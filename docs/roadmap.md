@@ -46,19 +46,24 @@ runs its two scans at once on a machine with two or more CPUs, so it takes about
 | Limitation | Status |
 |---|---|
 | TypeScript and JavaScript only | Other languages planned below |
-| Call resolution is syntactic unless a language server is configured — 2–19% of call sites resolve on public repositories | Opt-in [LSP enrichment](./design/lsp-enrichment.md) (`lsp.enabled` with `lsp.servers.ts`) resolves `this.` / `super.` calls; interface-typed receivers are not resolved yet |
+| Call resolution is syntactic unless a language server is configured — 6–29% of call sites resolve on public repositories | Opt-in [LSP enrichment](./design/lsp-enrichment.md) (`lsp.enabled` with `lsp.servers.ts`) resolves `this.` / `super.` calls; interface-typed receivers are not resolved yet |
 | No graph visualisation beyond the workspace overview and Slice View | No design yet |
 | No LLM integration | Deliberate. Aburi produces the facts, and interpreting them belongs to a separate tool. |
 
 ## Next
 
 - **LSP enrichment.** Use type resolution to sharpen effect inference and fill
-  in column-level source ranges. The number it has to beat is measured: between
-  2.0% of call sites resolved on NestJS itself, where a callee is a
-  constructor-injected interface, and 18.7% on `zod`. `no-match` is the largest
-  unresolved bucket almost everywhere, and classifying a sample of it comes
-  first — whatever share is a resolver gap rather than a genuinely unknowable
-  callee is fixable without type information at all.
+  in column-level source ranges. The number it has to beat is measured on the
+  benchmark's public repositories: from 6.3% of call sites resolved on
+  `shadcn-ui` to 29.0% on `zod`, with NestJS itself at 8.1%. `no-match` is the
+  largest unresolved bucket everywhere but NestJS, whose constructor-injected
+  interfaces make `dynamic` larger, and a
+  [hand-classified sample of it](https://github.com/kage1020/Aburi/blob/main/benchmarks/public-repos/no-match/README.md)
+  puts 70% ± 5% of it within reach of a rule that needs no types. Little of that
+  is a missing edge, though: most of it is a global, a binding of the caller or
+  a method of a builtin or package type, filed in the wrong bucket. Rules would
+  turn 4.9% ± 2.3% of `no-match` into call edges, and type information another
+  2.0% ± 1.6%.
 - **`@aburi/framework-trpc`.** The server side of tRPC (`t.router`,
   `publicProcedure.query` / `mutation` / `subscription`). The existing
   `effects-trpc` covers the client call side alone.
