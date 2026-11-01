@@ -14,6 +14,7 @@ import type {
 } from "@aburi/types"
 import { resolveCallGraph } from "../callgraph"
 import { type SerializeOptions, serializeCanonical } from "../canonical"
+import type { WorkspacePackage } from "../component-manifest"
 import { CoreError } from "../errors"
 import { logicFingerprint } from "../fingerprint"
 import { assertIRIntegrity } from "../integrity"
@@ -21,10 +22,12 @@ import { silentLogger } from "../logger"
 import { enrichWithLsp, type ServerFactory, withHintUsage } from "../lsp"
 import { compareBy } from "../order"
 import { propagateEffects } from "../propagate"
+import { componentImportEdges } from "./component-edges"
 import { discoverFiles, type SkippedFile, type UnrepresentableFile } from "./discover"
 import {
   buildPluginRefs,
   buildStats,
+  compareDependencies,
   projectSymbolEdges,
   sortComponents,
   uniqueSorted,
@@ -32,6 +35,7 @@ import {
 import { type ExtractionFailure, extractFiles, type ParseErrorRecord } from "./extract-files"
 import type { TreeReleaseFailure } from "./pipeline"
 import { buildLanguageRouter } from "./route"
+import { markTestFiles } from "./test-files"
 import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
 import type { UndeclaredVocabOccurrence } from "./vocab"
 
@@ -47,6 +51,8 @@ export interface ScanInput {
   logger?: Logger
   workspaceManagers?: readonly WorkspaceManager[]
   components?: readonly Component[]
+  /** What a bare import specifier is matched against to find the Component it imports. */
+  workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
 }
@@ -120,18 +126,32 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     dynamicCallSites: extracted.dynamicCallSites,
   })
   const symbolEdges = projectSymbolEdges(callGraph.edges)
+  const componentEdges = componentImportEdges({
+    importsByFile: extracted.importsByFile,
+    withdrawn: new Set(extracted.skipped.map((file) => file.path)),
+    components: input.components ?? [],
+    packages: input.workspacePackages ?? [],
+  })
+  for (const { name, components } of componentEdges.contested) {
+    logger.warn(
+      `${name} names a package in each of the Components ${components.join(", ")}, so an import of it draws no Component edge.`,
+    )
+  }
 
   const propagation = propagateEffects({
     symbols: callGraph.symbols,
     edges: callGraph.edges,
   })
-  const propagatedSymbols = propagation.symbols.map((s) =>
-    s.dropped
-      ? s
-      : {
-          ...s,
-          fingerprint: { ...s.fingerprint, logic: logicFingerprint(s) },
-        },
+  const propagatedSymbols = markTestFiles(
+    propagation.symbols.map((s) =>
+      s.dropped
+        ? s
+        : {
+            ...s,
+            fingerprint: { ...s.fingerprint, logic: logicFingerprint(s) },
+          },
+    ),
+    input.config,
   )
 
   const skipped = [...discovered.skipped, ...extracted.skipped].sort(compareBy((file) => file.path))
@@ -165,7 +185,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     workspace,
     components: sortComponents(input.components ?? []),
     symbols: propagatedSymbols,
-    dependencies: symbolEdges,
+    dependencies: [...symbolEdges, ...componentEdges.dependencies].sort(compareDependencies),
     stats,
   }
 

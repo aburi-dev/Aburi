@@ -62,6 +62,36 @@ directory a container owns does not stop a scan. The rule has to exclude the dir
 itself: `data/pg/*` leaves `data/pg` to be listed. A directory a `pnpm-workspace.yaml` or
 `workspaces` pattern names is the exception, because pnpm and npm never read `.gitignore`.
 
+## Mark test code
+
+Tests, fixtures and mocks are scanned like the rest of your code, so the calls out of them stay in
+the graph, but they are rarely what a pull request asks a reviewer about. Aburi marks the Symbols
+of a test file, lists their changes in a folded `🧪 Test files` section at the end of `diff.md`,
+and lets the gate skip them with `--fail-on-scope non-test` (or the action's `fail-on-scope`).
+
+With no `testFiles` in your config, these files are test code:
+
+```
+**/*.test.*  **/*.spec.*  **/*.test-d.*  **/*.spec-d.*
+**/__tests__/**  **/__mocks__/**  **/__fixtures__/**
+**/test/**  **/tests/**  **/e2e/**
+```
+
+Set `testFiles` to use your own list instead. It replaces the default one, so copy the patterns you
+keep:
+
+```jsonc
+{
+  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"]
+}
+```
+
+The globs read like `ignore`'s: `fixtures` or `fixtures/` marks the root's `fixtures/` directory,
+and `**/fixtures/**` marks every one. A pattern that starts with `!` takes files back out, so
+`["**/test/**", "!src/test"]` keeps a production `src/test/` out of the fold. `[]` marks nothing.
+Use `testFiles` rather than `ignore` for tests: an ignored file is never read, and the calls a
+test makes leave the graph with it.
+
 ## Choose plugins
 
 Three lists, one per plugin kind:
@@ -83,20 +113,26 @@ as the language id `"ts"`, stops the scan with exit 2 and names the plugin to wr
 instead.
 
 Order matters in `effects` alone. The first plugin to recognise a call wins, so
-put your project-specific plugins first. Options for an individual plugin go
-under `pluginOptions`, keyed by the plugin's manifest name:
+put your project-specific plugins first.
+
+Options for an individual plugin go under `pluginOptions`, keyed by the
+plugin's manifest name. None of the plugins that ship with Aburi takes options;
+a third-party plugin that takes options documents them:
 
 ```jsonc
 {
+  "effects": ["@myorg/aburi-effects"],
   "pluginOptions": {
-    "effects-prisma": { "treatExtendsAsTx": true }
+    "effects-myorg": { "queues": ["billing", "mail"] }
   }
 }
 ```
 
 A key that is not the manifest name of a plugin the scan loaded (a misspelling,
 or a plugin none of the three lists enables) gets a warning on stderr naming the
-plugins that did load, and its options are ignored.
+plugins that did load. A key for `hint-<name>`, the plugin Aburi builds from each
+[`frameworkHints`](#teach-it-your-in-house-framework) entry, gets a warning too:
+that plugin takes no options, so its rules go in the entry.
 
 ## Define components
 
@@ -212,10 +248,11 @@ setting in CI.
 |---|---|---|
 | `ignore` | `[]` | Extra glob patterns to skip. |
 | `respectGitignore` | `true` | Honour `.gitignore` files, in the scan and in finding components. |
+| `testFiles` | test-file globs | Files whose Symbols are test code: reported apart in `diff.md` and skipped by `--fail-on-scope non-test`. |
 | `languages` | `[]` | Language plugins to load. A scan needs at least one; `aburi init` writes the ones it detects. |
 | `frameworks` | `[]` | Framework plugins to load. |
 | `effects` | `[]` | Effects plugins, in priority order. |
-| `pluginOptions` | `{}` | Per-plugin options, keyed by plugin name. |
+| `pluginOptions` | `{}` | Options for third-party plugins, keyed by manifest name. |
 | `components` | autodetect | Explicit component boundaries. |
 | `suppress` | `[]` | Identifier prefixes to drop from effects and calls. |
 | `keep` | `[]` | Exceptions to `suppress` and to the built-in drop rules. |

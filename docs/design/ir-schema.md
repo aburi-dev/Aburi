@@ -61,6 +61,7 @@ The reader rule is what carries backward compatibility, and it is the more impor
 | `Component.description` | **yes** | **A** | always emitted; `null` when the component carries no description |
 | `Symbol.component` | **yes** | **A** | always emitted; `null` when the Symbol lies outside every Component |
 | `Symbol.signature` | **yes** | **A** | always emitted; `null` for Symbols with no callable signature |
+| `Symbol.inTestFile` | no | B | present iff `true`: the Symbol's file matched the config's `testFiles` (schema-enforced by `const: true`, §5.7) |
 | `Decorator.qualifier` | no | B | omitted when the decorator was written as a bare name; never `""` (§6) |
 | `Signature.inferredThrows` | no | B | omitted when nothing was inferred; never `[]` (§7) |
 | `Signature.inputs[].optional` | no | B | present iff `true`: a caller may omit the argument (schema-enforced by `const: true`, which refuses `false`, §7) |
@@ -202,8 +203,8 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 | export of a namespace merged into a class (`class C {}` beside `namespace C { export function m() {} }`) | `C::m`: the export is on the class's static side, a type (`export type m`) as much as a value, and `C.m` is the instance member's name. An ambient namespace exports what it declares without the keyword. What the namespace does not export is local to it and keeps the dot, and everything under an exported declaration sits under its segment (`C::Inner.g`, and `C::K::s` for a nested class's static member) |
 | nested namespace / class | `Billing.Invoice.create` |
 | interface / type alias | `Invoice` |
-| default export (including anonymous functions/classes) | `<default>` |
-| function/class expression assigned to a variable | the variable name becomes the qname (e.g. `const handler = () => ...` → `handler`) |
+| default export (including anonymous functions/classes, and a call handed a function, `export default withAuth(() => …)`) | `<default>` |
+| function/class expression assigned to a variable | the variable name becomes the qname (e.g. `const handler = () => ...` → `handler`). A class expression is named by the binding and not by a name of its own, which is in scope only inside its body: `const Registry = class Inner { reset() {} }` → `Registry` and `Registry.reset` ([`lang-plugin.md`](./lang-plugin.md) LP7h) |
 | function an object literal holds, the object initialising a binding (`const api = { get: () => …, post() {} }`) | `api.get` and `api.post`, with `.`, as a class's instance members: defining the object creates the closure, and calling the property runs it. An object nested under a named entry adds its key as a segment (`api.v1.get`), and the object in between has no Symbol. An entry whose key names no segment — computed, numeric, a quoted key that is not an identifier — has **no Symbol**, as a class member's, and its body stays on the binding. So does a `#` name, where the object diverges from a class: a class's `#v` is its private member, and outside a class body `#v` is a SyntaxError the grammar parses anyway ([`lang-plugin.md`](./lang-plugin.md) LP7d–LP7g). An object no binding holds directly, such as `export default { fetch() {} }`, declares no member: `<default>.fetch` is not a qualified name |
 | destructuring declaration | one Symbol per **binding**, each named by the binding (e.g. `const { GET, POST } = handlers` → `GET` and `POST`). The pattern's text is not a name; `{ a: b }` binds `b`, and `{ a = fallback }` binds `a` and reads `fallback` |
 | class member with a computed name (`[Symbol.iterator]() {}`) | **no Symbol**, and no diagnostic. The brackets are not a name static analysis can record, and mangling them into a segment would invent one the source does not contain. A **call target** answers the same shape differently and for the same reason ([`lang-plugin.md`](./lang-plugin.md) §4.4): a qualified name is a resolution target, so an invented segment mints an id that names nothing, while a call target is a reading of what the source calls, which a *dropped* segment falsifies — hence `<computed>` there and no Symbol here |
@@ -304,7 +305,8 @@ The core entity of the review unit.
   "confidence": "high",                       // required, enum §5.4
   "derivedBy": ["framework:nestjs:controller", "branch-condition"],  // required
   "dropped": false,                           // required
-  "dropReason": null                          // required, non-null when dropped=true
+  "dropReason": null,                         // required, non-null when dropped=true
+  "inTestFile": true                          // Class B (§1.1) — present only on a Symbol of test code, §5.7
 }
 ```
 
@@ -363,6 +365,8 @@ A string array indicating why this symbol was extracted in this form. Each entry
 
 An empty array means "picked up automatically by the core extraction path".
 
+The export entries — `export-keyword`, `export-default` and `export-clause:<name>` ([`lang-plugin.md`](./lang-plugin.md) LP6a–LP6c) — say which names the module exports the Symbol under, and the names are an input of the `api` fingerprint ([`fingerprint.md`](./fingerprint.md) §3.8). No fingerprint input is built from any other entry, though some reach a fingerprint by what they steer: `re-export` drops a Symbol, which zeroes all three, and `ambient-declaration`, `object-literal-initializer` and `export-default` steer call resolution, which decides the effects `logic` propagates.
+
 A Symbol's `derivedBy` entry that names something the source wrote — the call a framework plugin classified, `framework:express:route:app.get` — is composed from the names the syntax tree holds, never copied from an expression's text: that text carries the formatting it was written with, so a chain wrapped over several lines would put line breaks and indentation into the entry, and a `;` in a comment inside it would split the entry. Reformatting the code an entry names, or adding a comment inside it, leaves the entry as it was ([`lang-plugin.md`](./lang-plugin.md) §5.2.3 gives the framework plugins' reading of a call).
 
 ### 5.6 `dropped`
@@ -371,6 +375,12 @@ A Symbol's `derivedBy` entry that names something the source wrote — the call 
 - `true`: judged to be decoration, but kept for transparency about what was dropped
 
 Symbols with `dropped: true` have `rules`/`effects`/`calls`/`fingerprint` set to their prescribed values (empty arrays / all fingerprints = "0"*12). The Markdown projection aggregates them in a collapsed `## Dropped` section (see [markdown-projection.md](./markdown-projection.md) §3.6). `aburi explain` outputs the full details. `dropReason` is a short human-readable phrase (e.g. `"pure DTO"`, `"logger boilerplate"`, `"generated file"`).
+
+### 5.7 `inTestFile`
+
+`true` on every Symbol whose `source.file` matches the config's `testFiles` patterns, or the default list when the config gives none ([`config.md`](./config.md) §4.1); absent on every other Symbol. Dropped Symbols are marked like any other.
+
+The mark says the Symbol is test code, and nothing about how it was analysed: a Symbol of a test file has the same rules, effects, calls and edges it would have anywhere else, so a call graph through a fixture stays whole. No fingerprint reads it, so a change to `testFiles` alone moves no Symbol in `aburi diff`. Its readers are downstream: the Markdown projection lists the changes of marked Symbols apart ([`markdown-projection.md`](./markdown-projection.md) §6.2), and `aburi diff --fail-on-scope non-test` leaves them out of the gate ([`cli-spec.md`](./cli-spec.md) §6.7). A diff entry with both a base and a head Symbol is judged by the head's mark, as the report places it by the head's file.
 
 ## 6. Decorator
 
@@ -407,7 +417,7 @@ The `boundary: true` determination is made by the framework plugin. The Aburi co
 ```
 
 - `name` is the parameter's binding as written: its name, or the source text of its pattern when it destructures. A rest parameter's `...` is not part of it (`...ids` → `ids`, `...[x]` → `[x]`). A pattern's text is not a name, so a destructuring parameter also carries `bindings`: the identifiers the pattern binds, in source order, read as §3.2 reads a destructuring declaration (`{ a: b }` binds `b`; `{ a = fallback }` binds `a`; a rest element binds what it holds). The call resolver's local-scope step treats each of them as a parameter ([call-resolution.md](./call-resolution.md) §4.2). It is **Class B** per §1.1: a parameter that is a single name omits the key, a rest parameter included (`...ids` is named `ids` and carries `rest`), and so does a pattern that binds no name (`{}: Props`); the schema enforces `minItems: 1`. `bindings` is not part of the api fingerprint, any more than `name` is ([fingerprint.md](./fingerprint.md) §3.1). Only names the parser placed in binding position are listed. Neither a MISSING identifier, nor text the parser could not place, nor an expression it placed where a binding belongs (`{ a: obj.b }`) is a binding, and each is passed over rather than costing the file; where the parser kept a malformed pattern only as an expression (`[a, ?, b]`), the names written in it are listed ([lang-plugin.md](./lang-plugin.md) LP11d)
-- `type` is the string representation as read from the AST: an input's annotation text and nothing else, `""` when there is none. No type resolution is performed, and no later pass rewrites it — LSP enrichment included, which changes no fingerprint ([lsp-enrichment.md](./lsp-enrichment.md)). A rewritten `type` would make `api` differ with LSP on and off, which is what the `inferredThrows` split below exists to prevent
+- `type` is the string representation as read from the AST: an input's annotation and nothing else, `""` when there is none, written as it reads on one line. The plugin leaves out the comments, and the layout, trailing comma and union's leading `|` a formatter adds when it breaks the type over lines, and separates an object type's members with `;` as a formatter does on one line ([lang-plugin.md](./lang-plugin.md) LP11e); `outputs` and `typeParameters` are read the same way. No type resolution is performed, and no later pass rewrites it — LSP enrichment included, which changes no fingerprint ([lsp-enrichment.md](./lsp-enrichment.md)). A rewritten `type` would make `api` differ with LSP on and off, which is what the `inferredThrows` split below exists to prevent
 - `optional` and `rest` record what a caller sees of an input's form. The api fingerprint reads them beside `type`, and does not read `name` ([fingerprint.md](./fingerprint.md) §3.1). `optional: true` when a call may leave the argument out, whether the parameter is written optional or with a default: `limit = 10` → `{ "name": "limit", "type": "", "optional": true }`; the default's value is not recorded. `rest: true` when the parameter collects the remaining arguments: `...ids: string[]` → `{ "name": "ids", "type": "string[]", "rest": true }`, with `name` the bare binding. Both are **Class B** per §1.1: a writer omits the key rather than writing `false`. Renderers print them in the parameter's spelling — `a?: string`, `...ids: string[]`, and `limit?` for a default ([lang-plugin.md](./lang-plugin.md) LP11b)
 - `name` is never empty (`minLength: 1`). Where a recovered parse leaves no binding the source wrote — a MISSING node, which [fingerprint.md](./fingerprint.md) §5.1(6) treats as not written — the plugin names the input by the nearest text the source did write, so both rules hold ([lang-plugin.md](./lang-plugin.md) LP11c)
 - `throws` combines explicit throw statements and JSDoc `@throws`. A tag with braces contributes their text, unchecked (`{@link X}` contributes `X`); a tag without braces contributes a word only when that word is its whole text and reads as a type name. So a multi-word description cannot reach `throws`, but a single capitalised word is taken as a type (`@throws Unknown` records `Unknown`; `@throws Unknown.` records nothing), and whatever is written in braces is recorded as it stands ([lang-plugin.md](./lang-plugin.md) §9.2)
@@ -542,7 +552,7 @@ never a name spelled oddly.
 
 ## 11. Dependency
 
-An edge between symbols or between components. `aburi scan` writes Symbol edges only, `via: "call"` from the resolved call graph; Component edges are valid v1 for any producer, and the projections and the diff handle them, but the scan emits none yet. Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
+An edge between symbols or between components. `aburi scan` writes two kinds: Symbol edges, `via: "call"`, from the resolved call graph, and Component edges, `via: "import"`, from the imports that cross a Component boundary (§11.3). Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
 
 ```jsonc
 {
@@ -565,6 +575,17 @@ An edge between symbols or between components. `aburi scan` writes Symbol edges 
 `"outbound" | "inbound" | "bidirectional"`
 
 The direction as seen from `from`. `bidirectional` is limited to cases such as bidirectional RPC.
+
+### 11.3 Component edges
+
+`aburi scan` writes one `{ from: A, to: B, via: "import", direction: "outbound", effect: null }` for each ordered pair of distinct Components where a file attributed to A — as a Symbol in it is ([`component-detect.md`](./component-detect.md) §12) — imports a module of B. Every import edge the language plugin reports counts — static, dynamic, a re-export, a side-effect import, `import x = require(…)`, and a type-only import, which [`lang-plugin.md`](./lang-plugin.md) reports in the same shape. A CommonJS `require()` call is a call, not an import ([`call-resolution.md`](./call-resolution.md) §4.3), so a workspace that imports only through it has no Component edge. A query such as `?raw` or `?inline` asks a bundler for the module in another form, so it is dropped first. Then the specifier decides which Component the module belongs to:
+
+- **A relative specifier** joins the importing file's directory. The joined path belongs to the Component a file at that path would belong to, so it need not be a file the scan read: a JSON module, a stylesheet or a directory's index lies in the Component whose root holds its path. A specifier that climbs exactly to the workspace root names the module at its top level, which the Component rooted at `.` holds, if one is; one that climbs above the root names none.
+- **A bare specifier** names a workspace package by its package name: `@scope/name` for a scoped specifier, otherwise its first segment, so `@acme/billing/invoice` imports `@acme/billing`. The workspace packages are the `package.json#name` at each `workspace.managers[].roots` entry and each Component root, and a package belongs to the Component that holds its `package.json`; a root no Component holds is not read, since no edge could reach its package. A name two Components' manifests both declare names neither, and the scan warns once for each such name an import uses, naming the Components, so an edge left out for it is not missing silently. Every other bare specifier — a registry dependency, a Node built-in, a path alias — is outside the graph.
+
+A file the Document leaves out (`stats.skippedFiles`) contributes no edge, and neither does a file outside every Component. A `package.json` at one of those roots that cannot be read or parsed ends the scan as Component detection's does ([`component-detect.md`](./component-detect.md) §7), since edges built without it would be missing silently.
+
+A resolved call between two Components adds no Component edge. A call into another Component goes through an import of it, which is already an edge. The resolved calls that do not are the ones workspace scope matched by a globally unique name alone ([`call-resolution.md`](./call-resolution.md) §4.6). Drawing a dependency from that evidence would put an arrow in the graph that no import supports. So every Component edge the scan writes is `via: "import"`.
 
 ## 12. SourceRange
 
