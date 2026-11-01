@@ -12,7 +12,6 @@ export {
   classifyDiffError,
   type DiffOptions,
   type DiffReport,
-  formatFailOnMessage,
   runDiff,
 } from "./commands/diff"
 export type { DiffSide } from "./commands/diff-revisions"
@@ -29,7 +28,12 @@ export {
 } from "./commands/init"
 export { runScan, type ScanOptions } from "./commands/scan"
 export { reportScanIncidents } from "./commands/scan-incidents"
-export type { CoverageFault, PluginNamedFramework, ScanReport } from "./commands/scan-report"
+export type {
+  CoverageFault,
+  PluginNamedFramework,
+  ScanReport,
+  StrayPluginOptions,
+} from "./commands/scan-report"
 export {
   classifyConfigError,
   loadPinnedConfig,
@@ -41,6 +45,7 @@ export { type AburiEnv, type LogLevel, readEnv } from "./env"
 export { CliError, type CliErrorCode } from "./errors"
 export { EXIT, type ExitCode } from "./exit-codes"
 export {
+  type ClauseOutcome,
   evaluateClause,
   evaluateFailOn,
   type FailOnClause,
@@ -48,8 +53,10 @@ export {
   FailOnParseError,
   type FailOnStatusToken,
   type FailOnToken,
+  formatTriggered as formatFailOnMessage,
   formatTriggered,
   parseFailOn,
+  type TrippedClause,
 } from "./fail-on"
 export type { GitRunner } from "./git/runner"
 export { readIR } from "./ir-io"

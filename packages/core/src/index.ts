@@ -14,12 +14,14 @@ export {
   type DetectComponentsOptions,
   detectComponents,
 } from "./component"
+export { NPM_MANIFEST, readWorkspacePackages, type WorkspacePackage } from "./component-manifest"
 export {
   CoreError,
   type CoreErrorCode,
   type CoreErrorDetail,
   type IntegrityViolation,
 } from "./errors"
+export { type ExportEvidence, exportNames } from "./export-names"
 export {
   apiFingerprint,
   type ComputeFingerprintInput,

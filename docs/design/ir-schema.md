@@ -368,6 +368,8 @@ A string array indicating why this symbol was extracted in this form. Each entry
 
 An empty array means "picked up automatically by the core extraction path".
 
+The export entries — `export-keyword`, `export-default` and `export-clause:<name>` ([`lang-plugin.md`](./lang-plugin.md) LP6a–LP6c) — say which names the module exports the Symbol under, and the names are an input of the `api` fingerprint ([`fingerprint.md`](./fingerprint.md) §3.8). No fingerprint input is built from any other entry, though some reach a fingerprint by what they steer: `re-export` drops a Symbol, which zeroes all three, and `ambient-declaration`, `object-literal-initializer` and `export-default` steer call resolution, which decides the effects `logic` propagates.
+
 A Symbol's `derivedBy` entry that names something the source wrote — the call a framework plugin classified, `framework:express:route:app.get` — is composed from the names the syntax tree holds, never copied from an expression's text: that text carries the formatting it was written with, so a chain wrapped over several lines would put line breaks and indentation into the entry, and a `;` in a comment inside it would split the entry. Reformatting the code an entry names, or adding a comment inside it, leaves the entry as it was ([`lang-plugin.md`](./lang-plugin.md) §5.2.3 gives the framework plugins' reading of a call).
 
 ### 5.6 `dropped`
@@ -547,7 +549,7 @@ never a name spelled oddly.
 
 ## 11. Dependency
 
-An edge between symbols or between components. `aburi scan` writes Symbol edges only, `via: "call"` from the resolved call graph; Component edges are valid v1 for any producer, and the projections and the diff handle them, but the scan emits none yet. Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
+An edge between symbols or between components. `aburi scan` writes two kinds: Symbol edges, `via: "call"`, from the resolved call graph, and Component edges, `via: "import"`, from the imports that cross a Component boundary (§11.3). Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
 
 ```jsonc
 {
@@ -570,6 +572,17 @@ An edge between symbols or between components. `aburi scan` writes Symbol edges 
 `"outbound" | "inbound" | "bidirectional"`
 
 The direction as seen from `from`. `bidirectional` is limited to cases such as bidirectional RPC.
+
+### 11.3 Component edges
+
+`aburi scan` writes one `{ from: A, to: B, via: "import", direction: "outbound", effect: null }` for each ordered pair of distinct Components where a file attributed to A — as a Symbol in it is ([`component-detect.md`](./component-detect.md) §12) — imports a module of B. Every import edge the language plugin reports counts — static, dynamic, a re-export, a side-effect import, `import x = require(…)`, and a type-only import, which [`lang-plugin.md`](./lang-plugin.md) reports in the same shape. A CommonJS `require()` call is a call, not an import ([`call-resolution.md`](./call-resolution.md) §4.3), so a workspace that imports only through it has no Component edge. A query such as `?raw` or `?inline` asks a bundler for the module in another form, so it is dropped first. Then the specifier decides which Component the module belongs to:
+
+- **A relative specifier** joins the importing file's directory. The joined path belongs to the Component a file at that path would belong to, so it need not be a file the scan read: a JSON module, a stylesheet or a directory's index lies in the Component whose root holds its path. A specifier that climbs exactly to the workspace root names the module at its top level, which the Component rooted at `.` holds, if one is; one that climbs above the root names none.
+- **A bare specifier** names a workspace package by its package name: `@scope/name` for a scoped specifier, otherwise its first segment, so `@acme/billing/invoice` imports `@acme/billing`. The workspace packages are the `package.json#name` at each `workspace.managers[].roots` entry and each Component root, and a package belongs to the Component that holds its `package.json`; a root no Component holds is not read, since no edge could reach its package. A name two Components' manifests both declare names neither, and the scan warns once for each such name an import uses, naming the Components, so an edge left out for it is not missing silently. Every other bare specifier — a registry dependency, a Node built-in, a path alias — is outside the graph.
+
+A file the Document leaves out (`stats.skippedFiles`) contributes no edge, and neither does a file outside every Component. A `package.json` at one of those roots that cannot be read or parsed ends the scan as Component detection's does ([`component-detect.md`](./component-detect.md) §7), since edges built without it would be missing silently.
+
+A resolved call between two Components adds no Component edge. A call into another Component goes through an import of it, which is already an edge. The resolved calls that do not are the ones workspace scope matched by a globally unique name alone ([`call-resolution.md`](./call-resolution.md) §4.6). Drawing a dependency from that evidence would put an arrow in the graph that no import supports. So every Component edge the scan writes is `via: "import"`.
 
 ## 12. SourceRange
 
