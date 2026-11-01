@@ -172,8 +172,11 @@ export {
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
+  type ReceiverChain,
+  receiverChain,
   type SyntaxNode,
   unwrapValue,
+  writtenChildren,
 } from "./syntax-node"
 export { computeWeaklyConnectedComponents } from "./wcc"
 export {

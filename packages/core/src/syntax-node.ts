@@ -19,6 +19,14 @@ export function asSyntaxNode(value: unknown): SyntaxNode | null {
   return candidate as SyntaxNode
 }
 
+/** A node's named children as written, comments left out. */
+export function writtenChildren(node: SyntaxNode | null): SyntaxNode[] {
+  if (node === null) return []
+  return node.namedChildren.filter(
+    (child): child is SyntaxNode => child !== null && child.type !== "comment",
+  )
+}
+
 export function findNamedChildOfType(node: SyntaxNode, typeName: string): SyntaxNode | null {
   for (const child of node.namedChildren) {
     if (child !== null && child.type === typeName) return child
@@ -101,18 +109,41 @@ export function calleeName(callNode: SyntaxNode): CalleeName | null {
   return { name: `${chainRoot(object)}.${leaf}`, leaf }
 }
 
+export interface ReceiverChain {
+  /** Each property read and method called on the way down to the root, outermost first. */
+  readonly path: readonly string[]
+  /** The name the chain starts from, as `calleeName` names it. */
+  readonly root: string
+}
+
+/** The receiver `calleeName` names, read step for step as it reads it. */
+export function receiverChain(node: SyntaxNode): ReceiverChain {
+  const path: string[] = []
+  let cursor = unwrapValue(node)
+  for (let next = chainStep(cursor); next !== null; next = chainStep(cursor)) {
+    if (cursor.type === "member_expression") {
+      const property = cursor.childForFieldName("property")?.text ?? ""
+      if (property.length > 0) path.push(property)
+    }
+    cursor = unwrapValue(next)
+  }
+  return { path, root: rootName(cursor) }
+}
+
 const NAMED_ROOT_TYPES: ReadonlySet<string> = new Set(["identifier", "this"])
 
 function chainRoot(node: SyntaxNode): string {
   let cursor = unwrapValue(node)
-  let next = chainStep(cursor)
-  while (next !== null) {
+  for (let next = chainStep(cursor); next !== null; next = chainStep(cursor)) {
     cursor = unwrapValue(next)
-    next = chainStep(cursor)
   }
-  // Any other root's text would carry its line breaks and comments into the name.
-  return NAMED_ROOT_TYPES.has(cursor.type) && cursor.text.length > 0
-    ? cursor.text
+  return rootName(cursor)
+}
+
+// Any other root's text would carry its line breaks and comments into the name.
+function rootName(root: SyntaxNode): string {
+  return NAMED_ROOT_TYPES.has(root.type) && root.text.length > 0
+    ? root.text
     : COMPUTED_TARGET_SEGMENT
 }
 

@@ -11,8 +11,8 @@ tested, and exercised end to end against a NestJS-shaped fixture project.
 
 **Analysis.** TypeScript and JavaScript, parsed with tree-sitter WASM. Aburi
 detects pnpm, npm, Yarn, and Bun workspaces and nx projects on its own, recognises NestJS, Next.js App
-Router, Express, and React as frameworks, and reads Prisma, Drizzle, tRPC, and
-NestJS events as effects.
+Router, Express, React, and the tRPC server as frameworks, and reads Prisma,
+Drizzle, tRPC client calls, and NestJS events as effects.
 
 **Dependencies.** Aburi resolves calls to the symbols they reach within a file,
 an import, a component, or the workspace, and builds a symbol-level dependency
@@ -64,9 +64,6 @@ runs its two scans at once on a machine with two or more CPUs, so it takes about
   a method of a builtin or package type, filed in the wrong bucket. Rules would
   turn 4.9% ± 2.3% of `no-match` into call edges, and type information another
   2.0% ± 1.6%.
-- **`@aburi/framework-trpc`.** The server side of tRPC (`t.router`,
-  `publicProcedure.query` / `mutation` / `subscription`). The existing
-  `effects-trpc` covers the client call side alone.
 
 ## Later
 
