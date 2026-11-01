@@ -28,9 +28,11 @@ added and removed counts beside it as lower bounds.
 duplicates: the head revision still has a symbol of the same kind with the same
 body, as when two identical helpers become one. `--fail-on removed` does not
 count them, and `--fail-on removed:duplicate` does. Only a body with something
-to compare counts (a guard, a branch, a return value, an effect), and never a
-symbol a framework plugin classified, such as a route handler or a React
-component, because its role is not in its body.
+to compare counts: a guard (an `if` that returns or throws), a `throw`, a
+`switch`, a computed return value or an effect. A body that only calls
+something, or returns a literal, a variable or a property, never counts, and
+neither does a symbol a framework plugin classified, such as a route handler or
+a React component, because its role is not in its body.
 
 ## The sections
 
