@@ -7,10 +7,3 @@ export function isPathLiteral(node: SyntaxNode): boolean {
   if (value.type !== "template_string") return false
   return value.namedChildren.every((child) => child?.type !== "template_substitution")
 }
-
-export function writtenChildren(node: SyntaxNode | null): SyntaxNode[] {
-  if (node === null) return []
-  return node.namedChildren.filter(
-    (child): child is SyntaxNode => child !== null && child.type !== "comment",
-  )
-}
