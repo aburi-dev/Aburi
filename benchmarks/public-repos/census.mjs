@@ -1,39 +1,52 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, relative, resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { promisify } from "node:util"
+import { resolveRepos } from "./args.mjs"
 import {
-  callSiteKey,
+  callSitesOf,
+  censusRepos,
   drawIndices,
+  foreignPluginRefs,
   isTestPath,
   parseCensusArgs,
+  prepareCommand,
   renderCheck,
+  renderResolution,
   renderShares,
+  scanFaults,
+  validateCensus,
 } from "./census-report.mjs"
-import { containsPath, resolveRepos } from "./report.mjs"
+import {
+  aburiCommit,
+  aburiVersion,
+  assertRunnable,
+  CLI_ENTRY,
+  git,
+  REPO_ROOT,
+} from "./checkout.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = resolve(HERE, "../..")
-const CLI_ENTRY = resolve(REPO_ROOT, "packages/cli/dist/index.mjs")
 const CENSUS_PATH = resolve(HERE, "no-match/sample.json")
 const CODE_CHARS = 160
 
-const run = promisify(execFile)
-
-async function git(args, cwd) {
-  return (await run("git", args, { cwd })).stdout.trim()
-}
-
 async function scanClone(repo, workDir) {
   const dir = resolve(workDir, repo.id)
-  if (!existsSync(resolve(dir, "aburi.json"))) {
+  const configPath = resolve(dir, "aburi.json")
+  const prepare = prepareCommand(repo.id, workDir)
+  if (!existsSync(configPath)) {
     throw new Error(
-      `${dir} has no aburi.json. Run \`node benchmarks/public-repos/run.mjs --only ${repo.id} ` +
-        "--runs 1 --warmup 0 --no-diff` first: it clones the repository and writes the config.",
+      `${dir} has no aburi.json. Run \`${prepare}\` first: it clones the repository and writes ` +
+        "the config.",
+    )
+  }
+  const foreign = foreignPluginRefs(JSON.parse(await readFile(configPath, "utf8")), REPO_ROOT)
+  if (foreign.length > 0) {
+    throw new Error(
+      `${configPath} loads plugins this checkout did not build: ${foreign.join(", ")}. ` +
+        `Run \`${prepare}\` from this checkout first: it points the config at its builds.`,
     )
   }
   const head = await git(["rev-parse", "HEAD"], dir)
@@ -50,6 +63,13 @@ async function scanClone(repo, workDir) {
       suppressTimestamp: true,
       logLevel: "error",
     })
+    const faults = scanFaults(report)
+    if (faults.length > 0) {
+      throw new Error(
+        `The scan of ${repo.id} left part of it out (${faults.join("; ")}), and the census ` +
+          "compares whole scans only.",
+      )
+    }
     const ir = JSON.parse(await readFile(report.irPath, "utf8"))
     return { dir, ir, unresolved: report.unresolvedCalls }
   } finally {
@@ -72,11 +92,7 @@ async function draw(options, repos) {
   const census = {
     seed: options.seed,
     perRepo: options.perRepo,
-    aburi: {
-      version: JSON.parse(await readFile(resolve(REPO_ROOT, "packages/cli/package.json"), "utf8"))
-        .version,
-      commit: await git(["rev-parse", "HEAD"], REPO_ROOT),
-    },
+    aburi: { version: await aburiVersion(), ...(await aburiCommit()) },
     repos: [],
     categories: {},
     samples: [],
@@ -103,6 +119,7 @@ async function draw(options, repos) {
         code: (lines.get(file)[call.line - 1] ?? "").trim().slice(0, CODE_CHARS),
         category: null,
         expected: null,
+        expectedSymbol: null,
         note: null,
       })
     }
@@ -110,51 +127,21 @@ async function draw(options, repos) {
   process.stdout.write(`${JSON.stringify(census, null, 2)}\n`)
 }
 
-function callSitesOf(ir, unresolved) {
-  const sites = new Map()
-  for (const symbol of ir.symbols) {
-    for (const call of symbol.calls ?? []) {
-      const key = callSiteKey({ symbol: symbol.id, line: call.line, target: call.target })
-      if (!sites.has(key)) sites.set(key, { resolved: call.resolved, bucket: null })
-    }
-  }
-  for (const call of unresolved) {
-    const site = sites.get(
-      callSiteKey({ symbol: call.symbolId, line: call.line, target: call.target }),
-    )
-    if (site !== undefined && site.bucket === null) site.bucket = call.bucket
-  }
-  return sites
-}
-
 async function check(options, manifest) {
   const census = JSON.parse(await readFile(CENSUS_PATH, "utf8"))
-  const repos = resolveRepos(
-    manifest,
-    census.repos.map((repo) => repo.id),
-  )
+  validateCensus(census)
   const current = new Map()
   const baselines = []
-  for (const repo of repos) {
-    const recorded = census.repos.find((entry) => entry.id === repo.id)
-    if (recorded.head !== repo.head) {
-      throw new Error(
-        `repos.json pins ${repo.id} at ${repo.head}, but the census sampled ${recorded.head}; ` +
-          "its call sites are not comparable across pins.",
-      )
-    }
+  for (const repo of censusRepos(manifest, census)) {
     process.stderr.write(`scanning ${repo.id}\n`)
     const { ir, unresolved } = await scanClone(repo, options.workDir)
     current.set(repo.id, callSitesOf(ir, unresolved))
-    baselines.push({ recorded, now: baselineOf(repo, ir) })
+    baselines.push({
+      recorded: census.repos.find((entry) => entry.id === repo.id),
+      now: baselineOf(repo, ir),
+    })
   }
-  const lines = ["| Repo | Resolved then | Resolved now |", "|---|---:|---:|"]
-  for (const { recorded, now } of baselines) {
-    const share = (entry) =>
-      `${entry.resolved} / ${entry.calls} (${((100 * entry.resolved) / entry.calls).toFixed(1)}%)`
-    lines.push(`| \`${recorded.id}\` | ${share(recorded)} | ${share(now)} |`)
-  }
-  process.stdout.write(`${lines.join("\n")}\n\n${renderCheck(census, current)}`)
+  process.stdout.write(`${renderResolution(baselines)}\n${renderCheck(census, current)}`)
 }
 
 async function main() {
@@ -163,12 +150,7 @@ async function main() {
     process.stdout.write(renderShares(JSON.parse(await readFile(CENSUS_PATH, "utf8"))))
     return
   }
-  if (!existsSync(CLI_ENTRY)) {
-    throw new Error(`${relative(REPO_ROOT, CLI_ENTRY)} is missing. Run \`pnpm build\` first.`)
-  }
-  if (containsPath(REPO_ROOT, options.workDir)) {
-    throw new Error(`--work-dir must sit outside ${REPO_ROOT}, where run.mjs keeps its clones.`)
-  }
+  assertRunnable(options.workDir)
   const manifest = JSON.parse(await readFile(resolve(HERE, "repos.json"), "utf8"))
   if (options.mode === "draw") await draw(options, resolveRepos(manifest, options.only))
   else await check(options, manifest)

@@ -34,8 +34,8 @@ namespace spread into an object literal (2), from a `const` merged with an inter
 is dropped as a data model (1), and from receivers declared as workspace classes (3).
 
 Type information settles 30% of `no-match`, but most of that is a method on a builtin or package
-type (63 of 89), or a member of an interface with no body to link to (18 of 89): NestJS's
-`INestApplication`, tRPC's `ProcedureBuilder`, Zod's `ZodType`. Two are `any`. Six would become
+type (63 of 89), or has no body to link to (18 of 89), mostly interface members such as NestJS's
+`INestApplication`, tRPC's `ProcedureBuilder` and Zod's `ZodType`. Two are `any`. Six would become
 edges.
 
 So LSP enrichment, aimed at `no-match`, would add about 220 resolved calls to the 4,349 the four
@@ -88,6 +88,9 @@ information gives for `inferred-receiver`:
 | `dynamic` | Only an interface or a type declares the target, or the target is a closure in an object literal, so no body is named. |
 | `untyped` | The receiver is `any`, so not even types name a target. |
 
+An `edge` sample also records `expectedSymbol`, the id of its target, so a later run can tell a
+call resolved to that declaration from one resolved to another.
+
 ## Per category and repository
 
 `node benchmarks/public-repos/census.mjs shares` prints these tables from `sample.json`.
@@ -130,9 +133,9 @@ The repositories differ in the way their shapes predict. `hono` runs vitest with
 (14 of its 75), so its test code is mostly a resolver gap. `trpc` reaches most of its own API
 through proxies and builders whose types are inferred (31 of 75). `zod` declares its schemas as an
 interface and a `const` of one name, and gathers them through `export *` and namespace spreads, so
-it has the merge, both spreads and four of the nine re-exports. Test code is a different population from the
-rest, as expected: it holds every `test-global`, and in the other files the gap is 69% rather than
-75%.
+it has the merge, both spreads and four of the nine re-exports. Test code is a different population
+from the rest, as expected: it holds every `test-global`, and in the other files the gap is 69%
+rather than 75%.
 
 ## How the sample was drawn
 
@@ -150,7 +153,7 @@ rest, as expected: it holds every `test-global`, and in the other files the gap 
   Wilson intervals.
 - **Unit.** The unit is the call site, so a long function weighs in proportion to its calls:
   `hono`'s 1,100-line router test table holds 22 of its 75, and `zod`'s locale files, one per
-language and alike, 11 of its.
+  language and alike, 11 of its 75.
   The shares are shares of call sites, and that is what the resolver's counters count.
 - **Evidence.** Each call was read in its file. The head's binding came from the TypeScript
   compiler's binder over the clone, and the callee's declaration from its checker. The clones have
@@ -165,13 +168,21 @@ node benchmarks/public-repos/run.mjs --only zod,hono,trpc,nest --runs 1 --warmup
 node benchmarks/public-repos/census.mjs check
 ```
 
-`check` scans the four clones with the built CLI and tabulates, per category, what the resolver
-makes of each sampled call now, and how many land where `expected` says they should (`resolved`
-for an `edge`, and `no-match` for an `untyped` receiver, which nothing can resolve). A call whose
-symbol, line or target no longer matches is `gone`. It refuses a clone that is not at the pin the
-sample was drawn at, since the calls are not comparable across pins. At the commit the sample was
-drawn at, every call is still `no-match`.
+`check` scans the four clones with the built CLI. It prints each repository's resolved calls when
+the sample was drawn beside those of the scan now (`Resolved then` and `Resolved now`), then
+tabulates, per category, where each sampled call lands now and how many land where `expected` says
+they should: on the Symbol `expectedSymbol` names for an `edge`, and in `no-match` for an `untyped`
+receiver, which nothing can resolve. A call whose symbol, line or target no longer matches is
+`gone`. At the commit the sample was drawn at, every call is still `no-match`.
 
-`census.mjs draw` draws a fresh sample, with its categories empty for classifying by hand. It is
-for when `repos.json` moves a pin. `--only`, `--per-repo` and `--seed` change the frame, and
-`--work-dir` is where `run.mjs` keeps its clones for both `draw` and `check`.
+`check` refuses a clone that is not at the pin the sample was drawn at, since the calls are not
+comparable across pins. It refuses a clone whose `aburi.json` loads plugins another checkout
+built: `run.mjs` points the config at the builds of the checkout that ran it, and every checkout
+shares the default work directory. And it refuses a scan that left any file out, whose calls would
+read as `gone`.
+
+`census.mjs draw` scans the clones the same way and writes a fresh sample to stdout, with its
+categories empty for classifying by hand; `sample.json` stays as it is. It is for when `repos.json`
+moves a pin. It records the Aburi commit it ran at, and `dirty` when the working tree differed from
+it, as `run.mjs` does. `--only` changes the frame, `--per-repo` the sample size and `--seed` the
+sequence, and `--work-dir` is where `run.mjs` keeps its clones, for both `draw` and `check`.

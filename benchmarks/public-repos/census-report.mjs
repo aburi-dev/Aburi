@@ -1,6 +1,6 @@
-import { tmpdir } from "node:os"
 import { resolve } from "node:path"
-import { requireCount, requireValue } from "./report.mjs"
+import { fileURLToPath } from "node:url"
+import { containsPath, DEFAULT_WORK_DIR, requireCount, requireValue } from "./args.mjs"
 
 export const DEFAULT_CENSUS_REPOS = ["zod", "hono", "trpc", "nest"]
 export const DEFAULT_PER_REPO = 75
@@ -9,7 +9,7 @@ export const DEFAULT_SEED = "no-match"
 /** What a category's rule, or type information where the category needs it, makes of the call. */
 export const EXPECTED = ["edge", "external", "local-scope", "dynamic", "untyped"]
 
-/** What the resolver makes of a sampled call on a later run. */
+/** Where a sampled call lands on a later run; `gone` when no call site matches its key. */
 export const OUTCOMES = [
   "no-match",
   "resolved",
@@ -43,7 +43,7 @@ export function parseCensusArgs(argv) {
     only: DEFAULT_CENSUS_REPOS,
     perRepo: DEFAULT_PER_REPO,
     seed: DEFAULT_SEED,
-    workDir: resolve(tmpdir(), "aburi-bench-work"),
+    workDir: DEFAULT_WORK_DIR,
   }
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
@@ -57,6 +57,62 @@ export function parseCensusArgs(argv) {
     else throw new Error(`Unknown flag for \`${mode}\`: ${arg}`)
   }
   return options
+}
+
+export function prepareCommand(id, workDir) {
+  const at = /\s/.test(workDir) ? JSON.stringify(workDir) : workDir
+  return (
+    `node benchmarks/public-repos/run.mjs --only ${id} --runs 1 --warmup 0 --no-diff` +
+    (workDir === DEFAULT_WORK_DIR ? "" : ` --work-dir ${at}`)
+  )
+}
+
+export function censusRepos(manifest, census) {
+  return census.repos.map((recorded) => {
+    const pinned = manifest.repos.find((repo) => repo.id === recorded.id)
+    if (pinned === undefined) {
+      throw new Error(`sample.json samples ${recorded.id}, which repos.json no longer pins.`)
+    }
+    if (pinned.head !== recorded.head) {
+      throw new Error(
+        `repos.json pins ${recorded.id} at ${pinned.head}, but the census sampled ` +
+          `${recorded.head}; its call sites are not comparable across pins.`,
+      )
+    }
+    return pinned
+  })
+}
+
+const PLUGIN_BUCKETS = ["languages", "frameworks", "effects"]
+
+/** `run.mjs` points a clone's config at one checkout's builds, and every checkout shares the clones. */
+export function foreignPluginRefs(config, root) {
+  return PLUGIN_BUCKETS.flatMap((bucket) => config[bucket] ?? []).filter(
+    (ref) => !ref.startsWith("file:") || !containsPath(root, fileURLToPath(ref)),
+  )
+}
+
+const LISTED_SKIPS = 3
+
+export function scanFaults(report) {
+  const faults = []
+  if (report.skipped.length > 0) {
+    const listed = report.skipped
+      .slice(0, LISTED_SKIPS)
+      .map((file) => `${file.path} (${file.reason})`)
+    const more = report.skipped.length - listed.length
+    faults.push(
+      `${report.skipped.length} file(s) skipped: ${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}`,
+    )
+  }
+  if (report.extractionFailures.length > 0) {
+    faults.push(`${report.extractionFailures.length} extraction failure(s)`)
+  }
+  if (report.unrepresentableFiles.length > 0) {
+    faults.push(`${report.unrepresentableFiles.length} file(s) no Symbol id can name`)
+  }
+  if (report.coverageFault !== null) faults.push(`coverage fault: ${report.coverageFault.kind}`)
+  return faults
 }
 
 // FNV-1a then mulberry32: a seed string names one sequence on every platform and Node version.
@@ -97,6 +153,24 @@ export function callSiteKey(site) {
   return `${site.symbol}\0${site.line}\0${site.target}`
 }
 
+/** A Symbol may call one target twice on a line; the census keys a site by all three, so the first stands. */
+export function callSitesOf(ir, unresolved) {
+  const sites = new Map()
+  for (const symbol of ir.symbols) {
+    for (const call of symbol.calls ?? []) {
+      const key = callSiteKey({ symbol: symbol.id, line: call.line, target: call.target })
+      if (!sites.has(key)) sites.set(key, { resolved: call.resolved, bucket: null })
+    }
+  }
+  for (const call of unresolved) {
+    const site = sites.get(
+      callSiteKey({ symbol: call.symbolId, line: call.line, target: call.target }),
+    )
+    if (site !== undefined && site.bucket === null) site.bucket = call.bucket
+  }
+  return sites
+}
+
 export function wilsonInterval(hits, n) {
   if (n === 0) return { low: 0, high: 1 }
   const p = hits / n
@@ -126,6 +200,8 @@ export function stratifiedShare(strata) {
   return { share, margin: Z_95 * Math.sqrt(variance) }
 }
 
+const where = (samples) => samples.map((s) => `${s.repo} ${s.file}:${s.line}`).join(", ")
+
 export function validateCensus(census) {
   const known = new Set(Object.keys(census.categories))
   const unknown = [...new Set(census.samples.map((s) => s.category))].filter((c) => !known.has(c))
@@ -135,9 +211,22 @@ export function validateCensus(census) {
   const expected = new Set(EXPECTED)
   const strays = census.samples.filter((s) => !expected.has(s.expected))
   if (strays.length > 0) {
-    const where = strays.map((s) => `${s.repo} ${s.file}:${s.line}`).join(", ")
     throw new Error(
-      `sample.json has samples with no expected outcome among ${EXPECTED.join(", ")}: ${where}`,
+      `sample.json has samples with no expected outcome among ${EXPECTED.join(", ")}: ${where(strays)}`,
+    )
+  }
+  const unnamed = census.samples.filter(
+    (s) => s.expected === "edge" && typeof s.expectedSymbol !== "string",
+  )
+  if (unnamed.length > 0) {
+    throw new Error(
+      `sample.json has \`edge\` samples without the Symbol they resolve to (expectedSymbol): ${where(unnamed)}`,
+    )
+  }
+  const named = census.samples.filter((s) => s.expected !== "edge" && s.expectedSymbol != null)
+  if (named.length > 0) {
+    throw new Error(
+      `sample.json names an expectedSymbol for samples that expect no edge: ${where(named)}`,
     )
   }
   const repos = new Set(census.repos.map((repo) => repo.id))
@@ -146,6 +235,19 @@ export function validateCensus(census) {
     throw new Error(
       `sample.json samples repositories it records no baseline for: ${orphans.join(", ")}`,
     )
+  }
+  for (const repo of census.repos) {
+    const n = census.samples.filter((s) => s.repo === repo.id).length
+    if (n === 0) {
+      throw new Error(
+        `sample.json records a baseline for ${repo.id} but samples none of its calls.`,
+      )
+    }
+    if (n > repo.unresolved.noMatch) {
+      throw new Error(
+        `sample.json samples ${n} calls of ${repo.id}, whose \`no-match\` holds ${repo.unresolved.noMatch}.`,
+      )
+    }
   }
 }
 
@@ -228,25 +330,50 @@ export function renderShares(census) {
   return `${lines.join("\n")}\n`
 }
 
-export function outcomeOf(site, current) {
-  const found = current.get(callSiteKey(site))
-  if (found === undefined) return "gone"
-  return found.resolved === null ? found.bucket : "resolved"
+export function landingOf(sample, sites) {
+  const found = sites.get(callSiteKey(sample))
+  if (found === undefined) return { outcome: "gone", resolved: null }
+  if (found.resolved !== null) return { outcome: "resolved", resolved: found.resolved }
+  return { outcome: found.bucket, resolved: null }
+}
+
+export function settles(sample, landing) {
+  if (SETTLED_AS[sample.expected] !== landing.outcome) return false
+  return sample.expected !== "edge" || landing.resolved === sample.expectedSymbol
 }
 
 export function tallyOutcomes(census, current) {
   const rows = new Map()
-  for (const site of census.samples) {
-    const row = rows.get(site.category) ?? {
+  for (const sample of census.samples) {
+    const row = rows.get(sample.category) ?? {
       ...Object.fromEntries(OUTCOMES.map((o) => [o, 0])),
       settled: 0,
     }
-    const outcome = outcomeOf(site, current.get(site.repo) ?? new Map())
-    row[outcome]++
-    if (SETTLED_AS[site.expected] === outcome) row.settled++
-    rows.set(site.category, row)
+    const landing = landingOf(sample, current.get(sample.repo) ?? new Map())
+    if (!OUTCOMES.includes(landing.outcome)) {
+      throw new Error(
+        `${where([sample])} lands in ${JSON.stringify(landing.outcome)}, which the census does ` +
+          `not count; add it to OUTCOMES.`,
+      )
+    }
+    row[landing.outcome]++
+    if (settles(sample, landing)) row.settled++
+    rows.set(sample.category, row)
   }
   return rows
+}
+
+export function renderResolution(baselines) {
+  const share = (entry) =>
+    `${entry.resolved} / ${entry.calls} (${percent(entry.resolved / entry.calls, 1)})`
+  return [
+    "| Repo | Resolved then | Resolved now |",
+    "|---|---:|---:|",
+    ...baselines.map(
+      ({ recorded, now }) => `| \`${recorded.id}\` | ${share(recorded)} | ${share(now)} |`,
+    ),
+    "",
+  ].join("\n")
 }
 
 export function renderCheck(census, current) {

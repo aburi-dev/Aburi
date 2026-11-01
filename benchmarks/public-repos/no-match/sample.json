@@ -112,6 +112,7 @@
       "code": "body: format(targetResult.body),",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -124,6 +125,7 @@
       "code": "router.find(route.method, route.path)",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new KoaRouter()` from the koa-tree-router package"
     },
     {
@@ -136,6 +138,7 @@
       "code": "const match = router.find(route.path)",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new Router()` from the medley-router package"
     },
     {
@@ -148,6 +151,7 @@
       "code": "return str",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`str: string`"
     },
     {
@@ -160,6 +164,7 @@
       "code": "mockWritableStream.end()",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `NodeJS.WritableStream`"
     },
     {
@@ -172,6 +177,7 @@
       "code": "req = processor.createRequest(event)",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:src/adapter/aws-lambda/handler.ts#EventProcessor.createRequest",
       "note": "`getProcessor()` returns `EventProcessor`, whose `createRequest` is a Symbol"
     },
     {
@@ -184,6 +190,7 @@
       "code": "responseStream.end()",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `NodeJS.WritableStream`"
     },
     {
@@ -196,6 +203,7 @@
       "code": "typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -208,6 +216,7 @@
       "code": "return baseToSSG(app, denoFileSystemModule, options)",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:src/helper/ssg/ssg.ts#toSSG",
       "note": "`../../helper/ssg/index` re-exports `toSSG` as `baseToSSG`"
     },
     {
@@ -220,6 +229,7 @@
       "code": "? (new TextEncoder().encode(rawBody) as Uint8Array<ArrayBuffer>)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -232,6 +242,7 @@
       "code": "headerValues['Cookie'] = cookies.join('; ')",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -244,6 +255,7 @@
       "code": "targetUrl.searchParams.append(key, value)",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`searchParams` is a property of a `new URL()`"
     },
     {
@@ -256,6 +268,7 @@
       "code": "expect(await toString(template)).toBe(",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -268,6 +281,7 @@
       "code": "for (const [key, value] of Object.entries(requestInit.headers)) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -280,6 +294,7 @@
       "code": "const connectionValue = resHeaders.get('connection')",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new Headers()`"
     },
     {
@@ -292,6 +307,7 @@
       "code": "throw new Error(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -304,6 +320,7 @@
       "code": "this.#addRoute(m.toUpperCase(), this.#path, handler)",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "for-of variable over `[method].flat()`"
     },
     {
@@ -316,6 +333,7 @@
       "code": "handlers.map((handler) => {",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`handlers: H[]`"
     },
     {
@@ -328,6 +346,7 @@
       "code": "beforeAll(() => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -340,6 +359,7 @@
       "code": "root.querySelector('button')?.click()",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `HTMLElement`"
     },
     {
@@ -352,6 +372,7 @@
       "code": "const promise = new Promise<number>((_resolve) => (resolve = _resolve))",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -364,6 +385,7 @@
       "code": "await Promise.resolve()",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -376,6 +398,7 @@
       "code": "setOptimisticState((currentState) => updateState(currentState, newData))",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -388,6 +411,7 @@
       "code": "e.setAttribute('rel', props.rel)",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`document.createElement()` result"
     },
     {
@@ -400,6 +424,7 @@
       "code": "head.contains(existingElements[0]) ? existingElements[0] : head.querySelector(tag)",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`document.head`"
     },
     {
@@ -412,6 +437,7 @@
       "code": "? (document.createElementNS(child.n, child.tag as string) as SVGElement | MathMLElement)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -424,6 +450,7 @@
       "code": "useInsertionEffectCb?.() // invoke useInsertionEffect callbacks",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -436,6 +463,7 @@
       "code": "fnArray.splice(i, 1)",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `Map.get()` result"
     },
     {
@@ -448,6 +476,7 @@
       "code": "cb(context)",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -460,6 +489,7 @@
       "code": "setState((state) => reducer(state, action))",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -472,6 +502,7 @@
       "code": "setTimeout(() => {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -484,6 +515,7 @@
       "code": "? new Response(responseMessage, { status, headers })",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -496,6 +528,7 @@
       "code": "nextChunk.set(chunk.subarray(0, chunkLength))",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `Uint8Array`"
     },
     {
@@ -508,6 +541,7 @@
       "code": "const mask = ((1n << BigInt(prefix)) - 1n) << BigInt((isIPv4 ? 32 : 128) - prefix)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -520,6 +554,7 @@
       "code": "throw blockError(c)",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -532,6 +567,7 @@
       "code": "return next()",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -544,6 +580,7 @@
       "code": "const start = Date.now()",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -556,6 +593,7 @@
       "code": "const clonedRequest = c.req.raw.clone()",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`c.req.raw` is a `Request`"
     },
     {
@@ -568,6 +606,7 @@
       "code": "const newForm = await newRequest.formData()",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `Request.clone()` result"
     },
     {
@@ -580,6 +619,7 @@
       "code": "c.res = new Response(JSON.stringify(obj, null, options?.space ?? 2), c.res)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -592,6 +632,7 @@
       "code": "callbacks.push((ctx, values) => {",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -604,6 +645,7 @@
       "code": "timer = setTimeout(() => {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -616,6 +658,7 @@
       "code": "c.req.path.at(-1) !== '/' &&",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`c.req.path` is a string"
     },
     {
@@ -628,6 +671,7 @@
       "code": "c.res = c.redirect(url.toString(), 301)",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new URL()`"
     },
     {
@@ -640,6 +684,7 @@
       "code": "return new Response(body)[key]()",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -652,6 +697,7 @@
       "code": "router.add('GET', '/wild/*/card', 'get wildcard')",
       "category": "declared-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "annotated `Router<string>`, an interface: `add` has no body"
     },
     {
@@ -664,6 +710,7 @@
       "code": "router.add('GET', '/api/abc', 'get api')",
       "category": "declared-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "annotated `Router<string>`, an interface: `add` has no body"
     },
     {
@@ -676,6 +723,7 @@
       "code": "res = match('GET', '/post/onetwothree')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": "`let match: Match`, assigned in the enclosing test factory"
     },
     {
@@ -688,6 +736,7 @@
       "code": "const res = match('GET', '/posts/123')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -700,6 +749,7 @@
       "code": "expect(res[0].handler).toEqual('foo')",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -712,6 +762,7 @@
       "code": "expect(res[0].handler).toEqual('middleware a')",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -724,6 +775,7 @@
       "code": "expect(res[1].handler).toEqual('middleware c')",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -736,6 +788,7 @@
       "code": "beforeEach(() => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -748,6 +801,7 @@
       "code": "expect(res[2].handler).toEqual('action')",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -760,6 +814,7 @@
       "code": "beforeEach(() => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -772,6 +827,7 @@
       "code": "const res = match('GET', '/abc/sub')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -784,6 +840,7 @@
       "code": "it('GET /reverse/abc in reverse registration order', async () => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -796,6 +853,7 @@
       "code": "const res = match('GET', '/reverse/abc')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -808,6 +866,7 @@
       "code": "expect(res.map(({ handler }) => handler)).toEqual(['handler', 'middleware'])",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a local function's array result"
     },
     {
@@ -820,6 +879,7 @@
       "code": "router.add('GET', '/posts/:yr{[0-9]{4}}/comments', 'handler')",
       "category": "declared-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "annotated `Router<string>`, an interface: `add` has no body"
     },
     {
@@ -832,6 +892,7 @@
       "code": "expect(res[2].handler).toEqual('star1')",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -844,6 +905,7 @@
       "code": "beforeEach(() => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -856,6 +918,7 @@
       "code": "const res = match('GET', '/()/hono')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -868,6 +931,7 @@
       "code": "expect(res.length).toBe(1)",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -880,6 +944,7 @@
       "code": "beforeEach(() => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -892,6 +957,7 @@
       "code": "it('GET /foo/bar', () => {",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -904,6 +970,7 @@
       "code": "const res = match('get', '/foo/bar')",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -916,6 +983,7 @@
       "code": "const endsWithSlashStar = routePath.endsWith('/*')",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "destructured string"
     },
     {
@@ -928,6 +996,7 @@
       "code": "const childKeys = Object.keys(this.#children).sort(compareKey)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -940,6 +1009,7 @@
       "code": "const possibleKeys = new Set<string>()",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -952,6 +1022,7 @@
       "code": "const parsedCookie: Cookie = Object.create(null)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -964,6 +1035,7 @@
       "code": "sections.push(((ipV6 >> BigInt(16 * (7 - i))) & 0xffffn).toString(16))",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "array literal"
     },
     {
@@ -976,6 +1048,7 @@
       "code": "return sections.join(':').replace(/:{2,}/g, '::')",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "array literal"
     },
     {
@@ -988,6 +1061,7 @@
       "code": "encodeBase64Url(utf8Encoder.encode(JSON.stringify(part)).buffer).replace(/=/g, '')",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "imported `utf8Encoder = new TextEncoder()`"
     },
     {
@@ -1000,6 +1074,7 @@
       "code": "const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud]",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1012,6 +1087,7 @@
       "code": "const m = text.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---/);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `readFileSync()` result"
     },
     {
@@ -1024,6 +1100,7 @@
       "code": "const freshMultiCopies = () => DATA_MULTI.map((d) => ({ ...d }));",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an `Array.from()` result"
     },
     {
@@ -1036,6 +1113,7 @@
       "code": "best = Math.min(best, Number(process.hrtime.bigint() - t));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1048,6 +1126,7 @@
       "code": "if (typeof profile !== \"object\" || profile === null || Array.isArray(profile)) return false;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1060,6 +1139,7 @@
       "code": "return ipv4RegexF.test(DATA);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "regex literal"
     },
     {
@@ -1072,6 +1152,7 @@
       "code": "console.log(line(cols.map((c) => String(row[c]))));",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1084,6 +1165,7 @@
       "code": "return process.memoryUsage().heapUsed;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1096,6 +1178,7 @@
       "code": "const objects = report.filter((r) => r.kind === \"object\" && r.perInstance === \"YES\");",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -1108,6 +1191,7 @@
       "code": "const dB = objB && Object.getOwnPropertyDescriptor(objB, key);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1120,6 +1204,7 @@
       "code": "margin: `±${result.rme.toFixed(2)}%`,",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a number property of a benchmark result"
     },
     {
@@ -1132,6 +1217,7 @@
       "code": ".sort((a, b) => new Date(b.data?.date ?? 0).getTime() - new Date(a.data?.date ?? 0).getTime());",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1144,6 +1230,7 @@
       "code": "const sections = page.data.toc.filter((item: any) => item.depth >= 2 && item.depth <= 4);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "for-of variable; `toc` is an array"
     },
     {
@@ -1156,6 +1243,7 @@
       "code": "const files = fileNames.split(\",\").map((file) => import.meta.resolve(`./${file}`).replace(\"file://\", \"\"));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1168,6 +1256,7 @@
       "code": "file.push(`  \"${field.key}\": true,`);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -1180,6 +1269,7 @@
       "code": "(fieldErrors as any)._errors.push(mapper(issue));",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1192,6 +1282,7 @@
       "code": "return Math.floor(Math.random() * Math.floor(max));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1204,6 +1295,7 @@
       "code": "status.dirty();",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v3/helpers/parseUtil.ts#ParseStatus.dirty",
       "note": "destructured `ParseStatus`, whose `dirty` is a Symbol"
     },
     {
@@ -1216,6 +1308,7 @@
       "code": "data.value = Object.freeze(data.value);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1228,6 +1321,7 @@
       "code": "new URL(input.data);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1240,6 +1334,7 @@
       "code": "if (!regex.test(input.data)) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`timeRegex()` returns a RegExp"
     },
     {
@@ -1252,6 +1347,7 @@
       "code": "return items.map((item, index) => (index < minItems ? item : item.optional()));",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "callback parameter typed `ZodType`, an interface: `optional` is assigned in its constructor"
     },
     {
@@ -1264,6 +1360,7 @@
       "code": "if (SCHEMA_KEYWORDS.has(key)) return containsRef(sub);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new Set()`"
     },
     {
@@ -1276,6 +1373,7 @@
       "code": "stringSchema = stringSchema.check(z.email());",
       "category": "namespace-object",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/classic/schemas.ts#email",
       "note": "`z = { ..._schemas, ..._checks }`; `email` is a Symbol of schemas.ts"
     },
     {
@@ -1288,6 +1386,7 @@
       "code": "stringSchema = stringSchema.check(z.creditCard());",
       "category": "declared-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "annotated `ZodString`, an interface: `check` is assigned in its constructor"
     },
     {
@@ -1300,6 +1399,7 @@
       "code": "if (Object.keys(shape).length > 0) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1312,6 +1412,7 @@
       "code": "if (propertyKeys.includes(key)) continue;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an `Object.keys()` result"
     },
     {
@@ -1324,6 +1425,7 @@
       "code": "const tupleSchema = z.tuple(positionalItems as [ZodType, ...ZodType[]]);",
       "category": "namespace-object",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/classic/schemas.ts#tuple",
       "note": "`z = { ..._schemas, ..._checks }`; `tuple` is a Symbol of schemas.ts"
     },
     {
@@ -1336,6 +1438,7 @@
       "code": "throw new Error(\"External $ref is not supported, only local refs (#/...) are allowed\");",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1348,6 +1451,7 @@
       "code": "return new ZodDefault({",
       "category": "merged-value",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/classic/schemas.ts#ZodDefault",
       "note": "`interface ZodDefault` + `const ZodDefault = core.$constructor(...)`: the merged Symbol is dropped as a data model"
     },
     {
@@ -1360,6 +1464,7 @@
       "code": "return typeof defaultValue === \"function\" ? (defaultValue as Function)() : util.shallowClone(defaultValue);",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/util.ts#shallowClone",
       "note": "`util` is `export * as util from \"./util.js\"` in core/index.ts"
     },
     {
@@ -1372,6 +1477,7 @@
       "code": "payload.issues.push({",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's `issues` array"
     },
     {
@@ -1384,6 +1490,7 @@
       "code": "core._stringbool(",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/api.ts#_stringbool",
       "note": "`import * as core`; core/index.ts has `export * from \"./api.js\"`"
     },
     {
@@ -1396,6 +1503,7 @@
       "code": "encode: (decodedString) => encodeURIComponent(decodedString),",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1408,6 +1516,7 @@
       "code": "if (value instanceof RegExp) patterns.push([name, value]);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -1420,6 +1529,7 @@
       "code": "return _overwrite((input) => input.toUpperCase());",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, contextually a string"
     },
     {
@@ -1432,6 +1542,7 @@
       "code": "const literalSet = addConstant(ctx, new Set(values));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1444,6 +1555,7 @@
       "code": "d.write(`${outputVar}.set(${keyOutput}, ${valOutput});`);",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/doc.ts#Doc.write",
       "note": "callback parameter, contextually `Doc`, whose `write` is a Symbol"
     },
     {
@@ -1456,6 +1568,7 @@
       "code": "throw new ZodCompileUnsupportedError(`record key value ${String(key)}`);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1468,6 +1581,7 @@
       "code": "d.write(`if (typeof ${kVar} !== \"string\") return INVALID;`);",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/doc.ts#Doc.write",
       "note": "callback parameter, contextually `Doc`, whose `write` is a Symbol"
     },
     {
@@ -1480,6 +1594,7 @@
       "code": "issue.errors.map((issues) => processError({ issues }, [...path, ...issue.path]));",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1492,6 +1607,7 @@
       "code": "const isSimpleIntersection = (val: any) => \"allOf\" in val && Object.keys(val).length === 1;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1504,6 +1620,7 @@
       "code": "check(def.out);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1516,6 +1633,7 @@
       "code": "const desc = Object.getOwnPropertyDescriptor(def, key);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1528,6 +1646,7 @@
       "code": "if (value._zod) check(value);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1540,6 +1659,7 @@
       "code": "doc.write(`return payload;`);",
       "category": "declared-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/doc.ts#Doc.write",
       "note": "`new Doc()`; `Doc.write` is a Symbol"
     },
     {
@@ -1552,6 +1672,7 @@
       "code": "if (t === \"never\") unrecognized.push(key);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -1564,6 +1685,7 @@
       "code": "if (keys.length && rnd() < 0.6) out[pick(keys)] = corrupt(rnd, out[pick(keys)], depth + 1);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1576,6 +1698,7 @@
       "code": "return { schema: z.tuple([a.schema, b.schema]), ok: () => [a.ok(), b.ok()] };",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/classic/schemas.ts#tuple",
       "note": "`import * as z from \"../../index.js\"`, which re-exports classic/schemas.ts"
     },
     {
@@ -1588,6 +1711,7 @@
       "code": "for (const member of Array.isArray(type) ? type : [type]) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1600,6 +1724,7 @@
       "code": "`#/${seen.cycle?.join(\"/\")}/<root>` +",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an array property of a map value"
     },
     {
@@ -1612,6 +1737,7 @@
       "code": "return Object.entries(obj)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1624,6 +1750,7 @@
       "code": "return Number.isNaN(Number.parseInt(k, 10));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1636,6 +1763,7 @@
       "code": "return Number.isNaN(Number.parseInt(k, 10));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1648,6 +1776,7 @@
       "code": "if (Math.abs(ratio - roundedRatio) < tolerance) return 0;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1660,6 +1789,7 @@
       "code": "const maxValue = Number(issue.maximum);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1672,6 +1802,7 @@
       "code": "const sizing = getSizing(issue.origin);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1684,6 +1815,7 @@
       "code": "return `Trop grand : ${TypeDictionary[issue.origin] ?? \"valeur\"} doit être ${adj}${issue.maximum.toString()}`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1696,6 +1828,7 @@
       "code": "return `ખૂબ મોટું: ${issue.origin ?? \"મૂલ્ય\"} ${adj}${issue.maximum.toString()} ${sizing.unit ?? \"એલિમેન્ટ\"} હોવા જોઈએ`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1708,6 +1841,7 @@
       "code": "return `${sizing.longLabel} מדי: ${subject} ${be} ${adj}${issue.maximum.toString()} ${sizing.unit}`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1720,6 +1854,7 @@
       "code": "return `For stor(t): forventet ${issue.origin ?? \"value\"} til å ha ${adj}${issue.maximum.toString()}`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1732,6 +1867,7 @@
       "code": "const sizing = getSizing(issue.origin);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1744,6 +1880,7 @@
       "code": "const sizing = getSizing(issue.origin);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1756,6 +1893,7 @@
       "code": "const sizing = getSizing(issue.origin);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1768,6 +1906,7 @@
       "code": "return `Hodnota je príliš veľká: ${issue.origin ?? \"hodnota\"} musí byť ${adj}${issue.maximum.toString()}`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1780,6 +1919,7 @@
       "code": "return `Juda katta: kutilgan ${issue.origin ?? \"qiymat\"} ${adj}${issue.maximum.toString()} ${sizing.unit} ${sizing.verb}`;",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter's numeric property"
     },
     {
@@ -1792,6 +1932,7 @@
       "code": "return core._never(ZodMiniNever, params) as any;",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/zod/src/v4/core/api.ts#_never",
       "note": "`import * as core`; core/index.ts has `export * from \"./api.js\"`"
     },
     {
@@ -1804,6 +1945,7 @@
       "code": "collect(ts.getLeadingCommentRanges(text, sf.endOfFileToken.pos));",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1816,6 +1958,7 @@
       "code": "for (const line of [...owned.keys()].sort((a, b) => a - b)) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a function's `Map` result"
     },
     {
@@ -1828,6 +1971,7 @@
       "code": "for (let i = 0; i < n; i++) parts.push([`k${i}`, inner()]);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1840,6 +1984,7 @@
       "code": "for (let i = 0; i < n; i++) parts.push([`k${i}`, inner()]);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -1852,6 +1997,7 @@
       "code": "return { schema: i.schema.pipe(z.any()) as z.ZodType, gen: i.gen };",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`schema` typed `ZodType`, an interface: `pipe` is assigned in its constructor"
     },
     {
@@ -1864,6 +2010,7 @@
       "code": "L.push(\"\");",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -1876,6 +2023,7 @@
       "code": "L.push(`## 7. Highest signal with no triage write-up yet (${untriaged.length} untriaged)`);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -1888,6 +2036,7 @@
       "code": "if (re.test(hay)) weak.push(name);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "destructured RegExp"
     },
     {
@@ -1900,6 +2049,7 @@
       "code": "W.upvote * Math.log1p(item.upvotes) +",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1912,6 +2062,7 @@
       "code": "await ssg.greeting.fetch({ name: 'client' });",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`createServerSideHelpers()` result, a proxy"
     },
     {
@@ -1924,6 +2075,7 @@
       "code": "setNumber(n);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1936,6 +2088,7 @@
       "code": "return Object.values(map).sort(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1948,6 +2101,7 @@
       "code": "{channels.map((channel) => (",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "awaited server-side caller result, an array"
     },
     {
@@ -1960,6 +2114,7 @@
       "code": "destroyTimerAndPendingItems();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1972,6 +2127,7 @@
       "code": "const resJSON = Array.isArray(res.json)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1984,6 +2140,7 @@
       "code": "throw new Error(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -1996,6 +2153,7 @@
       "code": "queryParts.push(`input=${encodeURIComponent(JSON.stringify(input))}`);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2008,6 +2166,7 @@
       "code": "const serialized = JSON.stringify(transformer.input.serialize(chunk));",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`getTransformer()` returns `InputDataTransformer`, an interface"
     },
     {
@@ -2020,6 +2179,7 @@
       "code": "onErrorCallback(error);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2032,6 +2192,7 @@
       "code": "args.push(withContext ? { input, context: opts.context } : { input });",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`any[]` array literal"
     },
     {
@@ -2044,6 +2205,7 @@
       "code": "const requestStartTime = Date.now();",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2056,6 +2218,7 @@
       "code": "const op = opWithLastEventId();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2068,6 +2231,7 @@
       "code": "foo: t.procedure.query(() => 'bar' as const),",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`initTRPC.create()` result: `procedure` is a `ProcedureBuilder` interface"
     },
     {
@@ -2080,6 +2244,7 @@
       "code": "meta.schemas !== undefined && Object.keys(meta.schemas).length > 0;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2092,6 +2257,7 @@
       "code": "typeToRef: new Map(),",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2104,6 +2270,7 @@
       "code": "ctx.seen.add(type);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "destructured `Set`"
     },
     {
@@ -2116,6 +2283,7 @@
       "code": "const params = new URLSearchParams();",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2128,6 +2296,7 @@
       "code": "return JSON.stringify(transformer.input.serialize(body));",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "conditional of `InputDataTransformer`, an interface"
     },
     {
@@ -2140,6 +2309,7 @@
       "code": "return createQueryUtilsProxy<TRouter>(utils);",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/react-query/src/shared/proxy/utilsProxy.ts#createQueryUtilsProxy",
       "note": "`./shared` re-exports `createQueryUtilsProxy` from shared/proxy/utilsProxy.ts"
     },
     {
@@ -2152,6 +2322,7 @@
       "code": "return context.client.query(",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/client/src/internals/TRPCUntypedClient.ts#TRPCUntypedClient.query",
       "note": "`useContext()` result: `client` is a `TRPCUntypedClient`, whose `query` is a Symbol"
     },
     {
@@ -2164,6 +2335,7 @@
       "code": "!queryClient.getQueryCache().find({ queryKey: queryOption.queryKey })",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "destructured TanStack `QueryClient`"
     },
     {
@@ -2176,6 +2348,7 @@
       "code": "queryClient.resumePausedMutations().then(() => {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "TanStack `QueryClient`"
     },
     {
@@ -2188,6 +2361,7 @@
       "code": "const postById: Mock = vi.fn();",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2200,6 +2374,7 @@
       "code": "uploadFile: t.procedure",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`initTRPC` result: `procedure` is a `ProcedureBuilder` interface"
     },
     {
@@ -2212,6 +2387,7 @@
       "code": "moreLists: t.procedure",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`initTRPC` result: `procedure` is a `ProcedureBuilder` interface"
     },
     {
@@ -2224,6 +2400,7 @@
       "code": "'2': vi.fn(),",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2236,6 +2413,7 @@
       "code": "discussions: t.router({",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "imported `t = initTRPC.create()`: `router` is a property of the `TRPCRootObject` interface"
     },
     {
@@ -2248,6 +2426,7 @@
       "code": "throw new Error('__error');",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2260,6 +2439,7 @@
       "code": "handler(...args);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": "`const handler = createHTTPHandler(...)`"
     },
     {
@@ -2272,6 +2452,7 @@
       "code": "new Promise((resolve) => server.close(resolve)),",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "node `http.Server`"
     },
     {
@@ -2284,6 +2465,7 @@
       "code": "conn.destroy();",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "node `Socket` assigned in a callback"
     },
     {
@@ -2296,6 +2478,7 @@
       "code": "throw new Error('Function did not throw');",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2308,6 +2491,7 @@
       "code": "const request = new Request(url, init);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2320,6 +2504,7 @@
       "code": "server.close(resolve);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "node `http.Server`"
     },
     {
@@ -2332,6 +2517,7 @@
       "code": "client.send('PONG');",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `ws.WebSocket` from the ws package"
     },
     {
@@ -2344,6 +2530,7 @@
       "code": "return msgs.map((raw) => parseTRPCMessage(raw, transformer));",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `unknown[]`"
     },
     {
@@ -2356,6 +2543,7 @@
       "code": "Object.assign(this, cause);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2368,6 +2556,7 @@
       "code": "const inputs = await getInputs.read();",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`memo()` returns an object literal whose `read` is a closure"
     },
     {
@@ -2380,6 +2569,7 @@
       "code": "} else if (Array.isArray(obj[p])) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2392,6 +2582,7 @@
       "code": "data: rpcCalls.map(async (res, index) => {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an array `map()` result"
     },
     {
@@ -2404,6 +2595,7 @@
       "code": "ctx: ctxManager.valueOrUndefined(),",
       "category": "declared-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "annotated `ContextManager`, a local interface"
     },
     {
@@ -2416,6 +2608,7 @@
       "code": "await lazyRouter.load();",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`LazyLoader` interface"
     },
     {
@@ -2428,6 +2621,7 @@
       "code": "const reg = encodeAsync(value, path);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2440,6 +2634,7 @@
       "code": "return reader.cancel();",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "conditional of a stream reader"
     },
     {
@@ -2452,6 +2647,7 @@
       "code": "controller.enqueue(serialize(chunk));",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, a stream controller"
     },
     {
@@ -2464,6 +2660,7 @@
       "code": "const chunk = deserialize(JSON.parse(msg.data));",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2476,6 +2673,7 @@
       "code": "chunk.data = JSON.stringify(serialize(chunk.data));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2488,6 +2686,7 @@
       "code": "data: JSON.stringify(serialize(data)),",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2500,6 +2699,7 @@
       "code": "new TransformStream({",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2512,6 +2712,7 @@
       "code": "const promise = new Promise<TValue>((res, rej) => {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2524,6 +2725,7 @@
       "code": "errors.push(cause);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -2536,6 +2738,7 @@
       "code": "const [iterator, result] = buffer.shift()!;",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated array literal"
     },
     {
@@ -2548,6 +2751,7 @@
       "code": "const result = await query(",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2560,6 +2764,7 @@
       "code": "resolve({",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2572,6 +2777,7 @@
       "code": "ee.on('server:msg', onMessage);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new EventEmitter()` from node"
     },
     {
@@ -2584,6 +2790,7 @@
       "code": "user: getUser(),",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2596,6 +2803,7 @@
       "code": "yield tracked(String(idx), idx);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2608,6 +2816,7 @@
       "code": "const appRouter = t.router({",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`initTRPC.create()` result: `router` is a property of the `TRPCRootObject` interface"
     },
     {
@@ -2620,6 +2829,7 @@
       "code": "yield tracked(String(from), msg);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2632,6 +2842,7 @@
       "code": "node.modifiers?.some((mod) => mod.getText(sourceFile) === 'export')",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, a TypeScript AST node"
     },
     {
@@ -2644,6 +2855,7 @@
       "code": "log.info(`Filtered files: ${filteredSourcePaths.join(', ')}`);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an array `filter()` result"
     },
     {
@@ -2656,6 +2868,7 @@
       "code": "const variableDeclaration = j.variableDeclaration('const', [",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`api.jscodeshift` from the jscodeshift package"
     },
     {
@@ -2668,6 +2881,7 @@
       "code": "key: j.identifier('TRPCProvider'),",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`api.jscodeshift` from the jscodeshift package"
     },
     {
@@ -2680,6 +2894,7 @@
       "code": "(path.node as any).typeParameters = j.tsTypeParameterInstantiation([",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`api.jscodeshift` from the jscodeshift package"
     },
     {
@@ -2692,6 +2907,7 @@
       "code": "trpc.post.byId.useQuery({ id: 1 });",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "tRPC React proxy: `useQuery` is a member of a mapped type"
     },
     {
@@ -2704,6 +2920,7 @@
       "code": "queryClient.setQueryData(trpc.post.list.queryKey(), ctx?.prevData);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "TanStack `useQueryClient()`"
     },
     {
@@ -2716,6 +2933,7 @@
       "code": "const [data4] = trpc.post.infinite.useSuspenseInfiniteQuery(",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "tRPC React proxy: `useSuspenseInfiniteQuery` is a member of a mapped type"
     },
     {
@@ -2728,6 +2946,7 @@
       "code": "visit(ast, 'html', (node) => {",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": "destructured from `await import('unist-util-visit')`: the true target is external"
     },
     {
@@ -2740,6 +2959,7 @@
       "code": "const escapedHtml = JSON.stringify(codeBlockMarkup);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2752,6 +2972,7 @@
       "code": "const headingMatch = msg.match(/^##\\s*(.+)/m);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`err.message`, a string"
     },
     {
@@ -2764,6 +2985,7 @@
       "code": "await fetchPage();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2776,6 +2998,7 @@
       "code": "createdAt: Date.parse('2026-02-11'),",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2788,6 +3011,7 @@
       "code": "const id = href.split('#')[1];",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a DOM `href` string"
     },
     {
@@ -2800,6 +3024,7 @@
       "code": "return Object.entries(obj)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2812,6 +3037,7 @@
       "code": ".apply((req, res, next) => res.send(RETURN_VALUE))",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, an express response"
     },
     {
@@ -2824,6 +3050,7 @@
       "code": "const json = JSON.stringify(obj);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2836,6 +3063,7 @@
       "code": "const len = parseInt(buf.substring(0, delim), 10);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`let buf = raw`, a string"
     },
     {
@@ -2848,6 +3076,7 @@
       "code": "return parseFloat(message.headers!.toPartition!.toString());",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "destructured Kafka message header"
     },
     {
@@ -2860,6 +3089,7 @@
       "code": "return parseFloat(message.headers!.toPartition!.toString());",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2872,6 +3102,7 @@
       "code": "const parsed = new URL(url);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2884,6 +3115,7 @@
       "code": "resolve({",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2896,6 +3128,7 @@
       "code": "this.request.id = `${Date.now()}.${Math.floor(Math.random() * 1000000)}`;",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2908,6 +3141,7 @@
       "code": "console.log(`Application is running on: ${await app.getUrl()}`);",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`NestFactory.create()` returns `INestApplication`, an interface"
     },
     {
@@ -2920,6 +3154,7 @@
       "code": "return new Promise<T>((resolve, reject) => {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2932,6 +3167,7 @@
       "code": "Reflect.defineMetadata(PATH_METADATA, path, target);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2944,6 +3180,7 @@
       "code": "Reflect.getMetadata(ROUTE_ARGS_METADATA, target.constructor, key!) || {};",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2956,6 +3193,7 @@
       "code": "? message(this.validationOptions.maxSize)",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2968,6 +3206,7 @@
       "code": "Function.prototype.toString.call(Object)",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -2980,6 +3219,7 @@
       "code": "const moduleRef = collection.get(this.moduleContext);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`ModulesContainer extends Map`: `get` is `Map.get`"
     },
     {
@@ -2992,6 +3232,7 @@
       "code": "byHierarchyLevelGroup!.push(...staticTransientInstances);",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `Map.get()` result"
     },
     {
@@ -3004,6 +3245,7 @@
       "code": "throw new UnknownModuleException();",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/core/errors/exceptions/unknown-module.exception.ts#UnknownModuleException",
       "note": "`../errors/exceptions/index.js` re-exports `UnknownModuleException`"
     },
     {
@@ -3016,6 +3258,7 @@
       "code": "return moduleRef.addInjectable(injectable, enhancerSubtype, host);",
       "category": "inferred-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/core/injector/module.ts#Module.addInjectable",
       "note": "`this.modules.get()` returns `Module`, whose `addInjectable` is a Symbol"
     },
     {
@@ -3028,6 +3271,7 @@
       "code": "targetWrapper.instance = Object.create(metatype!.prototype);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3040,6 +3284,7 @@
       "code": "!item.isDependencyTreeStatic() &&",
       "category": "declared-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/core/injector/instance-wrapper.ts#InstanceWrapper.isDependencyTreeStatic",
       "note": "`(item: InstanceWrapper) =>`; `isDependencyTreeStatic` is a Symbol"
     },
     {
@@ -3052,6 +3297,7 @@
       "code": "const parents = dependencyTreeParents.get(wrapper) ?? new Set();",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3064,6 +3310,7 @@
       "code": "if (!imports.includes(token as Type<unknown>)) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an iterare `toArray()` result"
     },
     {
@@ -3076,6 +3323,7 @@
       "code": "private readonly _refs = new Set();",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3088,6 +3336,7 @@
       "code": "visited.add(current!);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new Set()`"
     },
     {
@@ -3100,6 +3349,7 @@
       "code": "Array.isArray(versionPaths) && versionPaths.length > 0",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3112,6 +3362,7 @@
       "code": "version: toUndefinedIfNeural(v),",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3124,6 +3375,7 @@
       "code": "Reflect.getMetadata(VERSION_METADATA, metatype) ??",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3136,6 +3388,7 @@
       "code": "await callModuleBootstrapHook(module);",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/core/hooks/on-app-bootstrap.hook.ts#callModuleBootstrapHook",
       "note": "`./hooks/index.js` re-exports `callModuleBootstrapHook`"
     },
     {
@@ -3148,6 +3401,7 @@
       "code": "microservice.setIsTerminated(true);",
       "category": "inferred-receiver",
       "expected": "untyped",
+      "expectedSymbol": null,
       "note": "element of `microservices: any[]`"
     },
     {
@@ -3160,6 +3414,7 @@
       "code": "sortedNativeFunctions.map(HelpReplFn.buildHelpMessage).join('\\n') +",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an iterare `toArray()` result"
     },
     {
@@ -3172,6 +3427,7 @@
       "code": "if (normalizedRoute.endsWith('/*/')) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "conditional string"
     },
     {
@@ -3184,6 +3440,7 @@
       "code": "if (key.includes(CUSTOM_ROUTE_ARGS_METADATA)) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, a string"
     },
     {
@@ -3196,6 +3453,7 @@
       "code": "private readonly exceptionFiltersCache = new WeakMap();",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3208,6 +3466,7 @@
       "code": "pathsToLog.forEach(path => {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `string[]` result"
     },
     {
@@ -3220,6 +3479,7 @@
       "code": "stream.commitHeaders();",
       "category": "declared-receiver",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/core/router/sse-stream.ts#SseStream.commitHeaders",
       "note": "`new SseStream()`; `commitHeaders` is a Symbol"
     },
     {
@@ -3232,6 +3492,7 @@
       "code": "Array.from<InstanceWrapper>(moduleRef.controllers.values()).concat(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3244,6 +3505,7 @@
       "code": "observer.error(this.serializeError(error));",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, an rxjs `Observer`"
     },
     {
@@ -3256,6 +3518,7 @@
       "code": "upstreamSubscription.unsubscribe();",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated rxjs `Subscription | null`"
     },
     {
@@ -3268,6 +3531,7 @@
       "code": "observer.complete();",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "callback parameter, an rxjs `Observer`"
     },
     {
@@ -3280,6 +3544,7 @@
       "code": "call.cancel();",
       "category": "inferred-receiver",
       "expected": "untyped",
+      "expectedSymbol": null,
       "note": "`client[methodName](...)` on an untyped gRPC client"
     },
     {
@@ -3292,6 +3557,7 @@
       "code": "throw new Error('Method is not supported in gRPC mode.');",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3304,6 +3570,7 @@
       "code": "cleanup();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3316,6 +3583,7 @@
       "code": "return new Promise<void>((resolve, reject) => {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3328,6 +3596,7 @@
       "code": "return new Promise<void>((resolve, reject) =>",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3340,6 +3609,7 @@
       "code": "throw new Error(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3352,6 +3622,7 @@
       "code": "this.contentLength = parseInt(rawContentLength, 10);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3364,6 +3635,7 @@
       "code": "`${label} [${namespace}] ${message} ${JSON.stringify(others)}`,",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3376,6 +3648,7 @@
       "code": "patternHandlers",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an array result"
     },
     {
@@ -3388,6 +3661,7 @@
       "code": "useValue: this.assignOnAppShutdownHook(ClientProxyFactory.create(item)),",
       "category": "reexport",
       "expected": "edge",
+      "expectedSymbol": "ts:packages/microservices/client/client-proxy-factory.ts#ClientProxyFactory::create",
       "note": "`../client/index.js` re-exports `ClientProxyFactory`; `::create` is a Symbol"
     },
     {
@@ -3400,6 +3674,7 @@
       "code": "global: !Array.isArray(options) && options.isGlobal,",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3412,6 +3687,7 @@
       "code": "error ? reject(error) : resolve(port),",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3424,6 +3700,7 @@
       "code": "resolve();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3436,6 +3713,7 @@
       "code": "resolve();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3448,6 +3726,7 @@
       "code": "return new RedisClient({",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": "`const RedisClient = this.loadPackage(...)`: the true target is a package class"
     },
     {
@@ -3460,6 +3739,7 @@
       "code": "throw new Error(",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3472,6 +3752,7 @@
       "code": "const sortedKeys = keys.sort((a, b) => ('' + a).localeCompare(b));",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an `Object.keys()` result"
     },
     {
@@ -3484,6 +3765,7 @@
       "code": "if (Array.isArray(version)) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3496,6 +3778,7 @@
       "code": "return new Promise(resolve => this.httpServer.close(resolve));",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3508,6 +3791,7 @@
       "code": "resolve();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3520,6 +3804,7 @@
       "code": "this.multer.none()(ctx.getRequest(), ctx.getResponse(), (err: any) => {",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`switchToHttp()` returns `HttpArgumentsHost`, an interface"
     },
     {
@@ -3532,6 +3817,7 @@
       "code": "versionOrVersions.forEach(storeVersionConstraint);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "annotated `string | Array<string>`"
     },
     {
@@ -3544,6 +3830,7 @@
       "code": "versions.clear();",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`new Map()`"
     },
     {
@@ -3556,6 +3843,7 @@
       "code": "req.url = req.url.replace(result[0], '');",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`req.url`, a string"
     },
     {
@@ -3568,6 +3856,7 @@
       "code": "fn(req, res, that.done);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3580,6 +3869,7 @@
       "code": "const message = Reflect.getMetadata(MESSAGE_METADATA, callback);",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3592,6 +3882,7 @@
       "code": "if (!metadataKeys.includes(GATEWAY_METADATA)) {",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "a `Reflect.getMetadataKeys()` result"
     },
     {
@@ -3604,6 +3895,7 @@
       "code": "findOne: vi.fn(),",
       "category": "test-global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3616,6 +3908,7 @@
       "code": "if (isNaN(val)) {",
       "category": "global",
       "expected": "external",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3628,6 +3921,7 @@
       "code": "const appService = app.get(AppService);",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`NestFactory.createApplicationContext()` returns `INestApplicationContext`, an interface"
     },
     {
@@ -3640,6 +3934,7 @@
       "code": "await app.listen(3000);",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`NestFactory.create()` returns `INestApplication`, an interface"
     },
     {
@@ -3652,6 +3947,7 @@
       "code": "return user && user.roles && hasRole();",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3664,6 +3960,7 @@
       "code": "await app.listen(3000);",
       "category": "inferred-receiver",
       "expected": "dynamic",
+      "expectedSymbol": null,
       "note": "`NestFactory.create()` returns `INestApplication`, an interface"
     },
     {
@@ -3676,6 +3973,7 @@
       "code": "reject(err);",
       "category": "local-callee",
       "expected": "local-scope",
+      "expectedSymbol": null,
       "note": null
     },
     {
@@ -3688,6 +3986,7 @@
       "code": "flattenedSampleDirs.push(sampleDir);",
       "category": "declared-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "`string[]` array literal"
     },
     {
@@ -3700,6 +3999,7 @@
       "code": "args.push('--', ...appendScript.split(' ').filter(Boolean));",
       "category": "inferred-receiver",
       "expected": "external",
+      "expectedSymbol": null,
       "note": "an array `slice()` result"
     }
   ]

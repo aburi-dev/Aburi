@@ -98,17 +98,20 @@ form of performance.md Rule PF-11; once the worker pool lands, the same
 equality across `--concurrency` values is the check that matters. A single
 measured run compares nothing, and the report says `n/a` rather than a tick.
 
-`report.mjs` holds every decision this makes without touching the disk — what a
-run is allowed to claim, and how a sweep renders — and `test/` checks it, including
-that every committed sample in `results/` still renders to its committed report.
+`report.mjs` and `args.mjs` hold every decision this makes without touching the
+disk — which flags and repositories a sweep accepts, what a run is allowed to
+claim, and how a sweep renders — and `test/` checks them, including that every
+committed sample in `results/` still renders to its committed report.
 
 ## The `no-match` census
 
-`census.mjs` draws, and later re-checks, the hand-classified sample in
-[`no-match/`](./no-match/README.md), which says how much of the `no-match`
-bucket a rule without types would settle and how much needs type information.
-It reads the clones `run.mjs` keeps and the pins in `repos.json`, and
-`census-report.mjs` holds its parts that touch no disk, which `test/` checks.
+`census.mjs` draws the sample in [`no-match/`](./no-match/README.md) for
+classifying by hand, prints its tables (`shares`) and re-checks it against a
+later scan (`check`). The sample says how much of the `no-match` bucket a rule
+without types would settle and how much needs type information. `draw` and
+`check` scan the clones `run.mjs` keeps at the pins in `repos.json`, while
+`shares` reads `sample.json` alone and needs no build. The parts that touch no
+disk live in `census-report.mjs`, which `test/` checks.
 
 ## The pinned commits
 
