@@ -109,6 +109,7 @@ export type {
   ParseError,
   ParseResult,
   PluginContext,
+  Reexport,
   SourceFile,
   SymbolCandidate,
   SymbolClassification,

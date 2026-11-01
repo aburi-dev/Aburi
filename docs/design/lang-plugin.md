@@ -115,7 +115,7 @@ interface SourceFile {
 interface ParseResult {
   tree: ParsedTree | null                      // plugin-internal type (opaque); null → parse produced nothing
   errors: ParseError[]
-  imports: ImportEdge[]
+  imports: Omit<ImportEdge, "origins">[]       // an `origins` written here is dropped (§5.2.4)
 }
 
 interface ParseError {
@@ -131,9 +131,17 @@ interface ImportEdge {
   line: number
   dynamic: boolean                             // true for import()
   namespaceBinding?: string                    // the local name bound to the whole module, when there is one
-  origins?: ReadonlyMap<string, string>        // set by the core, never by the plugin (§5.2.4)
+  reexports?: Reexport[]                       // what the module exports through this edge
+  origins?: ReadonlyMap<string, string>        // set by the scan alone (§5.2.4)
+}
+
+interface Reexport {
+  imported: string                             // the name taken from `source`, or "*" for the whole module
+  exported: string                             // the name the module exports it under
 }
 ```
+
+`reexports` is the only part of an edge that says what the module exports. `symbols` lists what an edge takes from its source, which for `export { A as B } from "m"` is `A`, and an import the module only uses lists its names the same way as one it republishes. A re-export carries an entry for each value it exports — `export { A as B } from "m"` gives `{ imported: "A", exported: "B" }`, `export * as ns from "m"` gives `{ imported: "*", exported: "ns" }` — and so does an import that an export clause or `export default` in the same module republishes: `import { A as L } from "m"` with `export { L as B }` gives `{ imported: "A", exported: "B" }`. A type-only clause or specifier exports nothing a decorator or call can name and adds no entry, and `export * from` names nothing, so it adds none either. A plugin for a language without re-exports leaves the field out.
 
 `tree` is nullable so a plugin can report a parse that produced nothing without fabricating a tree its own type would refuse. It and `recoverable: false` are companion signals: a plugin that has no tree is expected to say why in `errors[]` too, and §7.1 reads the two as one condition, so a plugin that sets only one still gets the withdrawal it asked for.
 
@@ -450,16 +458,22 @@ interface ImportResolver {
 
 A bare specifier can name a workspace file through build configuration the core does not read, such as TypeScript's `compilerOptions.paths`. The language plugin knows its build configuration and the core knows the file set, so the plugin maps the specifier and the core decides which path is a file: it probes each path, in the order given, the way it probes a relative specifier ([call-resolution.md](./call-resolution.md) §4.4.1, steps 1 and 3), against the files discovery found. A path may therefore leave out its extension or name a directory, and one that names no file costs nothing. The core never asks about a relative specifier.
 
-The core calls `createImportResolver` at most once per scan, and only when it has a non-relative specifier to ask about. A resolver may cache what it reads for the length of that scan and no longer: the next scan creates a new one, which reads the configuration afresh. A `createImportResolver` or a `resolve` that throws is logged once per plugin, and its specifiers are left as written.
+The core calls `createImportResolver` at most once per scan, and only when it has a non-relative specifier to ask about. A resolver may cache what it reads for the length of that scan and no longer: the next scan creates a new one, which reads the configuration afresh. A plugin's first resolver failure — `createImportResolver` throwing or returning something with no `resolve` method, or `resolve` throwing — is a warning, later ones are logged at debug, and a plugin whose resolver failed more than once is warned with the count at the end of the scan. A specifier the resolver failed on ends the chain it was part of without an origin (§5.2.4).
 
-The TypeScript plugin reads the `tsconfig.json` nearest above the importing file, or a `jsconfig.json` where no `tsconfig.json` sits beside it, and reads none above the workspace root. Comments and trailing commas are accepted, as `tsc` accepts them. It applies `compilerOptions.paths` and `baseUrl` the way `tsc` does:
+The TypeScript plugin reads the `tsconfig.json` nearest above the importing file, or a `jsconfig.json` where no `tsconfig.json` sits beside it, and looks no higher than the workspace root for it; an `extends` entry may still name a config outside the root. Comments, trailing commas, a leading byte order mark and an empty file (read as `{}`) are accepted, as `tsc` accepts them. It applies `compilerOptions.paths` and `baseUrl` the way `tsc` does:
 
 - An exact key wins outright; otherwise the wildcard key with the longest prefix does, its match put in place of each substitution's `*`. Every substitution is returned, in the order written, followed by `baseUrl` joined with the specifier when `baseUrl` is set.
 - Substitutions resolve against `baseUrl` when it is set, and otherwise against the directory of the config that declared `paths`.
 - `extends`, a string or an array, is followed. A relative or absolute entry resolves against the extending config's directory, with `.json` added when the entry has no such extension and names no file as written. A package entry is looked up as `node_modules/<entry>`, `node_modules/<entry>.json` and `node_modules/<entry>/tsconfig.json` in each directory upwards. A later entry overrides an earlier one and the extending config overrides them all, an option at a time, so its own `paths` replaces the inherited ones whole. A config that extends itself, directly or through others, is read once.
 - `${configDir}` at the start of a value is the directory of the config the file is compiled under, whichever config in the chain wrote it.
 
-It does not read a package's `package.json` `exports` or `tsconfig` field when an `extends` entry names the package, project references, a config's `files` and `include`, or a `package.json` `imports` field. A config that is not valid JSON is logged once and maps nothing, and a path outside the workspace is dropped.
+It does not read a package's `package.json` `exports` or `tsconfig` field when an `extends` entry names the package, project references, a config's `files` and `include`, or a `package.json` `imports` field. A path outside the workspace is dropped. What it cannot use, it warns about once and leaves out:
+
+- A config that is not valid JSON, named with the line and column of the first error, or one that exists and cannot be read. It maps nothing, and the search for the nearest config stops at it rather than moving on to the one above, which the file is not compiled under. A name that is not there, or is a directory, is not a config, and the search moves on.
+- An `extends` entry that names no config file. The rest of the chain still applies.
+- A value `tsc` refuses: a `paths` that is not an object, a key whose value is not a list, a key or substitution with more than one `*`, a substitution that is not a string, or a `baseUrl` that is not a string. Only that key, substitution or option is left out.
+
+A package entry in `extends` is found only where `node_modules` is installed. `aburi diff <base>..<head>` scans the base revision in a fresh worktree with no `node_modules`, so `paths` from a package's config apply to the head's scan and not to the base's, and a decorator reached through one of those aliases reads as moving from `medium` to `high`. The base's scan warns about the entry.
 
 ## 5. Cooperation with Other Plugins
 
@@ -528,7 +542,7 @@ A qualified decorator must **not** fall back to the named-import index for its *
 
 Both halves are necessary for the table to be ordered by how much the file disclosed. A plugin that drops the qualifier sees only the leaf, and a namespace import from a competing library then lands in the last row — trusted further than the named import of the very same decorator. A plugin that keeps the qualifier but indexes only one of the two binding forms gets the same result one spelling over.
 
-Two shapes reach the edge list without binding anything in local scope, and a plugin matching names should know both. A re-export (`export { X } from './y'`) names a symbol the file republishes rather than uses — and its aliased form arrives as the source-side name alone, since the language plugin composes `" as "` on imports but not on re-exports. Because re-exports do not bind, a name can appear on two edges in a file that compiles, so a plugin needs a duplicate rule and should say which of its outcomes are order-independent.
+Two shapes reach the edge list without binding anything in local scope, and a plugin matching names should know both. A re-export (`export { X } from './y'`) names a symbol the file republishes rather than uses — and its aliased form arrives in `symbols` as the source-side name alone, since the language plugin composes `" as "` on imports but not on re-exports; the name it is exported under is on `reexports` (§4.2). Because re-exports do not bind, a name can appear on two edges in a file that compiles, so a plugin needs a duplicate rule and should say which of its outcomes are order-independent.
 
 #### 5.2.3 Naming a call in `derivedBy`
 
@@ -540,12 +554,14 @@ The name is `<receiver>.<method>`. The method is the callee's property. The rece
 
 Before framework classification, the core traces each name a decorator in the file binds through the workspace's re-exports, and records the result on `ImportEdge.origins`: keyed by the name the edge's module exports, the specifier of the module outside the workspace that the chain ends at.
 
-- **Which names.** A decorator's leaf, through the named-import edge that binds it, and a qualified decorator's receiver head, through the named-import edge that binds it (keyed by its imported name) or the namespace edge that binds it (keyed by the member the receiver reads, as in §5.2.2). No other name is followed: an origin for every import would parse most of the workspace twice, and a decorator is the only name a framework plugin weighs provenance for. A scan with no framework plugin follows nothing.
-- **One hop.** The specifier resolves against the importing file: a relative one as call resolution resolves it ([call-resolution.md](./call-resolution.md) §4.4.1), a bare one through the language plugin's `ImportResolver` (§4.8). In the module it resolves to, the next hop is the first named edge whose binding is the name — a re-export, which records the name it takes from its source, or an import the module republishes — and the chain carries on from that edge's source with its imported name.
-- **Where it ends.** A bare specifier that resolves to no workspace file ends the chain outside the workspace, and that specifier is the origin. A module with no named edge for the name, because it declares the name itself or reaches it through `export *`, ends it inside the workspace, and so do a relative specifier that names no file and a module the chain already visited for the name. Those leave no origin. An origin equal to the edge's own specifier is not recorded, so `origins` holds only what the core learned.
-- **Cost.** A module the chain reaches is parsed once for its edges, unless its own turn in the scan came first, and that tree is released at once (§8.1). The parse counts against the importing file's `parseTimeoutMs`.
+- **Which names.** A decorator's leaf, through the named-import edge that binds it, and a qualified decorator's receiver head, through the named-import edge that binds it (keyed by its imported name) or the namespace edge that binds it (keyed by the member the receiver reads, as in §5.2.2). No other name is followed: an origin for every import would parse most of the workspace twice, and a decorator is the only name a framework plugin matches by its imported name. A plugin that grades on which modules a file imports reads `ImportEdge.source` and gets no origin. A scan with no framework plugin follows nothing.
+- **One hop.** The specifier resolves against the importing file: a relative one as call resolution resolves it ([call-resolution.md](./call-resolution.md) §4.4.1), a bare one through the language plugin's `ImportResolver` (§4.8). In the module it resolves to, the next hop is the edge whose `reexports` exports the name (§4.2), and the chain carries on from that edge's source with the name the entry takes from it. Nothing else on an edge is read, so an import the module only uses, and a re-export of the name under another one, lead nowhere, whichever order the edges are in.
+- **Where it ends.** A bare specifier that resolves to no workspace file ends the chain outside the workspace, and that specifier is the origin. It is the first such specifier, so a workspace package the package manager links in, which no `paths` key maps, is an origin too. A whole module exported under the name (`export * as ns from`) ends the chain there: outside the workspace its specifier is the origin, and inside it there is none, because which member the decorator reads is not carried past it. A module with no edge exporting the name, because it declares the name itself or reaches it through `export *`, ends the chain inside the workspace, and so do a relative specifier that names no file, a module the chain already visited for the name, and a specifier the resolver failed on (§4.8). Those leave no origin. An origin equal to the edge's own specifier is not recorded, so `origins` holds only what the core learned.
+- **Cost.** A module the chain reaches is parsed once for its edges, unless its own turn in the scan came first, and that tree is released at once (§8.1). The chain does not count against the importing file's `parseTimeoutMs` (§7.1.2): which file reaches a barrel first depends on discovery order, and a file's outcome should not.
 
-`export *` is not followed because the module it names may be outside the workspace, where nothing says whether it exports the name, and a guess would put a module in `origins` that the source does not name. An aliased re-export (`export { A as B } from`) arrives as `A` alone (§5.2.2), so a chain through it ends where `B` is imported.
+`export *` is not followed because the module it names may be outside the workspace, where nothing says whether it exports the name, and a guess would put a module in `origins` that the source does not name.
+
+`origins` is the scan's alone. An `origins` a language plugin returns is dropped before any plugin sees the edge, so a language plugin cannot vouch for its own edges. Effect plugins see the same edges through `FileSummary.imports`, and there as here a missing key says nothing about where a name is declared.
 
 ### 5.3 Extraction order
 
@@ -617,7 +633,7 @@ Files whose size exceeds `config.maxFileSizeBytes` (default: `2 * 1024 * 1024` =
 ### 7.1.2 Timeout
 
 If the total of parse + extractSymbols + walkBody for one file exceeds `config.parseTimeoutMs` (default: `5000` = 5 seconds; the config schema's minimum is 100 and it has no maximum), abort, skip that file, and warn.
-This prevents a broken grammar or pathological source (deep nesting, etc.) from stalling the whole run.
+This prevents a broken grammar or pathological source (deep nesting, etc.) from stalling the whole run. Following a decorator's name into other modules (§5.2.4) is not part of the total: the clock stops while it runs.
 
 The budget is **cooperative**, for the reason [effect-plugin.md](./effect-plugin.md) §5.1.1 gives for the classify budget: `extractSymbols` and `walkBody` are synchronous plugin calls, and nothing can interrupt one that has already started. It is read at the three points that bound the work still to come — after `parseFile`, after `extractSymbols`, and before each candidate's `walkBody` — so what it guarantees is that an over-budget file is handed no *further* work. A file costs at most its budget plus one stage, and one enormous candidate can still overrun by however long that candidate takes. A hang inside a single call is not something a wall-clock budget can catch at all.
 
@@ -865,6 +881,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP26l | an escape the grammar refuses — `"./a\uZZZZb"`, `"./a\xZZb"` | recoverable syntax errors from the parser, and the fragment that survived. These parse as ERROR nodes rather than `escape_sequence`, so no decoder is asked to repair source the grammar rejected. The criterion is that the grammar rejected it — see LP26n for the escapes it accepts without a legal value |
 | LP26m | a literal that is only a line continuation — `"\<newline>"` | no edge, and the LP26a diagnostic. A continuation joins two source lines and contributes no character, so the literal names no module. A literal made only of *other* escapes (`"\n\t"`) is a non-empty name and gets an ordinary edge, on LP26d's terms |
 | LP26n | an escape the grammar accepts and ECMAScript has no value for — `"./a\u{110000}b"`, `"./a\1b"`, `"./a\8b"` | the escape's own text, minus the backslash, with no diagnostic and no throw. The grammar checks a braced escape's shape and not its range, so `\u{110000}` reaches the reader where `\uZZZZ` does not, and `String.fromCodePoint` throws on it — which would cost the whole file. Legacy octal and non-octal decimal escapes are the same case: a SyntaxError in a module, so no correct value exists, and inventing one would put a module name in the IR the source does not contain |
+| LP26o | `export { A as B } from './m'`; `export * as ns from './m'`; `import { A as L } from './m'` with `export { L as B }`; `import A from './m'` with `export default A`; `export type { T } from './m'`, `export { type T } from './m'`, `export * from './m'`, and an import the module only uses | `reexports` = `[{imported: "A", exported: "B"}]`, `[{imported: "*", exported: "ns"}]`, `[{imported: "A", exported: "B"}]` on the import's edge, `[{imported: "default", exported: "default"}]`, and no entry for the rest (§4.2) |
 
 ### 9.7 Error recovery
 
@@ -905,11 +922,21 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP39 | an exact key beside a wildcard key that also matches | the exact key's substitutions |
 | LP40 | `baseUrl: "src"` and `paths: { "@/*": ["*"] }`, asked for `@/x` | `["src/x", "src/@/x"]` |
 | LP41 | `paths` declared by a config that `extends` reaches, relative or in a package | resolved against the declaring config's directory; a value starting `${configDir}` against the extending config's |
-| LP42 | the nearest config is not valid JSON | one warning, and nothing mapped for any file under it |
+| LP42 | the nearest config is not valid JSON, or exists and cannot be read | one warning naming it, with the line and column of a JSON error, and nothing mapped for any file under it, the config above it included |
+| LP42a | a config with a byte order mark, and an empty config | read as `tsc` reads them, with no warning: the first maps its `paths`, the second maps nothing in place of the config above it |
+| LP42b | `baseUrl` declared by a config that `extends` reaches (`tsconfig.base.json` with `baseUrl: "."`, extended from `apps/*`) | resolved against the declaring config's directory |
+| LP42c | an `extends` entry that names no config | one warning, and the rest of the chain applies |
+| LP42d | a `paths` or `baseUrl` value `tsc` refuses | one warning per value, and the rest of the config applies |
+| LP42e | an `extends` entry that names a config outside the workspace root | that config is read |
 | LP43 | a decorator imported through a path alias, or a relative specifier, to a barrel that re-exports it from `@nestjs/common`, directly or through another barrel | `origins` maps the imported name to `@nestjs/common`, and the NestJS plugin grades the decorator `high`, renamed on import or read through a namespace import alike |
+| LP43a | the barrel republishes an import of `@nestjs/common` in an export clause or as its default export, re-exports `@nestjs/common` as a namespace the decorator reads through, or re-exports a competing library's decorator under another name before `@nestjs/common`'s | `high` |
 | LP44 | the barrel reaches the name through `export *`, declares it itself, or the alias maps to no file | no origin, and the decorator stays `medium` |
+| LP44a | the barrel exports `@nestjs/common`'s decorator only under another name, before or after re-exporting or declaring its own, or imports it only for its own use | no origin, and the decorator stays `medium`, whichever order the edges are in |
+| LP44b | the resolver fails on a specifier in the middle of a chain, or a module the chain reaches cannot be parsed | no origin |
+| LP44c | a language plugin returns an edge with `origins` | the scan drops it |
 | LP45 | two barrels re-exporting the name from each other | the chain ends, with no origin |
-| LP46 | one barrel imported by several files | parsed once beyond its own turn, and every tree it was parsed into released |
+| LP46 | one barrel imported by several files | parsed once beyond its own turn if discovery reaches an importer first, not at all beyond it otherwise, and every tree it was parsed into released |
+| LP46a | a barrel whose parse takes longer than `parseTimeoutMs` | the barrel is skipped in its own turn, and the file whose chain reached it is not |
 | LP47 | no framework plugin loaded | no resolver created and no barrel parsed |
 
 ## 10. Design Decisions

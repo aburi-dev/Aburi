@@ -83,7 +83,7 @@ describe("classifyNestjsSymbol — a decorator written through a receiver", () =
       "medium",
     ],
     [
-      "a nested receiver whose second segment a barrel re-exports from @nestjs/common",
+      "a nested receiver whose second segment a barrel re-exports as a namespace of @nestjs/common",
       "ns.common",
       [reexported(makeNamespaceImport("@app/all", "ns"), { common: NEST })],
       "high",

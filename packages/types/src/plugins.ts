@@ -41,8 +41,19 @@ export interface ImportEdge {
   dynamic: boolean
   namespaceBinding?: string
   /**
-   * Set by the scan, never by the language plugin. Keyed by a name the edge's module exports, the
-   * specifier of the module outside the workspace that the name is re-exported from.
+   * What the importing module exports from the edge's module: a named or namespace re-export
+   * (`export { A as B } from`, `export * as ns from`), or an import that an export clause or
+   * `export default` republishes. `symbols` cannot say it: a re-export binds no local, and an
+   * import says nothing of what the module exports. Absent when the module republishes nothing
+   * from the edge; `export * from` names nothing, so it adds no entry.
+   */
+  reexports?: readonly Reexport[]
+  /**
+   * Set by the scan, never by the language plugin, and only for a name a decorator in the file
+   * binds while a framework plugin is loaded. Keyed by that name as the edge's module exports it,
+   * the first bare specifier the module's `reexports` lead to that no workspace file answers, which
+   * may be a workspace package the package manager links. A name without a key may be declared
+   * anywhere: in the workspace, or behind a re-export the scan could not follow.
    */
   origins?: ReadonlyMap<string, string>
 }
@@ -53,10 +64,19 @@ export interface ImportBinding {
   readonly local: string
 }
 
+/** A name a module exports that it takes from an import edge's module. */
+export interface Reexport {
+  /** The name the edge's module exports, or `*` for the whole module as a namespace. */
+  readonly imported: string
+  /** The name the importing module exports it under. */
+  readonly exported: string
+}
+
 export interface ParseResult<TTree = ParsedTree> {
   tree: TTree | null
   errors: ParseError[]
-  imports: ImportEdge[]
+  /** `origins` is the scan's to write; the scan drops any a plugin returns. */
+  imports: Omit<ImportEdge, "origins">[]
 }
 
 export type WrittenSourceRange = Omit<SourceRange, "startColumn" | "endColumn"> & {

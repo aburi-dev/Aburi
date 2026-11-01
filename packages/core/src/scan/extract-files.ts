@@ -236,6 +236,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
       logger.warn(`Plugin ${plugin} failed to release ${count} parse trees over this run.`)
     }
   }
+  origins.reportFaults()
 
   return out
 }

@@ -1,10 +1,13 @@
 import { readFile } from "node:fs/promises"
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { AsyncMemo, describeJsonType, describeThrown, errorCode, stripUtf8Bom } from "@aburi/core"
 import type { ImportResolver, ImportResolverContext } from "@aburi/types"
 import { type ParseError, parse, printParseErrorCode } from "jsonc-parser"
 
 const CONFIG_FILE_NAMES = ["tsconfig.json", "jsconfig.json"]
 const CONFIG_DIR = `\${configDir}`
+// EISDIR is what a `node_modules/<package>` candidate of `locateExtended` gives.
+const ABSENT_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR", "EISDIR"])
 
 interface Declared<T> {
   readonly value: T
@@ -14,73 +17,69 @@ interface Declared<T> {
 
 interface CompilerPaths {
   baseUrl?: Declared<string>
-  paths?: Declared<Readonly<Record<string, unknown>>>
+  paths?: Declared<readonly PathPattern[]>
 }
 
 interface RawConfig {
   readonly extends: readonly string[]
-  readonly compilerOptions: Readonly<Record<string, unknown>>
+  readonly baseUrl: string | undefined
+  readonly paths: readonly PathPattern[] | undefined
 }
 
-interface PathPattern {
-  readonly prefix: string
-  /** `null` for a key without a `*`, which matches only itself. */
-  readonly suffix: string | null
-  readonly substitutions: readonly string[]
-}
+const UNUSABLE: RawConfig = { extends: [], baseUrl: undefined, paths: undefined }
+
+type PathPattern =
+  | { readonly kind: "exact"; readonly key: string; readonly substitutions: readonly string[] }
+  | {
+      readonly kind: "wildcard"
+      readonly prefix: string
+      readonly suffix: string
+      readonly substitutions: readonly string[]
+    }
 
 interface PathMapping {
   readonly leafDir: string
   readonly baseUrl: string | null
-  readonly pathsBase: string | null
-  readonly patterns: readonly PathPattern[]
+  readonly paths: { readonly base: string; readonly patterns: readonly PathPattern[] } | null
+}
+
+interface ConfigReader {
+  read(path: string): Promise<RawConfig | null>
+  warn(message: string): void
+  display(path: string): string
 }
 
 export function createTsconfigResolver(ctx: ImportResolverContext): ImportResolver {
   const root = resolve(ctx.workspaceRoot)
-  const reads = new Map<string, Promise<RawConfig | null>>()
-  const scopes = new Map<string, Promise<string | null>>()
-  const mappings = new Map<string, Promise<PathMapping>>()
+  const reads = new AsyncMemo<string, RawConfig | null>()
+  const scopes = new AsyncMemo<string, string | null>()
+  const mappings = new AsyncMemo<string, PathMapping>()
+  const warned = new Set<string>()
 
-  const read = (path: string): Promise<RawConfig | null> => {
-    let config = reads.get(path)
-    if (config === undefined) {
-      config = readConfig(path, (problem) =>
-        ctx.log.warn(
-          `${displayPath(root, path)} ${problem}, so the path aliases it declares are not resolved.`,
-        ),
-      )
-      reads.set(path, config)
-    }
-    return config
+  const reader: ConfigReader = {
+    read: (path) => reads.get(path, () => readConfig(path, reader)),
+    warn(message) {
+      if (warned.has(message)) return
+      warned.add(message)
+      ctx.log.warn(message)
+    },
+    display: (path) => (isInside(root, path) ? relative(root, path).split(sep).join("/") : path),
   }
 
-  const nearestConfig = (directory: string): Promise<string | null> => {
-    let found = scopes.get(directory)
-    if (found === undefined) {
-      found = (async () => {
-        for (const name of CONFIG_FILE_NAMES) {
-          const path = join(directory, name)
-          if ((await read(path)) !== null) return path
-        }
-        const parent = dirname(directory)
-        return directory === root || !isInside(root, parent) ? null : nearestConfig(parent)
-      })()
-      scopes.set(directory, found)
-    }
-    return found
-  }
+  const nearestConfig = (directory: string): Promise<string | null> =>
+    scopes.get(directory, async () => {
+      for (const name of CONFIG_FILE_NAMES) {
+        const path = join(directory, name)
+        if ((await reader.read(path)) !== null) return path
+      }
+      const parent = dirname(directory)
+      return directory === root || !isInside(root, parent) ? null : nearestConfig(parent)
+    })
 
-  const mappingOf = (configPath: string): Promise<PathMapping> => {
-    let mapping = mappings.get(configPath)
-    if (mapping === undefined) {
-      mapping = compilerPaths(configPath, [], read).then((options) =>
-        buildMapping(options, dirname(configPath)),
-      )
-      mappings.set(configPath, mapping)
-    }
-    return mapping
-  }
+  const mappingOf = (configPath: string): Promise<PathMapping> =>
+    mappings.get(configPath, async () =>
+      buildMapping(await compilerPaths(configPath, [], reader), dirname(configPath)),
+    )
 
   return {
     async resolve(specifier, fromFile) {
@@ -100,65 +99,128 @@ function isInside(root: string, path: string): boolean {
   return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
 }
 
-function displayPath(root: string, path: string): string {
-  return isInside(root, path) ? relative(root, path).split(sep).join("/") : path
-}
-
-async function readConfig(
-  path: string,
-  warn: (problem: string) => void,
-): Promise<RawConfig | null> {
+async function readConfig(path: string, reader: ConfigReader): Promise<RawConfig | null> {
+  const name = reader.display(path)
   let text: string
   try {
-    text = await readFile(path, "utf8")
-  } catch {
-    return null
+    text = stripUtf8Bom(await readFile(path, "utf8"))
+  } catch (error) {
+    if (ABSENT_CODES.has(errorCode(error) ?? "")) return null
+    reader.warn(
+      `${name} could not be read (${describeThrown(error)}), so the path aliases it declares ` +
+        "are not resolved.",
+    )
+    return UNUSABLE
   }
   const errors: ParseError[] = []
-  const value: unknown = parse(text, errors, { allowTrailingComma: true })
+  const value: unknown = parse(text, errors, { allowTrailingComma: true, allowEmptyContent: true })
   const first = errors[0]
   if (first !== undefined) {
-    warn(`is not valid JSON (${printParseErrorCode(first.error)} at offset ${first.offset})`)
-    return { extends: [], compilerOptions: {} }
+    reader.warn(
+      `${name} is not valid JSON (${printParseErrorCode(first.error)} at ` +
+        `${position(text, first.offset)}), so the path aliases it declares are not resolved.`,
+    )
+    return UNUSABLE
   }
   const config = isRecord(value) ? value : {}
   const written = config.extends
   const extendsList =
     typeof written === "string" ? [written] : Array.isArray(written) ? written : []
+  const options = isRecord(config.compilerOptions) ? config.compilerOptions : {}
   return {
     extends: extendsList.filter((entry): entry is string => typeof entry === "string"),
-    compilerOptions: isRecord(config.compilerOptions) ? config.compilerOptions : {},
+    baseUrl: readBaseUrl(options.baseUrl, (problem) => reader.warn(`${name} ${problem}.`)),
+    paths: readPaths(options.paths, (problem) => reader.warn(`${name} ${problem}.`)),
   }
 }
 
-// Each config in `extends` overrides the ones before it and the extending config overrides them
-// all, option by option, the way `tsc` merges them.
+function readBaseUrl(value: unknown, warn: (problem: string) => void): string | undefined {
+  if (value === undefined || typeof value === "string") return value
+  warn(
+    `declares compilerOptions.baseUrl as ${describeJsonType(value)}, not a string, so it is ignored`,
+  )
+  return undefined
+}
+
+// `tsc` refuses each of these shapes, so a config holding one does not build as written.
+function readPaths(value: unknown, warn: (problem: string) => void): PathPattern[] | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) {
+    warn(
+      `declares compilerOptions.paths as ${describeJsonType(value)}, not an object, so it maps nothing`,
+    )
+    return undefined
+  }
+  const patterns: PathPattern[] = []
+  for (const [key, written] of Object.entries(value)) {
+    if (!Array.isArray(written)) {
+      warn(
+        `declares paths["${key}"] as ${describeJsonType(written)}, not a list, so that key maps nothing`,
+      )
+      continue
+    }
+    const stars = countStars(key)
+    if (stars > 1) {
+      warn(`declares the paths key "${key}" with more than one "*", so it maps nothing`)
+      continue
+    }
+    const substitutions: string[] = []
+    for (const entry of written) {
+      if (typeof entry !== "string") {
+        warn(`declares a substitution for "${key}" as ${describeJsonType(entry)}, so it is skipped`)
+      } else if (countStars(entry) > 1) {
+        warn(
+          `declares the substitution "${entry}" for "${key}" with more than one "*", so it is skipped`,
+        )
+      } else substitutions.push(entry)
+    }
+    const star = key.indexOf("*")
+    patterns.push(
+      stars === 0
+        ? { kind: "exact", key, substitutions }
+        : {
+            kind: "wildcard",
+            prefix: key.slice(0, star),
+            suffix: key.slice(star + 1),
+            substitutions,
+          },
+    )
+  }
+  return patterns
+}
+
 async function compilerPaths(
   configPath: string,
   chain: readonly string[],
-  read: (path: string) => Promise<RawConfig | null>,
+  reader: ConfigReader,
 ): Promise<CompilerPaths> {
-  const config = await read(configPath)
+  const config = await reader.read(configPath)
   if (config === null) return {}
   const dir = dirname(configPath)
   const merged: CompilerPaths = {}
   for (const entry of config.extends) {
-    const base = await locateExtended(entry, dir, read)
-    if (base === null || base === configPath || chain.includes(base)) continue
-    Object.assign(merged, await compilerPaths(base, [...chain, configPath], read))
+    const base = await locateExtended(entry, dir, reader)
+    if (base === null) {
+      reader.warn(
+        `${reader.display(configPath)} extends "${entry}", but no config file was found for it, ` +
+          "so the path aliases it would supply are not resolved.",
+      )
+      continue
+    }
+    if (base === configPath || chain.includes(base)) continue
+    Object.assign(merged, await compilerPaths(base, [...chain, configPath], reader))
   }
-  const { baseUrl, paths } = config.compilerOptions
-  if (typeof baseUrl === "string") merged.baseUrl = { value: baseUrl, dir }
-  if (isRecord(paths)) merged.paths = { value: paths, dir }
+  if (config.baseUrl !== undefined) merged.baseUrl = { value: config.baseUrl, dir }
+  if (config.paths !== undefined) merged.paths = { value: config.paths, dir }
   return merged
 }
 
-// A package's config is looked up in `node_modules` as `<package>/<path>`, `<package>/<path>.json`
-// or `<package>/tsconfig.json`; its `package.json` `exports` and `tsconfig` fields are not read.
+// A package's `package.json` `exports` and `tsconfig` fields are not read, so a package that
+// exposes its config only through them is not found.
 async function locateExtended(
   entry: string,
   dir: string,
-  read: (path: string) => Promise<RawConfig | null>,
+  reader: ConfigReader,
 ): Promise<string | null> {
   const relativeEntry = entry.startsWith("./") || entry.startsWith("../") || isAbsolute(entry)
   const candidates: string[] = []
@@ -174,7 +236,7 @@ async function locateExtended(
     }
   }
   for (const candidate of candidates) {
-    if ((await read(candidate)) !== null) return candidate
+    if ((await reader.read(candidate)) !== null) return candidate
   }
   return null
 }
@@ -184,69 +246,57 @@ function buildMapping(options: CompilerPaths, leafDir: string): PathMapping {
     options.baseUrl === undefined
       ? null
       : optionPath(options.baseUrl.value, options.baseUrl.dir, leafDir)
-  const pathsBase = baseUrl ?? options.paths?.dir ?? null
-  const patterns: PathPattern[] = []
-  for (const [key, value] of Object.entries(options.paths?.value ?? {})) {
-    if (!Array.isArray(value)) continue
-    const substitutions = value.filter(
-      (entry): entry is string => typeof entry === "string" && countStars(entry) <= 1,
-    )
-    const stars = countStars(key)
-    if (stars > 1) continue
-    const star = key.indexOf("*")
-    patterns.push(
-      stars === 0
-        ? { prefix: key, suffix: null, substitutions }
-        : { prefix: key.slice(0, star), suffix: key.slice(star + 1), substitutions },
-    )
-  }
-  return { leafDir, baseUrl, pathsBase, patterns }
+  const paths =
+    options.paths === undefined
+      ? null
+      : { base: baseUrl ?? options.paths.dir, patterns: options.paths.value }
+  return { leafDir, baseUrl, paths }
 }
 
 function mappedPaths(mapping: PathMapping, specifier: string): string[] {
   const out: string[] = []
-  const match = matchPattern(mapping.patterns, specifier)
-  if (match !== null && mapping.pathsBase !== null) {
-    for (const substitution of match.pattern.substitutions) {
-      const written =
-        match.star === null ? substitution : substitution.replace("*", () => match.star ?? "")
-      out.push(optionPath(written, mapping.pathsBase, mapping.leafDir))
+  if (mapping.paths !== null) {
+    for (const written of substitutionsFor(mapping.paths.patterns, specifier)) {
+      out.push(optionPath(written, mapping.paths.base, mapping.leafDir))
     }
   }
   if (mapping.baseUrl !== null) out.push(resolve(mapping.baseUrl, specifier))
   return out
 }
 
-// An exact key wins outright; among wildcard keys the longest prefix does, as in `tsc`.
-function matchPattern(
-  patterns: readonly PathPattern[],
-  specifier: string,
-): { pattern: PathPattern; star: string | null } | null {
-  let best: PathPattern | null = null
+function substitutionsFor(patterns: readonly PathPattern[], specifier: string): readonly string[] {
+  let best: { readonly substitutions: readonly string[]; prefix: string; star: string } | null =
+    null
   for (const pattern of patterns) {
-    if (pattern.suffix === null) {
-      if (pattern.prefix === specifier) return { pattern, star: null }
+    if (pattern.kind === "exact") {
+      if (pattern.key === specifier) return pattern.substitutions
       continue
     }
+    const { prefix, suffix } = pattern
     const fits =
-      specifier.length >= pattern.prefix.length + pattern.suffix.length &&
-      specifier.startsWith(pattern.prefix) &&
-      specifier.endsWith(pattern.suffix)
-    if (fits && (best === null || pattern.prefix.length > best.prefix.length)) best = pattern
+      specifier.length >= prefix.length + suffix.length &&
+      specifier.startsWith(prefix) &&
+      specifier.endsWith(suffix)
+    if (fits && (best === null || prefix.length > best.prefix.length)) {
+      const star = specifier.slice(prefix.length, specifier.length - suffix.length)
+      best = { substitutions: pattern.substitutions, prefix, star }
+    }
   }
-  if (best === null || best.suffix === null) return null
-  return {
-    pattern: best,
-    star: specifier.slice(best.prefix.length, specifier.length - best.suffix.length),
-  }
+  if (best === null) return []
+  const { star } = best
+  return best.substitutions.map((substitution) => substitution.replace("*", () => star))
 }
 
-// `${configDir}` stands for the directory of the config the file is compiled under, whichever
-// config in the `extends` chain wrote it.
 function optionPath(value: string, declaredDir: string, leafDir: string): string {
   return value.startsWith(CONFIG_DIR)
     ? join(leafDir, value.slice(CONFIG_DIR.length))
     : resolve(declaredDir, value)
+}
+
+function position(text: string, offset: number): string {
+  const before = text.slice(0, offset)
+  const lineStart = before.lastIndexOf("\n") + 1
+  return `${before.split("\n").length}:${offset - lineStart + 1}`
 }
 
 function countStars(text: string): number {

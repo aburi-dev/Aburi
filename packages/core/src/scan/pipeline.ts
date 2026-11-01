@@ -118,11 +118,12 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       .map(normalizeCandidateStrings)
     if (deadline.expired()) return abandonedFile()
 
+    const origins = input.origins
+    // Which importer pays for a barrel's parse would depend on discovery order.
     const imports =
-      input.origins === undefined || frameworks.length === 0
+      origins === undefined || frameworks.length === 0
         ? writtenImports
-        : await input.origins.attach(file, writtenImports, candidates)
-    if (deadline.expired()) return abandonedFile()
+        : await deadline.excluding(() => origins.attach(file, writtenImports, candidates))
 
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []

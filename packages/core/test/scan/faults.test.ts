@@ -97,6 +97,7 @@ describe("describeJsonType", () => {
   it.each<[unknown, string]>([
     [[], "a list"],
     [null, "null"],
+    [undefined, "undefined"],
     [{}, "an object"],
     ["x", "a string"],
     [1, "a number"],

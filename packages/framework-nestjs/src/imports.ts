@@ -1,4 +1,4 @@
-import { DEFAULT_EXPORT_NAME, splitAliasedImportName } from "@aburi/core"
+import { DEFAULT_EXPORT_NAME, decoratorReference, splitAliasedImportName } from "@aburi/core"
 import {
   assertImportBinding,
   assertImportEdgeSource,
@@ -80,12 +80,11 @@ export function resolveDecoratorName(
   decorator: Pick<Decorator, "name" | "qualifier">,
   bindings: ImportedBindings,
 ): ResolvedDecoratorName {
-  const { name, qualifier } = decorator
-  if (qualifier !== undefined) {
-    const head = headSegment(qualifier)
+  const { name } = decorator
+  if (decorator.qualifier !== undefined) {
+    const { head, member } = decoratorReference(decorator)
     const viaNamespace = bindings.namespaces.get(head)
     if (viaNamespace !== undefined) {
-      const member = memberSegment(qualifier) ?? name
       const source = viaNamespace.origins?.get(member) ?? viaNamespace.source
       return { canonical: name, confidence: isNestjsModule(source) ? "high" : "medium" }
     }
@@ -99,15 +98,4 @@ export function resolveDecoratorName(
   if (origin === undefined) return { canonical: name, confidence: "high" }
   const canonical = origin.imported === DEFAULT_EXPORT_NAME ? name : origin.imported
   return { canonical, confidence: origin.fromNestjs ? "high" : "medium" }
-}
-
-/** The only segment of a receiver that can name a binding. */
-function headSegment(qualifier: string): string {
-  const dot = qualifier.indexOf(".")
-  return dot === -1 ? qualifier : qualifier.slice(0, dot)
-}
-
-/** The segment after the head, the member a namespace receiver reads from its module, if any. */
-function memberSegment(qualifier: string): string | undefined {
-  return qualifier.split(".")[1]
 }

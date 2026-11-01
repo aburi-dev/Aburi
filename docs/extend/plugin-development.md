@@ -134,6 +134,14 @@ Contracts to know:
   them again at the plugin boundary, so a string they already produced passes
   unchanged. The [rule-string contract](../design/lang-plugin.md#rule-string-contract)
   has the reasoning.
+- **Say what a module exports through its imports.** An edge's `symbols` are the
+  names it takes from its source. On a re-export, and on an import the module
+  republishes in an export clause, also set `reexports` to each
+  `{ imported, exported }` pair. The scan follows a decorator's name through a
+  barrel by those entries alone, so an edge without them is never read as a
+  re-export. Leave `origins` out: the scan sets it and drops one you return. To
+  map bare specifiers such as path aliases to workspace files, implement
+  `createImportResolver`.
 - `symbolDropHint` returns `{ reason, category: "B" | "C" }` or `null`. Category
   B drops keep the Symbol out of the IR, so use it for genuine boilerplate.
   Category C keeps the Symbol and prunes its calls.
