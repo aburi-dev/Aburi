@@ -1,11 +1,11 @@
-import type { Node } from "web-tree-sitter"
+import type { SyntaxNode } from "./syntax-node"
 
 export interface DecodedLiteral {
   value: string
   whole: boolean
 }
 
-export function decodeStringLiteral(node: Node): DecodedLiteral {
+export function decodeStringLiteral(node: SyntaxNode): DecodedLiteral {
   const parts: string[] = []
   let whole = true
   for (const child of node.namedChildren) {
@@ -17,7 +17,7 @@ export function decodeStringLiteral(node: Node): DecodedLiteral {
   return { value: parts.join(""), whole }
 }
 
-export function decodeStringLiteralOrRaw(node: Node): string {
+export function decodeStringLiteralOrRaw(node: SyntaxNode): string {
   const { value, whole } = decodeStringLiteral(node)
   if (whole || value !== "") return value
   const raw = node.text
@@ -63,7 +63,7 @@ const NAMED_ESCAPES: ReadonlyMap<string, string> = new Map([
 /** CRLF is one continuation, not two, so the whole body is matched rather than the first char. */
 const LINE_TERMINATOR = /^(\r\n|[\n\r\u2028\u2029])$/
 
-export function readStaticString(node: Node): string | null {
+export function readStaticString(node: SyntaxNode): string | null {
   if (node.type === "template_string") {
     for (const child of node.namedChildren) {
       if (child?.type === "template_substitution") return null

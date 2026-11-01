@@ -4,6 +4,7 @@ import type {
   MatchRationale,
   SliceRecord,
   Summary,
+  SymbolChange,
   SymbolChanged,
   SymbolDelta,
   SymbolMoved,
@@ -87,4 +88,27 @@ export function movedChanged(
   rationale: MatchRationale = "git-rename",
 ): SymbolMovedChanged {
   return { status: "moved+changed", before, after, rationale, delta: delta(flags) }
+}
+
+/** Each change as `status base -> head`, or `status id` when only one side holds it. */
+export function changeLines(changes: readonly SymbolChange[]): string[] {
+  return changes.map((change) =>
+    "before" in change
+      ? `${change.status} ${change.before.id} -> ${change.after.id}`
+      : `${change.status} ${change.symbol.id}`,
+  )
+}
+
+export function soleChange<S extends SymbolChange["status"]>(
+  changes: readonly SymbolChange[],
+  status: S,
+): Extract<SymbolChange, { status: S }> {
+  const found = changes.filter(
+    (change): change is Extract<SymbolChange, { status: S }> => change.status === status,
+  )
+  const [only] = found
+  if (only === undefined || found.length > 1) {
+    throw new Error(`expected one ${status} change; got ${changeLines(changes).join(", ")}`)
+  }
+  return only
 }

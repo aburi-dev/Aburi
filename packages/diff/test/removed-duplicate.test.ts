@@ -1,7 +1,7 @@
-import { makeSymbol, rule } from "@aburi/test-support"
+import { makeSymbol, rule, soleChange } from "@aburi/test-support"
 import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { diffSymbols, soleChange } from "./helpers"
+import { diffSymbols } from "./helpers"
 
 const EMPTY_IR_LOGIC = "e0e0e0e0e0e0"
 

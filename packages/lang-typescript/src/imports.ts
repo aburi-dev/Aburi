@@ -1,9 +1,13 @@
-import { compareCodeUnit, DEFAULT_EXPORT_NAME, splitAliasedImportName } from "@aburi/core"
+import {
+  compareCodeUnit,
+  DEFAULT_EXPORT_NAME,
+  readStaticString,
+  splitAliasedImportName,
+} from "@aburi/core"
 import type { ImportEdge, ParseError, Reexport } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
 import { maskedImportSpecifier } from "./import-type-reparse"
-import { readStaticString } from "./string-escape"
 
 export interface ImportExtraction {
   edges: ImportEdge[]
