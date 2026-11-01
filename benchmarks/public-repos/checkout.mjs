@@ -1,24 +1,46 @@
-import { execFile } from "node:child_process"
+import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { dirname, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { promisify } from "node:util"
 import { containsPath } from "./args.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(HERE, "../..")
 export const CLI_ENTRY = resolve(REPO_ROOT, "packages/cli/dist/index.mjs")
 
-const execFileAsync = promisify(execFile)
+export function run(command, args, options = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+    })
+    let stdout = ""
+    let stderr = ""
+    const timer = options.timeoutMs
+      ? setTimeout(() => {
+          child.kill("SIGKILL")
+          stderr += `\n[harness] killed after ${options.timeoutMs} ms\n`
+        }, options.timeoutMs)
+      : null
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk
+    })
+    child.on("error", reject)
+    child.on("close", (code, signal) => {
+      if (timer) clearTimeout(timer)
+      resolvePromise({ code, signal, stdout, stderr })
+    })
+  })
+}
 
 export async function git(args, cwd) {
-  try {
-    const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 64 * 1024 * 1024 })
-    return stdout.trim()
-  } catch (error) {
-    throw new Error(`git ${args.join(" ")} failed:\n${error.stderr ?? error.message}`)
-  }
+  const result = await run("git", args, { cwd })
+  if (result.code !== 0) throw new Error(`git ${args.join(" ")} failed:\n${result.stderr}`)
+  return result.stdout.trim()
 }
 
 export async function aburiVersion() {

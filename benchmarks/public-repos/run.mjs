@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
@@ -15,6 +14,7 @@ import {
   git,
   pluginRef,
   REPO_ROOT,
+  run,
 } from "./checkout.mjs"
 import { parseArgs, renderReport, scrubPaths, summariseScans } from "./report.mjs"
 
@@ -23,34 +23,6 @@ const CHILD = resolve(HERE, "bench-child.mjs")
 
 /** Enough of a failing run's output to read, taken from the head, where the first error is. */
 const CAPTURED_OUTPUT_BYTES = 4000
-
-function run(command, args, options = {}) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: { ...process.env, ...options.env },
-    })
-    let stdout = ""
-    let stderr = ""
-    const timer = options.timeoutMs
-      ? setTimeout(() => {
-          child.kill("SIGKILL")
-          stderr += `\n[harness] killed after ${options.timeoutMs} ms\n`
-        }, options.timeoutMs)
-      : null
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk
-    })
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk
-    })
-    child.on("error", reject)
-    child.on("close", (code, signal) => {
-      if (timer) clearTimeout(timer)
-      resolvePromise({ code, signal, stdout, stderr })
-    })
-  })
-}
 
 async function ensureClone(repo, workDir) {
   const dir = resolve(workDir, repo.id)
