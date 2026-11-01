@@ -41,15 +41,13 @@ Why JSONC is allowed: this is a human-authored config, so comments on each secti
   "ignore": ["docs/**", "scripts/legacy/**"],
   "respectGitignore": true,
 
+  // Test code: scanned, but reported and gated apart (§4.1)
+  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"],
+
   // Plugin enablement (extension-vocab §4)
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
   "effects": ["effects-prisma", "effects-pino"],
-
-  // Per-plugin options (optional)
-  "pluginOptions": {
-    "effects-prisma": { "treatExtendsAsTx": true }
-  },
 
   // Component override (autodetect is the default)
   "components": [
@@ -118,6 +116,24 @@ These are **appended** to the core standard patterns of drop-list §3.1 (existin
 
 Setting it to `false` makes git-ignored files (build artifacts, etc.) extraction targets as well. Intended for special cases such as deliberately inspecting built code in CI.
 
+## 4.1 `testFiles`
+
+Glob patterns naming the files that hold test code.
+
+```jsonc
+{
+  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"]
+}
+```
+
+- The syntax of `ignore` (§3): POSIX, relative to the workspace root, a `*` or `**` matching a name that starts with a dot, and a pattern that does not end in `*` naming a directory as well as a file, as the walk reads an `ignore` entry: `test` and `test/` mark every file under the root's `test/`. A pattern is read in NFC, the form every IR path is in
+- A pattern that starts with `!` (but not `!(`) takes the files it names out of what the others mark, whatever their order: `["**/test/**", "!src/test"]` marks every `test/` directory but `src/test/`. A list of `!` patterns alone marks nothing. The walk skips a `!` entry of `ignore`, so this is where the two syntaxes part; reading `!src/test/**` as a glob of its own would mark every other file in the workspace
+- Absent, the default list applies: `**/*.test.*`, `**/*.spec.*`, `**/*.test-d.*`, `**/*.spec-d.*`, `**/__tests__/**`, `**/__mocks__/**`, `**/__fixtures__/**`, `**/test/**`, `**/tests/**`, `**/e2e/**`. Given, the list **replaces** the default one, so a workspace whose `src/test/` is production code can leave that pattern out; `[]` marks no file
+- A file it names is scanned like any other. Its Symbols keep their calls, effects and edges, so Slice View and `aburi explain` still read them, and each carries `inTestFile: true` (ir-schema.md §5.7)
+- What the mark changes is downstream: `diff.md` lists those Symbols' changes in a trailing folded section instead of the sections above it (markdown-projection.md §6.2), and `aburi diff --fail-on-scope non-test` leaves them out of the gate (cli-spec.md §6.7)
+
+`ignore` is the other way to keep tests out of a report, and the wrong one for them: a file it names is never read, so the calls out of a test file leave the dependency graph with its Symbols.
+
 ## 5. Plugin Enablement
 
 ### 5.1 `languages` / `frameworks` / `effects`
@@ -183,21 +199,24 @@ Earlier entries in `effects` have higher priority. Placing a project-specific pl
 
 ### 5.4 `pluginOptions`
 
-Opaque per-plugin configuration.
+Opaque per-plugin configuration. No plugin that ships with Aburi reads options, so the field is for third-party plugins.
 
 ```jsonc
 {
+  "effects": ["@myorg/aburi-effects"],
   "pluginOptions": {
-    "effects-prisma": { "treatExtendsAsTx": true },
-    "framework-nestjs": { "considerHttpExceptionAsThrow": false }
+    // keyed by the manifest name of @myorg/aburi-effects
+    "effects-myorg": { "queues": ["billing", "mail"] }
   }
 }
 ```
 
 - Keys are plugin manifest names
-- Values are arbitrary objects interpreted by the plugin (the Aburi core does not inspect their contents)
-- Each plugin is responsible for documenting the schema of its options
-- A key that is not the manifest name of a plugin the scan loaded — a misspelling, or a plugin none of `languages` / `frameworks` / `effects` enables — is a warning, one per key in config order, naming the key and the plugins that did load. Its options are ignored, and the exit code is the one the run would have had without the key. The loaded plugins are the manifest names the registry holds once the plugins are loaded, so the `hint-<name>` plugin of each `frameworkHints` entry (§8.3) counts as loaded, and a plugin loaded by package id or path matches only under its manifest name. `aburi diff` says each such line once, without a side label, because both of its scans load the head's config and plugin set ([`cli-spec.md`](./cli-spec.md) §5.6)
+- Values are arbitrary JSON values interpreted by the plugin (the Aburi core does not inspect their contents). The core hands every plugin the whole config (`config` on the extraction and classification contexts), and a plugin reads the value under its own manifest name
+- Each plugin is responsible for validating its options and documenting their schema
+- A key that is not the manifest name of a plugin the scan loaded — a misspelling, or a plugin none of `languages` / `frameworks` / `effects` enables — is a warning, one per key in config order, naming the key and the plugins that did load. The exit code is the one the run would have had without the key. The loaded plugins are the manifest names the registry holds once the plugins are loaded, so the `hint-<name>` plugin of each `frameworkHints` entry (§8.3) counts as loaded (it is listed under `loaded:`; its key is the next bullet's case), and a plugin loaded by package id or path matches only under its manifest name
+- A key that names the `hint-<name>` plugin of a `frameworkHints` entry is a warning too, in the same config order: Aburi builds that plugin from the entry and it reads no options, so the line names the entry its rules belong in
+- `aburi diff` says each line of either kind once, without a side label, because both of its scans load the head's config and plugin set ([`cli-spec.md`](./cli-spec.md) §5.6)
 
 ## 6. `components`
 
@@ -492,7 +511,7 @@ writes it down, mapping each detected language and framework to the first-party 
 | C7d | Two entries writing `framework:acme:a` and `framework:acme:b` | Exit 2 naming the second entry |
 | C8 | Extracting undeclared vocab with `strict: false` | Warning only; recorded in `out/aburi-vocab-discovered.json` |
 | C9 | Passing CLI `--strict` | Overrides config `strict: false` |
-| C10 | A `pluginOptions` key that names no loaded plugin, misspelled (`effects-prsima` beside `effects: ["effects-prisma"]`) or not enabled; and, alongside, a loaded plugin's name and the `hint-acme` of a `frameworkHints` entry named `acme` | Exit code unchanged; one warning per unmatched key, in config order: `pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, effects-prisma, hint-acme); its options are ignored.` Nothing for the loaded names |
+| C10 | A `pluginOptions` key that names no loaded plugin, misspelled (`effects-prsima` beside `effects: ["effects-prisma"]`) or not enabled; and, alongside, a loaded plugin's name and the `hint-acme` of a `frameworkHints` entry named `acme` | Exit code unchanged; one warning per key, in config order: `pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, effects-prisma, hint-acme).` for the unmatched one, `pluginOptions["hint-acme"] names the plugin built from the frameworkHints entry "acme", which takes no options; write its rules in that entry.` for the hint plugin's. Nothing for the loaded plugin's name |
 | C11 | `minParsedFileRatio` omitted, and a scan that parsed some files and lost others | Exit 0 |
 | C12 | `minParsedFileRatio: 0.9`, and a scan that parsed half the files it found | Exit 3, naming both counts and the floor |
 | C13 | `minParsedFileRatio` equal to the ratio the scan achieved | Exit 0 |
@@ -507,6 +526,12 @@ writes it down, mapping each detected language and framework to the first-party 
 | C21a | `components: [{ …, "frameworks": ["lang-typescript"] }]`, a plugin that provides no framework | Exit 0; stderr says to remove it or write the component's framework id |
 | C22 | A config that opens with one byte order mark (U+FEFF) | Loads as without it; a key named twice is reported at the column an editor shows. Two of them, or one after the first character, is `config-parse-failed` naming `InvalidSymbol` and its offset |
 | C23 | `components: [{ …, "publicApi": ["src\\index.ts"] }]` | Exit 2 naming the component and the entry |
+| C24 | `testFiles` omitted, over `src/a.test.ts`, `src/__tests__/b.ts`, `test/c.ts`, `tools/.harness/test/d.ts` and `src/testing.ts` | Every Symbol of the first four carries `inTestFile: true`; the last file's carry no key |
+| C25 | `testFiles: ["src/order.ts"]` | Only that file's Symbols carry the key: the default list no longer applies |
+| C26 | `testFiles: []` | No Symbol carries the key, and every fingerprint is the one the default list gives |
+| C27 | `testFiles: ["test", "src/__mocks__/"]` | The Symbols of `test/helpers.ts` and `src/__mocks__/db.ts` carry the key; those of `tools/test/run.ts` do not, as neither pattern starts with `**/` |
+| C28 | `testFiles: ["**/test/**", "!tools"]`, and `testFiles: ["!tools/**"]` | The first marks `test/helpers.ts` and not `tools/test/run.ts`; the second marks no file |
+| C29 | C24 with a plugin that drops the Symbol of `src/a.test.ts` | That Symbol carries `dropped: true` and `inTestFile: true` |
 
 ## 14.1 Config Schema Compatibility Policy
 
