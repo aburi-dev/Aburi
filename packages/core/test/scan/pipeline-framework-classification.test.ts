@@ -97,24 +97,24 @@ describe("runFilePipeline — framework classification", () => {
     ])
   })
 
-  it("records the middleware the winning classification names, in NFC and without empty names", async () => {
+  it("records the middleware the winning classification names, normalized and without empty names", async () => {
     const framework = stubFrameworkPlugin("framework-route", {
       classifySymbol: () => ({
         extKind: "framework:express:route",
         derivedBy: "framework-route:hit",
-        middleware: ["requireAdmin", "", "caf\u0065\u0301"],
+        middleware: ["requireAdmin", "", "caf\u0065\u0301", ' requireRole("a \n  b") ', " \t "],
       }),
     })
 
     const { symbols } = await extractOneSymbol({ frameworks: [framework] })
 
-    expect(symbols[0]?.middleware).toEqual(["requireAdmin", "caf\u00e9"])
+    expect(symbols[0]?.middleware).toEqual(["requireAdmin", "caf\u00e9", 'requireRole("a b")'])
   })
 
   it.each<[string, string[] | undefined]>([
     ["names none", undefined],
     ["names an empty list", []],
-    ["names only empty names", [""]],
+    ["names only empty names", ["", "  "]],
   ])("leaves the middleware out when the classification %s", async (_label, middleware) => {
     const framework = stubFrameworkPlugin("framework-route", {
       classifySymbol: () => ({

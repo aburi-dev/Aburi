@@ -879,6 +879,22 @@ describe("a changed Symbol's middleware rows", () => {
     expect(md).not.toContain("no field-level detail")
   })
 
+  it("sets the middleware rows after the export name rows and before the rule rows", () => {
+    const md = renderDelta(
+      {
+        logicChanged: true,
+        exportedAs: { ...none(), added: ["DELETE"] },
+        middleware: { added: [], removed: ["requireAdmin"], reordered: false },
+        rules: { ...none(), added: [{ type: "guard", line: 12, condition: "x > 0" }] },
+      },
+      route(["requireAdmin"]),
+      route([]),
+    )
+    expect(md).toContain(
+      "- export name added: `DELETE`\n- middleware removed: `requireAdmin`\n- rules added:\n",
+    )
+  })
+
   it("writes no row for middleware that did not move", () => {
     const md = renderDelta(
       { middleware: { added: [], removed: [], reordered: false } },

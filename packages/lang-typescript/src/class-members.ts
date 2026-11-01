@@ -1,8 +1,7 @@
-import { isQnameSegment, unwrapValue } from "@aburi/core"
+import { decodeStringLiteral, isQnameSegment, unwrapValue } from "@aburi/core"
 import type { Node } from "web-tree-sitter"
 import { asFunctionValue, hasChildOfType, hasErrorChild, nameFieldText } from "./ast-helpers"
 import { wrappedFunctions } from "./call-symbols"
-import { decodeStringLiteral } from "./string-escape"
 
 const CONSTRUCTION_SEGMENT = "constructor"
 

@@ -149,6 +149,13 @@ export {
 } from "./scan/timeout"
 export { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./scan/vocab"
 export {
+  type DecodedLiteral,
+  decodeEscapeSequence,
+  decodeStringLiteral,
+  decodeStringLiteralOrRaw,
+  readStaticString,
+} from "./string-literal"
+export {
   anyCallCalleeMatches,
   asSyntaxNode,
   type CalleeName,

@@ -388,9 +388,11 @@ The mark says the Symbol is test code, and nothing about how it was analysed: a 
 
 The middleware a framework registration hands its handler to, in the order it runs, as the framework plugin names them ([`lang-plugin.md`](./lang-plugin.md) §5.2.4). `router.get("/users", requireAdmin, validate(query), listUsers)` carries `["requireAdmin", "validate(query)"]`.
 
-It exists because a registration's middleware is neither a rule nor an effect, and is not a call made from the registration's body, so before it the only axis it moved was `syntax`: a route that lost its authorization check was reported as a reformat. The `logic` fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1), so adding, removing or reordering one is a logic change, and the diff names which ([`diff-algorithm.md`](./diff-algorithm.md) §5.5).
+It exists because a registration's middleware is neither a rule nor an effect, and is not a call made from the registration's body, so before it the only axis it moved was `syntax`: a route that lost its authorization check was reported as a reformat. The `logic` fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1), so adding, removing or reordering one is a logic change, and the diff names which ([`diff-algorithm.md`](./diff-algorithm.md) §5.6).
 
-It is **Class B** per §1.1: a Symbol that names no middleware — every Symbol that is not a framework registration, and a registration whose only handlers are written inline — omits the key, never `[]`, and the schema enforces `minItems: 1` and `minLength: 1` on each entry. A dropped Symbol carries none (§5.6). Because the key is absent wherever there is nothing to record, a Symbol without middleware hashes exactly as it did before the field existed.
+It is **Class B** per §1.1: a Symbol that names no middleware — every Symbol that is not a framework registration, and a registration whose only handlers are written inline — omits the key, never `[]`, and the schema enforces `minItems: 1` and `minLength: 1` on each entry. A dropped Symbol carries none (§5.6).
+
+Each name is held in the form the fingerprint reads text in: NFC (§1.2), each run of whitespace collapsed to one space, the ends trimmed. The scan normalizes a name where it enters the IR and drops one left empty, so the `logic` fingerprint hashes the names as held and the diff's middleware delta compares the same strings. Because the key is absent wherever there is nothing to record, a Symbol without middleware hashes exactly as it did before the field existed.
 
 ## 6. Decorator
 

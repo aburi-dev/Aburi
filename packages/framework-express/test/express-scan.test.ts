@@ -455,7 +455,7 @@ describe("scan — the middleware a registration hands its handler to", () => {
     ],
     [
       "what no name spells as computed",
-      "app.get(`/users`, isProd ? cached : live, requireRole(`admin`), listUsers)",
+      `app.get("/users", isProd ? cached : live, requireRole(\`\${role}\`), listUsers)`,
       ["<computed>", "requireRole(…)"],
     ],
     [
@@ -468,12 +468,31 @@ describe("scan — the middleware a registration hands its handler to", () => {
       `app.route("/users").get(requireUser, listUsers).post(requireAdmin, validate(user), createUser)`,
       ["requireUser", "requireAdmin", "validate(user)"],
     ],
+    [
+      "what all takes ahead of a method in a chain, its last handler included",
+      `app.route("/users").all(requireUser, audit).get(listUsers).post(createUser)`,
+      ["requireUser", "audit"],
+    ],
+    [
+      "what an all that ends its chain takes ahead of its handler",
+      `app.route("/users").get(listUsers).all(audit, notAllowed)`,
+      ["audit"],
+    ],
     ["every argument of use", `app.use(logger, audit)`, ["logger", "audit"]],
     [
       "what use hands a path, the router it mounts included",
       `app.use("/admin", requireAdmin, adminRouter)`,
       ["requireAdmin", "adminRouter"],
     ],
+    [
+      "what use hands a list of paths",
+      `app.use(["/admin", "/staff"], requireAdmin, adminRouter)`,
+      ["requireAdmin", "adminRouter"],
+    ],
+    ["what use hands a regex path", `app.use(/^\\/admin/, requireAdmin)`, ["requireAdmin"]],
+    ["what use hands a templated path", `app.use(\`/v\${version}\`, apiRouter)`, ["apiRouter"]],
+    ["what use hands an empty list of paths", `app.use([], audit)`, ["audit"]],
+    ["what use hands in a list of its own", `app.use([audit], apiRouter)`, ["audit", "apiRouter"]],
     ["each use of a chain", `app.use(cors()).use("/api", apiRouter)`, ["cors()", "apiRouter"]],
   ])("records %s", async (_label, line, middleware) => {
     expect((await oneCallIn(inExpressApp(line))).middleware).toEqual(middleware)
@@ -486,8 +505,25 @@ describe("scan — the middleware a registration hands its handler to", () => {
       `app.get("/users", (req, res, next) => next(), listUsers)`,
     ],
     ["error middleware written inline", `app.use((err, req, res, next) => res.end())`],
+    ["a chain whose all takes its handler alone", `app.route("/users").all(listUsers)`],
   ])("leaves the field out for %s", async (_label, line) => {
     expect(await oneCallIn(inExpressApp(line))).not.toHaveProperty("middleware")
+  })
+
+  it.each([
+    ["a factory argument in single quotes", `requireRole('admin')`, `requireRole("admin")`],
+    ["a factory argument in double quotes", `requireRole("admin")`, `requireRole("admin")`],
+    ["a factory argument in a template", "requireRole(`admin`)", `requireRole("admin")`],
+    [
+      "a factory argument spelled with an escape",
+      `requireRole("\\x61dmin")`,
+      `requireRole("admin")`,
+    ],
+    ["a key in single quotes", `handlers['auth']`, "handlers.auth"],
+    ["a key in a template", "handlers[`auth`]", "handlers.auth"],
+  ])("names %s by its value, not its quotes", async (_label, written, name) => {
+    const call = await oneCallIn(inExpressApp(`app.get("/users", ${written}, listUsers)`))
+    expect(call.middleware).toEqual([name])
   })
 
   it("names middleware the same however the registration is wrapped and commented", async () => {
@@ -505,6 +541,6 @@ describe("scan — the middleware a registration hands its handler to", () => {
       ),
     )
 
-    expect(wrapped.middleware).toEqual([`requireRole('admin')`, "auth.required"])
+    expect(wrapped.middleware).toEqual([`requireRole("admin")`, "auth.required"])
   })
 })

@@ -25,11 +25,12 @@ const SHAPE_ONLY_RULE_FIELDS: ReadonlySet<string> = new Set([
   "loopKind",
 ] satisfies (keyof LogicInput["rules"][number])[])
 
+// Middleware is not read: one guard such as `auth` fronts many routes, so sharing it says no
+// more about which route a body is than sharing a rule's type does.
 export function logicNamesNothing(symbol: IRSymbol): boolean {
   const input = buildLogicInput(symbol)
   return (
     input.effects.length === 0 &&
-    input.middleware === undefined &&
     input.rules.every((rule) =>
       Object.entries(rule).every(
         ([field, value]) => SHAPE_ONLY_RULE_FIELDS.has(field) || value === null,
@@ -44,8 +45,9 @@ function buildLogicInput(symbol: IRSymbol): LogicInput {
     rules: canonicalizeRules(symbol.rules),
   }
   // Left out rather than empty, so a Symbol that names no middleware hashes as it always has.
+  // The names are hashed as the IR holds them, so the diff's middleware delta compares the same.
   const middleware = symbol.middleware ?? []
-  if (middleware.length > 0) input.middleware = middleware.map(normalizeFingerprintString)
+  if (middleware.length > 0) input.middleware = [...middleware]
   return input
 }
 

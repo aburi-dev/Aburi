@@ -10,7 +10,7 @@ import type {
   SymbolCandidate,
   SymbolClassification,
 } from "@aburi/types"
-import { toNfc } from "../codepoints"
+import { normalizeFingerprintString } from "../fingerprint/string"
 import { decideSymbolDrop } from "./drop-b"
 
 export interface FrameworkMergeResult {
@@ -51,7 +51,9 @@ export function mergeFrameworkClassification(
         result.extKind === undefined || result.extKind === null
           ? extractedBy
           : framework.manifest.name,
-      middleware: (result.middleware ?? []).filter((name) => name.length > 0).map(toNfc),
+      middleware: (result.middleware ?? [])
+        .map(normalizeFingerprintString)
+        .filter((name) => name.length > 0),
     }
   }
   return { candidate, confidence: "high", extKindBy: extractedBy, middleware: [] }

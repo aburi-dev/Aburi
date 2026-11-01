@@ -1,6 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
-import { diffOfEditWith } from "@aburi/test-harness"
-import { useScratchWorkspace } from "@aburi/test-support"
+import { diffIRs, diffOfEditWith, scanWith } from "@aburi/test-harness"
+import { changeLines, soleChange, useScratchWorkspace } from "@aburi/test-support"
 import type { DiffResult, SymbolChanged } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { expressFrameworkPlugin } from "../src/index"
@@ -27,9 +27,7 @@ const usersRoute = (...middleware: string[]) =>
 
 function onlyChange(diff: DiffResult): SymbolChanged {
   expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
-  const [change] = diff.symbols
-  if (change?.status !== "changed") throw new Error(`expected one change, got ${change?.status}`)
-  return change
+  return soleChange(diff.symbols, "changed")
 }
 
 describe("diff — a route's middleware", () => {
@@ -96,5 +94,54 @@ describe("diff — a route's middleware", () => {
     )
 
     expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 0, unchanged: 2 })
+  })
+
+  it("is a logic change when a mount loses the middleware in front of its router", async () => {
+    const mount = (...middleware: string[]) =>
+      routes(`router.use("/admin", ${[...middleware, "adminRouter"].join(", ")})`)
+    const { diff } = await diffOfEditWith(workspace, lineup, SOURCE, mount("requireAdmin"), mount())
+
+    expect(onlyChange(diff).delta).toMatchObject({
+      logicChanged: true,
+      middleware: { added: [], removed: ["requireAdmin"], reordered: false },
+    })
+  })
+
+  it.each([
+    [
+      "of another method and path",
+      [`router.get("/a", requireAdmin, listA)`],
+      [`router.post("/b", requireAdmin, createB)`],
+    ],
+    [
+      "while a third route keeps that middleware",
+      [`router.get("/a", requireAdmin, listA)`, `router.get("/x", requireAdmin, listX)`],
+      [`router.delete("/zzz", requireAdmin, removeZ)`, `router.get("/x", requireAdmin, listX)`],
+    ],
+  ])("does not pair a removed route with an added one that shares only its middleware, %s", async (_case, before, after) => {
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      SOURCE,
+      routes(before.join("\n")),
+      routes(after.join("\n")),
+    )
+
+    expect(diff.summary).toMatchObject({ added: 1, removed: 1, moved: 0, movedChanged: 0 })
+  })
+
+  it("does not pair a route removed from one file with one added to another that shares only its middleware", async () => {
+    await workspace.writeSource("src/one.ts", routes(`router.get("/a", requireAdmin, listA)`))
+    await workspace.writeSource("src/two.ts", routes(""))
+    const base = await scanWith(workspace.root, lineup)
+    await workspace.writeSource("src/one.ts", routes(""))
+    await workspace.writeSource("src/two.ts", routes(`router.put("/b", requireAdmin, updateB)`))
+    const head = await scanWith(workspace.root, lineup)
+
+    const diff = diffIRs(base.ir, head.ir)
+    expect(changeLines(diff.symbols).filter((line) => !line.startsWith("unchanged"))).toEqual([
+      "added ts:src/two.ts#router__put__$b__d0",
+      "removed ts:src/one.ts#router__get__$a__d0",
+    ])
   })
 })

@@ -317,6 +317,24 @@ describe("middleware", () => {
       ["auth", "validate(b)", "audit"],
       { added: ["validate(b)"], removed: ["validate(a)"], reordered: false },
     ],
+    [
+      "one removed and the rest reordered",
+      ["x", "y", "z"],
+      ["z", "x"],
+      { added: [], removed: ["y"], reordered: true },
+    ],
+    [
+      "two inner ones of four swapped",
+      ["a", "b", "c", "d"],
+      ["a", "c", "b", "d"],
+      { added: [], removed: [], reordered: true },
+    ],
+    [
+      "one added among four that kept their order",
+      ["a", "b", "c", "d"],
+      ["a", "b", "e", "c", "d"],
+      { added: ["e"], removed: [], reordered: false },
+    ],
   ])("reports %s", (_what, base, head, expected) => {
     expect(middlewareDelta(base, head)).toEqual(expected)
   })

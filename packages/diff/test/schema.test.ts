@@ -1,9 +1,17 @@
 import irSchema from "@aburi/schema/aburi.ir.v1.json" with { type: "json" }
-import { component, dependency, fp, guardedBody, makeIR, makeSymbol } from "@aburi/test-support"
+import {
+  component,
+  dependency,
+  fp,
+  guardedBody,
+  makeIR,
+  makeSymbol,
+  soleChange,
+} from "@aburi/test-support"
 import type { DiffResult, SkipReason } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { diffSchemaViolations } from "./diff-schema"
-import { diffOf, diffSymbols, soleChange, withSkipped } from "./helpers"
+import { diffOf, diffSymbols, withSkipped } from "./helpers"
 
 const changing = makeSymbol({ id: "ts:src/a.ts#A", name: "A" })
 const gone = makeSymbol({ id: "ts:src/gone.ts#foo", name: "foo" })

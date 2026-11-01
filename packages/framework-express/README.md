@@ -64,12 +64,17 @@ that loses its authorization check is a logic change the report names
 is every handler argument but the last, the handler; for `use`, every argument
 after the path, the router a mount hands over included; in a chain
 (`app.route("/users").get(a, h).post(b, h)`), each registration's in the order
-the chain makes them. Arrays and spreads of arrays are flattened, as Express
-flattens them. An inline function is left out, since its body is the
+the chain makes them. An `all` with a later method in its chain
+(`app.route("/users").all(requireUser).get(listUsers)`) runs ahead of each of
+them, so every argument it takes is middleware. A `use` path is whatever
+Express reads as one, so `["/a", "/b"]`, `/^\/admin/` and `` `/v${version}` ``
+are skipped as `"/admin"` is. Arrays and spreads of arrays are flattened, as
+Express flattens them. An inline function is left out, since its body is the
 registration's own and already read. Each entry is named from the syntax tree,
-so line breaks and comments do not reach it: `requireAdmin`, `auth.required`,
-`handlers.auth` for `handlers["auth"]`, a factory with its literal and named
-arguments (`requireRole("admin")`, and `rateLimit(…)` for
+so line breaks, comments and quote style do not reach it: `requireAdmin`,
+`auth.required`, `handlers.auth` for `handlers["auth"]`, a factory with its
+literal and named arguments, a string written back in double quotes
+(`requireRole("admin")` for `requireRole('admin')`, and `rateLimit(…)` for
 `rateLimit({ max: 10 })`), `...guards` for a spread whose contents the
 statement does not show, and `<computed>` for anything else. A `use` with no
 path is named by its arguments already, so changing them makes it another

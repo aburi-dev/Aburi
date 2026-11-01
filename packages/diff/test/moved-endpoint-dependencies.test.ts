@@ -1,7 +1,7 @@
-import { guardedBody, makeIR } from "@aburi/test-support"
+import { changeLines, guardedBody, makeIR } from "@aburi/test-support"
 import type { SkippedFile } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { callEdge, changeLines, diffOf, fn, withSkipped } from "./helpers"
+import { callEdge, diffOf, fn, withSkipped } from "./helpers"
 
 const analyzeUseArguments = (file: string) => fn(file, "analyzeUseArguments", "analyzeUseArguments")
 const isPathLiteral = (file: string, name = "isPathLiteral") =>

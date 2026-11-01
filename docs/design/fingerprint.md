@@ -174,11 +174,11 @@ Represents the **meaning executed by the symbol's body**. Changes when the meani
       "target": <canonical(Effect.target)>
     }
   ],                                            // locally detected effects in input order, then propagated targets (below)
-  "middleware": [<canonical(Symbol.middleware[i])>]  // only when Symbol.middleware is present; input order preserved
+  "middleware": [Symbol.middleware[i]]               // only when Symbol.middleware is present; as the IR holds it; input order preserved
 }
 ```
 
-`middleware` is read only when the Symbol carries it ([`ir-schema.md`](./ir-schema.md) §5.8), and the key is left out of the input otherwise rather than written as `[]`, so every Symbol that names no middleware hashes to the value it had before the field existed. Its order is kept for the reason §4.7 keeps the order of effects: a rate limit in front of authentication and one behind it are two different routes.
+`middleware` is read only when the Symbol carries it ([`ir-schema.md`](./ir-schema.md) §5.8), and the key is left out of the input otherwise rather than written as `[]`, so every Symbol that names no middleware hashes to the value it had before the field existed. Its order is kept for the reason §4.7 keeps the order of effects: a rate limit in front of authentication and one behind it are two different routes. The names are read as the IR holds them, which the scan already wrote in canonical form ([`ir-schema.md`](./ir-schema.md) §5.8), so the fingerprint and the diff's middleware delta ([`diff-algorithm.md`](./diff-algorithm.md) §5.6) compare the same strings: were the fingerprint to canonicalize them again, `requireRole("a  b")` → `requireRole("a b")` would leave `logic` unmoved while the delta reported one name removed and another added.
 
 The rule strings are the ones the IR holds, already in the ir-schema.md §8.2 form: comments removed, whitespace collapsed, and cut to 120 characters plus `...`. Reading what the IR holds keeps `logic` recomputable from a Document alone. The cost is that an edit past the 120th character of a long condition, throw value or return expression moves neither `logic` nor the diff's rule delta; `syntax` still moves, so the change is reported as syntax-only rather than missed.
 
@@ -246,7 +246,9 @@ This applies to locally detected effects, each of which sits at a call site in t
 
 ### 4.8 A value that names nothing
 
-Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect, no middleware and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class, enum and body that only calls something (the empty input), another for every body that is a single `for` loop over calls, another for every single `try`. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class, enum and body that only calls something (the empty input), another for every body that is a single `for` loop over calls, another for every single `try`, another for every route behind `requireAdmin` alone. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+
+`middleware[]` changes the hash but is not counted as naming something. A guard such as `auth` fronts many routes, so two registrations that agree on it alone say no more about being one route than two bodies that agree on `rules[].type` do; counted, it let a deleted endpoint and an unrelated one added behind the same guard pair as a single move, and `--fail-on removed` never saw the deletion.
 
 `logicNamesNothing` (`@aburi/core`) tells such a Symbol apart, reading the same input the hash is. A field added to the input counts as naming something until it is listed as classifying only.
 
