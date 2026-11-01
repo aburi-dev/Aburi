@@ -41,6 +41,25 @@ describe("scan — a module's top-level statements", () => {
     const callers = ir.symbols.filter((s) => s.calls.some((c) => c.resolved === scope?.id))
     expect(callers).toEqual([])
   })
+
+  it("mark a test file's `<module>` as test code, as they do the file's other Symbols", async () => {
+    await workspace.writeSource("src/db.ts", "export function reset() {}\n")
+    await workspace.writeSource("src/seed.ts", seed("await main()"))
+    await workspace.writeSource(
+      "src/seed.test.ts",
+      'import { main } from "./seed"\n\ndescribe("seed", () => { it("runs", () => main()) })\n',
+    )
+
+    const ir = await scanWithoutWarnings(workspace.root)
+
+    const scopes = ir.symbols
+      .filter((s) => s.id.endsWith("#<module>"))
+      .map((s) => [s.id, s.inTestFile ?? false])
+    expect(scopes.sort()).toEqual([
+      ["ts:src/seed.test.ts#<module>", true],
+      ["ts:src/seed.ts#<module>", false],
+    ])
+  })
 })
 
 describe("scan — what a module does on import, when it is ceremony", () => {

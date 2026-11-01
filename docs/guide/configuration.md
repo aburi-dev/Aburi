@@ -35,13 +35,9 @@ Generated code, vendored trees, and fixtures rarely belong in the report.
 Tests are scanned like the rest of the workspace. A file's top-level code is
 reported as one entry, `<module>`, and in a test file that code is its
 `describe` and `it` blocks, so an edit to a test shows up as a change to that
-file's `<module>`. Leave them out if the report is for the code alone:
-
-```jsonc
-{
-  "ignore": ["**/*.test.ts", "**/*.spec.ts"]
-}
-```
+file's `<module>`. Like the file's other Symbols, it is test code: the report
+folds it into the `🧪 Test files` section, and the gate can skip it
+([Mark test code](#mark-test-code)), so tests need no `ignore` entry.
 
 Write POSIX globs relative to the workspace root. Aburi adds them to the
 built-in exclusions rather than replacing them. A `*` or `**` matches a name
