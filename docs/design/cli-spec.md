@@ -623,7 +623,7 @@ aburi diff --base <ir.json> --head <ir.json>               # specify existing IR
 | `--fail-on <kinds>` | Exit 3 if even one change of the given kinds (status granularity) exists (for CI gates). Repeatable: each occurrence adds its clauses after the earlier ones' (§6.7) |
 | `--max-bytes <n>` | Cap `diff.md` at n UTF-8 bytes, keeping sections most important first at their smallest (names only for a section of whole Symbols) and then growing the name lists back to full entries from the top ([`markdown-projection.md`](./markdown-projection.md) §6.4). `diff.json` is never capped, and when the cap changed the report the uncapped one is written as `diff.full.md` beside it. Absent: no cap — `0` is exit 2 here, not the opt-out it is on the action input. Warns when `--format json` leaves it nothing to cap, and when the budget could not be met |
 | `--compact` | Compact `diff.json` to a single line |
-| `--concurrency <n>` | How many of the two scans run at once (§14.1). `1` runs the base and then the head; absent, both at once when the machine has two or more CPUs, and one at a time on one. A value above `2` is `2`. Anything but a positive integer is exit 2. No effect with `--base/--head`, which scans nothing |
+| `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once (§14.1). `--no-parallel-scans` runs the base and then the head, which uses less memory; `--parallel-scans` runs both at once even on one CPU. Neither: at once when the machine has two or more CPUs, one after the other on one. No effect with `--base/--head`, which scans nothing |
 | `--config <path>` | The config file both scans read (§13, §6.4 step 3) |
 | `--quiet` | (planned) Limit stdout to the glyph line |
 
@@ -657,7 +657,7 @@ With refs (every git command these steps run gets the caller's environment as §
    - Rationale: using the config as of the base ref would make "config change = the entire IR changes", breaking the diff. Fixing the view to the head automatically resolves config differences
    - A future `--base-config <path>` may be provided to override this (planned — see the [roadmap](../roadmap.md)). The two scans would then no longer read one config, and the `pluginOptions` line (§5.6) would be said by each, labelled by side
 4. Run `aburi scan` on the head (the original cwd)
-   - Steps 3 and 4 run at the same time unless `--concurrency 1` or a single CPU says otherwise (§14.1), and what the run says, writes and exits is what it would have been with the two one after the other
+   - Steps 3 and 4 run at the same time unless `--no-parallel-scans` or a single CPU says otherwise (§14.1), and what the run says, writes and exits is what it would have been with the two one after the other, save for a failure of the base scan's thread itself
    - Both scans root at the repository: the workspace-root walk stops at the first `.git` ([`component-detect.md`](./component-detect.md) §2.1, CD32), the head checkout's own `.git` (a directory or a file) on one side and the temporary worktree's `.git` file on the other. Rooted anywhere else, the two sides scan different trees (`component-detect.md` §11.1 has the layouts that did), so a base scan that roots anywhere but its worktree ends the run as a bug in Aburi (exit `1`, §9)
 5. Compare the two IRs and compute the diff ([`diff-algorithm.md`](./diff-algorithm.md))
 6. Write `<output-dir>/diff.json` + `<output-dir>/diff.md`, and `<output-dir>/diff.full.md` (the uncapped `diff.md`, written before `diff.md` so the note never points at a file that failed to land) when `--max-bytes` changed the report. Any `diff.json`, `diff.md` or `diff.full.md` already there was removed when the output directory was created, ahead of step 1 and whatever the `--format`, since each would describe another diff: a `--format md` run leaves no `diff.json` of an earlier run's, and a `--format json` run no `diff.md`, so none naming a `diff.full.md` that is gone. So a run that stops before this step (a plugin that fails to load, a strict scan's undeclared value) leaves no report at all rather than an earlier one a caller would take for its own. A path there that cannot be removed is refused like one that cannot be written
@@ -1190,15 +1190,16 @@ deleted. Either is what §6.4 step 3 forbids.
 `aburi diff <base>..<head>` runs its two scans (§6.4 steps 3 and 4) at the same time: the base on a
 worker thread of its own, the head on the main thread. They are independent — each reads its own
 tree and writes its own IR, and the comparison starts once both exist — so this needs none of the
-sharding below, and the IRs the comparison reads are the ones the scans would write one after the
-other. On a 4-CPU machine a diff of `nest`'s last 50 commits (1,828 TypeScript files) takes 4.4 s
-against 6.9 s one at a time, where one scan of the head takes 3.4 s; the peak RSS of the process
-rose from 362 MiB to 498 MiB.
+work partitioning the parser pool would (§14.2, [`performance.md`](./performance.md) §4–§7), and the
+IRs the comparison reads are the ones the scans would write one after the other. The run then takes
+about as long as its slower scan rather than both, and holds two scans in memory at once.
 
-`--concurrency <n>` on `aburi diff` caps how many of the two run at once. `1` runs the base and
-then the head, as every release before this one did, and stays the reference the concurrent run
-is held to. Absent, the cap is `2` where `os.availableParallelism()` reports two or more CPUs and
-`1` where it reports one, which is where a second thread would only take turns with the first.
+`--no-parallel-scans` runs the base and then the head, and stays the reference the concurrent run
+is held to; `--parallel-scans` runs them at once on any machine. With neither, they run at once
+where `os.availableParallelism()` reports two or more CPUs and one after the other where it reports
+one, which is where a second thread would only take turns with the first. The option is a switch
+rather than a count, and is not named `--concurrency`: that name is reserved for the parser pool
+within a scan (§14.2), so that it can mean the same thing on `aburi diff` as on `aburi scan`.
 
 Running together changes nothing the run says or decides:
 
@@ -1208,9 +1209,21 @@ Running together changes nothing the run says or decides:
 - **Failures.** Which failure ends the run, and with which exit code, is the one a sequential run
   would report. A base scan that fails ends the run with its own error once the head scan has
   stopped too, and what the head said or threw is discarded, as a sequential run would never have
-  started it. A head scan that fails waits for the base, whose failure, if it has one, comes first.
+  started it. Until then the run says nothing, since the head's log is still held. A head scan that
+  fails waits for the base, whose failure, if it has one, comes first.
 - **Artefacts and stdout.** `diff.json`, `diff.md` and the glyph line are byte for byte the
   sequential run's.
+
+A failure of the base's thread rather than of its scan has no sequential counterpart, and ends the
+run with exit `1` (§9), naming the base ref and `--no-parallel-scans`. Like a failing base scan it
+waits for the head scan to stop, and the worktree and the temporary directory are removed as on any
+other failure:
+
+- a plugin that calls `process.exit()` ends the thread, not the process;
+- an error thrown outside the scan's own handling, from a timer for instance, reaches the thread's
+  `error` event rather than the scan; one that arrives after the scan finished is a warning instead;
+- the worker script cannot be found, as when a bundle inlines `@aburi/cli` and leaves the script
+  behind.
 
 ### 14.2 Parser concurrency for `aburi scan`
 
@@ -1226,7 +1239,7 @@ waits. This section reserves the interface:
   - When multiple lang plugins coexist in the same run, the **maximum** of the declared values is used
 - On memory-constrained CI, `--concurrency 1` is recommended (for debugging)
 
-A future release will switch to Node worker_threads instead of a worker pool (see the [roadmap](../roadmap.md)). Architecture details — pool sizing, work partitioning, serialization boundary, and byte-identical merge — are specified in [`performance.md`](./performance.md).
+The pool would run on Node `worker_threads`, as the base scan of `aburi diff` already does (§14.1; [`performance.md`](./performance.md) Rule PF-1). Architecture details — pool sizing, work partitioning, serialization boundary, and byte-identical merge — are specified in [`performance.md`](./performance.md).
 
 ## 15. Planned Features
 
@@ -1341,8 +1354,9 @@ a command's option, not a global one (§3).
 | CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind. stdout on a descriptor that refuses writes (one opened read-only) still exits 1, with the errno on stderr |
 | CL55 | `aburi diff main..HEAD` with a `pluginOptions` key that names no loaded plugin (`config.md` C10) | The warning once, with no side label, while the base scan's own lines keep theirs; the exit code is the one the run has without the key |
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
-| CL59 | `aburi diff main..HEAD --concurrency 2`, where both scans finish, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr, the per-file log and the report are those of the same run under `--concurrency 1`: a base that stops ends the run with the base's error, whatever the head did (§14.1) |
-| CL60 | `aburi diff main..HEAD --concurrency` with `0`, `-1`, `1.5`, `two` or an empty value | exit 2, `--concurrency must be a positive integer (got "<value>")` |
+| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
+| CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
+| CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
 
 ## 18. Design Decisions
 

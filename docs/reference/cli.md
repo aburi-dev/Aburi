@@ -220,7 +220,7 @@ scanning.
 | `--format <fmt>` | `json`, `md`, or `both`. |
 | `--compact` | JSON without indentation. |
 | `--max-bytes <n>` | Cap `diff.md` at n bytes. See below. |
-| `--concurrency <n>` | How many of the two scans run at once. `1` scans the base and then the head; by default both run together on a machine with two or more CPUs. Nothing the run prints, writes or exits with depends on it. |
+| `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once. By default they do on a machine with two or more CPUs, and run in turn on one. The output is the same either way; `--no-parallel-scans`, one at a time, uses less memory. |
 | `--config <path>` | Use a different config file. |
 
 In ref mode, a scan that did not finish cleanly exits `3` even with no

@@ -21,7 +21,7 @@ import type { RefSpec } from "./diff-inputs"
 import { runScan } from "./scan"
 import { reportScanIncidents } from "./scan-incidents"
 import type { ScanReport } from "./scan-report"
-import { scanInThread, type ThreadScanOptions } from "./scan-thread"
+import { type PortableScanOptions, scanInThread, type ThreadedScan } from "./scan-thread"
 
 export type DiffSide = "base" | "head"
 
@@ -43,7 +43,7 @@ export interface RevisionScanContext {
   logLevel: LogLevel | undefined
   pinConfigOnce: () => Promise<PinnedConfig>
   warn: WarnFn
-  concurrency: number | undefined
+  parallelScans: boolean | undefined
 }
 
 type ScanTarget = { side: "base"; ref: string } | { side: "head" }
@@ -68,7 +68,7 @@ export async function scanRevisions(
   const worktreeDir = resolve(worktreeParent, baseWorktreeLeaf(headWorkspaceRoot))
 
   const said = new Set<string>()
-  const optionsFor = (dir: string, outputDir: string): ThreadScanOptions => ({
+  const optionsFor = (dir: string, outputDir: string): PortableScanOptions => ({
     cwd: dir,
     command: "diff",
     outputDir,
@@ -112,8 +112,12 @@ export async function scanRevisions(
     const baseOptions = optionsFor(worktreeDir, resolve(tempParent, "base-out"))
     const headOptions = optionsFor(cwd, resolve(tempParent, "head-out"))
     const scanned =
-      (context.concurrency ?? availableParallelism()) >= 2
-        ? await scanTogether(baseOptions, headOptions, readBase, readHead)
+      (context.parallelScans ?? availableParallelism() >= 2)
+        ? await scanTogether(baseOptions, headOptions, readBase, readHead, {
+            name: `base ref "${spec.base}"`,
+            log: writeToStderr,
+            warn,
+          })
         : await scanInTurn(baseOptions, headOptions, readBase, readHead)
     return { ...scanned, gitRenames }
   } finally {
@@ -143,8 +147,8 @@ type ReadSide = (report: ScanReport) => Promise<IR>
 type ScannedSides = Omit<ScannedRevisions, "gitRenames">
 
 async function scanInTurn(
-  baseOptions: ThreadScanOptions,
-  headOptions: ThreadScanOptions,
+  baseOptions: PortableScanOptions,
+  headOptions: PortableScanOptions,
   readBase: ReadSide,
   readHead: ReadSide,
 ): Promise<ScannedSides> {
@@ -161,10 +165,11 @@ async function scanInTurn(
  * a base that fails waits for the head and discards it, as the head would never have started.
  */
 async function scanTogether(
-  baseOptions: ThreadScanOptions,
-  headOptions: ThreadScanOptions,
+  baseOptions: PortableScanOptions,
+  headOptions: PortableScanOptions,
   readBase: ReadSide,
   readHead: ReadSide,
+  baseThread: ThreadedScan,
 ): Promise<ScannedSides> {
   const headLog = heldLog()
   const headScan = runScan({ ...headOptions, log: headLog.write })
@@ -175,7 +180,7 @@ async function scanTogether(
   let base: ScanReport
   let baseIR: IR
   try {
-    base = await scanInThread(baseOptions, writeToStderr)
+    base = await scanInThread(baseOptions, baseThread)
     baseIR = await readBase(base)
   } catch (error) {
     await headStopped

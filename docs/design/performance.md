@@ -1,6 +1,6 @@
 # Parallel Parsing Architecture
 
-**Status: planned.** `aburi scan` parses one file at a time today and has no `--concurrency` flag; the [roadmap](../roadmap.md) explains why the pool waits. This document specifies how `aburi scan` would use a worker pool to reach the roadmap performance target — parse a >1000-file TypeScript project in under 30 seconds on a 4-core CI runner — while producing byte-identical IR to a single-threaded reference run. It refines, but does not replace, the concurrency defaults already stated in [cli-spec.md](./cli-spec.md) §14 and the WASM lifecycle rules in [lang-plugin.md](./lang-plugin.md) §8.1. No IR schema change, no new CLI flag, no new config field.
+**Status: planned.** `aburi scan` parses one file at a time today and has no `--concurrency` flag; the [roadmap](../roadmap.md) explains why the pool waits. This document specifies how `aburi scan` would use a worker pool to reach the roadmap performance target — parse a >1000-file TypeScript project in under 30 seconds on a 4-core CI runner — while producing byte-identical IR to a single-threaded reference run. It refines, but does not replace, the concurrency defaults already stated in [cli-spec.md](./cli-spec.md) §14.2 and the WASM lifecycle rules in [lang-plugin.md](./lang-plugin.md) §8.1. No IR schema change, no new CLI flag, no new config field.
 
 ## References:
 
@@ -66,7 +66,7 @@ Rule PF-11 (§7.1) has its single-threaded half confirmed on the way: three cons
 
 Rule PF-1: the pool is Node `worker_threads`, one WASM parser instance per worker, workers long-lived for the duration of the scan.
 
-Rule PF-2: pool size = `min(--concurrency, floor(availableMemoryMB / maxWasmHeapPerWorkerMB))` where the numerator defaults to `max(1, CPU_count - 1)` from [cli-spec.md](./cli-spec.md) §14.2. When multiple language plugins are loaded, `maxWasmHeapPerWorkerMB` = max of each plugin's declared `capabilities.wasmHeapPerWorkerMB` (also cli-spec §14).
+Rule PF-2: pool size = `min(--concurrency, floor(availableMemoryMB / maxWasmHeapPerWorkerMB))` where the numerator defaults to `max(1, CPU_count - 1)` from [cli-spec.md](./cli-spec.md) §14.2. When multiple language plugins are loaded, `maxWasmHeapPerWorkerMB` = max of each plugin's declared `capabilities.wasmHeapPerWorkerMB` (also cli-spec §14.2).
 
 ## 4. Work partitioning
 

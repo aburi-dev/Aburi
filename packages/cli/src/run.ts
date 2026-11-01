@@ -5,7 +5,6 @@ import {
   deriveFormat,
   deriveStrict,
   type OutputFormat,
-  parseConcurrency,
   parseFormat,
   parseLogLevel,
   parseMaxBytes,
@@ -241,10 +240,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
       "cap diff.md at n UTF-8 bytes, shortening sections to names and then dropping them least-important-first (GitHub rejects a comment body over 65536)",
       parseMaxBytes,
     )
+    .option("--parallel-scans", "scan the base and the head at once, even on a single CPU")
     .option(
-      "--concurrency <n>",
-      "how many of the two scans run at once; 1 runs the base and then the head (default: 2, or 1 on a single CPU)",
-      parseConcurrency,
+      "--no-parallel-scans",
+      "scan the base and then the head, which uses less memory (default: at once, unless on a single CPU)",
     )
     .option("--config <path>", "config file path", parsePath)
     .action(
@@ -258,7 +257,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
           failOn?: string[]
           compact?: boolean
           maxBytes?: number
-          concurrency?: number
+          parallelScans?: boolean
           config?: string
         },
       ) =>
@@ -277,7 +276,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
                   : undefined,
               compact: cmdOptions.compact,
               maxBytes: cmdOptions.maxBytes,
-              concurrency: cmdOptions.concurrency,
+              parallelScans: cmdOptions.parallelScans,
               logLevel: logLevel(),
               configPath: resolveConfigPath(cmdOptions.config, env),
             }),
