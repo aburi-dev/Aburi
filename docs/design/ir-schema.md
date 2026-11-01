@@ -386,7 +386,7 @@ The mark says the Symbol is test code, and nothing about how it was analysed: a 
 
 ### 5.8 `middleware`
 
-The middleware a framework registration hands its handler to, in the order it runs, as the framework plugin names them ([`lang-plugin.md`](./lang-plugin.md) §5.2.4). `router.get("/users", requireAdmin, validate(query), listUsers)` carries `["requireAdmin", "validate(query)"]`.
+The middleware a framework registration hands its handler to, in the order it runs, as the framework plugin names them ([`lang-plugin.md`](./lang-plugin.md) §5.2.5). `router.get("/users", requireAdmin, validate(query), listUsers)` carries `["requireAdmin", "validate(query)"]`.
 
 It exists because a registration's middleware is neither a rule nor an effect, and is not a call made from the registration's body, so before it the only axis it moved was `syntax`: a route that lost its authorization check was reported as a reformat. The `logic` fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1), so adding, removing or reordering one is a logic change, and the diff names which ([`diff-algorithm.md`](./diff-algorithm.md) §5.6).
 

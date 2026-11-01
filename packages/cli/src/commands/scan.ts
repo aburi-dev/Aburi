@@ -79,6 +79,7 @@ export interface ScanOptions {
   strict?: boolean
   lsp?: boolean
   logLevel?: LogLevel
+  log?: (line: string) => void
   incidents?: {
     warn: WarnFn
     label?: string
@@ -115,7 +116,10 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const command = options.command ?? "scan"
   const outputDir = resolveOutputDir(cwd, options.outputDir, config.output?.dir)
   await createOutputDir(command, outputDir)
-  const logger = createLogger(options.logLevel === undefined ? {} : { minimum: options.logLevel })
+  const logger = createLogger({
+    ...(options.logLevel === undefined ? {} : { minimum: options.logLevel }),
+    ...(options.log === undefined ? {} : { write: options.log }),
+  })
   let scanResult: ScanResult
   try {
     scanResult = await scan({

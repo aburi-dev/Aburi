@@ -22,6 +22,7 @@ import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
+import type { ImportOrigins } from "./import-origins"
 import { normalizeCandidateStrings, normalizeImportEdge } from "./normalize"
 import { type ClassifyTimeoutEvent, type ParseTimeoutEvent, startParseDeadline } from "./timeout"
 import type { VocabCheck } from "./vocab"
@@ -63,6 +64,7 @@ export interface FilePipelineInput {
   log: Logger
   treeReleaseFailures: TreeReleaseFailure[]
   vocab: VocabCheck
+  origins?: ImportOrigins
 }
 
 export interface TreeReleaseFailure {
@@ -102,28 +104,37 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
   const timeoutEvents: ClassifyTimeoutEvent[] = []
 
   try {
-    const imports = parseResult.imports.map(normalizeImportEdge)
+    const writtenImports = parseResult.imports.map(normalizeImportEdge)
 
     if (parseResult.tree === null || parseErrors.some((error) => error.recoverable === false)) {
-      return { kind: "parse-failed", path: file.path, parseErrors, imports }
+      return { kind: "parse-failed", path: file.path, parseErrors, imports: writtenImports }
     }
 
     if (deadline.expired()) return abandonedFile()
 
     const extractCtx: ExtractionContext = { file, registry, config }
-    const candidates = language.extractSymbols(parseResult.tree, extractCtx)
+    const candidates = language
+      .extractSymbols(parseResult.tree, extractCtx)
+      .map(normalizeCandidateStrings)
     if (deadline.expired()) return abandonedFile()
+
+    const origins = input.origins
+    // Which importer pays for a barrel's parse would depend on discovery order.
+    const imports =
+      origins === undefined || frameworks.length === 0
+        ? writtenImports
+        : await deadline.excluding(() => origins.attach(file, writtenImports, candidates))
 
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
-    for (const raw of candidates) {
+    for (const written of candidates) {
       if (deadline.expired()) return abandonedFile()
 
       const { candidate, confidence, extKindBy, middleware } = mergeFrameworkClassification(
-        normalizeCandidateStrings(raw),
+        written,
         frameworks,
         frameworkCtx,
         language.manifest.name,
@@ -212,7 +223,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
   }
 }
 
-function releaseParsedTree(
+export function releaseParsedTree(
   language: LanguagePlugin,
   tree: ParsedTree,
   file: SourceFile,
