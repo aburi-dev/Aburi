@@ -48,13 +48,6 @@ contains, and posts the report as a comment it rewrites on every push. Its gate
 (`removed,dropped-toggled:to-dropped:>10`) turns the check red when a symbol disappears or
 bodies are emptied in bulk.
 
-This repository calls no Prisma, Drizzle, tRPC or NestJS, so the self-run's report never shows an
-effect. CI covers them instead:
-[`effects-coverage.test.ts`](packages/cli/test/e2e/effects-coverage.test.ts) scans a fixture that
-calls into every shipped effects plugin, diffs one edit per plugin, and compares the effects each
-attributes with a recorded list, so a change in what a plugin attributes fails until that list is
-updated.
-
 From a fork, that run's token is read-only and cannot post, so a third workflow does it:
 [`aburi-comment.yml`](.github/workflows/aburi-comment.yml) picks the report up from the
 `aburi-diff` artifact afterwards and comments with this repository's own token. It posts no
@@ -64,6 +57,13 @@ Aburi check finishes, and if it never arrives, the report is still that artifact
 The job has no bypass switch: a tripped gate stays red for that commit. Say in the pull
 request why the removal is deliberate — merging past a red Aburi check is then a
 maintainer's call, and the design docs are what the argument is made against.
+
+The repository's own `aburi.json` loads no effects plugin, so the self-run's report never shows an
+effect. The test suite pins them instead:
+[`effects-coverage.test.ts`](packages/cli/test/e2e/effects-coverage.test.ts) scans a fixture that
+calls the libraries the effects plugins model, diffs one edit per plugin, and compares what each
+plugin attributes with a recorded list, so a change in what a plugin attributes fails until that
+list is updated.
 
 Two things about this repository's own dogfooding are worth knowing before they surprise
 you:

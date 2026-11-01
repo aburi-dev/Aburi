@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { diffIRs } from "@aburi/test-harness"
+import { editFile } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { evaluateFailOn, parseFailOn } from "../../src"
 import { scanFixture, useFixtureCheckout } from "./project"
@@ -18,20 +19,12 @@ describe("e2e diff — logger.service.ts moved under common/logging/", () => {
     await writeFile(newPath, original, "utf8")
     await rm(oldPath)
 
-    for (const importer of [
-      resolve(fixture.root, "src/app.module.ts"),
-      resolve(fixture.root, "src/billing/billing.service.ts"),
-    ]) {
-      const source = await readFile(importer, "utf8")
-      const rewritten = source.replace(
-        /["'](.+?)common\/logger\.service["']/g,
-        (_match, prefix) => `"${prefix}common/logging/logger.service"`,
+    for (const importer of ["src/app.module.ts", "src/billing/billing.service.ts"]) {
+      await editFile(
+        resolve(fixture.root, importer),
+        'common/logger.service"',
+        'common/logging/logger.service"',
       )
-      expect(
-        rewritten,
-        `import rewrite must match a common/logger.service ref in ${importer}`,
-      ).not.toBe(source)
-      await writeFile(importer, rewritten, "utf8")
     }
 
     const headIR = (await scanFixture(fixture.root)).ir
