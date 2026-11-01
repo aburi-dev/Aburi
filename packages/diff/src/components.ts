@@ -1,4 +1,10 @@
-import { compareBy, compareCodeUnit, serializeCanonical, stringArraysEqual } from "@aburi/core"
+import {
+  buildComponentAttribution,
+  compareBy,
+  compareCodeUnit,
+  serializeCanonical,
+  stringArraysEqual,
+} from "@aburi/core"
 import type {
   Component,
   ComponentDiff,
@@ -62,6 +68,8 @@ export function diffComponents(
 export interface DependencySideView {
   symbolFiles: ReadonlyMap<DependencyEndpoint, RelativePath>
   lostFiles: ReadonlyMap<RelativePath, SkipReason>
+  /** The skipped files each Component holds, by the document's own `components[]`. */
+  componentLostFiles: ReadonlyMap<DependencyEndpoint, readonly DiffSkippedFile[]>
 }
 
 export interface RenameDirections {
@@ -130,17 +138,38 @@ export function dependencySideView(ir: IR): DependencySideView {
   const symbolFiles = new Map<DependencyEndpoint, RelativePath>()
   for (const symbol of ir.symbols) symbolFiles.set(symbol.id, symbol.source.file)
   const lostFiles = new Map<RelativePath, SkipReason>()
-  for (const file of ir.stats.skippedFiles ?? []) lostFiles.set(file.path, file.reason)
-  return { symbolFiles, lostFiles }
+  const componentLostFiles = new Map<DependencyEndpoint, DiffSkippedFile[]>()
+  const attribute = buildComponentAttribution(ir.components)
+  for (const { path, reason } of ir.stats.skippedFiles ?? []) {
+    lostFiles.set(path, reason)
+    const owner = attribute(path)
+    if (owner === null) continue
+    const held = componentLostFiles.get(owner)
+    if (held === undefined) componentLostFiles.set(owner, [{ path, reason }])
+    else held.push({ path, reason })
+  }
+  return { symbolFiles, lostFiles, componentLostFiles }
 }
 
 export function diffDependencies(
   base: readonly Dependency[],
   head: readonly Dependency[],
-  sides: { base: DependencySideView; head: DependencySideView; renames: RenameDirections },
+  sides: LossSides,
+  pairedHeadIds: ReadonlyMap<DependencyEndpoint, DependencyEndpoint>,
 ): DependencyDiff & { unknown: DependencyUnknown[] } {
+  const asHeadEndpoint = (endpoint: DependencyEndpoint) => pairedHeadIds.get(endpoint) ?? endpoint
   const baseKeys = new Map<string, Dependency>()
-  for (const dependency of base) baseKeys.set(dependencyKey(dependency), dependency)
+  for (const dependency of base) {
+    const read = {
+      ...dependency,
+      from: asHeadEndpoint(dependency.from),
+      to: asHeadEndpoint(dependency.to),
+    }
+    const key = dependencyKey(read)
+    const earlier = baseKeys.get(key)
+    if (earlier !== undefined) throw translatedCollision(earlier, dependency, read)
+    baseKeys.set(key, dependency)
+  }
   const headKeys = new Map<string, Dependency>()
   for (const dependency of head) headKeys.set(dependencyKey(dependency), dependency)
   const added: Dependency[] = []
@@ -185,9 +214,25 @@ function endpointsLostBy(
     if (lost === undefined) continue
     byPath.set(lost.path, lost.reason)
   }
+  // A Component edge stands for the imports of the files of `from`, so any of them could have held it.
+  for (const lost of sides[absentFrom].componentLostFiles.get(dep.from) ?? []) {
+    byPath.set(lost.path, lost.reason)
+  }
   return [...byPath.entries()]
     .map(([path, reason]) => ({ path, reason }))
     .sort(compareBy((file) => file.path))
+}
+
+// The integrity checker would refuse an endpoint that names no declared Symbol, but `buildDiff` does
+// not run it, and such an endpoint can carry the head id another base edge is translated to.
+function translatedCollision(first: Dependency, second: Dependency, read: Dependency): DiffError {
+  const shown = showDependencyIdentity(identityOf(read))
+  return new DiffError(
+    `baseIR.dependencies holds ${showDependencyIdentity(identityOf(first))} and ` +
+      `${showDependencyIdentity(identityOf(second))}, which both read as ${shown} under the ` +
+      "head ids the Symbol pairing gave their endpoints; one of them would drop out of the diff.",
+    { code: "ir-identity-collision", value: shown },
+  )
 }
 
 export const DEPENDENCY_IDENTITY_FIELDS = ["from", "to", "via"] as const
@@ -196,8 +241,16 @@ export function dependencyIdentity(parts: readonly string[]): string {
   return parts.join("::")
 }
 
+export function showDependencyIdentity(parts: readonly string[]): string {
+  return `(${parts.join(", ")})`
+}
+
+function identityOf(dependency: Dependency): string[] {
+  return DEPENDENCY_IDENTITY_FIELDS.map((field) => dependency[field])
+}
+
 function dependencyKey(dependency: Dependency): string {
-  return dependencyIdentity(DEPENDENCY_IDENTITY_FIELDS.map((field) => dependency[field]))
+  return dependencyIdentity(identityOf(dependency))
 }
 
 const compareDependencies = compareBy(dependencyKey)

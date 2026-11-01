@@ -143,8 +143,9 @@ Contracts to know:
   `tree: null`. The file is withdrawn and recorded as skipped, and the run still
   exits `0`. An unusable source file tells you about your repository, not about
   a failure.
-- **Throw only when your plugin has a bug.** A throw withdraws the file *and*
-  exits the scan `3`.
+- **Throw only when your plugin has a bug or cannot run with the options it was
+  given ([Options](#options)).** A throw withdraws the file *and* exits the scan
+  `3`.
 
 ::: details The exact contract for refusing and throwing
 `recoverable: false` must be the literal `false`; omitting the key means
@@ -269,8 +270,11 @@ Contracts:
   (`lastQnameSegment(symbol.name)`), `declaratorValue` returns that initializer
   read through `as`, `satisfies`, `!` and parentheses. It returns `null` for a
   name with no initializer of its own (`declare const Ctx: Context<string>`,
-  `let x`) and for one a destructuring pattern binds. All three come from
-  `@aburi/core`. Searching the whole statement for its first call finds one
+  `let x`) and for one a destructuring pattern binds. A default export written
+  as a call handed a function (`export default memo(function Row() { … })`) is
+  a `const` named `<default>` whose `fullNode` is the `export_statement`; for it
+  the same call returns the statement's value, read through the same wrappers.
+  All three come from `@aburi/core`. Searching the whole statement for its first call finds one
   that may belong to another name.
 - An optional `symbolDropHint(symbol, ctx)` drops a Symbol the way a language
   plugin's does. Every framework plugin is asked, not only the one that
@@ -425,6 +429,30 @@ the run.
 
 Your module must export the plugin as a default export, a `plugin` export, or
 any top-level export whose value has a `manifest` field. The first hit wins.
+
+## Options
+
+Users configure your plugin under `pluginOptions`, keyed by your manifest
+`name`:
+
+```jsonc
+{
+  "effects": ["@myorg/aburi-effects"],
+  "pluginOptions": {
+    "effects-myorg": { "queues": ["billing", "mail"] }
+  }
+}
+```
+
+Aburi does not look inside the value: the config schema accepts any JSON value
+there. The whole config is on the `ctx` of each per-file hook (`extractSymbols`,
+`walkBody` and `symbolDropHint` of a language plugin, `classifySymbol` and
+`symbolDropHint` of a framework plugin, `classify` of an effects plugin), so
+read your key as `ctx.config.pluginOptions?.["effects-myorg"]`, check its shape
+before you rely on it, and document the options in your README. A value you
+cannot use is a fault in the plugin set rather than in a file: throw an error
+whose `code` is `scan-plugin-misconfigured`, and the run ends with exit `3`
+instead of recording the same failure against every file.
 
 ## Testing
 

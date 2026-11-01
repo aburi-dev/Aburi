@@ -202,9 +202,6 @@ The monorepo overview.
 
 ### 4.1 Structure
 
-The example draws Component edges, which the IR can carry and `aburi scan` does not write yet
-(§4.2): against a scanned workspace the graph holds the nodes alone.
-
 ````md
 # Workspace
 
@@ -299,8 +296,10 @@ edge, ``- `<from>` → `<to>` (via `<via>`)`` in edge order, or
 with no edge too, because a reader looking at a block that failed to render
 cannot otherwise tell whether it held any edge; every node is a Components
 table row or an endpoint named in the list. The sentence says what the IR
-records, not that the components are independent: `aburi scan` writes Symbol
-edges only. A workspace with no component and no Component edge has no
+records, not that the components are independent: `aburi scan` draws a
+Component edge from an import alone ([`ir-schema.md`](./ir-schema.md) §11.3),
+so two components that reach each other only through a call matched by name
+have no edge. A workspace with no component and no Component edge has no
 diagram, and the section is that sentence alone.
 
 ### 4.3 generation metadata
@@ -521,6 +520,7 @@ The output of `aburi diff`. Its primary use case is pasting into PR comments.
 ## 💧 Dropped changes
 ## 🎚 Confidence changes
 ## 🎨 Syntax-only changes
+## 🧪 Test files
 ```
 
 Each ref of the title is in a span (§3.4.2), unless it is a commit SHA, which is written bare: hex
@@ -531,13 +531,28 @@ The section order is fixed, **highest importance → lowest**, and this list is 
 sections from the bottom of it, and MP13 is stated against it, so a list that has drifted from the
 projection is a size cap that drops the wrong thing.
 
-Three sections — **Moved**, **Dropped changes** and **Syntax-only changes** — are folded in
-`<details>`. They are not contiguous: Component changes and Dependency changes sit between Moved
-and Dropped changes, unfolded, and Confidence changes between Dropped changes and Syntax-only
-changes. Moved + Changed is not folded either, because it carries semantic
+Four sections — **Moved**, **Dropped changes**, **Syntax-only changes** and **Test files** — are
+folded in `<details>`. They are not contiguous: Component changes and Dependency changes sit
+between Moved and Dropped changes, unfolded, and Confidence changes between Dropped changes and
+Syntax-only changes. Moved + Changed is not folded either, because it carries semantic
 change worth reading.
 
+A change whose Symbol carries `inTestFile` ([`ir-schema.md`](./ir-schema.md) §5.7) — the head's
+for a pair, as the head's file is the one the entry names — is in **Test files** and not in the
+sections above it, and every other change is in those sections and not in **Test files**, so a pull
+request that only edits fixtures reads as one. A Slice that reaches beyond test code still draws its
+test members (§6.2). An edge carries no mark, but a Symbol-level edge comes or goes only as its
+caller's calls change, so an added or removed one whose `from` is the Symbol of a change in **Test
+files** — either id, for a pair — is listed there and not in Dependency changes. Every other edge,
+and every Component change, stays where the diff puts it.
+
 The `· ?N unknown` suffix on the Summary line appears only when `summary.unknown` is non-zero, so the line a reviewer skims on every PR does not carry a permanent `?0`. It qualifies the counts beside it: added and removed are both smaller than the truth by that much.
+
+The line ends `· N in test files` when N of the diff's Symbol changes, dropped changes included, are
+test code. The counts before it still count every change, test code too, and the fold's
+`<summary>` counts the same N; a diff with none carries no `· 0 in test files`.
+
+`-N removed` reads `-N removed (M duplicates)` when `summary.removedDuplicates` is non-zero, `(1 duplicate)` for one: M of the N removals duplicated a head Symbol that holds their body ([`diff-algorithm.md`](./diff-algorithm.md) §3.5.2), and `--fail-on removed` counts only the other N−M. The CLI's glyph line (`+A -R ~C ↔M ⤴MC`) is left as it is: it is read by scripts, and `-R` stays the count of `removed` entries.
 
 ### 6.2 Display form of each section
 
@@ -563,6 +578,8 @@ Entries with `status: "changed"` or `"moved+changed"` and `delta.apiChanged: tru
 The rows for a single value — `signature.async`, `signature.generator`, `signature.typeParameters`, `component` and `visibility` — set the base value before the head one, read off the entry's `before` and `after` as the confidence row's are, because the flag alone says only that something moved and the reader's next question is from what to what. `async` and `generator` read `false` / `true`, or `none` on a side that has no signature, which never said either; no type parameters, and a Symbol outside every Component, read `none`; type parameters are spelled as the signature line leads with them (§5.5).
 
 Every decorator row prints the decorator's `raw`, arguments and receiver included, as the non-delta list does (§5.4), and falls back to `qualifier.name` when `raw` is absent. A modified decorator differs from its base in its arguments or its receiver, the two things the diff compares beside the name ([`diff-algorithm.md`](./diff-algorithm.md) §5.2.2), and `raw` spells both, so its row sets the base's `raw` before the head's wherever the base element can be told (Delta rows, below).
+
+The names the module exports the declaration under ([`diff-algorithm.md`](./diff-algorithm.md) §5.5) follow the decorator rows, as ``- export name added: `DELETE` `` and ``- export name removed: `GET` ``, each listing the names its bucket holds. They explain the API flag, since the names are an `api` input ([`fingerprint.md`](./fingerprint.md) §3.8). A renamed pair exported under its own name alone loses the base's name and gains the head's, which the name row already says, so a pair whose `removed` is exactly the base's name and whose `added` is exactly the head's writes neither row, and the name row alone decides whether the API flag is explained. `export function isAdminUser` moved and renamed `canAdministerSite` reads ``- name: `isAdminUser` → `canAdministerSite` `` and nothing more, and a namespace member whose owner alone was renamed keeps its note.
 
 A change whose `delta.confidenceChanged` is also true adds a row such as ``- confidence: `high` → `medium` ``, base side first, in whichever section the entry lands. This holds for every section that renders a delta body, Moved + Changed included. A fingerprint flag with no field-level row to explain it gets `- <axis> fingerprint changed; no field-level detail was recorded`; the component and confidence rows do not count as that explanation, since no fingerprint reads either, so a syntax change moved into Confidence changes still says it happened. The name row of a pair whose name changed (see Moved + Changed below) explains the API flag only when the last segment of the name changed, since that segment is all of the name the API fingerprint reads ([`fingerprint.md`](./fingerprint.md) §3.3): `Repo.save` → `UserRepo.save` still gets the note.
 
@@ -622,6 +639,16 @@ Full symbol rendering (same as §5.2), less the fingerprint line (§12.7):
 **Effects**:
 - db.write: `prisma.invoice.update` (L120) [effects-prisma]
 ```
+
+A removed duplicate of a head Symbol (`duplicateOf`, [`diff-algorithm.md`](./diff-algorithm.md) §3.5.2) names the survivor under its **File** line, so the entry does not read as deleted behaviour:
+
+```md
+### `makeEmptyIR` *(function)*
+**File**: `packages/cli/test/diff-fs.test.ts:14`
+**Duplicate of**: `ts:packages/cli/test/fixtures.ts#emptyIR`, which holds the same body
+```
+
+The survivor is named by its id, which carries its file: the diff records only the id, and a survivor nothing else changed has no entry of its own to take a line from.
 
 #### ❔ Unknown
 
@@ -752,9 +779,10 @@ component whose only difference is in a field this version of the projection has
 A Symbol end is written by its name and file, the way a moved Symbol's route is, rather than by its
 id: the id repeats the language on every end, and an edge between two Symbols of one file, the
 common case for a call, wrote the same path twice. Such an edge names the file once, after both
-names. A Component end is written by its id.
+names. A Component end is written by its id. An added or removed edge whose caller is a change of
+test code is listed in **Test files** instead (§6.1).
 
-The Unknown group is not split by level the way the added and removed groups are. Only a Symbol endpoint has a file to lose ([`diff-algorithm.md`](./diff-algorithm.md) §6.2.1), so every entry in it is a symbol-level edge by construction. Each line names the file and the reason after the edge, because that is what decides the reviewer's next move — `parse-timeout` says re-run, `parse-failed` and `extraction-failed` say fix something.
+The Unknown group is not split by level the way the added and removed groups are: what a reviewer acts on is the file each line names, not the level. A symbol-level edge names the file of an endpoint, and a Component-level one every file of the Component it leaves that the other revision skipped ([`diff-algorithm.md`](./diff-algorithm.md) §6.2.1). Each line names the file and the reason after the edge, because that is what decides the reviewer's next move — `parse-timeout` says re-run, `parse-failed` and `extraction-failed` say fix something.
 
 #### 💧 Dropped changes (folded)
 
@@ -796,6 +824,42 @@ The Unknown group is not split by level the way the added and removed groups are
 </details>
 ```
 
+#### 🧪 Test files (folded)
+
+The changes of test code, by name, grouped in the order of the sections above:
+
+```md
+<details>
+<summary>3 symbols in test files</summary>
+
+**2 added**
+- `documentWith` *(function)* — `packages/cli/test/ir-documents.ts:24`
+- `scratch` *(const)* — `packages/cli/test/serializer-refusal.test.ts:31`
+
+**1 moved**
+- `mock` *(const)* — `packages/cli/test/serializer.test.ts:21` (from `packages/cli/test/serializer-refusal.test.ts`)
+
+**1 dependency added**
+- `documentWith` in `packages/cli/test/ir-documents.ts` → `makeIR` in `packages/test-support/src/ir.ts` (via `call`)
+
+</details>
+```
+
+Each Symbol row is the names-only row of the section the change would otherwise be in (§6.4), so a
+reviewer who does open the fold finds each Symbol where its full entry would have been. The edges
+of those Symbols (§6.1) follow the moved groups as `dependency added` and `dependency removed`, in
+the row form of Dependency changes. A moved
+pair is listed once, under moved + changed or moved, where the sections above list a moved pair
+with a changed body in both Moved + Changed and the section of its delta. A group counts one in
+the singular (`1 API change`, `1 added`), and so does the fold's summary (`1 symbol in a test file`).
+
+The Slice View leaves out a Slice whose members are all test code, and the singleton of a test
+Symbol, so a fixture that calls a fixture draws no call tree. A Slice that reaches from test code
+into the code under test is drawn whole, test members included: the slice is about the code it
+reaches, and its calls are the reason it is one.
+
+The section is the last, so the size cap (§6.4) omits it before any other.
+
 ### 6.3 One-line summary (CLI stdout)
 
 When `aburi diff` runs, a one-line summary is printed to stdout:
@@ -829,7 +893,8 @@ heading, a line saying the entries are short, and one row per Symbol,
 - `handleInvoice` *(function)* — `src/billing/invoice.ts:42`
 ```
 
-(the confidence badge follows the kind as on the heading; Unknown adds the side and the skip reason,
+(the confidence badge follows the kind as on the heading; Removed adds `` (duplicate of `<id>`) `` to
+a removed duplicate; Unknown adds the side and the skip reason,
 Moved + Changed where it moved from, Confidence changes the two values, `` (`high` → `medium`) ``;
 a pair whose name changed carries its Moved + Changed row's ``(from …)`` in API changes, Logic
 changes and Confidence changes too, ahead of the two values, so its old name stays in whichever of
@@ -1057,9 +1122,16 @@ All Markdown projection output is **English, with fixed wording**.
 | MP17a | `modified` rule, effect, call, decorator or input whose entry's `before` holds the base element it was paired with, differing in a compared field | That field reads `<base> → <head>` in its place: ``loop (`for` → `while`)``, `[effects-drizzle → effects-prisma]`, an origin `(L5) → [propagated from …]`, ``resolved: `<id>` → none``, `` `@nest.Post()` → `@Post()` ``, `` `limit: number` → `limit?: number` ``; a confidence as `⚠ medium (was high)`, or `(was ⚠ medium)` when it rose to `high`. A field the diff does not compare (`line`, `derivedBy`) gets no base value, and neither does a field whose base value reads like its head value. A base element under another key, in `removed`, or equal to the head element is not taken for the paired one, nor are the base elements equal to an unchanged head element while there are no more of them than of such head elements |
 | MP17b | `modified` element with several candidate bases: several `modified` elements under one key, or base elements equal but for their line | A field the candidates disagree on, or one of them shares with the head element, shows the head value alone; a field they agree on and differ from the head element on still gets their value |
 | MP17c | diff entry whose delta flags `asyncChanged`, `generatorChanged`, `typeParametersChanged`, `componentChanged` or `visibilityChanged` | One row per flag with the base value before the head one: `- signature.async: false → true`, ``- signature.typeParameters: none → `<T>` ``, ``- component: `billing` → none``, ``- visibility: `internal` → `public` `` |
+| MP17d | diff entry whose `delta.exportedAs` holds an added or a removed name | ``- export name added: `<name>`, …`` and ``- export name removed: `<name>`, …``, one row per bucket after the decorator rows; either row explains the API flag, so no `fingerprint changed` note follows. An empty bucket writes no row. A renamed pair whose `removed` is exactly the base's name and whose `added` is exactly the head's writes neither row, and keeps the note MP11b gives a new owner alone; one that also gained or lost another name writes both rows, the two own names included |
+| MP17e | diff with a `removed` entry whose `duplicateOf` names a head Symbol, and `summary.removedDuplicates` 1 | The entry carries ``**Duplicate of**: `<id>`, which holds the same body`` under its **File** line, and its names-only row ends `` (duplicate of `<id>`) ``; the Summary line reads `-1 removed (1 duplicate)`, `(2 duplicates)` for two, and the glyph line `-1`. A `duplicateOf` of `null`, an absent one, and a `removedDuplicates` of 0 or absent add nothing |
 | MP18 | diff whose `dependencies.added` holds a call edge between two Symbols of one file, one between two files, and one from a Component to a Symbol | The first reads `` `a` → `b` in `<file>` (via `call`) ``, the second `` `a` in `<file>` → `b` in `<file>` (via `call`) ``, the third `` `billing` → `b` in `<file>` (via `import`) ``; no Symbol id appears |
 | MP19 | diff with an added, a removed and an unknown Symbol, each with a non-zero fingerprint | No entry carries a `<sub>` fingerprint line; the same Symbol on its component page does |
 | MP20 | Symbol block whose calls are `log` (L3), `svc.save` (L5), `log` (L9) and `log` (L9) | **Calls** reads ``- `log` (L3, L9)`` then ``- `svc.save` (L5)`` |
+| MP21 | diff with an added Symbol outside test files and, inside them, two added, one removed, one API, one logic and one syntax-only change, a moved + changed and a moved pair | `## ➕ Added` holds only the first; `## 🧪 Test files` is last, folded under `8 symbols in test files`, with one bold group per section in §6.1's order, each row its names-only row, the moved + changed pair under that group alone; the Summary line ends `· 8 in test files` |
+| MP21a | diff whose one pair moved out of a test file, and one whose pair moved into one | The first in `## 🔀 Moved`, the second in `## 🧪 Test files`: the head decides |
+| MP21b | diff with a Slice of two test Symbols, a test singleton, and a Slice from a test Symbol into code under test | No Slice View for the first two; the third drawn with its test member |
+| MP21c | diff with one change outside test files and ten inside, projected with a budget that holds the first and the note but not the fold | The note names `🧪 Test files` as the one section omitted |
+| MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
 
 ## 12. Design decisions
 

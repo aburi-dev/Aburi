@@ -14,12 +14,14 @@ export {
   type DetectComponentsOptions,
   detectComponents,
 } from "./component"
+export { NPM_MANIFEST, readWorkspacePackages, type WorkspacePackage } from "./component-manifest"
 export {
   CoreError,
   type CoreErrorCode,
   type CoreErrorDetail,
   type IntegrityViolation,
 } from "./errors"
+export { type ExportEvidence, exportNames } from "./export-names"
 export {
   apiFingerprint,
   type ComputeFingerprintInput,
@@ -131,6 +133,7 @@ export {
   scan,
   writeCanonicalIR,
 } from "./scan/scan"
+export { DEFAULT_TEST_FILES } from "./scan/test-files"
 export {
   CLASSIFY_TIMEOUT_MAX_MS,
   CLASSIFY_TIMEOUT_MIN_MS,
