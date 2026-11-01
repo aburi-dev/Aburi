@@ -55,3 +55,13 @@ jobs:
 
       - name: Test
         run: pnpm test ${{ env.TURBO_ARGS }}
+
+      # A process that fails to initialise (0xC0000142) prints nothing, and from then on no new process on
+      # the runner starts. If this step can still start, its memory figures and System log show what ran out.
+      - name: Windows resources after a failure
+        if: failure() && runner.os == 'Windows'
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Format-List TotalVisibleMemorySize, FreePhysicalMemory, TotalVirtualMemorySize, FreeVirtualMemory
+          Get-CimInstance Win32_PageFileUsage | Format-List Name, AllocatedBaseSize, CurrentUsage, PeakUsage
+          Get-WinEvent -MaxEvents 50 -ErrorAction SilentlyContinue -FilterHashtable @{ LogName = 'System'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-1) } | Format-List TimeCreated, ProviderName, Id, Message
+          Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 15 Count, Name | Format-Table -AutoSize
