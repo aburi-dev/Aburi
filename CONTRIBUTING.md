@@ -68,6 +68,13 @@ The job has no bypass switch: a tripped gate stays red for that commit. Say in t
 request why the removal is deliberate — merging past a red Aburi check is then a
 maintainer's call, and the design docs are what the argument is made against.
 
+The repository's own `aburi.json` loads no effects plugin, so the self-run's report never shows an
+effect. The test suite pins them instead:
+[`effects-coverage.test.ts`](packages/cli/test/e2e/effects-coverage.test.ts) scans a fixture that
+calls the libraries the effects plugins model, diffs one edit per plugin, and compares what each
+plugin attributes with a recorded list, so a change in what a plugin attributes fails until that
+list is updated.
+
 Two things about this repository's own dogfooding are worth knowing before they surprise
 you:
 
