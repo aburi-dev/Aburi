@@ -22,6 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # Two tasks at a time: Windows runners now and then fail to start a process (0xC0000142), which is
+      # usually blamed on many starting at once. All logs, streamed, so a dying run shows what was running.
+      TURBO_ARGS: ${{ startsWith(matrix.os, 'windows') && '--concurrency=2 --output-logs=full --log-order=stream' || '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -44,10 +48,10 @@ jobs:
         run: pnpm hygiene
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: pnpm typecheck ${{ env.TURBO_ARGS }}
 
       - name: Build
-        run: pnpm build
+        run: pnpm build ${{ env.TURBO_ARGS }}
 
       - name: Test
-        run: pnpm test
+        run: pnpm test ${{ env.TURBO_ARGS }}
