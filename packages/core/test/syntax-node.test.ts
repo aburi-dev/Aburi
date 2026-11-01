@@ -8,8 +8,10 @@ import {
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
+  receiverChain,
   type SyntaxNode,
   unwrapValue,
+  writtenChildren,
 } from "../src/syntax-node"
 
 function node(overrides: Partial<SyntaxNode> = {}): SyntaxNode {
@@ -154,6 +156,56 @@ describe("calleeName", () => {
     ["an identifier with no text", identifier("")],
   ])("returns null for %s", (_label, callee) => {
     expect(calleeName(callWith(callee))).toBeNull()
+  })
+})
+
+describe("receiverChain", () => {
+  const wrapped = (inner: SyntaxNode) =>
+    node({
+      type: "parenthesized_expression",
+      namedChildren: [node({ type: "comment", text: "/* c */" }), inner],
+    })
+
+  it.each([
+    ["a bare name", identifier("t"), [], "t"],
+    [
+      "each property read and method called, outermost first",
+      call(member(member(identifier("t"), "procedure"), "use")),
+      ["use", "procedure"],
+      "t",
+    ],
+    [
+      "a chain behind wrappers and an index",
+      member(withFields("subscript_expression", { object: wrapped(identifier("routers")) }), "v1"),
+      ["v1"],
+      "routers",
+    ],
+    ["a chain from this", member(node({ type: "this", text: "this" }), "app"), ["app"], "this"],
+    [
+      "a root that is not a name as computed",
+      member(node({ type: "new_expression", text: "new Lib()" }), "procedure"),
+      ["procedure"],
+      "<computed>",
+    ],
+  ])("reads %s", (_label, receiver, path, root) => {
+    expect(receiverChain(receiver)).toEqual({ path, root })
+  })
+})
+
+describe("writtenChildren", () => {
+  it("keeps the named children as written, leaving comments out", () => {
+    const first = identifier("a")
+    const second = identifier("b")
+    const list = node({
+      type: "arguments",
+      namedChildren: [first, node({ type: "comment", text: "// c" }), null, second],
+    })
+
+    expect(writtenChildren(list)).toEqual([first, second])
+  })
+
+  it("reads nothing from no node", () => {
+    expect(writtenChildren(null)).toEqual([])
   })
 })
 

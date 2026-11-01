@@ -39,10 +39,10 @@ terminals like `query` and `subscribe` from matching unrelated code, and the
 prefix match keeps lookalikes (`@trpc/client-mock`, `@trpc/react-query-devtools`)
 out.
 
-### Server-side routers are out of scope
+### Server-side routers belong to framework-trpc
 
-`t.router({...})` and `publicProcedure.input(...).query(resolver)` are **not**
-classified. A router definition is a Boundary, not a call that reaches the
+This plugin does **not** classify `t.router({...})` or
+`publicProcedure.input(...).query(resolver)`. A router definition is a Boundary, not a call that reaches the
 network, and per [`extension-vocab.md`](../../docs/design/extension-vocab.md)
 a `type: "effects"` plugin may not declare the `framework:trpc:*` extKinds that
 Boundary classification would need. That belongs to

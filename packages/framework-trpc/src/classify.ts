@@ -4,14 +4,16 @@ import {
   lastQnameSegment,
   type SyntaxNode,
   unwrapValue,
+  writtenChildren,
 } from "@aburi/core"
-import type {
-  FrameworkClassifyContext,
-  OpaqueAstNode,
-  SymbolCandidate,
-  SymbolClassification,
+import {
+  COMPUTED_TARGET_SEGMENT,
+  type FrameworkClassifyContext,
+  type OpaqueAstNode,
+  type SymbolCandidate,
+  type SymbolClassification,
 } from "@aburi/types"
-import { type Chain, readChain, writtenArguments } from "./chain"
+import { type Chain, readChain } from "./chain"
 import { TRPC_DERIVED_BY_PREFIX, type TrpcExtKind } from "./ext-kinds"
 import { hasTrpcServerImport } from "./imports"
 
@@ -23,9 +25,13 @@ const BUILDER_STEPS: ReadonlySet<string> = new Set(["use", "input", "output", "m
 const RESOLVER_TYPES: ReadonlySet<string> = new Set([
   "arrow_function",
   "function_expression",
+  "generator_function",
   "identifier",
   "member_expression",
+  "call_expression",
 ])
+// tRPC's documentation and create-t3-app name a base procedure `procedure` or `…Procedure`.
+const PROCEDURE_NAME = /(^p|P)rocedure$/
 
 export function classifyTrpcSymbol(
   symbol: SymbolCandidate<OpaqueAstNode>,
@@ -37,20 +43,28 @@ export function classifyTrpcSymbol(
   // `lastQnameSegment` throws on a broken qname; that is a language-plugin bug not to swallow.
   const initializer = declaratorValue(statement, lastQnameSegment(symbol.name))
   const chain = initializer === null ? null : readChain(initializer)
-  const role = chain === null ? null : roleOf(chain)
+  const importsTrpc = hasTrpcServerImport(ctx.imports)
+  const role = chain === null ? null : roleOf(chain, importsTrpc)
   if (chain === null || role === null) return null
   return {
     extKind: `${TRPC_DERIVED_BY_PREFIX}:${role}` satisfies TrpcExtKind,
     derivedBy: `${TRPC_DERIVED_BY_PREFIX}:${role}:${chain.name}`,
-    // The names are tRPC's conventions rather than its exports, so only the import makes them tRPC's.
-    confidence: hasTrpcServerImport(ctx.imports) ? "high" : "medium",
+    // Most of these names are tRPC's conventions rather than its exports, so only the import
+    // makes them tRPC's.
+    confidence: importsTrpc ? "high" : "medium",
   }
 }
 
-function roleOf(chain: Chain): TrpcRole | null {
+function roleOf(chain: Chain, importsTrpc: boolean): TrpcRole | null {
   const { call, leaf } = chain
-  if (call === null) return leaf === "procedure" ? "base-procedure" : null
-  const args = writtenArguments(call)
+  // `procedure` is a domain word as well (`form.procedure`), and a bare read says nothing more,
+  // so it is taken only off a plain name in the file that creates tRPC's instance.
+  if (call === null) {
+    const instanceRead =
+      leaf === "procedure" && chain.path.length === 0 && isInstanceName(chain.root)
+    return instanceRead && importsTrpc ? "base-procedure" : null
+  }
+  const args = argumentsOf(call)
   if (leaf === "create") return chain.root === "initTRPC" ? "instance" : null
   if (ROUTER_FACTORIES.has(leaf)) {
     const [only, ...rest] = args
@@ -66,7 +80,19 @@ function roleOf(chain: Chain): TrpcRole | null {
 }
 
 function buildsOnProcedure(chain: Chain): boolean {
-  return chain.path.includes("procedure") || /(^p|P)rocedure$/.test(chain.root)
+  const readOffRoot = chain.path.at(-1) === "procedure" && isInstanceName(chain.root)
+  return readOffRoot || PROCEDURE_NAME.test(chain.root)
+}
+
+// tRPC's instance is held under a plain name (`t`), never `this` or an expression.
+function isInstanceName(root: string): boolean {
+  return root !== "this" && root !== COMPUTED_TARGET_SEGMENT
+}
+
+// A tagged template's `arguments` is the template itself, which hands over no resolver.
+function argumentsOf(call: SyntaxNode): SyntaxNode[] {
+  const list = call.childForFieldName("arguments")
+  return list?.type === "arguments" ? writtenChildren(list) : []
 }
 
 function isResolver(args: readonly SyntaxNode[]): boolean {

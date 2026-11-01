@@ -17,14 +17,7 @@ describe("frameworkTrpcManifest", () => {
     })
   })
 
-  it("declares each extKind the classifier assigns, every one on a const", () => {
-    expect(frameworkTrpcManifest.provides.extKinds.map((e) => [e.id, e.baseKind])).toEqual([
-      ["framework:trpc:instance", "const"],
-      ["framework:trpc:router", "const"],
-      ["framework:trpc:procedure", "const"],
-      ["framework:trpc:base-procedure", "const"],
-      ["framework:trpc:middleware", "const"],
-    ])
+  it("declares each extKind the classifier assigns, in order and no other", () => {
     expect(frameworkTrpcManifest.provides.extKinds.map((e) => e.id)).toEqual([...TRPC_EXT_KINDS])
   })
 })

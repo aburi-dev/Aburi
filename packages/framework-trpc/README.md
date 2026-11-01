@@ -20,15 +20,20 @@ Every shape is a `const` whose own declarator holds it:
 | `const isAuthed = t.middleware(({ ctx, next }) => …)`, `middleware(fn)` | `framework:trpc:middleware` | `framework:trpc:middleware:t.middleware` |
 
 A procedure is a `query`, `mutation` or `subscription` handed its resolver — a
-function, or a name for one — on a chain built from a procedure: one that reads
-`.procedure` on the way (`t.procedure.query(…)`) or starts from a name ending
-in `Procedure` (`publicProcedure`, `protectedProcedure`), which is how tRPC's
+function, an async generator (tRPC v11's subscriptions), a name for one, or a
+call that returns one (`withCache(listUsers)`) — on a chain built from a
+procedure: one that reads `.procedure` straight off a plain name
+(`t.procedure.query(…)`) or starts from a name that is `procedure` or ends in
+`Procedure` (`publicProcedure`, `protectedProcedure`), which is how tRPC's
 documentation and create-t3-app name their base procedures. The chain is what
 tells `publicProcedure.query(resolve)` from `db.query(fn)` and from the client
 call `client.user.byId.query({ id })`. A base procedure is the same chain ending
 in `use`, `input`, `output`, `meta` or `concat` instead, or the bare
-`t.procedure`. The three procedure kinds share one extKind, as an Express
-route's methods do, and `derivedBy` names which one it is.
+`t.procedure`. That bare read is taken only off a plain name and only in a file
+that imports `@trpc/server`, the file that creates the instance: `procedure` is
+a domain word as well, and `form.procedure` reads the same. The three procedure
+kinds share one extKind, as an Express route's methods do, and `derivedBy` names
+which one it is.
 
 A router is `router` or `createTRPCRouter` handed one object literal, or
 `mergeRouters` handed the routers it merges; another library's
@@ -44,9 +49,10 @@ gives the same entry, and `t.procedure.use(timing).query(fn)` is
 `t.query`. The bare `t.procedure` is named the same way, `t.procedure`.
 
 Confidence is `high` when the file imports `@trpc/server` or one of its
-subpaths, type-only imports included, and `medium` otherwise. The names this
-plugin reads are tRPC's conventions rather than its exports, and the usual
-layout keeps the import in one file: create-t3-app's routers import
+subpaths, type-only imports included, and `medium` otherwise. Most of the
+names this plugin reads are tRPC's conventions rather than its exports
+(`initTRPC` is the exception), and the usual layout keeps the import in one
+file: create-t3-app's routers import
 `createTRPCRouter` and `publicProcedure` from `~/server/api/trpc`, so their
 routers and procedures are `medium`.
 
@@ -63,9 +69,11 @@ Not classified today:
   classify, and the resolver is in no Symbol either. The router itself is
   classified. Declare the procedure as a `const` and name it in the router to
   give it a Symbol.
-- A base procedure behind a name that does not end in `Procedure`
-  (`const base = t.procedure`, then `base.query(fn)`). The plugin reads one
+- What is built on a base procedure whose name is neither `procedure` nor ends
+  in `Procedure` (`const base = t.procedure`, then `base.query(fn)` or
+  `base.use(x)`). `base` itself is classified, but the plugin reads one
   declaration at a time, so it cannot see where `base` came from.
+- The bare `t.procedure` in a file that does not import `@trpc/server`.
 - A router or middleware factory under a name other than tRPC's
   (`const makeRouter = t.router`, then `makeRouter({ … })`), for the same reason.
 - `experimental_standaloneMiddleware`, `createCallerFactory(appRouter)` and
@@ -73,6 +81,13 @@ Not classified today:
 - A file that reaches `@trpc/server` only through CommonJS
   (`const { initTRPC } = require("@trpc/server")`): the import list carries no
   edge for a `require` call, so its shapes are `medium`.
+
+Classified though not tRPC's: the receiver's name is all a declaration shows,
+so another library's shapes under tRPC's names are read as tRPC's, at `medium`
+in a file that does not import `@trpc/server`. A ts-rest contract
+(`c.router({ getPost: … })`) and an oRPC router (`os.router({ ping })`) are
+routers, `app.middleware(handler)` is a middleware, and a `query` on a name
+ending in `Procedure` (`storedProcedure.query(sql)`) is a procedure.
 
 ## Install
 

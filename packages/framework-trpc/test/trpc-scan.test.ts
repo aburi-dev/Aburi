@@ -147,9 +147,39 @@ describe("scan — what a const's initializer makes it", () => {
       "procedure:t.subscription",
     ],
     [
+      "a subscription written as an async generator",
+      "publicProcedure.subscription(async function* (opts) { yield 1 })",
+      "procedure:publicProcedure.subscription",
+    ],
+    [
       "a resolver declared elsewhere",
       "publicProcedure.query(listUsers)",
       "procedure:publicProcedure.query",
+    ],
+    [
+      "a resolver read off a module",
+      "publicProcedure.query(handlers.listUsers)",
+      "procedure:publicProcedure.query",
+    ],
+    [
+      "a resolver written as a function expression",
+      "publicProcedure.query(function listUsers() { return [] })",
+      "procedure:publicProcedure.query",
+    ],
+    [
+      "a resolver wrapped in a call",
+      "publicProcedure.query(withCache(listUsers))",
+      "procedure:publicProcedure.query",
+    ],
+    [
+      "a resolver behind a comment in the argument list",
+      "publicProcedure.query(/* by id */ ({ input }) => find(input))",
+      "procedure:publicProcedure.query",
+    ],
+    [
+      "a chain from a base procedure named procedure",
+      "procedure.query(listUsers)",
+      "procedure:procedure.query",
     ],
     [
       "a builder behind a type assertion",
@@ -174,6 +204,21 @@ describe("scan — what a const's initializer makes it", () => {
       "base-procedure:publicProcedure.input",
     ],
     [
+      "a base procedure fixing an output",
+      "publicProcedure.output(z.string())",
+      "base-procedure:publicProcedure.output",
+    ],
+    [
+      "a base procedure carrying meta",
+      "publicProcedure.meta({ openapi: { method: 'GET' } })",
+      "base-procedure:publicProcedure.meta",
+    ],
+    [
+      "a base procedure joining another's middleware",
+      "publicProcedure.concat(authedProcedure)",
+      "base-procedure:publicProcedure.concat",
+    ],
+    [
       "a middleware the instance builds",
       "t.middleware(async ({ next }) => next())",
       "middleware:t.middleware",
@@ -191,12 +236,46 @@ describe("scan — what a const's initializer makes it", () => {
     ["a step tRPC's builder does not have", "publicProcedure.pipe(transform)"],
     ["another library's router factory", "createRouter({ routes })"],
     ["a router factory handed no procedures", `router("/api")`],
+    ["a router factory handed nothing", "router()"],
+    ["a router factory handed more than its procedures", "router({}, extra)"],
+    ["routers merged from none", "t.mergeRouters()"],
+    ["a procedure read off something the instance holds", "a.b.procedure"],
+    ["a procedure read off this", "this.procedure"],
+    ["a procedure that is not read off the instance", "appointment.details.procedure.query(list)"],
+    ["a query run as a tagged template", "storedProcedure.query`select 1`"],
     ["another library's create", "Store.create()"],
     ["an alias of the instance's router factory", "t.router"],
     ["an alias of the instance's middleware factory", "t.middleware"],
     ["a middleware factory handed no function", "t.middleware({ name: 'timing' })"],
   ])("%s is not classified", async (_shape, initializer) => {
     expect(await subjectIn(initializer)).toBeNull()
+  })
+
+  it.each([
+    ["the instance's procedure", "t.procedure"],
+    ["a procedure field of a domain object", "form.procedure"],
+  ])("%s is not classified in a file that does not import @trpc/server", async (_shape, initializer) => {
+    expect(await subjectIn(initializer, "")).toBeNull()
+  })
+
+  // Only the receiver's name tells these from tRPC's, and the file's imports keep them at medium.
+  it.each([
+    [
+      "a ts-rest contract",
+      `c.router({ getPost: { method: "GET", path: "/posts/:id" } })`,
+      "router:c.router",
+    ],
+    ["a server's middleware hook", "app.middleware(handler)", "middleware:app.middleware"],
+    [
+      "a query on a name ending in Procedure",
+      "storedProcedure.query(sql)",
+      "procedure:storedProcedure.query",
+    ],
+  ])("%s is read as tRPC's at medium confidence", async (_shape, initializer, entry) => {
+    const role = entry.slice(0, entry.indexOf(":"))
+    expect(await subjectIn(initializer, "")).toBe(
+      `framework:trpc:${role} medium framework:trpc:${entry}`,
+    )
   })
 
   it("reads only the const's own declarator", async () => {

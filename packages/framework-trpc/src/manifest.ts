@@ -1,7 +1,7 @@
 import type { FrameworkManifest } from "@aburi/types"
 import { TRPC_DERIVED_BY_PREFIX, type TrpcExtKind } from "./ext-kinds"
 
-/** `id` is pinned to `TrpcExtKind` so the manifest cannot drift from `classify.ts`. */
+/** `id` is typed as `TrpcExtKind`, so an entry names only an extKind the classifier assigns. */
 interface TrpcExtKindEntry {
   id: TrpcExtKind
   baseKind: "const"
@@ -25,7 +25,7 @@ const EXT_KIND_ENTRIES: TrpcExtKindEntry[] = [
     id: "framework:trpc:procedure",
     baseKind: "const",
     description:
-      "A tRPC procedure — a const initialised by a `query`, `mutation` or `subscription` handed its resolver, on a chain built from a procedure (`t.procedure`, or a name ending in `Procedure`).",
+      "A tRPC procedure — a const initialised by a `query`, `mutation` or `subscription` handed its resolver, on a chain built from a procedure (`t.procedure`, or a name that is `procedure` or ends in `Procedure`).",
   },
   {
     id: "framework:trpc:base-procedure",
