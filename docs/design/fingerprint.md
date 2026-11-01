@@ -178,7 +178,7 @@ Represents the **meaning executed by the symbol's body**. Changes when the meani
 }
 ```
 
-`middleware` is read only when the Symbol carries it ([`ir-schema.md`](./ir-schema.md) §5.7), and the key is left out of the input otherwise rather than written as `[]`, so every Symbol that names no middleware hashes to the value it had before the field existed. Its order is kept for the reason §4.7 keeps the order of effects: a rate limit in front of authentication and one behind it are two different routes.
+`middleware` is read only when the Symbol carries it ([`ir-schema.md`](./ir-schema.md) §5.8), and the key is left out of the input otherwise rather than written as `[]`, so every Symbol that names no middleware hashes to the value it had before the field existed. Its order is kept for the reason §4.7 keeps the order of effects: a rate limit in front of authentication and one behind it are two different routes.
 
 The rule strings are the ones the IR holds, already in the ir-schema.md §8.2 form: comments removed, whitespace collapsed, and cut to 120 characters plus `...`. Reading what the IR holds keeps `logic` recomputable from a Document alone. The cost is that an edit past the 120th character of a long condition, throw value or return expression moves neither `logic` nor the diff's rule delta; `syntax` still moves, so the change is reported as syntax-only rather than missed.
 

@@ -171,8 +171,9 @@ unparseable file tells you something about your source, not about the scan.
 
 Every command that scans reports the same way. `aburi diff` runs two scans and
 labels each one's `⚠` lines: the base by its ref, the head as `head (working tree)`.
-A `pluginOptions` key that names no loaded plugin is about the config both scans
-read, so `aburi diff` says it once, with no label.
+A `pluginOptions` key that names no loaded plugin, or the plugin of a
+`frameworkHints` entry, is about the config both scans read, so `aburi diff`
+says it once, with no label.
 
 ---
 
@@ -215,6 +216,7 @@ scanning.
 | `<base>..<head>` | Ref-spec dispatch. A ref git cannot resolve exits `2`, and the message says whether that is because the directory is not a repository, the repository has no commits, or the name is unknown. |
 | `--base <path>` `--head <path>` | File-mode dispatch. Mutually exclusive with the ref-spec. |
 | `--fail-on <spec>` | The CI gate. Repeatable. See below. |
+| `--fail-on-scope <scope>` | `all` (default) or `non-test`: whether the gate counts the Symbols of test files. See below. |
 | `--output-dir <dir>` | Where to write. Falls back to `output.dir`, then `out`. Created if missing; a path a file already stands on exits `2` and names it. Any `diff.json`, `diff.md` or `diff.full.md` already there is removed before the comparison starts, so a run that fails leaves no earlier report to be mistaken for its own. |
 | `--format <fmt>` | `json`, `md`, or `both`. |
 | `--compact` | JSON without indentation. |
@@ -282,11 +284,15 @@ Repeating `--fail-on` adds its clauses after the earlier ones, so
 
 | Clause | Matches |
 |---|---|
-| `added` `removed` `changed` `moved` `moved+changed` `dropped-toggled` `unknown` | Symbols with that status. |
+| `added` `removed` `changed` `moved` `moved+changed` `dropped-toggled` `unknown` | Symbols with that status. `removed` leaves out a removed duplicate. |
+| `removed:duplicate` | Removed duplicates: removals whose head revision holds a symbol of the same kind with the same body, as deduplicating two identical helpers into one leaves the other removed. A body with nothing to compare (only calls, or a literal returned) and a symbol a framework plugin classified (a route handler, a React component) are never duplicates. `removed,removed:duplicate` trips on every removal; a threshold on `removed` counts only the removals that are not duplicates. |
 | `dropped-toggled:to-dropped` `dropped-toggled:to-kept` | One direction of a boilerplate toggle. |
 | `api-changed` `logic-changed` `syntax-changed` `confidence-changed` | Symbols whose change touched that axis. |
 
-Evaluation stops at the first clause that fires, which keeps CI logs short.
+Evaluation stops at the first clause that fires, which keeps CI logs short. The
+line it prints names the Symbols that tripped it, ten at most, one per indented
+line below it. A `removed` clause with no `removed:duplicate` beside it adds a
+line naming the removed duplicates it did not count, whether it fired or not.
 
 ::: warning Quote the value
 `>` is a shell redirect. Write `--fail-on 'changed:>5'`, not
@@ -298,6 +304,25 @@ clause (`added,`, `added,,removed`), and an empty value all exit `2`, and with
 `--fail-on` repeated the message quotes the occurrence at fault. Aburi
 treats an empty gate as a mistake rather than as "no gate", because it would
 turn a regression into a green pipeline.
+
+### `--fail-on-scope`
+
+A Symbol of a file your config's [`testFiles`](https://aburi.kage1020.com/guide/configuration#mark-test-code)
+names is test code. `diff.md` lists its changes in a folded `🧪 Test files` section at the end,
+and `--fail-on-scope non-test` leaves them out of the gate, so deleting a fixture does not fail
+the build:
+
+```bash
+aburi diff main..HEAD --fail-on removed --fail-on-scope non-test
+```
+
+```
+--fail-on removed tripped (observed: 1 removed outside test files)
+  ts:src/billing/legacy.ts#refundInvoice
+```
+
+Every clause counts that way. A pair is judged by its head: a helper moved out of a test file
+into `src/` counts, one moved into a test file does not. The default, `all`, counts every change.
 
 ---
 

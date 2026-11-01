@@ -16,7 +16,14 @@ import { configuredOutputDir, type PinnedConfig, pinConfig } from "../config-loa
 import type { LogLevel } from "../env"
 import { CliError, errorMessage, internalFault, unplacedErrorCode } from "../errors"
 import { EXIT, type ExitCode } from "../exit-codes"
-import { evaluateFailOn, type FailOnClause, formatTriggered, parseFailOn } from "../fail-on"
+import {
+  evaluateFailOn,
+  type FailOnClause,
+  type FailOnScope,
+  parseFailOn,
+  type TrippedClause,
+  uncountedDuplicates,
+} from "../fail-on"
 import { readGeneratorInfo } from "../generator-info"
 import type { GitRunner } from "../git/runner"
 import { readIR } from "../ir-io"
@@ -30,7 +37,7 @@ import {
   type ScanPair,
   scanRevisions,
 } from "./diff-revisions"
-import { faultedSides, warnAboutComparison } from "./diff-warnings"
+import { faultedSides, warnAboutComparison, warnOnUncountedDuplicates } from "./diff-warnings"
 
 export function classifyDiffError(error: DiffError): CliError {
   switch (error.code) {
@@ -54,6 +61,7 @@ export interface DiffOptions {
   outputDir?: string
   format?: "json" | "md" | "both"
   failOn?: string | readonly string[]
+  failOnScope?: FailOnScope
   configPath?: string
   compact?: boolean
   maxBytes?: number
@@ -68,7 +76,7 @@ export interface DiffReport {
   diffFullMdPath: string | null
   summaryLine: string
   callResolutionLine: string | null
-  triggered: { clause: FailOnClause; observed: number } | null
+  triggered: TrippedClause | null
   faultedScans: readonly DiffSide[] | null
   exitCode: ExitCode
 }
@@ -128,7 +136,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
   }
 
   const written = await writeReport(diff, outputDir, options, warn)
-  const { firstTriggered } = evaluateFailOn(failOn, diff)
+  const { firstTriggered } = evaluateFailOn(failOn, diff, options.failOnScope)
   const faultedScans = faultedSides(compared.scans)
   const exitCode: ExitCode =
     firstTriggered === null && (faultedScans === null || faultedScans.length === 0)
@@ -136,6 +144,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
       : EXIT.GATE
 
   warnAboutComparison({ ...compared, notCompared: diff.notCompared }, warn)
+  warnOnUncountedDuplicates(uncountedDuplicates(failOn, diff, options.failOnScope), warn)
   const callResolution = compared.headIR.stats.callResolution
   return {
     ...written,
@@ -152,10 +161,6 @@ function parseFailOnValues(failOn: string | readonly string[]): FailOnClause[] {
   const values = [failOn].flat()
   // No value at all is refused as an empty one is: either would leave the gate checking nothing.
   return (values.length === 0 ? [""] : values).flatMap((value) => parseFailOn(value))
-}
-
-export function formatFailOnMessage(triggered: NonNullable<DiffReport["triggered"]>): string {
-  return formatTriggered(triggered.clause, triggered.observed)
 }
 
 async function removeEarlierReport(outputDir: string): Promise<void> {

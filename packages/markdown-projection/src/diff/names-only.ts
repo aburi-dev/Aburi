@@ -1,10 +1,24 @@
-import type { Symbol as IRSymbol, SymbolMovedChanged, SymbolUnknown } from "@aburi/types"
+import type {
+  Symbol as IRSymbol,
+  SymbolDroppedToggled,
+  SymbolMoved,
+  SymbolMovedChanged,
+  SymbolRemoved,
+  SymbolUnknown,
+} from "@aburi/types"
 import { inlineCode, symbolTitle } from "../format"
 import { fileLine } from "./entries"
 import type { ChangedEntry } from "./partition"
 
 export function indexSymbols(symbols: readonly IRSymbol[]): string[] {
   return symbols.map((symbol) => indexRow(symbol))
+}
+
+export function indexRemoved(items: readonly SymbolRemoved[]): string[] {
+  return items.map((item) => {
+    const survivor = item.duplicateOf ?? null
+    return indexRow(item.symbol, survivor === null ? "" : ` (duplicate of ${inlineCode(survivor)})`)
+  })
 }
 
 export function indexChanged(items: readonly ChangedEntry[]): string[] {
@@ -26,8 +40,12 @@ export function indexUnknown(items: readonly SymbolUnknown[]): string[] {
   )
 }
 
-export function indexMovedChanged(items: readonly SymbolMovedChanged[]): string[] {
+export function indexMoved(items: readonly (SymbolMoved | SymbolMovedChanged)[]): string[] {
   return items.map((item) => indexRow(item.after, movedFrom(item)))
+}
+
+export function indexDroppedToggled(items: readonly SymbolDroppedToggled[]): string[] {
+  return items.map((item) => indexRow(item.after, ` (${item.direction})`))
 }
 
 function indexRow(symbol: IRSymbol, suffix = ""): string {
@@ -40,7 +58,7 @@ function oldName(item: ChangedEntry): string {
 }
 
 /** The row already carries the head's `file:line`, so only the base side is named. */
-function movedFrom({ before, after }: ChangedEntry): string {
+function movedFrom({ before, after }: { before: IRSymbol; after: IRSymbol }): string {
   if (before.source.file !== after.source.file) {
     if (before.name === after.name) return ` (from ${inlineCode(before.source.file)})`
     return ` (from ${inlineCode(before.name)} in ${inlineCode(before.source.file)})`

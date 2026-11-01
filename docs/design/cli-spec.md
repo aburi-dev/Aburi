@@ -244,7 +244,7 @@ A planned `--quiet` would print the census lines alone.
 
 ```
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
-⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma); its options are ignored.
+⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
     src/panel.tsx: 12:4 — syntax error
@@ -266,16 +266,17 @@ The `frameworks` line comes ahead of the parse lines because the artifact cannot
 reproduce it: a first-party plugin that is not loaded is absent from `plugins[]`, so nothing in
 the IR says `framework-next` was a plugin's name ([config.md](./config.md) §6).
 
-The `pluginOptions` line follows it, one per key that names no loaded plugin
-([config.md](./config.md) §5.4), for the same reason: the IR records the plugins that loaded but
-not the options the config gave. Of the `⚠` lines a scan reports it is the only one that never
-carries a scan's label, and a command says it once however many scans it runs. The `frameworks`
-line keeps its label, and under `aburi diff` is said by each scan, because the value it names
-lands in that scan's IR (`components[].frameworks` carries it as written), so each copy
-describes something its side's artifact holds. A `pluginOptions` key reaches no artifact at all,
-and `aburi diff`'s two scans read the same config and load the same plugins (§6.4 step 3,
-§6.4.1.5), so a label would pin it on one side and a second copy would say nothing new. The scans
-of one command share the set of lines already said, which `runScan` takes as `incidents.said`.
+The `pluginOptions` line follows it, one per key that names no loaded plugin or the plugin of a
+`frameworkHints` entry ([config.md](./config.md) §5.4), for the same reason: the IR records the
+plugins that loaded but not the options the config gave. Of the `⚠` lines a scan reports it is
+the only one that never carries a scan's label, and a command says it once however many scans it
+runs. The `frameworks` line keeps its label, and under `aburi diff` is said by each scan, because
+the value it names lands in that scan's IR (`components[].frameworks` carries it as written), so
+each copy describes something its side's artifact holds. A `pluginOptions` key reaches no
+artifact at all, and `aburi diff`'s two scans read the same config and load the same plugins
+(§6.4 step 3, §6.4.1.5), so a label would pin it on one side and a second copy would say nothing
+new. The scans of one command share the set of lines already said, which `runScan` takes as
+`incidents.said`.
 
 The parse-error line names its files, which nothing else does: mostly they are in the IR, so
 `stats.skippedFiles[]` does not hold them and no per-file log line is written for them either.
@@ -620,6 +621,7 @@ aburi diff --base <ir.json> --head <ir.json>               # specify existing IR
 | `--format <json\|md\|both>` | Output format |
 | `--filter <kinds>` | (planned) Comma-separated restriction to change kinds (`added,removed,changed,moved,moved+changed`) |
 | `--fail-on <kinds>` | Exit 3 if even one change of the given kinds (status granularity) exists (for CI gates). Repeatable: each occurrence adds its clauses after the earlier ones' (§6.7) |
+| `--fail-on-scope <all\|non-test>` | Which changes every `--fail-on` clause counts: all of them (default), or those whose Symbol is not test code (§6.7) |
 | `--max-bytes <n>` | Cap `diff.md` at n UTF-8 bytes, keeping sections most important first at their smallest (names only for a section of whole Symbols) and then growing the name lists back to full entries from the top ([`markdown-projection.md`](./markdown-projection.md) §6.4). `diff.json` is never capped, and when the cap changed the report the uncapped one is written as `diff.full.md` beside it. Absent: no cap — `0` is exit 2 here, not the opt-out it is on the action input. Warns when `--format json` leaves it nothing to cap, and when the budget could not be met |
 | `--compact` | Compact `diff.json` to a single line |
 | `--config <path>` | The config file both scans read (§13, §6.4 step 3) |
@@ -808,7 +810,7 @@ Used in CI for gates such as "PRs containing changes of a specific status requir
 
 ```bash
 aburi diff main..HEAD --fail-on changed,removed
-# exit 3 if even one symbol has status "changed" or "removed"
+# exit 3 if even one symbol is "changed", or "removed" without duplicating a head symbol
 ```
 
 `unknown` counts Symbols only — it reads `symbols[]`, not `dependencies[]`, and not `notCompared[]`. A gate written meaning "fail if this diff is incomplete" therefore catches neither the dependency side ([`diff-algorithm.md`](./diff-algorithm.md) §6.2.1) nor a file both scans skipped (§6.3), and no token exists for either. A bare token for the second would be the wrong default in any case: a workspace with a permanent over-size bundle would trip it on every pull request, which is an argument for a threshold rather than a flag. Whether the gate vocabulary should grow either family is an open decision.
@@ -819,12 +821,39 @@ aburi diff main..HEAD --fail-on changed,removed
 |---|---|
 | Status granularity | `added` / `removed` / `changed` / `moved` / `moved+changed` / `dropped-toggled` / `unknown` |
 | Delta granularity | `api-changed` / `logic-changed` / `syntax-changed` / `confidence-changed` |
-| Direction granularity | `dropped-toggled:to-dropped` / `dropped-toggled:to-kept` |
+| Subtype granularity | `dropped-toggled:to-dropped` / `dropped-toggled:to-kept` / `removed:duplicate` |
 | Count threshold | `<value>:><N>` (e.g. `dropped-toggled:>10` fires when the count exceeds 10) |
 
 Multiple values may be given, comma-separated. Every segment must be a clause: an empty one (`added,`, `added,,removed`) exits 2, as a value with no clause at all does.
 
 `--fail-on` may also be repeated, so a script can write one clause per `--fail-on`: each occurrence adds its clauses after those of the occurrences before it, and `--fail-on changed --fail-on removed` gates exactly as `--fail-on changed,removed` does — the order included, which decides the clause a tripped gate names. Keeping only the last occurrence would leave the earlier clauses unchecked, and the run would pass on the change they were written to block. Each occurrence is read as a value of its own: an error quotes the one at fault and counts clauses within it (`--fail-on removed, --fail-on changed` exits 2 with `--fail-on value "removed," is invalid: clause 2 of 2 is empty; …`), and an empty occurrence exits 2 beside a valid one as it does alone. `runDiff`, which also takes the values as a list, refuses an empty one as it refuses an empty value, since either leaves the gate checking nothing.
+
+#### Removed duplicates
+
+`removed` counts the removals that duplicate no head Symbol, and `removed:duplicate` the ones whose `duplicateOf` names a head Symbol holding their body ([`diff-algorithm.md`](./diff-algorithm.md) §3.5.2). That is narrower than every removal whose body survives: a removed Symbol with an `extKind`, or one whose logic names nothing (a body that only calls something, or returns a literal), is never a duplicate, and counts under `removed` even when a head Symbol holds it byte for byte. Deduplicating N identical helpers into one leaves N−1 `removed` entries whatever the author does, so a gate that counted them would fail every such refactor until it was taken out of the workflow.
+
+`--fail-on removed,removed:duplicate` trips on every removal, as a bare `removed` did before duplicates were told apart. A threshold does not carry over that way: `removed:>N` counted every removal and now counts the ones that duplicate nothing, and no combination of clauses holds the two kinds together to one threshold. A diff written before `duplicateOf` existed carries none, and `removed` counts all of its removals.
+
+When the clauses hold `removed`, with or without a threshold, and no `removed:duplicate`, a diff with removed duplicates in it adds a line on stderr, whether the gate trips or not: a count and a capped list of ids, as the line for a file both scans skipped (§6.6) has.
+
+```
+⚠ --fail-on removed did not count 2 removal(s) of a duplicate whose body a head Symbol holds (removed:duplicate counts them): ts:src/a.test.ts#makeEmptyIR, ts:src/b.test.ts#blankIR.
+```
+
+A workflow that kept `--fail-on removed` across the release that narrowed it would otherwise pass a pull request it used to fail, with nothing in its log to say why.
+
+#### Test code
+
+`--fail-on-scope non-test` makes every clause count only the changes whose Symbol carries no `inTestFile` — the Symbols of the files the head config's `testFiles` does not name ([`config.md`](./config.md) §4.1, [`ir-schema.md`](./ir-schema.md) §5.7). For a pair it is the head Symbol's mark, as the report places the entry by the head's file: a helper moved out of a test file into the code under test counts, one moved the other way does not. A fixture deleted, renamed or rewritten then trips no gate, while the same change to the code it tests does. The default, `all`, counts every change, as the gate always has.
+
+The scope narrows the clauses rather than adding one, so `--fail-on removed --fail-on-scope non-test` reads as it is meant: fail on a removal outside the tests. Given without `--fail-on`, it has nothing to narrow and the diff exits as it would without it. The tripped line says it counted that way, and names only the Symbols it counted:
+
+```
+--fail-on removed tripped (observed: 1 removed outside test files)
+  ts:src/billing/legacy.ts#refundInvoice
+```
+
+The line naming the removed duplicates a `removed` clause did not count (Removed duplicates, above) reads the same scope, so a duplicate in a test file is not named under `non-test`, where no clause would have counted it.
 
 #### Uses of Direction-Specific fail-on
 
@@ -837,7 +866,8 @@ In cases where a drop-rule change legitimately fires `dropped-toggled` in bulk (
 
 #### Evaluation Rules
 
-- Status granularity (`changed`, etc.): fires if even one Symbol has the given status
+- Status granularity (`changed`, etc.): fires if even one Symbol has the given status; `removed` leaves out a removed duplicate of a head Symbol, which `removed:duplicate` counts
+- Every clause counts `symbols[]` entries, never the `summary` counters, so the count and the Symbols it names are one list
 - Delta granularity (`api-changed`, etc.): fires if even one Symbol has status `changed` or `moved+changed` with the corresponding `delta.<axis>Changed: true`. A diff written before `delta.confidenceChanged` existed carries no key, and `confidence-changed` counts nothing in it
 
 Examples:
@@ -848,10 +878,20 @@ aburi diff main..HEAD --fail-on api-changed
 # changed symbols where only logic changed, and moved (status only), have no effect
 
 aburi diff main..HEAD --fail-on api-changed,removed,dropped-toggled
-# fires on API change OR removal OR drop-rule fluctuation
+# fires on API change OR a removal that duplicates nothing OR drop-rule fluctuation
 ```
 
 This allows fine-grained CI gates, making operational policies such as "only API changes require approval, logic changes are warnings" possible today.
+
+A tripped clause names the Symbols it counted on stderr, under its line and indented, by the id its entry carries (the head's, or the base's for a removal and for an `unknown` whose file the head never analysed), ten at most and then how many more:
+
+```
+--fail-on removed tripped (observed: 2 removed)
+  ts:src/billing/legacy.ts#refundInvoice
+  ts:src/billing/legacy.ts#voidInvoice
+```
+
+A red check that said only `removed tripped` sent its reader to the report to find which removal, and on a pull request whose removals were expected left nothing to say why the gate fired but a comment. The first line keeps its form, so a script reading it reads it as before.
 
 A Symbol whose extraction confidence moved is `changed` even when no fingerprint did ([`diff-algorithm.md`](./diff-algorithm.md) §4), so `--fail-on changed` fires on it. A plugin can decide confidence from a file-level signal (the Express plugin reads whether the file imports `express`), so one edit can move every Symbol in a file at once. A gate that should not fire on that writes the axes it cares about (`--fail-on api-changed,logic-changed`, which a confidence-only change does not trip) and, where a mass shift should still be noticed, a threshold on the confidence axis (`confidence-changed:>20`).
 
@@ -1267,7 +1307,7 @@ a command's option, not a global one (§3).
 | CL37 | `aburi init --log-level debug` | exit 0: `init` accepts the flag, which has no per-file log there to govern |
 | CL38 | `aburi init --help`, `aburi scan --help`, `aburi diff --help` or `aburi explain --help` | `--log-level` listed under "Global Options" |
 | CL39 | `aburi diff … --fail-on changed --fail-on removed` over one changed Symbol, in either order; over a changed and a removed one, in either order | exit 3 in both orders, as `--fail-on changed,removed` gives, and `--fail-on removed --fail-on added`, or no `--fail-on` at all, exits 0; over both, the tripped line names the clause written first. An invalid occurrence beside a valid one (`--fail-on bogus --fail-on changed`, `--fail-on '' --fail-on changed`) exits 2 quoting that occurrence alone, before either IR is read and with an earlier report in the output directory left as it was. `runDiff` refuses `failOn: []` as it refuses `failOn: ""` |
-| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
+| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--fail-on-scope`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
 | CL41 | An empty value for any option that takes a path — `init --output`; `scan --output-dir`, `--config`; `diff --base`, `--head`, `--output-dir`, `--config`; `explain --ir`, `--output`, `--config` — in either spelling (`--output-dir=`) | exit 2, `error: option '<option> <path>' argument '' is invalid. a path must not be empty` on stderr, nothing on stdout, nothing written, and an earlier report left as it was |
 | CL42 | `aburi diff main..HEAD --base b.json`, or `aburi diff main..HEAD --head h.json` | exit 2, `<option> cannot be combined with a ref spec argument. Use one or the other.`, naming the option given |
 | CL43 | `aburi scan` after one Component was renamed and another removed | The page of each id the IR no longer holds is removed, with LF or CRLF line endings, and on a filesystem that returns a few bytes per read; nothing else in `components/` goes. A file beside them that is not such a page stays: another extension, a first line naming another id or none, the heading with more on its line, a name no Component id takes, the same page in a subdirectory, or a directory named like a page |
@@ -1283,6 +1323,9 @@ a command's option, not a global one (§3).
 | CL53 | `aburi scan` where `package.json` and `aburi.json` both open with one byte order mark | exit 0, the Component named after the `package.json` |
 | CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind. stdout on a descriptor that refuses writes (one opened read-only) still exits 1, with the errno on stderr |
 | CL55 | `aburi diff main..HEAD` with a `pluginOptions` key that names no loaded plugin (`config.md` C10) | The warning once, with no side label, while the base scan's own lines keep theirs; the exit code is the one the run has without the key |
+| CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
+| CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |
+| CL58 | `aburi diff … --fail-on-scope tests` | exit 2, `--fail-on-scope must be one of: all \| non-test`, before either IR is read |
 
 ## 18. Design Decisions
 
