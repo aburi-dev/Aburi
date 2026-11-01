@@ -1,5 +1,10 @@
 import { component, fp, guardedBody, makeIR, makeSymbol, rule, zeroFp } from "@aburi/test-support"
-import type { Fingerprint, Symbol as IRSymbol, MatchRationale } from "@aburi/types"
+import {
+  DIFF_SCHEMA_URL,
+  type Fingerprint,
+  type Symbol as IRSymbol,
+  type MatchRationale,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { buildDiff, classifyStatus, dropDirection } from "../src"
 import { changeLines, diffOf, diffSymbols, dropped, soleChange } from "./helpers"
@@ -237,7 +242,7 @@ describe("the envelope around the changes", () => {
     const base = { ref: "main", irSchema: ir.$schema }
     const head = { ref: "feature", irSchema: ir.$schema }
     const diff = buildDiff({ baseIR: ir, headIR: ir, base, head })
-    expect(diff.$schema).toBe("https://aburi.kage1020.com/schema/aburi.diff.v1.json")
+    expect(diff.$schema).toBe(DIFF_SCHEMA_URL)
     expect(diff.base).toEqual(base)
     expect(diff.head).toEqual(head)
   })

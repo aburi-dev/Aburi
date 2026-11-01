@@ -1,6 +1,11 @@
 import { parsePluginManifest, VocabRegistry } from "@aburi/plugin-registry"
 import { decorator, errorFrom, makeCandidate, makeExtractionCtx } from "@aburi/test-support"
-import type { FrameworkClassifyContext, FrameworkHint, FrameworkPlugin } from "@aburi/types"
+import {
+  type FrameworkClassifyContext,
+  type FrameworkHint,
+  type FrameworkPlugin,
+  PLUGIN_SCHEMA_URL,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ConfigError, frameworkHintPlugins, normalizeFrameworkHints } from "../src/index"
 import { hint, withHints } from "./fixtures/configs"
@@ -35,7 +40,7 @@ describe("the manifest a frameworkHints entry synthesizes", () => {
       classNamePatterns: { "*Handler": { extKind: "framework:acme:handler" } },
     })
     expect(manifest).toEqual({
-      $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+      $schema: PLUGIN_SCHEMA_URL,
       name: "hint-acme",
       version: "0.0.0",
       type: "framework",

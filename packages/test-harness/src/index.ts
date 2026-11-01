@@ -2,19 +2,18 @@ import { CLASSIFY_TIMEOUT_MAX_MS, type ScanInput, type ScanResult, scan } from "
 import { buildDiff } from "@aburi/diff"
 import { VocabRegistry } from "@aburi/plugin-registry"
 import type { ScratchWorkspace } from "@aburi/test-support"
-import type {
-  CallCandidate,
-  ClassifyContext,
-  Config,
-  EffectPlugin,
-  FrameworkClassifyContext,
-  FrameworkPlugin,
-  IR,
-  LanguagePlugin,
-  SymbolCandidate,
+import {
+  type CallCandidate,
+  type ClassifyContext,
+  type Config,
+  type EffectPlugin,
+  type FrameworkClassifyContext,
+  type FrameworkPlugin,
+  type IR,
+  IR_SCHEMA_URL,
+  type LanguagePlugin,
+  type SymbolCandidate,
 } from "@aburi/types"
-
-export const IR_SCHEMA_URL = "https://aburi.kage1020.com/schema/aburi.ir.v1.json"
 
 export interface PluginLineup {
   languages?: readonly LanguagePlugin[]

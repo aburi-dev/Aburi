@@ -1,13 +1,14 @@
-import type {
-  DiffResult,
-  Symbol as IRSymbol,
-  MatchRationale,
-  SliceRecord,
-  Summary,
-  SymbolChanged,
-  SymbolDelta,
-  SymbolMoved,
-  SymbolMovedChanged,
+import {
+  DIFF_SCHEMA_URL,
+  type DiffResult,
+  type Symbol as IRSymbol,
+  type MatchRationale,
+  type SliceRecord,
+  type Summary,
+  type SymbolChanged,
+  type SymbolDelta,
+  type SymbolMoved,
+  type SymbolMovedChanged,
 } from "@aburi/types"
 import { sliceId } from "./ir"
 
@@ -38,7 +39,7 @@ export function emptySummary(): Summary {
 /** A diff of `main` against `HEAD` that reports nothing, with `overrides` laid over it. */
 export function makeDiff(overrides: Partial<DiffResult> = {}): DiffResult {
   return {
-    $schema: "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+    $schema: DIFF_SCHEMA_URL,
     generator: { name: "aburi", version: "0.0.0" },
     base: { ref: "main", irSchema: "aburi.ir.v1.json" },
     head: { ref: "HEAD", irSchema: "aburi.ir.v1.json" },

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+  "$id": "https://aburi.dev/schema/aburi.diff.v1.json",
   "title": "Aburi Diff Result",
   "description": "Result of aburi diff <base>..<head>. JSON projection of the matched/added/removed/moved/changed symbol pairs.",
   "type": "object",
@@ -18,7 +18,11 @@
   ],
   "properties": {
     "$schema": {
-      "const": "https://aburi.kage1020.com/schema/aburi.diff.v1.json"
+      "enum": [
+        "https://aburi.dev/schema/aburi.diff.v1.json",
+        "https://aburi.kage1020.com/schema/aburi.diff.v1.json"
+      ],
+      "description": "The first value is this schema's $id, the one to write. The second is the host the schema was served from before aburi.dev; documents that name it remain valid."
     },
     "generator": { "$ref": "#/$defs/Generator" },
     "base": { "$ref": "#/$defs/IRRef" },

@@ -35,7 +35,7 @@ Why JSONC is allowed: this is a human-authored config, so comments on each secti
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
 
   // File exclusion (drop-list Category A)
   "ignore": ["docs/**", "scripts/legacy/**"],
@@ -482,7 +482,7 @@ writes it down, mapping each detected language and framework to the first-party 
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": [],
   "components": [

@@ -2,7 +2,7 @@
   "name": "@aburi/schema",
   "version": "0.0.0",
   "private": true,
-  "description": "JSON Schemas for the Aburi IR, diff, config and plugin manifest, served at https://aburi.kage1020.com/schema/.",
+  "description": "JSON Schemas for the Aburi IR, diff, config and plugin manifest, served at https://aburi.dev/schema/.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

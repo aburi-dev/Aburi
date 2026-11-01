@@ -114,6 +114,13 @@ export type {
   WalkContext,
   WrittenSourceRange,
 } from "./plugins"
+export {
+  CONFIG_SCHEMA_URL,
+  DIFF_SCHEMA_URL,
+  IR_SCHEMA_URL,
+  isIRSchemaURL,
+  PLUGIN_SCHEMA_URL,
+} from "./schema-urls"
 export { representativeSymbol } from "./symbol-change"
 export {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,

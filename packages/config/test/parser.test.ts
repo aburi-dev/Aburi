@@ -1,12 +1,12 @@
 import { join } from "node:path"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import { CONFIG_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ConfigError, parseConfig, readConfigFile } from "../src/index"
-import { CONFIG_SCHEMA as SCHEMA } from "./fixtures/configs"
 
 const VALID_JSONC = `{
   // comment is allowed
-  "$schema": "${SCHEMA}",
+  "$schema": "${CONFIG_SCHEMA_URL}",
   "ignore": ["docs/**"],
   "effects": ["effects-prisma", "effects-pino"],
   "components": [
@@ -28,11 +28,15 @@ describe("parseConfig", () => {
     ["effects in the order written", { effects: ["effects-prisma", "effects-stripe"] }],
     [
       "keep and suppress that overlap",
-      { $schema: SCHEMA, suppress: ["logger"], keep: ["logger.audit"] },
+      { $schema: CONFIG_SCHEMA_URL, suppress: ["logger"], keep: ["logger.audit"] },
     ],
     [
       "pluginOptions as an opaque object",
-      { $schema: SCHEMA, pluginOptions: { "effects-myorg": { queues: ["billing"] } } },
+      { $schema: CONFIG_SCHEMA_URL, pluginOptions: { "effects-myorg": { queues: ["billing"] } } },
+    ],
+    [
+      "the $schema of the host the schema was served from before aburi.dev",
+      { $schema: "https://aburi.kage1020.com/schema/aburi.config.v1.json" },
     ],
   ])("accepts %s as written", (_, config) => {
     expect(parseConfig(JSON.stringify(config), "inline")).toEqual(config)
@@ -54,7 +58,7 @@ describe("parseConfig", () => {
 
   it("throws config-invalid on a schema violation, with the ajv errors as cause and their params in the message", async () => {
     const caught = await errorFrom(ConfigError, () =>
-      parseConfig(JSON.stringify({ $schema: SCHEMA, unknownField: 1 }), "inline"),
+      parseConfig(JSON.stringify({ $schema: CONFIG_SCHEMA_URL, unknownField: 1 }), "inline"),
     )
     expect(caught.code).toBe("config-invalid")
     expect(Array.isArray(caught.cause)).toBe(true)
@@ -64,27 +68,27 @@ describe("parseConfig", () => {
 
   it.each([
     ["a wrong $schema", { $schema: "https://example.com/wrong" }],
-    ["suppress containing an empty string", { $schema: SCHEMA, suppress: [""] }],
+    ["suppress containing an empty string", { $schema: CONFIG_SCHEMA_URL, suppress: [""] }],
     [
       "a pluginOptions key violating the PluginManifestName pattern",
-      { $schema: SCHEMA, pluginOptions: { "Effects-Prisma": {} } },
+      { $schema: CONFIG_SCHEMA_URL, pluginOptions: { "Effects-Prisma": {} } },
     ],
     [
       "a ComponentOverride.id violating its kebab-case pattern",
-      { $schema: SCHEMA, components: [{ id: "Billing", roots: ["apps/billing"] }] },
+      { $schema: CONFIG_SCHEMA_URL, components: [{ id: "Billing", roots: ["apps/billing"] }] },
     ],
     [
       "a ComponentOverride with empty roots[]",
-      { $schema: SCHEMA, components: [{ id: "billing", roots: [] }] },
+      { $schema: CONFIG_SCHEMA_URL, components: [{ id: "billing", roots: [] }] },
     ],
     [
       "a Windows-style backslash in a RelativePath",
-      { $schema: SCHEMA, components: [{ id: "billing", roots: ["apps\\billing"] }] },
+      { $schema: CONFIG_SCHEMA_URL, components: [{ id: "billing", roots: ["apps\\billing"] }] },
     ],
     [
       "a HintRule.extKind that does not start with framework:",
       {
-        $schema: SCHEMA,
+        $schema: CONFIG_SCHEMA_URL,
         frameworkHints: [{ name: "acme", decorators: { X: { extKind: "foo:bar:baz" } } }],
       },
     ],
@@ -92,12 +96,18 @@ describe("parseConfig", () => {
       // Fewer than three segments would collide at `framework:hint` after injection.
       "a HintRule.extKind with fewer than three segments",
       {
-        $schema: SCHEMA,
+        $schema: CONFIG_SCHEMA_URL,
         frameworkHints: [{ name: "acme", decorators: { X: { extKind: "framework:acme" } } }],
       },
     ],
-    ["maxFileSizeBytes below the schema minimum", { $schema: SCHEMA, maxFileSizeBytes: 512 }],
-    ["classifyTimeoutMs above the schema maximum", { $schema: SCHEMA, classifyTimeoutMs: 10_000 }],
+    [
+      "maxFileSizeBytes below the schema minimum",
+      { $schema: CONFIG_SCHEMA_URL, maxFileSizeBytes: 512 },
+    ],
+    [
+      "classifyTimeoutMs above the schema maximum",
+      { $schema: CONFIG_SCHEMA_URL, classifyTimeoutMs: 10_000 },
+    ],
   ])("throws config-invalid on %s", (_label, config) => {
     expect(() => parseConfig(JSON.stringify(config), "inline")).toThrowError(
       expect.objectContaining({ code: "config-invalid" }),
@@ -125,7 +135,7 @@ describe("parseConfig", () => {
       'declares frameworkHints[].name "acme" more than once',
     ],
   ])("rejects duplicate %s, naming the value", async (_, config, code, value, message) => {
-    const text = JSON.stringify({ $schema: SCHEMA, ...config })
+    const text = JSON.stringify({ $schema: CONFIG_SCHEMA_URL, ...config })
     const caught = await errorFrom(ConfigError, () => parseConfig(text, "inline"))
     expect(caught).toMatchObject({ code, value })
     expect(caught.message).toBe(`Config at inline ${message}`)

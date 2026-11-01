@@ -203,7 +203,7 @@ The paths *inside* that config still resolve per scan: `ignore` and
 `components[].roots` are matched against each revision's own workspace root, so
 for the base that is the temporary worktree. Plugin refs are the
 exception. A relative one (`./plugins/x.mjs`) belongs to the plugin set, which
-[comes from the head](https://aburi.kage1020.com/extend/architecture) along with
+[comes from the head](https://aburi.dev/extend/architecture) along with
 `node_modules`, so it is loaded from your working tree for both scans. An
 absolute one (`/opt/plugins/x.mjs`) names the same file for both scans,
 whichever workspace root each has.
@@ -260,7 +260,7 @@ The CLI has no cap unless you pass one: omitting `--max-bytes` writes the whole 
 `--max-bytes 0` is not the way to say that — it exits `2`, along with every other value that is
 not a positive integer.
 
-The [GitHub Action](https://aburi.kage1020.com/guide/ci-integration) passes `65507` for you —
+The [GitHub Action](https://aburi.dev/guide/ci-integration) passes `65507` for you —
 65536 less the hidden marker it prepends — so you only reach for this flag to choose a smaller
 comment. There, `max-bytes: 0` *is* the spelling for no cap: the action input takes it and passes
 no flag at all.
@@ -307,7 +307,7 @@ turn a regression into a green pipeline.
 
 ### `--fail-on-scope`
 
-A Symbol of a file your config's [`testFiles`](https://aburi.kage1020.com/guide/configuration#mark-test-code)
+A Symbol of a file your config's [`testFiles`](https://aburi.dev/guide/configuration#mark-test-code)
 names is test code. `diff.md` lists its changes in a folded `🧪 Test files` section at the end,
 and `--fail-on-scope non-test` leaves them out of the gate, so deleting a fixture does not fail
 the build:

@@ -1,4 +1,4 @@
-import type { FrameworkManifest, SymbolKind } from "@aburi/types"
+import { type FrameworkManifest, PLUGIN_SCHEMA_URL, type SymbolKind } from "@aburi/types"
 import { EXPRESS_DERIVED_BY_PREFIX, type ExpressExtKind } from "./ext-kinds"
 
 interface ExpressExtKindEntry {
@@ -41,7 +41,7 @@ const EXT_KIND_ENTRIES: ExpressExtKindEntry[] = [
 ]
 
 export const frameworkExpressManifest: FrameworkManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "framework-express",
   version: "0.0.0",
   type: "framework",

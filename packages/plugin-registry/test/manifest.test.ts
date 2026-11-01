@@ -6,7 +6,7 @@ import { langManifest } from "./fixtures/manifests"
 
 const VALID_MANIFEST = `{
   // valid effects plugin
-  "$schema": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "name": "effects-foo",
   "version": "1.0.0",
   "type": "effects",
@@ -33,6 +33,13 @@ describe("parsePluginManifest", () => {
     const m = parsePluginManifest(VALID_MANIFEST, "inline")
     expect(m.name).toBe("effects-foo")
     expect(m.type).toBe("effects")
+  })
+
+  it("accepts a manifest naming the host the schema was served from before aburi.dev", () => {
+    const text = VALID_MANIFEST.replace("https://aburi.dev/", "https://aburi.kage1020.com/")
+    expect(parsePluginManifest(text, "inline").$schema).toBe(
+      "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+    )
   })
 
   it.each([

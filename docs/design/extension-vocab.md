@@ -40,7 +40,7 @@ The manifest is the `manifest` property of the plugin object the module exports:
 ```jsonc
 // type=effects plugin (effects only, e.g. lifecycle hooks)
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "name": "effects-nest",
   "version": "1.0.0",
   "type": "effects",
@@ -60,7 +60,7 @@ The manifest is the `manifest` property of the plugin object the module exports:
 
 // type=framework plugin (boundary recognition, extKind assignment)
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "name": "framework-nestjs",
   "version": "1.0.0",
   "type": "framework",
@@ -334,7 +334,7 @@ There are three tiers, by complexity, for bringing a new language / in-house fra
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "name": "acme-framework",
   "version": "0.0.1",
   "type": "framework",
@@ -435,7 +435,7 @@ If `lang-crystal` were hypothetically written, it could get by on the core vocab
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "name": "lang-crystal",
   "version": "0.1.0",
   "type": "lang",

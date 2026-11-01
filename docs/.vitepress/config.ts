@@ -9,7 +9,7 @@ export default defineConfig({
   lastUpdated: true,
   cleanUrls: true,
   sitemap: {
-    hostname: "https://aburi.kage1020.com",
+    hostname: "https://aburi.dev",
   },
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
@@ -25,10 +25,10 @@ export default defineConfig({
         content: "Semantic IR extraction for high-level code review.",
       },
     ],
-    ["meta", { property: "og:url", content: "https://aburi.kage1020.com" }],
-    ["meta", { property: "og:image", content: "https://aburi.kage1020.com/brand/og.png" }],
+    ["meta", { property: "og:url", content: "https://aburi.dev" }],
+    ["meta", { property: "og:image", content: "https://aburi.dev/brand/og.png" }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
-    ["meta", { name: "twitter:image", content: "https://aburi.kage1020.com/brand/og.png" }],
+    ["meta", { name: "twitter:image", content: "https://aburi.dev/brand/og.png" }],
   ],
   themeConfig: {
     logo: { light: "/brand/mark.svg", dark: "/brand/mark-dark.svg", alt: "Aburi" },

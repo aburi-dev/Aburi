@@ -31,7 +31,7 @@ inputs:
   fail-on:
     description: >-
       Value passed to `aburi diff --fail-on`, in the CLI's gate grammar (e.g. `changed`,
-      `removed:>10`, `dropped-toggled:to-dropped`); see https://aburi.kage1020.com/reference/cli.
+      `removed:>10`, `dropped-toggled:to-dropped`); see https://aburi.dev/reference/cli.
       Leave empty to run in report-only mode.
     required: false
     default: ""

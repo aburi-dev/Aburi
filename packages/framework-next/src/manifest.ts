@@ -1,9 +1,9 @@
-import type { FrameworkManifest } from "@aburi/types"
+import { type FrameworkManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
 
 export const NEXT_DERIVED_BY_PREFIX = "framework:next"
 
 export const frameworkNextManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "framework-next",
   version: "0.0.0",
   type: "framework",

@@ -1,5 +1,5 @@
 import { component, fp, makeIR, makeSymbol } from "@aburi/test-support"
-import type { Component, IR, Symbol as IRSymbol } from "@aburi/types"
+import { type Component, type IR, IR_SCHEMA_URL, type Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { diffOf, refusalOf } from "./helpers"
 
@@ -69,7 +69,7 @@ describe("a Document that is not one", () => {
 
   it("is refused when it carries only the three collections", async () => {
     const minimal = {
-      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+      $schema: IR_SCHEMA_URL,
       symbols: [],
       components: [],
       dependencies: [],
@@ -93,12 +93,20 @@ describe("two Documents of different schemas", () => {
   it("are refused as schema-mismatch, naming the base schema", async () => {
     const base = makeIR()
     const head = makeIR({
-      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v2.json" as IR["$schema"],
+      $schema: "https://aburi.dev/schema/aburi.ir.v2.json" as IR["$schema"],
     })
     expect(await refusalOf(base, head)).toMatchObject({
       code: "schema-mismatch",
       value: base.$schema,
     })
+  })
+
+  it("are compared when one names v1 by the host it was served from before aburi.dev", () => {
+    const base = makeIR({
+      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+      symbols: [makeSymbol({ id: "ts:src/a.ts#a", name: "a" })],
+    })
+    expect(diffOf(base, makeIR()).summary.removed).toBe(1)
   })
 })
 

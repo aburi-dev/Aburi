@@ -5,6 +5,7 @@ import {
   serializeCanonical,
 } from "@aburi/core"
 import {
+  DIFF_SCHEMA_URL,
   type DiffResult,
   type DiffSkippedFile,
   type IR,
@@ -43,8 +44,6 @@ import {
 } from "./match"
 import { computeSlices } from "./slice"
 import { classifyStatus, dropDirection, headIdsByBaseId } from "./status"
-
-const DIFF_SCHEMA = "https://aburi.kage1020.com/schema/aburi.diff.v1.json"
 
 interface AlwaysEmittedCounters {
   unknown: number
@@ -224,7 +223,7 @@ export function buildDiff(
   })
 
   return {
-    $schema: DIFF_SCHEMA,
+    $schema: DIFF_SCHEMA_URL,
     generator: input.generator ?? DEFAULT_GENERATOR,
     base: input.base,
     head: input.head,

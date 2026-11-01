@@ -7,23 +7,24 @@ import {
   spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
-import type {
-  BodyExtraction,
-  Config,
-  EffectPlugin,
-  ExtractionContext,
-  FrameworkPlugin,
-  ImportEdge,
-  LangManifest,
-  LanguageCapabilities,
-  LanguagePlugin,
-  ParsedTree,
-  ParseError,
-  ParseResult,
-  PluginManifest,
-  SourceFile,
-  SymbolCandidate,
-  WalkContext,
+import {
+  type BodyExtraction,
+  type Config,
+  type EffectPlugin,
+  type ExtractionContext,
+  type FrameworkPlugin,
+  type ImportEdge,
+  type LangManifest,
+  type LanguageCapabilities,
+  type LanguagePlugin,
+  type ParsedTree,
+  type ParseError,
+  type ParseResult,
+  PLUGIN_SCHEMA_URL,
+  type PluginManifest,
+  type SourceFile,
+  type SymbolCandidate,
+  type WalkContext,
 } from "@aburi/types"
 import { beforeEach, expect } from "vitest"
 import {
@@ -40,14 +41,12 @@ import {
 } from "../../src"
 import { makeLanguageId } from "../../src/id"
 
-const PLUGIN_SCHEMA = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
-
 function manifest<T extends PluginManifest["type"]>(
   type: T,
   name: string,
 ): PluginManifest & { type: T } {
   return {
-    $schema: PLUGIN_SCHEMA,
+    $schema: PLUGIN_SCHEMA_URL,
     name,
     version: "0.0.0",
     type,
