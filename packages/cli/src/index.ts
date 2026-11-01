@@ -51,6 +51,7 @@ export {
   type FailOnClause,
   type FailOnDeltaAxis,
   FailOnParseError,
+  type FailOnScope,
   type FailOnStatusToken,
   type FailOnToken,
   formatTriggered as formatFailOnMessage,
