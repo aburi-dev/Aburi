@@ -65,6 +65,7 @@ export interface DiffOptions {
   configPath?: string
   compact?: boolean
   maxBytes?: number
+  parallelScans?: boolean
   logLevel?: LogLevel
   git?: GitRunner
   warn?: WarnFn
@@ -114,6 +115,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     logLevel: options.logLevel,
     pinConfigOnce,
     warn,
+    parallelScans: options.parallelScans,
   })
 
   const generator = await readGeneratorInfo()

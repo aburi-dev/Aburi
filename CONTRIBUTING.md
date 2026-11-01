@@ -46,7 +46,17 @@ and Windows, and Aburi runs on itself: [`.github/workflows/aburi.yml`](.github/w
 builds your branch, diffs it against the pull request's base with the CLI your branch
 contains, and posts the report as a comment it rewrites on every push. Its gate
 (`removed,dropped-toggled:to-dropped:>10`) turns the check red when a symbol disappears or
-bodies are emptied in bulk.
+bodies are emptied in bulk. A helper deleted while one with the same body stays does not count
+when that body holds a guard (an `if` that returns or throws), a `throw`, a `switch`, a computed
+return value or an effect: the report lists it as a removed duplicate of the one that stayed. A
+body that only calls something, or returns a literal, a variable or a property, has nothing to
+compare, so deleting it still counts. With `fail-on-scope: non-test` the gate skips the files the
+`testFiles` in [`aburi.json`](aburi.json) name (the tests, the test helpers and the showcase's
+sample projects) and lists their changes in the report's folded `🧪 Test files` section
+instead. Every other file the scan reads counts, the docs site, `examples/src` and the
+repository's scripts included. That section comes last, so it is the first one the comment's size
+cap drops on a large pull request; `diff.full.md` in the run's `aburi-diff` artifact holds the
+whole report.
 
 From a fork, that run's token is read-only and cannot post, so a third workflow does it:
 [`aburi-comment.yml`](.github/workflows/aburi-comment.yml) picks the report up from the
@@ -57,6 +67,13 @@ Aburi check finishes, and if it never arrives, the report is still that artifact
 The job has no bypass switch: a tripped gate stays red for that commit. Say in the pull
 request why the removal is deliberate — merging past a red Aburi check is then a
 maintainer's call, and the design docs are what the argument is made against.
+
+The repository's own `aburi.json` loads no effects plugin, so the self-run's report never shows an
+effect. The test suite pins them instead:
+[`effects-coverage.test.ts`](packages/cli/test/e2e/effects-coverage.test.ts) scans a fixture that
+calls the libraries the effects plugins model, diffs one edit per plugin, and compares what each
+plugin attributes with a recorded list, so a change in what a plugin attributes fails until that
+list is updated.
 
 Two things about this repository's own dogfooding are worth knowing before they surprise
 you:

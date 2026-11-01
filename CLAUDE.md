@@ -93,6 +93,9 @@ pipeline, and its tests run against its own built bin.
 - The docs deploy uses `cloudflare/wrangler-action@v4`; v3 pins a Wrangler that cannot deploy an
   assets-only Worker.
 - The docs site ships with a release, not a merge (`release.yml` calls `docs.yml`).
+- `aburi diff <base>..<head>` scans the base on a worker thread that runs cli's built
+  `dist/scan-worker.mjs`, even under a direct vitest run of `src`. Rebuild cli before that run, or the
+  base scans with the last build (and, never built, every ref diff exits 1).
 - `packages/github-action/test/resolve-cli-bin.test.ts` › "anchors on the working directory…" fails in
   a long-lived checkout whose pnpm store exposes `@aburi/cli` through vitest's `NODE_PATH`; it passes in a
   fresh install and in CI.

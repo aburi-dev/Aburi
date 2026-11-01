@@ -1,6 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { diffIRs } from "@aburi/test-harness"
+import { editFile } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { evaluateFailOn, parseFailOn } from "../../src"
 import { scanFixture, useFixtureCheckout } from "./project"
@@ -11,16 +11,16 @@ describe("e2e diff — a guard added to BillingService.applyRefund", () => {
   it("reports changed:1 with logicChanged=true and trips `--fail-on changed`", async () => {
     const baseIR = (await scanFixture(fixture.root)).ir
 
-    const target = resolve(fixture.root, "src/billing/billing.service.ts")
-    const original = await readFile(target, "utf8")
     const dollar = "$"
     const guardLine = `    if (amountCents < 0) throw new Error(\`refund amount must be non-negative: ${dollar}{amountCents}\`)`
     const searchAnchor =
       "  applyRefund(id: string, amountCents: number): StoredInvoice {\n    const invoice = this.findInvoice(id)"
     const replacement = `  applyRefund(id: string, amountCents: number): StoredInvoice {\n${guardLine}\n    const invoice = this.findInvoice(id)`
-    const patched = original.replace(searchAnchor, replacement)
-    expect(patched, "mutation regex must match the fixture's applyRefund").not.toBe(original)
-    await writeFile(target, patched, "utf8")
+    await editFile(
+      resolve(fixture.root, "src/billing/billing.service.ts"),
+      searchAnchor,
+      replacement,
+    )
 
     const headIR = (await scanFixture(fixture.root)).ir
     const diff = diffIRs(baseIR, headIR)
