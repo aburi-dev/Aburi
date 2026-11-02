@@ -38,11 +38,11 @@ jobs:
       - name: Build the site
         run: pnpm --filter @aburi/docs build
 
-      # The action brings Wrangler; as a workspace dependency it would add ~300 packages to every install.
+      # Not a workspace dependency (~300 packages on every install), and not wrangler-action: it installs
+      # Wrangler with npm, which cannot read the docs package's workspace: dependencies.
       - name: Deploy
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: docs
-          command: deploy
+        working-directory: docs
+        run: pnpm dlx wrangler@4 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

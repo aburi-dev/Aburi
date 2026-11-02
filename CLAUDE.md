@@ -90,8 +90,8 @@ pipeline, and its tests run against its own built bin.
 - `.gitattributes` forces LF: Biome is configured for LF and Windows checkouts would otherwise fail it.
 - `declarationMap` stays off: turning it on makes rolldown-plugin-dts enable sourcemaps for every
   tsdown build and ships ~1.6 MB of `.map` files.
-- The docs deploy uses `cloudflare/wrangler-action@v4`; v3 pins a Wrangler that cannot deploy an
-  assets-only Worker.
+- The docs deploy runs Wrangler through `pnpm dlx`. `cloudflare/wrangler-action` installs it with npm,
+  which fails on the docs package's `workspace:` dependencies.
 - The docs site ships with a release, not a merge (`release.yml` calls `docs.yml`).
 - `aburi diff <base>..<head>` scans the base on a worker thread that runs cli's built
   `dist/scan-worker.mjs`, even under a direct vitest run of `src`. Rebuild cli before that run, or the
