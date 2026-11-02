@@ -65,11 +65,11 @@
     "@aburi/schema": "workspace:*",
     "@aburi/test-harness": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
-    "ajv": "^8.20.0",
-    "tsdown": "^0.22.3",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "@types/node": "catalog:",
+    "ajv": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

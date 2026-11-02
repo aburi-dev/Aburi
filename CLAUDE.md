@@ -84,7 +84,9 @@ pipeline, and its tests run against its own built bin.
   spec ids, invariant numbers, issue or PR numbers — in code, comments or test titles.
 - ESM, strict TypeScript, no `any` escapes, no linter-suppression comments.
 - Dependencies are added with `pnpm add` (workspace packages as `'@aburi/x@workspace:*'`), never by
-  writing versions into `package.json`.
+  writing versions into `package.json`. One that two or more packages declare is a `catalog:` entry,
+  its range kept once in `pnpm-workspace.yaml`: `pnpm add` writes `catalog:` for a name the catalog
+  lists, and `pnpm add <dep> --save-catalog`, run for every package that declares it, moves one there.
 - Behaviour is specified in `docs/design/` first; change the doc and schema in the same branch.
 - A change to a published package needs a changeset (`pnpm changeset`).
 - Branch from `main`; changes land through pull requests.
