@@ -25,8 +25,8 @@
     "@aburi/lang-typescript": "workspace:*",
     "@aburi/test-support": "workspace:*",
     "@aburi/types": "workspace:*",
-    "@types/node": "^26.0.1",
-    "tsx": "^4.22.4",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   }

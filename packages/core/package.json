@@ -47,9 +47,9 @@
   "devDependencies": {
     "@aburi/schema": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.6.5",
     "@types/picomatch": "^4.0.3",
-    "tsdown": "^0.22.3",
+    "tsdown": "^0.23.2",
     "typescript": "^6.0.3",
     "typescript-language-server": "^5.3.0",
     "vitest": "^4.1.11"
