@@ -164,6 +164,28 @@ triggers a preview build. **Build → Build watch paths** can narrow that to
   `@vscode/tree-sitter-wasm` devDependency by that package's `build`. Both are
   gitignored; `wasm/` is also published, so it must exist before `pnpm pack`.
 
+## Dependency updates
+
+Dependabot proposes updates on Monday mornings, Japan time, grouped by
+[`.github/dependabot.yml`](.github/dependabot.yml) so that what has to move
+together arrives in one pull request and a major arrives on its own. A release
+waits a week before it is proposed; security updates do not wait.
+CI and the Aburi self-run treat these pull requests like any other, and some
+need a hand before they merge:
+
+- Biome changes its formatter output even in patch releases. Run `pnpm format`
+  on the branch, and `pnpm exec biome migrate --write` to move the schema URL in
+  `biome.json`.
+- The workflow examples in the READMEs and under `docs/` use the same action
+  versions as `.github/workflows/`; move them in the same pull request. A bump
+  that reaches [`packages/github-action/action.yml`](packages/github-action/action.yml)
+  changes what the action's users run and needs a changeset for
+  `@aburi/github-action`.
+- A change to a published package's `dependencies`, or to
+  `@vscode/tree-sitter-wasm`, whose grammars `@aburi/lang-typescript` ships,
+  needs a changeset like any other change to a published package; `minor` when
+  the new grammars move a stored fingerprint.
+
 ## Releases
 
 Releases are cut from `main` via [changesets](https://github.com/changesets/changesets):
