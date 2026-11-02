@@ -380,7 +380,7 @@ describe("what an object member does not reach", () => {
     expect(await idsOf("export default { fetch() { q() } }")).toEqual([])
   })
 
-  it("declares no member for an object assigned to module.exports, which runs at module scope", async () => {
+  it("declares no member for an object assigned to module.exports, and leaves its methods' calls on <module>", async () => {
     const source = "module.exports = { m() { q() } }"
 
     expect(await idsOf(source, "src/a.js")).toEqual(["ts:src/a.js#<module>"])

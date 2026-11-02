@@ -44,4 +44,25 @@ describe("scan — a write a module makes when it is imported", () => {
     expect(symbolById(result, "ts:src/app.ts#start").effects).toEqual([])
     expect(result.ir.symbols.map((s) => s.id)).not.toContain("ts:src/app.ts#<module>")
   })
+
+  it("is its call's own when the method is one a router registers through", async () => {
+    await workspace.writeSource(
+      "src/cleanup.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        "const prisma = new PrismaClient()",
+        "await prisma.user.delete({ where: { id: 1 } })",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWith(workspace.root, {
+      languages: [langTypescriptPlugin],
+      effects: [prismaEffectsPlugin],
+    })
+
+    expect(symbolById(result, "ts:src/cleanup.ts#prisma__delete__d0").effects).toMatchObject([
+      { id: "db.write", target: "prisma.user.delete", line: 3 },
+    ])
+  })
 })

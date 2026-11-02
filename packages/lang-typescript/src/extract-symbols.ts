@@ -1,8 +1,4 @@
-import {
-  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
-  type ExtractionContext,
-  type SymbolCandidate,
-} from "@aburi/types"
+import type { ExtractionContext, SymbolCandidate } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import {
   AMBIENT_DECLARATION_TYPE,
@@ -15,10 +11,10 @@ import {
 } from "./ast-helpers"
 import {
   type CallExtractionState,
+  callFunctions,
   layOutBodies,
   makeCallExtractionState,
   visitCallStatement,
-  wrappedFunctions,
 } from "./call-symbols"
 import { addClassAndMembers } from "./class-candidates"
 import { type CandidateSink, makeCandidateSink } from "./declaration-merge"
@@ -216,7 +212,7 @@ function makeDefaultCallCandidate(
 ): SymbolCandidate<Node> | null {
   const statement = value.parent
   if (statement === null) return null
-  const bodies = wrappedFunctions(value)
+  const { bodies, evidence } = callFunctions(value)
   if (bodies.length === 0) return null
   const qname = defaultExportQname()
   return {
@@ -228,7 +224,7 @@ function makeDefaultCallCandidate(
     decorators: [],
     signature: null,
     source: makeSourceRange(statement, ctx),
-    derivedBy: [CALL_ARGUMENT_FUNCTION_DERIVED_BY, ...exportEvidence(value)],
+    derivedBy: [...evidence, ...exportEvidence(value)],
     ...layOutBodies(bodies, statement),
   }
 }

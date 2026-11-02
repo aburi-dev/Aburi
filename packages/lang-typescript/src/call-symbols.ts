@@ -1,5 +1,11 @@
 import { readStaticString, unwrapValue } from "@aburi/core"
-import type { ExtractionContext, MergedDeclaration, SymbolCandidate } from "@aburi/types"
+import {
+  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
+  type ExtractionContext,
+  INVOKED_FUNCTION_DERIVED_BY,
+  type MergedDeclaration,
+  type SymbolCandidate,
+} from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { asFunctionValue, findChild, firstNonCommentChild, makeSourceRange } from "./ast-helpers"
 import { makeTsSymbolId, nestedQname } from "./qname"
@@ -58,7 +64,7 @@ export function visitCallStatement(
   state.seen.set(stem, ordinal + 1)
   const qname = nestedQname([`${stem}__d${ordinal}`])
 
-  const bodies = inlineHandlers(call)
+  const handlers = inlineHandlers(call)
   return {
     id: makeTsSymbolId(ctx.file.path, qname),
     kind: "call",
@@ -68,14 +74,39 @@ export function visitCallStatement(
     decorators: [],
     signature: null,
     source: makeSourceRange(call, ctx),
-    derivedBy: makeDerivedBy(parsed, path, names, bodies.length > 0),
-    ...layOutBodies(bodies, call),
+    derivedBy: makeDerivedBy(parsed, path, names, handlers.length > 0),
+    // Handed no function, the registration defers nothing: what it runs is the call, on import.
+    ...layOutBodies(handlers.length > 0 ? handlers : [call], call),
   }
 }
 
 export function wrappedFunctions(value: Node): Node[] {
   const call = unwrapValue(value)
   return call.type === "call_expression" ? inlineHandlers(call) : []
+}
+
+export interface CallFunctions {
+  bodies: Node[]
+  evidence: string[]
+}
+
+export function callFunctions(value: Node): CallFunctions {
+  const unwrapped = unwrapValue(value)
+  const awaited = unwrapped.type === "await_expression"
+  const operand = awaited ? firstNonCommentChild(unwrapped) : unwrapped
+  const call = operand === null ? null : unwrapValue(operand)
+  if (call?.type !== "call_expression") return { bodies: [], evidence: [] }
+  // An invoked function runs whether or not its result is awaited. An awaited call's value is what
+  // it resolves to, not a function wrapping the ones it is handed.
+  const invoked = invokedBody(call)
+  const handed = awaited ? [] : inlineHandlers(call)
+  return {
+    bodies: invoked === null ? handed : [invoked, ...handed],
+    evidence: [
+      ...(invoked === null ? [] : [INVOKED_FUNCTION_DERIVED_BY]),
+      ...(handed.length === 0 ? [] : [CALL_ARGUMENT_FUNCTION_DERIVED_BY]),
+    ],
+  }
 }
 
 export function layOutBodies(
@@ -101,20 +132,25 @@ function inlineHandlers(call: Node): Node[] {
     for (const argument of args.namedChildren) {
       if (argument === null) continue
       const handler = asFunctionValue(argument)
-      if (handler === null) continue
-      const body = handler.childForFieldName("body")
-      if (body === null || body.text.length === 0) continue
-      bodies.push(body)
+      const body = handler === null ? null : writtenBody(handler)
+      if (body !== null) bodies.push(body)
     }
   }
   return bodies.sort((a, b) => a.startIndex - b.startIndex)
 }
 
-export function invokedFunction(call: Node): Node | null {
+function invokedBody(call: Node): Node | null {
   let root: Node | null = null
   for (const step of spineCalls(call)) root = step
   const callee = root?.childForFieldName("function") ?? null
-  return callee === null ? null : asFunctionValue(callee)
+  const invoked = callee === null ? null : asFunctionValue(callee)
+  return invoked === null ? null : writtenBody(invoked)
+}
+
+// A body of no width is the parser's stand-in for one that was not written.
+function writtenBody(fn: Node): Node | null {
+  const body = fn.childForFieldName("body")
+  return body === null || body.text.length === 0 ? null : body
 }
 
 function* spineCalls(call: Node): Iterable<Node> {

@@ -32,6 +32,7 @@ export function runsCode(statement: Node): boolean {
 
 // A lone string is a directive (`"use client"`) or evaluates to nothing; either way it runs no code.
 function isDirective(statement: Node): boolean {
+  if (statement.type !== "expression_statement") return false
   const parts = statement.namedChildren.filter(
     (child): child is Node => child !== null && child.type !== "comment",
   )

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { normalizeAst } from "../src/index"
 import { callsOf, idsOf, normalizedOf, symbolOf, walkOf } from "./fixtures/ctx"
 
 const MODULE = "ts:src/a.ts#<module>"
@@ -56,6 +55,8 @@ describe("a module's top-level statements", () => {
     ["a block", "{ setup() }", ["setup"], []],
     ["a labelled statement", "outer: for (const x of xs) visit(x)", ["visit"], ["loop"]],
     ["a throw", 'throw new Error("unsupported")', ["Error"], ["throw"]],
+    ["a throw of a string", 'throw "unsupported"', [], ["throw"]],
+    ["a with", "with (obj) { f() }", ["f"], []],
     [
       "an immediately invoked function",
       "(async () => { await main() })()",
@@ -63,6 +64,19 @@ describe("a module's top-level statements", () => {
       [],
     ],
     ["a statement inside a namespace", "namespace N { setup() }", ["setup"], []],
+    ["a statement inside an exported namespace", "export namespace N { setup() }", ["setup"], []],
+    [
+      "a statement inside a nested namespace",
+      "namespace A { namespace B { setup() } }",
+      ["setup"],
+      [],
+    ],
+    [
+      "a registration inside a namespace, which is no Symbol of its own",
+      'namespace N { app.get("/x", () => { q() }) }',
+      ["app.get", "q"],
+      [],
+    ],
   ])("take %s", async (_label, source, calls, rules) => {
     const walk = await walkOf(source, MODULE)
 
@@ -78,6 +92,7 @@ describe("a module's top-level statements", () => {
     ],
     ["a directive", '"use client"\nexport function Page() { return null }'],
     ["a registration, which is its own Symbol", 'app.get("/users", (req, res) => { list() })'],
+    ["a registration handed no function, which walks its own call", "app.use(cors())"],
     ["a default export", "export default withAuth(() => { q() })"],
     ["an ambient declaration", "declare function f(): void\ndeclare const v: number"],
     ["an empty statement", ";"],
@@ -96,22 +111,28 @@ describe("a module's top-level statements", () => {
   })
 
   it("are described by every one of them, not by the first alone", async () => {
-    const symbol = await symbolOf("a()\nb()", MODULE)
-
-    expect(symbol.mergedDeclarations).toHaveLength(1)
-    expect(normalizeAst(symbol)).not.toBe(normalizeAst({ ...symbol, mergedDeclarations: [] }))
+    expect(await normalizedOf("a()\nc()", MODULE)).not.toBe(await normalizedOf("a()\nb()", MODULE))
   })
 })
 
-describe("a function a const's initializer runs in place", () => {
-  it("is the const's body", async () => {
-    const source = "export const h = (() => { q() })()"
-    const symbol = await symbolOf(source, "ts:src/a.ts#h")
+describe("a function a const's initializer or a default export runs in place", () => {
+  it.each([
+    ["a const", "export const h = (() => { q() })()", "h", "export-keyword"],
+    [
+      "a const that awaits it",
+      "export const h = await (async () => { q() })()",
+      "h",
+      "export-keyword",
+    ],
+    ["a default export", "export default (async () => { q() })()", "<default>", "export-default"],
+  ])("is the body of %s", async (_label, source, name, exported) => {
+    const id = `ts:src/a.ts#${name}`
+    const symbol = await symbolOf(source, id)
 
     expect(symbol.kind).toBe("const")
-    expect(symbol.derivedBy).toEqual(["invoked-function", "export-keyword"])
-    expect(await callsOf(source, "ts:src/a.ts#h")).toEqual(["q"])
-    expect(await idsOf(source)).toEqual(["ts:src/a.ts#h"])
+    expect(symbol.derivedBy).toEqual(["invoked-function", exported])
+    expect(await callsOf(source, id)).toEqual(["q"])
+    expect(await idsOf(source)).toEqual([id])
   })
 
   it("leads the functions the rest of the chain is handed", async () => {

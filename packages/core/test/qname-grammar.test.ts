@@ -107,6 +107,7 @@ describe("what is not a name is still refused, and named", () => {
     ["module-scope", MODULE_SCOPE_QNAME],
   ])("keeps the %s sentinel, which is exempted before the segment check", (_label, sentinel) => {
     expect(build(sentinel)).toBe(`ts:src/a.ts#${sentinel}`)
+    expect(isQualifiedName(sentinel)).toBe(true)
   })
 
   it.each([

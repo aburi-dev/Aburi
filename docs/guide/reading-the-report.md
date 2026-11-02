@@ -74,7 +74,10 @@ does.
 An entry is named after the symbol it is about. Two names are not written in
 the source: `<default>` is a file's anonymous default export, and `<module>` is
 what a file does when it is imported, the statements at its top level that
-declare nothing (`await seed()`, `process.on("SIGTERM", …)`).
+declare nothing (`await seed()`, `process.on("SIGTERM", …)`). In a CommonJS
+file that includes the functions assigned to `module.exports` or
+`exports.handler`: an assignment declares nothing, so their calls are
+reported under `<module>` rather than under a name of their own.
 
 A change entry lists what differs. A rule, effect, call or decorator that was
 edited rather than added or removed sits under `modified`, with the old value

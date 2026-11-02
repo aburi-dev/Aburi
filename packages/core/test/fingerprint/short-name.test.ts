@@ -11,6 +11,7 @@ describe("lastQnameSegment", () => {
     ["C.#v", "#v"],
     ["C::#v", "#v"],
     ["<default>", "<default>"],
+    ["<module>", "<module>"],
   ])("answers %j with %j", (qname, leaf) => {
     expect(lastQnameSegment(qname)).toBe(leaf)
   })

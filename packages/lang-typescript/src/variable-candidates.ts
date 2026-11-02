@@ -1,9 +1,4 @@
-import { unwrapValue } from "@aburi/core"
-import {
-  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
-  type ExtractionContext,
-  type SymbolCandidate,
-} from "@aburi/types"
+import type { ExtractionContext, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import {
   asClassValue,
@@ -12,7 +7,7 @@ import {
   makeSourceRange,
   nameFieldText,
 } from "./ast-helpers"
-import { invokedFunction, layOutBodies, wrappedFunctions } from "./call-symbols"
+import { callFunctions, layOutBodies } from "./call-symbols"
 import { classMemberCandidates } from "./class-candidates"
 import { foldMemberGroup, groupMemberDeclaration, type MemberGroup } from "./declaration-merge"
 import { refuseAnonymousId } from "./declared-name"
@@ -115,7 +110,8 @@ function makeVariableCandidate(
       ...objectMemberCandidates(object, ctx, [...namespacePath, name]),
     ]
   }
-  const { bodies, evidence } = initializerFunctions(initializer)
+  const { bodies, evidence } =
+    initializer === null ? { bodies: [], evidence: [] } : callFunctions(initializer)
   return [
     {
       id,
@@ -130,31 +126,6 @@ function makeVariableCandidate(
       ...layOutBodies(bodies, statement),
     },
   ]
-}
-
-interface InitializerFunctions {
-  bodies: Node[]
-  evidence: string[]
-}
-
-function initializerFunctions(initializer: Node | null): InitializerFunctions {
-  const call = initializer === null ? null : unwrapValue(initializer)
-  if (call === null || call.type !== "call_expression") return { bodies: [], evidence: [] }
-  const handed = wrappedFunctions(call)
-  const invoked = invokedFunction(call)?.childForFieldName("body") ?? null
-  if (invoked === null || invoked.text.length === 0) {
-    return {
-      bodies: handed,
-      evidence: handed.length > 0 ? [CALL_ARGUMENT_FUNCTION_DERIVED_BY] : [],
-    }
-  }
-  return {
-    bodies: [invoked, ...handed],
-    evidence:
-      handed.length > 0
-        ? ["invoked-function", CALL_ARGUMENT_FUNCTION_DERIVED_BY]
-        : ["invoked-function"],
-  }
 }
 
 function objectMemberCandidates(
