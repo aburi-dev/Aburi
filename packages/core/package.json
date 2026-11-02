@@ -40,8 +40,8 @@
     "@aburi/types": "workspace:*",
     "picomatch": "^4.0.7",
     "tinyglobby": "^0.2.17",
-    "vscode-jsonrpc": "^9.0.1",
-    "vscode-languageserver-protocol": "^3.18.2",
+    "vscode-jsonrpc": "^10.0.0",
+    "vscode-languageserver-protocol": "^3.18.5",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
