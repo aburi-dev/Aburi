@@ -50,6 +50,6 @@
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.5"
   }
 }
