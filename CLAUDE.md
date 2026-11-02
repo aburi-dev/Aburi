@@ -54,6 +54,10 @@ Private packages:
 - `@aburi/docs` (`docs/`) — the VitePress site. Its `build` builds the packages it renders first.
 - `@aburi/benchmark-public-repos` (`benchmarks/public-repos/`) — measures `scan` and `diff` on pinned
   public repositories; run by hand or by `benchmark.yml`. Its report helpers have unit tests.
+- `@aburi/changelog` — the changelog functions `.changeset/config.json` names, which write every
+  CHANGELOG.md and so every GitHub release: each changeset as `@changesets/changelog-git` writes it,
+  and the dependencies a release picked up in one line. Plain `.mjs` with no build, because
+  `changeset version` loads it from source before anything is built.
 
 Generated, gitignored, rebuilt by turbo: `packages/types/src/generated/` (the `codegen` task, from the
 schemas) and `packages/lang-typescript/wasm/` (vendored grammars).

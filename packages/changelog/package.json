@@ -1,0 +1,21 @@
+{
+  "name": "@aburi/changelog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The changelog functions `changeset version` writes each CHANGELOG.md, and so each GitHub release, with: a changeset as @changesets/changelog-git writes it, and the dependencies a release picked up in one line. Not published; the changesets config loads it by name.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@changesets/changelog-git": "^1.0.0"
+  },
+  "devDependencies": {
+    "@aburi/test-support": "workspace:*",
+    "@changesets/cli": "^2.31.0",
+    "vitest": "^4.1.11"
+  }
+}
