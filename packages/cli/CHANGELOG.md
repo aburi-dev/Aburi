@@ -1,5 +1,269 @@
 # @aburi/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- f2a6916: `aburi scan` now writes the edges between Components. Before this release, `dependencies[]` held only Symbol-to-Symbol `via: "call"` edges, so the Component dependencies graph in every `workspace.md` drew its nodes and no arrow, its fallback list read `_No Component edges recorded._`, and a diff never had a `Component-level added` or `Component-level removed` group.
+
+  For each ordered pair of distinct Components where a file in the first imports a module of the second, the IR now carries one `{ from, to, via: "import", direction: "outbound", effect: null }`. In a pnpm workspace, `packages/web/src/app.ts` writing `import { format } from "@acme/shared"` gives `acme-web` → `acme-shared`:
+
+  ```
+  Fallback list:
+
+  - `acme-web` → `acme-shared` (via `import`)
+  ```
+
+  Static imports, dynamic `import()`, re-exports, side-effect imports, `import x = require(…)` and type-only imports all count, and a bundler query such as `?raw` is dropped before the specifier is read. A relative specifier names the Component its joined path lies in, whether or not that path is a file the scan read; one that climbs exactly to the workspace root names the Component rooted at `.`. A bare specifier names a workspace package by its `package.json#name`, a subpath such as `@acme/shared/format` included. A package belongs to the Component that holds its `package.json`. A registry dependency, a Node built-in, a path alias, a CommonJS `require()` call, an import inside one Component, and the imports of a file the scan left out produce no edge. A package name the manifests of two Components declare names neither, and the scan warns once for each such name an import uses. A resolved call between Components adds no edge of its own: a call matched only by a globally unique name is not evidence of a dependency.
+
+  Every IR of a workspace where one Component imports another changes, and so does its `workspace.md`. A diff against an IR scanned before this release reports every Component edge as `Component-level added`. No fingerprint moves.
+
+  The scan now reads `package.json` at each workspace package root and each root a config's `components[]` declares, wherever a Component holds it; a root no Component holds is not read. A manifest it reads that cannot be read or parsed stops the scan with exit 2 (`Failed to resolve components: …`). Before this release a config that declared its Components never read those manifests, so the same tree scanned with exit 0. A malformed `package.json` at the workspace root still stops workspace detection first, with exit 1, as before.
+
+  A diff now reads a Component edge one side lacks as `unknown` when that side skipped a file of the Component the edge leaves, since any of those files could have held the import, and lists every such file in `lostFiles`. Before, a `parse-timeout` on one file put a `Component-level removed` line in the report for a dependency that still existed.
+
+  `@aburi/core`: `ScanInput` takes an optional `workspacePackages` (`{ name, root }[]`), which `readWorkspacePackages(workspaceRoot, roots)` reads; `NPM_MANIFEST` is exported beside it. A caller that passes none gets edges from relative imports alone. `@aburi/diff`: `DependencySideView` carries `componentLostFiles`, the skipped files of each Component, which `dependencySideView` fills in.
+
+- 113622f: `aburi diff <base>..<head>` runs its two scans at the same time: the base on a worker thread, the
+  head on the main thread. On a 4-CPU machine a diff of the last 50 commits of `nest` (1,828
+  TypeScript files) took 4.4 s instead of 6.9 s, where one scan of the head takes 3.4 s, and peak RSS
+  rose from 362 MiB to 498 MiB. stdout, stderr, the exit code and the report stay byte-identical to a
+  run with one scan at a time. That includes which failure ends a run where a scan fails: the base
+  scan's error still comes first, and the head's log and incidents still follow the base's. A plugin
+  that ends the base's thread itself, by calling `process.exit()` or throwing from a timer, ends the
+  run with exit 1 and a message naming the base ref.
+
+  The new `--no-parallel-scans` option (`DiffOptions.parallelScans: false`) runs the base and then the
+  head, as before, which uses less memory. Without it, both scans run together when
+  `os.availableParallelism()` reports two or more CPUs; `--parallel-scans` runs them together on one.
+
+- 1a56ce7: A top-level file or directory whose name opens with one ASCII letter and a colon (`a:notes.ts`, `d:data/x.ts`) no longer ends the scan. A Document path reads that opening as a Windows drive, on every platform, so such a name has no spelling in the IR, and discovery handed it to the path rule anyway: `aburi scan` stopped with `path "a:notes.ts" is absolute; only workspace-relative paths are allowed`, exit 1, and wrote no IR. The file is now reported the way a name holding a backslash is: it is left out of the IR and of `stats.totalFiles`, the rest of the workspace is scanned and the IR written, and the run names it on stderr and exits 3.
+
+  ```
+  ⚠ 3 file(s) were left out of the IR and out of its counts, under 2 top-level name(s) a Document path reads as a Windows drive: a path opening with one ASCII letter and ":" names a drive there, and a Document means the same on every platform, so no workspace-relative path can open that way. Rename each one below, or leave it out with ignore, which matches the name as printed.
+      a:notes.ts
+      d:data — a directory, and the 2 file(s) under it
+  ```
+
+  A colon anywhere else (`ab:notes.ts`, `src/x:y.ts`) is still an `unroutable` skip, as before. `ScanResult.unrepresentableFiles` (and `ScanReport.unrepresentableFiles`) can now hold `reason: "drive-shaped-name"`, with the top-level name in `unnameablePrefix`, beside `"unspellable-name"` and `"colliding-spelling"`; code that switches over that reason needs a case for it. `@aburi/core` exports `unnameableSite`, which says whether a path has no Document spelling, because of a backslash or a drive, and which prefix to rename. It no longer exports `backslashSite` or `BackslashSite`: `unnameableSite` answers the backslash case with the same prefix.
+
+  A workspace package in such a directory, or in one whose name holds a backslash, no longer ends the scan either: `pnpm-workspace.yaml` `packages: ["*"]` beside an `a:pkg/package.json`, or an nx `a:pkg/project.json`, stopped every `aburi scan` and `aburi init` with `pnpm workspace root "a:pkg" is absolute; … A package outside the workspace root cannot be described by this IR`, even with `components` declared in the config. That package is now not a Component and not on `workspace.managers[].roots`, and the other packages are detected as before. Both commands name it on stderr, whether or not it holds a source file, and `aburi scan` exits 3 for it, so an `aburi diff` whose scan found one exits 3 too:
+
+  ```
+  ⚠ pnpm package "a:pkg" (pnpm-workspace.yaml) is not a component and not on workspace.managers[].roots, and none of its files can be scanned: "a:pkg" opens with one ASCII letter and ":", which a Document path reads as a Windows drive, so no IR can name it. Rename it.
+  ```
+
+  `aburi init` still writes the config and exits 0. Where that package was the only one, both commands follow the line with `No other workspace package was found, so the whole repository is described as one component.` `detectManagers` returns these packages as `unnameableRoots`, and `ScanReport` and `InitReport` carry them under the same name. A package under `..` is still refused as outside the workspace, whatever its name.
+
+  `aburi explain d:data/x.ts` and `aburi explain ./a:notes.ts`, and `aburi explain a:notes.ts` when that file exists, now answer, as a path holding a backslash does, that no IR can name the file and why, with exit 3, instead of `No matches` with exit 1. A bare argument that names no file, such as `A::create`, is still matched against qualified names.
+
+  Only a workspace holding such a name sees a difference, and it could not be scanned before, so there is no earlier IR of it to compare against. Every other IR is unchanged.
+
+- 659f00c: `--fail-on removed` no longer trips on a removed duplicate of a head Symbol, and a tripped gate names the Symbols that tripped it. Deduplicating two identical helpers into one always left one of them `removed`, so the gate the docs recommend starting with failed every such refactor. `removed` now counts the removals whose `duplicateOf` is `null` or absent, and the new `removed:duplicate` counts the others: `--fail-on removed,removed:duplicate` trips on every removal, as `removed` did before. A threshold does not carry over: `removed:>N` counted every removal and now counts only those that are not duplicates, and no combination of clauses holds the two to one threshold. When the clauses hold `removed` and no `removed:duplicate`, `aburi diff` names on stderr the duplicates it did not count, so a gate kept across the upgrade does not narrow without a word.
+
+  The stderr line a tripped clause prints is followed by the id of each Symbol it counted, indented, ten at most and then `… and N more`, so a red check says which removal it was. Every clause now counts `symbols[]` entries rather than the `summary` counters, so the count and the ids are one list.
+
+  For library users: `FailOnToken` and `FailOnStatusToken` gain `removed:duplicate`, so an exhaustive `switch` over them needs the case. `runDiff`'s `triggered` and `evaluateFailOn`'s `firstTriggered` are a `TrippedClause`, whose `symbols` is required, so a caller that builds `{ clause, observed }` for `formatFailOnMessage` must add it. `evaluateClause` returns a `ClauseOutcome`, which carries the same `symbols`. `ClauseOutcome` and `TrippedClause` are new exports. `formatTriggered` takes a `TrippedClause` in place of a clause and a count, and `formatFailOnMessage` is now the same function under its earlier name.
+
+- bb90fea: New package `@aburi/framework-trpc` classifies the server side of tRPC as Boundaries: the `initTRPC` instance (`framework:trpc:instance`), routers and merged routers (`framework:trpc:router`), `query` / `mutation` / `subscription` procedures (`framework:trpc:procedure`), base procedures such as `t.procedure.use(isAuthed)` (`framework:trpc:base-procedure`) and middleware (`framework:trpc:middleware`), each a `const` whose own declarator holds the shape. A procedure's resolver is a function, an async generator, a name for one, or a call that returns one, and the bare `t.procedure` is a base procedure only off a plain name in a file that imports `@trpc/server`. Confidence is `high` in a file that imports `@trpc/server` and `medium` elsewhere. `aburi init` now writes `framework-trpc` for a workspace that depends on `@trpc/server`, where it used to report the framework as unmapped. The `@aburi/effects-trpc` README names the new package as the one that covers server-side routers.
+
+  `@aburi/core` exports `receiverChain`, the receiver walk `calleeName` names a call by, with each property and method on the way, and `writtenChildren`, a node's named children without comments. `@aburi/framework-express` reads its arguments through the latter.
+
+- af663a2: `ABURI_LOG_LEVEL` now governs the scans `aburi diff` and `aburi explain` run, as it already governed `aburi scan`'s. Both commands built their scans without it, so those scans logged at `warn` whatever the variable said: `ABURI_LOG_LEVEL=error aburi diff main..HEAD` still printed a `warn: Skipped src/legacy.ts: parse reported a non-recoverable error at 12:4 — …` line from each side, and `ABURI_LOG_LEVEL=debug` reached neither command's per-file `debug:` lines. `runDiff` and `runExplain` take the level as `logLevel`, as `runScan` does.
+
+  The level can also be set with `--log-level debug|info|warn|error`, on any command and before or after it, and the flag wins over the variable. A value other than those four exits 2, where the variable still ignores one. The default stays `warn`. Every command's `--help` lists the flag among its global options.
+
+  The level decides only which `debug:`, `info:`, `warn:` and `error:` lines reach stderr. The `⚠` warnings, the IR, `diff.json` and `diff.md` are the same at every level, so nothing produced before this release compares differently with what is produced after.
+
+  Minor rather than patch: the CLI gains a flag, and `DiffOptions` and `ExplainOptions` gain `logLevel`.
+
+- f9d300c: LSP enrichment opens each file under the language id its extension names: `.tsx` as `typescriptreact`, `.jsx` as `javascriptreact`, `.js`, `.mjs` and `.cjs` as `javascript`, and `.ts`, `.mts` and `.cts` as `typescript` as before. All eight used to be opened as `typescript`, so the server read the JSX in a `.tsx`, `.jsx` or `.js` file as type assertions, and a `this.<method>()` call inside a JSX expression hovered as `any` and landed in `hintsRejected.ownerClassNotFound`. Such a call can now resolve like the same call outside JSX, provided the server answers for the document type it is now told. A file whose extension has no known id is still opened under its language's id, and each language and extension that has to be guessed this way is now reported once.
+
+  A configuration that leaves the pass nothing to do is now reported instead of passing in silence: an `lsp.servers` key that names no loaded language plugin, such as `typescript` where the plugin id is `ts`, and a configuration in which no key matches at all, `"servers": {}` and `aburi scan --lsp` over a config with no `lsp` block included. `stats.lspEnrichment.enabled` now keeps its schema's promise: it is `false` when no language the scan found Symbols in has a server configured, and `aburi scan` says so. These lines arrive with the scan's other incidents, labelled with the side under `aburi diff`, rather than through the log. The docs and config schema now give `ts` as the key, and the `@aburi/types` patch carries the regenerated `lsp.servers` descriptions.
+
+  `EnrichmentInput` takes the loaded plugins' language ids as a required `languageIds`, which `scan` fills in; a direct caller of `enrichWithLsp` passes them, or `null` to check no key. The lines come back as `EnrichmentResult.warnings` and `ScanResult.lspWarnings`, and as `ScanReport.lspWarnings` in the CLI. Minor for `@aburi/cli` rather than patch: `ScanReport` gains the required `lspWarnings`.
+
+  Without `lsp.enabled`, which is off by default, or without an effect plugin, no fingerprint moves. With both, a caller in a `.tsx`, `.jsx`, `.js`, `.mjs` or `.cjs` file whose `this.*` call now resolves inherits that callee's effects, which moves its `logic` fingerprint, so an IR scanned before this release, compared with one scanned after, can report such a caller as changed. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with the installed version and is unaffected.
+
+- 61dd8a8: A `pluginOptions` key that names no loaded plugin is now reported instead of being ignored in silence. With `"languages": ["lang-typescript"]`, `"effects": ["effects-prisma"]` and options under the misspelled `"effects-prsima"`, or options for a plugin that `languages`, `frameworks` and `effects` do not enable, `aburi scan` used to exit 0 with nothing on stderr; it now warns once per such key, naming the plugins that did load:
+
+  ```
+  ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, effects-prisma).
+  ```
+
+  A key matches a plugin by its manifest name, and a plugin loaded by package id or path matches only under its manifest name. The `hint-<name>` plugin a `frameworkHints` entry is loaded as counts as loaded, but Aburi builds it from the entry and it reads no options, so a key for it gets a line of its own:
+
+  ```
+  ⚠ pluginOptions["hint-acme"] names the plugin built from the frameworkHints entry "acme", which takes no options; write its rules in that entry.
+  ```
+
+  The lines follow the keys' config order. `aburi explain` says them when it rescans, and `aburi diff` says each once, without a side label, since both of its scans load the head's config and plugins. The warnings do not change the exit code.
+
+  No plugin that ships with Aburi reads `pluginOptions`, and the documentation no longer shows options for `effects-prisma` and `framework-nestjs`: `treatExtendsAsTx` and `considerHttpExceptionAsThrow` never existed. The field is for third-party plugins, which read their own key from `ctx.config` in their extraction and classification hooks.
+
+  Minor for `@aburi/cli` rather than patch: `ScanReport` gains the required `loadedPlugins` and `strayPluginOptions`, one `StrayPluginOptions` (`{ key, hintEntry }`, `hintEntry` null for a key that names no loaded plugin) per reported key. `ScanOptions.incidents` takes an optional `said` set that the scans of one command share, and the exported `reportScanIncidents` takes the same set as an optional fourth argument.
+
+  Nothing is written to the IR or the diff, so no fingerprint moves: an IR scanned before this release compares with one scanned after exactly as before.
+
+- d4fca12: Component detection now writes a `publicApi` entry only for a `package.json` value that names a file inside the package. `"main": "./"`, a legal npm value, and the folder-mapping form of `exports`, `"./": "./"`, used to give `publicApi: [""]`: `aburi scan` exited 0 having written an IR that fails its own schema. They now give no entry. Neither do `"."`, a directory value whose last segment is empty or `.` (`"./lib/"`, `"./lib/."`), an absolute path, one whose first segment reads as a Windows drive (`"a:index.js"`) or one with a `..` segment, which used to be written as `"."`, `"lib/"`, `"lib/."`, `"/dist/index.js"`, `"a:index.js"` or `"../shared/index.js"`. A value spelled with repeated or inner `.` segments or a doubled slash (`"././dist/index.js"`, `"dist//index.js"`) is written as the one path it names, `"dist/index.js"`, where it used to keep the extra `./` or slash. The integrity check now holds every `publicApi` entry to what the schema states for one, non-empty and free of backslashes, so a scan stops rather than write a Document that breaks it. A `publicApi` entry in `aburi.json` holding a backslash is refused with exit 2 naming the component; it used to be copied into an IR that failed its schema. `@aburi/core` exports `posixSpellingViolation`, the check `aburi scan` applies to such an entry.
+
+  Only a package whose manifest spells one of those values sees a difference, and no Symbol does. A stored IR from before this release that holds an empty or backslashed `publicApi` entry is refused with exit 2 by `aburi diff` and `aburi explain`. One with any other affected value still reads, and compared with an IR scanned after this release reports that component's `publicApi` as changed. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with this release and is unaffected.
+
+- ed3edd3: `aburi diff` kept only the last `--fail-on`, so `--fail-on changed --fail-on removed` gated on `removed` alone and exited 0 over a changed Symbol, without the gate line on stderr. Each occurrence now adds its clauses after the earlier ones', exactly as the comma form does: that run exits 3 with `--fail-on changed tripped (observed: 1 changed)`, as `--fail-on changed,removed` does. Each occurrence is read as a value of its own, so `--fail-on bogus --fail-on changed`, which used to gate on `changed` alone, exits 2 with `--fail-on value "bogus" is invalid: unknown token "bogus"`. `runDiff` takes a list of `--fail-on` values as well as one, and refuses an empty list as it refuses an empty value, with the same `FailOnParseError` before anything is written.
+
+  Every other option that takes a value kept its last one too and dropped the earlier ones without a word: `--config`, `--output-dir`, `--format`, `--max-bytes`, `--base`, `--head`, `--ir` and the `--output` of `init` and `explain`. A second occurrence now exits 2 before anything is read or written, naming the option and both values: `--config is given more than once ("a.json", then "b.json"): pass one`. The new global `--log-level` takes one value the same way, whether both occurrences come before the command, after it, or one on each side. That holds when the second value is one the option refuses on its own, too: `--format json --format bogus` names the repeat, where it used to report only that `bogus` is invalid. `--ignore` still adds up, and a flag, which takes no value, or either half of a `--x` / `--no-x` pair, can still be repeated, the last one written applying. A CI script that repeats `--fail-on` now gates on every clause it names, and can turn red on a change the last clause alone let through; one that repeats any other option that takes a value exits 2 until it passes it once.
+
+  An option that takes a path now exits 2 on an empty value, before anything is read or written: `error: option '--config <path>' argument '' is invalid. a path must not be empty`. `--config ""` used to fall back to `ABURI_CONFIG` or a discovered `aburi.json`, `--output-dir ""` wrote into the working directory, where `aburi diff` first removed any `diff.json`, `diff.md` and `diff.full.md` it found, and `aburi diff main..HEAD --head ""` ran as if `--head` were absent. `init --output ""`, `explain --ir ""`, `explain --output ""` and `diff --base ""` exited 2 already, with a message about a directory or a missing input instead. A script that builds a path option from a variable that can be empty exits 2 until it leaves the option out in that case. `aburi diff main..HEAD --head h.json` ran the ref diff and ignored `--head` whatever its value; it now exits 2 with `--head cannot be combined with a ref spec argument. Use one or the other.`, as `--base` beside a ref spec already did.
+
+  Only argument handling changes. Nothing a scan or a diff writes is different, so an IR scanned before this release, compared with one scanned after, shows no change the release caused.
+
+- 7830c96: The changes of test code are reported apart, and a gate can leave them out. A new config field, `testFiles`, names the files that hold test code: glob patterns in the syntax of `ignore`, defaulting to `**/*.test.*`, `**/*.spec.*`, `**/*.test-d.*`, `**/*.spec-d.*`, `**/__tests__/**`, `**/__mocks__/**`, `**/__fixtures__/**`, `**/test/**`, `**/tests/**` and `**/e2e/**`; a list given replaces the default one, and `[]` marks no file. As in `ignore`, a pattern that does not end in `*` names a directory as well, so `test` marks every file under the root's `test/`. A pattern that starts with `!` takes the files it names out of what the others mark, so `["**/test/**", "!src/test"]` leaves a production `src/test/` reviewed; a list of `!` patterns alone marks nothing. Those files are still scanned, so their calls stay in the dependency graph, and every Symbol of one carries `inTestFile: true` in the IR, an optional key no fingerprint reads.
+
+  `diff.md` lists the changes of those Symbols by name, grouped like the sections of the report, in a folded `## 🧪 Test files` section at the end, and leaves them out of every section above it; the Summary line ends `· N in test files`. The call edges those Symbols gained or lost are listed in the same fold instead of `## 🔗 Dependency changes`. The Slice View leaves out a Slice made of test code alone, and a Slice that reaches beyond test code still draws its test members. A pair is placed by its head Symbol. On a pull request that only edits fixtures the report was a page of `➕ Added` entries for scratch variables; it is now the Summary line and one fold.
+
+  `aburi diff --fail-on-scope non-test` makes every `--fail-on` clause count only the changes outside test files, and the tripped line says so: `--fail-on removed tripped (observed: 1 removed outside test files)`. The default, `all`, counts every change as before. The line naming the removed duplicates a `removed` clause did not count reads the same scope. The GitHub Action forwards a new `fail-on-scope` input. For library users, `evaluateClause` and `evaluateFailOn` take the scope as an optional third argument, `FailOnScope` is a new export, and `TrippedClause` carries a required `scope`, which `formatTriggered` reads.
+
+  Compared with an IR scanned before this release, an IR scanned after it moves no Symbol, as no fingerprint reads the key. A removal is placed by its base Symbol, though, which the older IR does not mark, so a deleted fixture stays in `➖ Removed` and counts under `--fail-on-scope non-test`. `aburi diff <base>..<head>` scans both sides with this release, so neither happens there.
+
+- 65c758f: A directory the scan cannot list now ends the run at exit 1 and names it, as a file the scan cannot open already did. The walk took a failed listing for an empty directory, so a permission, an exhausted descriptor table or failing storage removed every file under it from `symbols`, `stats.totalFiles` and `stats.skippedFiles` alike, and `aburi scan` exited 0: with `src/locked` unreadable beside `src/a.ts`, the IR held `src/a.ts` alone and nothing mentioned `src/locked/b.ts`. The same scan now stops with `Failed to resolve components: Directory "<workspace>/src/locked" could not be listed: EACCES: permission denied, scandir …. Exclude it in .gitignore, or let this process read it`, since the component census meets it first. A directory that is gone by the time it is listed is still passed over, and so is one that `.gitignore` excludes while `.gitignore` is honoured: git never lists it and none of its files can reach the IR, so a data directory a container owns does not stop a scan. With `respectGitignore` off its files are scanned, and failing to list it ends the run too.
+
+  Component detection follows the same rule in its language census, in the nx detector's search for `project.json` and in the resolution of `pnpm-workspace.yaml` and `workspaces` patterns, where a directory that cannot be listed hides every package below it. That resolution follows links, as pnpm does, and a link it cannot resolve ends the run the same way, naming the link; one that dangles or loops is passed over. It never reads `.gitignore`, as pnpm and npm do not, so a git-ignored directory a pattern names ends the run when it cannot be listed. `aburi init` reports any of these at exit 1 rather than 2, after `Failed to detect components: `, since no edit to a config fixes it, and `aburi scan` reports them after `Failed to resolve components: ` whichever search meets them. `detectManagers` takes `{ respectGitignore }`.
+
+  While `respectGitignore` holds, the nx detector no longer takes a `project.json` that `.gitignore` excludes for a project, as nx itself does not. An nx workspace holding one loses the Component rooted there and its entry in `managers[].roots`, and when it was the only project the workspace becomes one Component, as with no nx project. `aburi diff` against an IR scanned before this release reports that change; rescan the base.
+
+  Otherwise a workspace whose directories can all be listed scans as before: `aburi diff` between an IR scanned before this release and one scanned after reports no change. An IR written before this release on a machine that could not list a directory lacks the Symbols under it, and `aburi diff` against it reports them as added; that machine's run now ends instead of writing it. Rescan the base where every directory can be listed rather than comparing against the stored IR.
+
+### Patch Changes
+
+- c6ce311: An effect classification that runs past `classifyTimeoutMs` is now kept rather than dropped. `classify()` is synchronous, so its answer has already been computed by the time the clock is read. Dropping it saved no time and made the IR depend on how busy the machine was: the first classification in a process, on a loaded runner, could lose a real `db.write`, and with it the `logic` of its Symbol and of every caller it propagates to. The call is now classified, or handed to the next plugin when the answer was `null`, exactly as a fast call would be. The overrun is still recorded in `stats.effectClassifyTimeouts`, and the scan's warning now reads `N effect classification(s) ran past the per-call budget; their results were kept.` An overrun now changes that record and nothing else in the IR.
+
+  An IR whose stats list no overrun keeps every fingerprint. One that lists overruns gains the effect of each one no later plugin claimed, so those Symbols and their callers get a new `logic` value once. For a plugin that overran on every call, that means effects it never contributed before. An IR scanned before this release, compared with one scanned after, reports those Symbols as logic changes, and there is no `grammarRevision` counterpart for `logic` to warn you that a stored IR predates this release. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with the installed version and is unaffected.
+
+  A kept classification also meets the vocabulary check, which a dropped one skipped. With `strict` on (the default), an effects plugin that emits an effect id its manifest does not declare now fails the scan with `vocab-undeclared` even when that call overran, and with `strict: false` the id is listed in `aburi-vocab-discovered.json`. Before, a slow enough call let such a scan pass. Core effect ids such as `db.write` are exempt, so only plugins with their own vocabulary can meet this.
+
+- b7a7148: Warnings and refusals no longer cite design-doc files: the call-resolution warning of `aburi diff`, the two strict-vocabulary messages of `aburi scan`, and the two refusals of `aburi explain --debug-resolution`, which now say the IR does not keep the per-call buckets.
+
+  The README now says a CLI entry point should assign `process.exitCode`, as the `aburi` bin does, because `process.exit()` can truncate output still being written to a pipe.
+
+- 963b505: `aburi` now exits with its command's own code when the reader of its stdout or stderr stops early. `aburi diff main..HEAD | head -1` used to exit 1 on a clean diff and on a tripped gate alike, with `Error: write EPIPE` on stderr: Node reports the closed pipe as an `error` event on the stream, and the bin had no listener for it. Under `set -o pipefail`, which GitHub Actions uses for `shell: bash`, that failed the step. The same pipe now exits 0 or 3, as without it; `aburi scan 2>&1 | head -1` exits 0 on a workspace with recoverable parse errors, and `aburi explain` listing candidates into a closed pipe exits 2 rather than the 1 that means "not found". A run whose stderr reader has left no longer dies at its next warning either: for `aburi diff` that was the base scan's incident report, and the run ended there with the base worktree and the temporary directory holding it left behind. Any other failure to write a stream, such as stdout redirected to a full disk, still ends the process at that write with exit 1 and Node's own report of the error, and runs no cleanup.
+
+  `runScan` no longer swallows an exception thrown by its `incidents.warn` sink. The catch was meant for a closed pipe, which never arrives as a throw from a stream's `write()`; all it could still catch was a sink that throws or a fault in the report itself, and it hid both. `runScan` now rejects with that exception, unless the scan was already ending with an error of its own: that error still wins, and the sink's failure is logged.
+
+- e4487a5: `aburi diff <base>..<head>` leaves submodules out of the file scans and refuses a sparse checkout
+
+  Submodules are now left out of both file scans, with the warning `Submodules detected: <list>. Submodule-aware diff is not yet supported, so their files are left out of both file scans. Component detection still walks them, so a workspace package inside one can still be reported as a Component added or removed.` The base worktree has no submodules checked out while the head working tree does, so every Symbol of an unchanged submodule used to be reported as added, tripping `--fail-on added` on every pull request from a clone with initialised submodules.
+
+  A sparse checkout (`core.sparseCheckout` set to `true`, `1`, `yes` or `on`) now stops the run with exit 1 and `Sparse-checkout detected. aburi diff requires full file tree. Disable with: git sparse-checkout disable`, as `cli-spec.md` §6.4.1 already required, instead of diffing a partial tree whose missing files read as removed.
+
+- a090f5b: `aburi init --force` now says on stderr when it replaced an existing config (`⚠ Overwrote <path>; the config that was there is gone.`). It used to replace the file without a word, so a hand-written `components` or `ignore` list could vanish unnoticed.
+
+  `aburi init --with-suggestions` names only the plugins the workspace has not installed. It used to suggest every plugin it mapped a detected language or framework to, installed or not. A plugin counts as installed when a `node_modules/@aburi/<name>` directory sits in the workspace root or above it, the directories an ESM import from there searches.
+
+  The help text of `scan --no-timestamp` says what it drops, `discoveredAt` from `aburi-vocab-discovered.json`: the IR never carries a timestamp. The help of `init --respect-gitignore` / `--no-respect-gitignore` names the nx project search beside the language census.
+
+- 8c2ad99: Interrupting `aburi diff` with Ctrl-C, a cancelled CI job or a closed terminal (`SIGINT`, `SIGTERM`, `SIGHUP`) now removes the base worktree and its temporary checkout before the process exits. It used to end without running that cleanup, so every interrupted run left a `(detached HEAD)` entry in `git worktree list` and a full checkout of the base revision under the temp directory. The run still ends on the signal rather than reporting success: on POSIX with the signal's own 128+N status, and on Windows with an exit code of that same 128+N. Collecting git renames now happens before the temporary directory is created, so a failure there no longer leaves that directory behind either.
+- ad21560: A JSON file that opens with a UTF-8 byte order mark is now read as it would be without one. PowerShell 5's `Out-File` and `Set-Content` write that mark under `-Encoding utf8`, and Node's `require()`, npm and pnpm read past it, but Aburi handed it to the parser: a `package.json` that opened with one stopped `aburi scan` and `aburi init` with `Failed to parse JSON at <workspace>/package.json`, exit 1, and an `aburi.json` that did stopped `aburi scan` with `Failed to load Aburi config: Config at <path> is not valid JSONC: InvalidSymbol at offset 0 (len 1)`, exit 2. One leading mark is now read past by component detection in a package's `package.json` or `project.json`, and in the root `package.json`, whether detection or the workspace-root walk reads it (`pnpm-workspace.yaml`, `Cargo.toml` and `pyproject.toml` already were); by the config loader in `aburi.json` and `aburi.jsonc`, which reports a repeated key at the column the editor shows; by `parsePluginManifest` and `loadPluginManifest`; and by `aburi diff --base/--head` and `aburi explain --ir` in an IR file. A second mark, or one anywhere but the start, is refused with the same error code as before. A `package.json` or `project.json` detection cannot parse is now reported with the parser's own detail after the path, or, when the file opens with more than one mark, with `it opens with more than one byte order mark (U+FEFF), and only one is read past`, which an editor that hides the marks gives no other way to find. `@aburi/core` exports the `stripUtf8Bom` it reads them with, which is why it is `minor`, and `@aburi/framework-next` now finds a module's `"use client"` through it, with no change in what it finds.
+
+  A repository with such a manifest could not be scanned before, so no stored IR of it changes. The one layout whose output moves is a tree with no `.git` below a `package.json` that declares `workspaces` and opens with a byte order mark: the root walk passed over that manifest, so the workspace root was the inner directory, and it is now the outer one, as it is without the mark. Every Symbol id and component root there gains the path between the two, so an IR scanned before this release, compared with one scanned after, reports those Symbols under new ids. That earlier root was wrong rather than previously correct output, so the other packages stay `patch`, as for the line-terminator fix. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with this release and is unaffected.
+
+- 6afef8b: A fault in the plugin set now exits 3 whichever error class carries it, and a refused plugin manifest names the `aburi.json` entry that loaded it.
+
+  `aburi scan`, `aburi diff` and `aburi explain` exited 3 for an undeclared value only when the core's own vocabulary check found it. A plugin that refused a value through the registry it is handed (`ctx.registry.assertEffectDeclared` or `assertExtKindDeclared`) raised the registry's error under the same `vocab-undeclared` code, and the run exited 1, the code for a failure of the machine. So did the other two faults the core lets end the run, an effect plugin returning a Promise from `classify` and a language plugin stamping Symbol ids with no valid language prefix. All three now exit 3, recognised by code as the core recognises them; the registry's refusal does so under `--discover` too, since the registry does not read `strict`. `@aburi/core` exports the predicate it uses for this, `isPluginSetFault`, and `describeThrown`, which the CLI now prints the fault with: a plugin that throws a plain object carrying one of those codes is reported by what the object holds, not as `[object Object]`.
+
+  A manifest the registry refuses at load already exited 3, with the registry's message alone, which names plugins by manifest name: `extKind prefix "framework:acme" is already declared by plugin "framework-one".` It now leads with the config entry, `Plugin "./plugins/framework-two.mjs" cannot be registered: …`, which also says which plugin is meant when the registry's message names none (a manifest value JSON cannot carry) or names the colliding manifest only (two entries loading plugins under one name).
+
+  Nothing changes in an IR or a report: these runs write neither.
+
+- cf6aeb1: `aburi diff` now removes the `diff.json` and `diff.md` an earlier run left in the output directory before it compares anything, as it already did `diff.full.md`. A run that stops first — a plugin that fails to load, a strict scan's undeclared value — leaves no report behind, instead of one describing some other diff.
+
+  The GitHub Action sets `diff-json-path` and `diff-md-path` only for a file this run wrote, and as absolute paths. The comment step used to run on every exit 3, including a plugin error's, and then failed on a missing `diff.md` or posted the one an earlier run left; it also prefixed the path with `working-directory`, so an absolute `output-dir` failed the upsert with ENOENT on a diff that had succeeded. An empty `output-dir` is now refused with exit 2, since the CLI would read it as the directory it runs in.
+
+- 6068bca: `aburi scan` now removes what an earlier run left in the output directory and this run does not write. A Component renamed or removed since loses its `components/<id>.md`; the old page used to stay beside the current ones, so anything reading `components/*.md` read a Component the IR no longer held. `--format json` (or `--no-md`) removes `workspace.md` and the component pages, and `--format md` (or `--no-json`) removes `aburi.ir.json`, which `aburi explain --no-rescan` used to answer from, finding a Symbol under the name it had before a rename. `aburi.ir.json` and `workspace.md` are recognised by name alone, so a file of your own under either name goes too. In `components/` only Aburi's pages go: a page is a file named after a Component id whose first line is its `# Component: <id>` heading, so a README, notes or a subdirectory there stays.
+
+  Every removal comes after the run's last write, so a scan that stops before it has written everything removes nothing, and a `--format md` run that cannot write `workspace.md` keeps the earlier `aburi.ir.json`. A removal that fails ends the run with the files before it already removed; the next scan that completes removes the rest. A path that cannot be removed, a `components/` that cannot be listed and a page whose first line cannot be read are refused like a path that cannot be written, and the message names the step: `aburi scan could not list the components directory at …`, `could not read the Markdown for component "beta" at …`. A directory standing where an earlier run's file would be is described that way, by `aburi diff` too, rather than as one standing where the file would go. Only `aburi scan` removes anything: the scan `aburi explain` runs when it finds no IR, and `runScan` called with another `command`, remove nothing. `--log-level info` prints an `info: Removed <artefact> at <path>` line for each file removed, the discovered-vocabulary record a strict scan removes included.
+
+  `@aburi/markdown-projection` exports `componentHeading`, the line a component page opens with.
+
+  The IR and the pages are unchanged, so an IR scanned before this release, compared with one scanned after, reports nothing it did not before.
+
+- dd28468: `buildDiff` takes an optional `logger`, and `matchStageNameSignature` takes one as an optional third argument. Given one, the name-and-signature stage of the matcher writes a `debug` line for each Symbol it will not compare by name, because its name says too little to pair on or it has no signature. Once it has chosen its pairings, it also writes one for each pair whose base and head both stay unpaired, that cleared its threshold, and whose owners do not correspond. A Symbol line stands for one `added`, `removed` or `unknown` entry, and a pair line for two Symbols the report lists separately, where the report itself gives no reason. The diff result is the same with and without a logger. `aburi diff` passes one at `--log-level debug` or `ABURI_LOG_LEVEL=debug`, which prints the lines on stderr, and the `--log-level` help now says so.
+- 47f8ef9: A file git renamed between the revisions and skipped by one scan now leaves its Symbols `unknown` instead of confidently `removed` or `added`. The skip was looked up only under the leftover's own path, while the other scan had recorded the file under its other name, so `src/big.ts → src/billing.ts` with `src/billing.ts` over the size cap at head reported every Symbol of `src/big.ts` as removed and tripped `--fail-on removed`.
+
+  - Such an entry carries the new optional `SymbolUnknown.lostPath` (`aburi.diff.v1`), the path the skipping scan recorded. `diff.md` names that path as this file's head (or base) name, where it used to name the other revision's path as the one skipped.
+  - Dependency edges get the same lookup, and their `lostFiles[].path` is the path the skipping scan recorded, not the holder's.
+  - A renamed file both scans skipped appears in `notCompared[]` under the head path, with the base path in the new optional `NotComparedFile.basePath`. `diff.md` and the stderr line name it as `base → head`.
+  - `diffDependencies` now requires `renames`. `RenameDirections` and `renameDirections` are exported to build it, and a caller with no rename information passes `renameDirections(null)`.
+
+- Updated dependencies [19ead65]
+- Updated dependencies [af4b970]
+- Updated dependencies [c6ce311]
+- Updated dependencies [b7a7148]
+- Updated dependencies [f2a6916]
+- Updated dependencies [50ea5bb]
+- Updated dependencies [90fa1cb]
+- Updated dependencies [b7a7148]
+- Updated dependencies [9c21737]
+- Updated dependencies [dde9172]
+- Updated dependencies [7d4dbf9]
+- Updated dependencies [3b52db9]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [dfffac9]
+- Updated dependencies [ad04fff]
+- Updated dependencies [13f8ba9]
+- Updated dependencies [1a56ce7]
+- Updated dependencies [b7a7148]
+- Updated dependencies [38317cb]
+- Updated dependencies [107c1c6]
+- Updated dependencies [b2155c1]
+- Updated dependencies [b2155c1]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [bb90fea]
+- Updated dependencies [f32e45b]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [b7a7148]
+- Updated dependencies [80be216]
+- Updated dependencies [50c0bd2]
+- Updated dependencies [a6cd1ac]
+- Updated dependencies [f9d300c]
+- Updated dependencies [1a41bef]
+- Updated dependencies [6be7d2e]
+- Updated dependencies [ad21560]
+- Updated dependencies [b7a7148]
+- Updated dependencies [3499bce]
+- Updated dependencies [18d4a87]
+- Updated dependencies [517eb21]
+- Updated dependencies [a143dc9]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [36fd72f]
+- Updated dependencies [6afef8b]
+- Updated dependencies [eb4ab00]
+- Updated dependencies [d4fca12]
+- Updated dependencies [a090f5b]
+- Updated dependencies [635be83]
+- Updated dependencies [659f00c]
+- Updated dependencies [3b60893]
+- Updated dependencies [659f00c]
+- Updated dependencies [7494e52]
+- Updated dependencies [7830c96]
+- Updated dependencies [463d616]
+- Updated dependencies [6068bca]
+- Updated dependencies [1739845]
+- Updated dependencies [ad101d5]
+- Updated dependencies [b4e6a5f]
+- Updated dependencies [dd28468]
+- Updated dependencies [7830c96]
+- Updated dependencies [47f8ef9]
+- Updated dependencies [65c758f]
+- Updated dependencies [b4e6a5f]
+  - @aburi/core@0.6.0
+  - @aburi/types@0.6.0
+  - @aburi/config@0.4.1
+  - @aburi/diff@0.6.0
+  - @aburi/markdown-projection@0.5.0
+  - @aburi/plugin-registry@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes
