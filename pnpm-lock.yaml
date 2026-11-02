@@ -4,6 +4,36 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@changesets/cli':
+      specifier: ^2.31.0
+      version: 2.31.0
+    '@types/node':
+      specifier: ^26.0.1
+      version: 26.0.1
+    ajv:
+      specifier: ^8.20.0
+      version: 8.20.0
+    json-schema-to-typescript:
+      specifier: ^15.0.4
+      version: 15.0.4
+    jsonc-parser:
+      specifier: ^3.3.1
+      version: 3.3.1
+    tsdown:
+      specifier: ^0.22.3
+      version: 0.22.3
+    tsx:
+      specifier: ^4.22.4
+      version: 4.22.4
+    typescript:
+      specifier: ^6.0.3
+      version: 6.0.3
+    vitest:
+      specifier: ^5.0.5
+      version: 5.0.5
+
 overrides:
   fast-uri@3: ^3.1.6
   js-yaml@3: ^3.15.2
@@ -28,28 +58,28 @@ importers:
         specifier: ^2.5.1
         version: 2.5.1
       '@changesets/cli':
-        specifier: ^2.31.0
+        specifier: 'catalog:'
         version: 2.31.0(@types/node@26.0.1)
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       json-schema-to-typescript:
-        specifier: ^15.0.4
+        specifier: 'catalog:'
         version: 15.0.4
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       tsx:
-        specifier: ^4.22.4
+        specifier: 'catalog:'
         version: 4.22.4
       turbo:
         specifier: ^2.10.0
         version: 2.10.0
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   benchmarks/public-repos:
@@ -58,7 +88,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/github-action
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   docs:
@@ -115,16 +145,16 @@ importers:
         specifier: workspace:*
         version: link:../packages/types
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsx:
-        specifier: ^4.22.4
+        specifier: 'catalog:'
         version: 4.22.4
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/changelog:
@@ -137,10 +167,10 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@changesets/cli':
-        specifier: ^2.31.0
+        specifier: 'catalog:'
         version: 2.31.0(@types/node@26.0.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/cli:
@@ -207,22 +237,22 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       tsx:
-        specifier: ^4.22.4
+        specifier: 'catalog:'
         version: 4.22.4
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/config:
@@ -234,10 +264,10 @@ importers:
         specifier: workspace:*
         version: link:../types
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       jsonc-parser:
-        specifier: ^3.3.1
+        specifier: 'catalog:'
         version: 3.3.1
     devDependencies:
       '@aburi/schema':
@@ -247,16 +277,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/core:
@@ -287,22 +317,22 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       '@types/picomatch':
         specifier: ^4.0.3
         version: 4.0.3
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       typescript-language-server:
         specifier: ^5.3.0
         version: 5.3.0
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/diff:
@@ -321,19 +351,19 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/effects-drizzle:
@@ -355,16 +385,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/effects-nest:
@@ -386,16 +416,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/effects-prisma:
@@ -420,16 +450,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/effects-trpc:
@@ -451,16 +481,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/framework-express:
@@ -482,16 +512,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/framework-nestjs:
@@ -516,16 +546,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/framework-next:
@@ -547,16 +577,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/framework-react:
@@ -578,16 +608,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/framework-trpc:
@@ -609,16 +639,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/github-action:
@@ -630,16 +660,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/lang-typescript:
@@ -651,7 +681,7 @@ importers:
         specifier: workspace:*
         version: link:../types
       jsonc-parser:
-        specifier: ^3.3.1
+        specifier: 'catalog:'
         version: 3.3.1
       web-tree-sitter:
         specifier: ^0.26.10
@@ -664,19 +694,19 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       '@vscode/tree-sitter-wasm':
         specifier: ^0.3.1
         version: 0.3.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/markdown-projection:
@@ -689,19 +719,19 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       markdown-it:
         specifier: ^15.0.3
         version: 15.0.3
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/plugin-registry:
@@ -710,10 +740,10 @@ importers:
         specifier: workspace:*
         version: link:../types
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       jsonc-parser:
-        specifier: ^3.3.1
+        specifier: 'catalog:'
         version: 3.3.1
     devDependencies:
       '@aburi/schema':
@@ -723,16 +753,16 @@ importers:
         specifier: workspace:*
         version: link:../test-support
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/test-harness:
@@ -754,10 +784,10 @@ importers:
         version: link:../types
     devDependencies:
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
   packages/test-support:
@@ -769,17 +799,17 @@ importers:
         specifier: workspace:*
         version: link:../types
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
     devDependencies:
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
   packages/types:
@@ -788,22 +818,22 @@ importers:
         specifier: workspace:*
         version: link:../../schema
       '@types/node':
-        specifier: ^26.0.1
+        specifier: 'catalog:'
         version: 26.0.1
       json-schema-to-typescript:
-        specifier: ^15.0.4
+        specifier: 'catalog:'
         version: 15.0.4
       tsdown:
-        specifier: ^0.22.3
+        specifier: 'catalog:'
         version: 0.22.3(tsx@4.22.4)(typescript@6.0.3)
       tsx:
-        specifier: ^4.22.4
+        specifier: 'catalog:'
         version: 4.22.4
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 'catalog:'
         version: 5.0.5(@types/node@26.0.1)(vite@8.2.2(@types/node@26.0.1)(esbuild@0.28.1)(tsx@4.22.4)(yaml@2.9.0))
 
   schema: {}

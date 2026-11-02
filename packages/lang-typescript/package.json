@@ -40,16 +40,16 @@
   "dependencies": {
     "@aburi/core": "workspace:*",
     "@aburi/types": "workspace:*",
-    "jsonc-parser": "^3.3.1",
+    "jsonc-parser": "catalog:",
     "web-tree-sitter": "^0.26.10"
   },
   "devDependencies": {
     "@aburi/test-harness": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
+    "@types/node": "catalog:",
     "@vscode/tree-sitter-wasm": "^0.3.1",
-    "tsdown": "^0.22.3",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

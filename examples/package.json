@@ -25,9 +25,9 @@
     "@aburi/lang-typescript": "workspace:*",
     "@aburi/test-support": "workspace:*",
     "@aburi/types": "workspace:*",
-    "@types/node": "^26.0.1",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.5"
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

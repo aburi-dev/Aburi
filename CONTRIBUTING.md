@@ -157,6 +157,10 @@ triggers a preview build. **Build → Build watch paths** can narrow that to
 - ESM only, TypeScript strict mode, no `any` escapes.
 - Never hardcode dependency versions in `package.json` — install via
   `pnpm add` so the latest compatible version is recorded.
+- A dependency that two or more workspace packages declare is a `catalog:`
+  entry, so its range is kept once, in `pnpm-workspace.yaml`. `pnpm add` writes
+  `catalog:` for a name the catalog already lists; `pnpm add <dep> --save-catalog`,
+  run for every package that declares it, moves a newly shared one there.
 - No linter-suppression comments; fix the root cause instead.
 - Generated files are never edited by hand:
   `packages/types/src/generated/` is regenerated from `schema/`, and
@@ -184,7 +188,9 @@ need a hand before they merge:
 - A change to a published package's `dependencies`, or to
   `@vscode/tree-sitter-wasm`, whose grammars `@aburi/lang-typescript` ships,
   needs a changeset like any other change to a published package; `minor` when
-  the new grammars move a stored fingerprint.
+  the new grammars move a stored fingerprint. A catalog entry that a published
+  package lists in `dependencies` counts, though its pull request touches only
+  `pnpm-workspace.yaml` and the lockfile.
 
 ## Releases
 
