@@ -56,16 +56,15 @@ describe("a Document that is not one", () => {
     expect(error.message).toBe(message)
   })
 
-  it.each([
-    "stats",
-    "generator",
-    "workspace",
-  ])("is refused when it lacks %s, with no index to name", async (field) => {
-    const { base, head } = changedPair()
-    expect((await refusalOf(base, without(head, field))).message).toBe(
-      `headIR: "${field}" is absent, not an object.`,
-    )
-  })
+  it.each(["stats", "generator", "workspace"])(
+    "is refused when it lacks %s, with no index to name",
+    async (field) => {
+      const { base, head } = changedPair()
+      expect((await refusalOf(base, without(head, field))).message).toBe(
+        `headIR: "${field}" is absent, not an object.`,
+      )
+    },
+  )
 
   it("is refused when it carries only the three collections", async () => {
     const minimal = {
@@ -103,43 +102,34 @@ describe("two Documents of different schemas", () => {
 })
 
 describe("a Symbol missing a field", () => {
-  it.each([
-    "fingerprint",
-    "source",
-    "calls",
-    "decorators",
-    "effects",
-    "rules",
-    "id",
-  ])("is refused by name when it lacks %s, which the diff reads", async (field) => {
-    const { base } = changedPair()
-    const error = await refusalOf(base, headWithoutSymbolField(field))
-    expect(error.code).toBe("ir-shape-invalid")
-    expect(error.message).toContain("headIR.symbols[0]")
-    expect(error.message).toContain(`"${field}" is absent`)
-  })
+  it.each(["fingerprint", "source", "calls", "decorators", "effects", "rules", "id"])(
+    "is refused by name when it lacks %s, which the diff reads",
+    async (field) => {
+      const { base } = changedPair()
+      const error = await refusalOf(base, headWithoutSymbolField(field))
+      expect(error.code).toBe("ir-shape-invalid")
+      expect(error.message).toContain("headIR.symbols[0]")
+      expect(error.message).toContain(`"${field}" is absent`)
+    },
+  )
 
-  it.each([
-    "visibility",
-    "name",
-    "kind",
-    "language",
-    "confidence",
-    "derivedBy",
-  ])("is refused when it lacks %s, although the diff never reads it", async (field) => {
-    const { base } = changedPair()
-    const error = await refusalOf(base, headWithoutSymbolField(field))
-    expect(error.code).toBe("ir-shape-invalid")
-    expect(error.message).toContain(`"${field}"`)
-  })
+  it.each(["visibility", "name", "kind", "language", "confidence", "derivedBy"])(
+    "is refused when it lacks %s, although the diff never reads it",
+    async (field) => {
+      const { base } = changedPair()
+      const error = await refusalOf(base, headWithoutSymbolField(field))
+      expect(error.code).toBe("ir-shape-invalid")
+      expect(error.message).toContain(`"${field}"`)
+    },
+  )
 
-  it.each([
-    "signature",
-    "component",
-  ])("is accepted without %s, which the schema makes optional", (field) => {
-    const { base } = changedPair()
-    expect(() => diffOf(base, headWithoutSymbolField(field))).not.toThrow()
-  })
+  it.each(["signature", "component"])(
+    "is accepted without %s, which the schema makes optional",
+    (field) => {
+      const { base } = changedPair()
+      expect(() => diffOf(base, headWithoutSymbolField(field))).not.toThrow()
+    },
+  )
 })
 
 describe("a malformed entry", () => {

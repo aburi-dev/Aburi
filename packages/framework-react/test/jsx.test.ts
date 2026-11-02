@@ -22,12 +22,12 @@ describe("hasJsxReturn", () => {
     expect(hasJsxReturn(await bodyOf(source))).toBe(expected)
   })
 
-  it.each([
-    null,
-    { placeholder: true },
-  ])("returns false for %o, which is not a syntax node", (body) => {
-    expect(hasJsxReturn(body)).toBe(false)
-  })
+  it.each([null, { placeholder: true }])(
+    "returns false for %o, which is not a syntax node",
+    (body) => {
+      expect(hasJsxReturn(body)).toBe(false)
+    },
+  )
 })
 
 describe("findReturnedJsxElementNames", () => {
@@ -128,12 +128,12 @@ describe("findReturnedJsxElementNames", () => {
     expect(findReturnedJsxElementNames(await bodyOf(source))).toEqual(names)
   })
 
-  it.each([
-    null,
-    { placeholder: true },
-  ])("returns no names for %o, which is not a syntax node", (body) => {
-    expect(findReturnedJsxElementNames(body)).toEqual([])
-  })
+  it.each([null, { placeholder: true }])(
+    "returns no names for %o, which is not a syntax node",
+    (body) => {
+      expect(findReturnedJsxElementNames(body)).toEqual([])
+    },
+  )
 })
 
 describe("findReturnedJsxElementName", () => {

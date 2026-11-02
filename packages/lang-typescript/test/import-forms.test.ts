@@ -10,14 +10,17 @@ describe("import-equals-require binds the module object", () => {
       "import x = require('./mod')",
       "src/a.cts",
     ],
-  ])("as a static namespace edge carrying the local binding, in %s", async (_label, source, path) => {
-    const { imports, errors } = await importsOf(source, path)
+  ])(
+    "as a static namespace edge carrying the local binding, in %s",
+    async (_label, source, path) => {
+      const { imports, errors } = await importsOf(source, path)
 
-    expect(imports).toEqual([
-      { source: "./mod", symbols: "*", line: 1, dynamic: false, namespaceBinding: "x" },
-    ])
-    expect(errors).toEqual([])
-  })
+      expect(imports).toEqual([
+        { source: "./mod", symbols: "*", line: 1, dynamic: false, namespaceBinding: "x" },
+      ])
+      expect(errors).toEqual([])
+    },
+  )
 
   it("says nothing about an alias that renames a local namespace", async () => {
     const { imports, errors } = await importsOf("import x = A.B.C")

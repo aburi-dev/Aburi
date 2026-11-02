@@ -58,15 +58,15 @@ describe("projectDiff — maxBytes", () => {
     ).toBe(uncapped)
   })
 
-  it.each([
-    GITHUB_LIMIT,
-    2000,
-  ])("renders the same bytes on every run when a %i-byte cap trims the document", (maxBytes) => {
-    const capped = projectDiff(crowdedDiff(600), { maxBytes })
+  it.each([GITHUB_LIMIT, 2000])(
+    "renders the same bytes on every run when a %i-byte cap trims the document",
+    (maxBytes) => {
+      const capped = projectDiff(crowdedDiff(600), { maxBytes })
 
-    expect(bytes(capped)).toBeLessThan(bytes(projectDiff(crowdedDiff(600))))
-    expect(projectDiff(crowdedDiff(600), { maxBytes })).toBe(capped)
-  })
+      expect(bytes(capped)).toBeLessThan(bytes(projectDiff(crowdedDiff(600))))
+      expect(projectDiff(crowdedDiff(600), { maxBytes })).toBe(capped)
+    },
+  )
 
   it("keeps what fits below a section too large to fit even as names", () => {
     const md = projectDiff(crowdedDiff(600), { maxBytes: 2000 })
@@ -127,24 +127,21 @@ describe("projectDiff — maxBytes", () => {
     )
   })
 
-  it.each([
-    "one\ntwo",
-    "one\rtwo",
-  ])("refuses a full report location that would break the note (%j)", (fullReportLocation) => {
-    expect(() =>
-      projectDiff(crowdedDiff(1), { maxBytes: GITHUB_LIMIT, fullReportLocation }),
-    ).toThrow(RangeError)
-  })
+  it.each(["one\ntwo", "one\rtwo"])(
+    "refuses a full report location that would break the note (%j)",
+    (fullReportLocation) => {
+      expect(() =>
+        projectDiff(crowdedDiff(1), { maxBytes: GITHUB_LIMIT, fullReportLocation }),
+      ).toThrow(RangeError)
+    },
+  )
 
-  it.each([
-    0,
-    -1,
-    1.5,
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-  ])("rejects a budget of %s, which is not a positive integer", (maxBytes) => {
-    expect(() => projectDiff(crowdedDiff(1), { maxBytes })).toThrow(RangeError)
-  })
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects a budget of %s, which is not a positive integer",
+    (maxBytes) => {
+      expect(() => projectDiff(crowdedDiff(1), { maxBytes })).toThrow(RangeError)
+    },
+  )
 })
 
 describe("projectDiff — maxBytes at a budget nothing fits", () => {

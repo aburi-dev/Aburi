@@ -160,22 +160,22 @@ describe("aburi init --output", () => {
     expect(error.message).toContain("--output")
   })
 
-  it.each([
-    false,
-    true,
-  ])("names a directory on the path itself, --force %s or not", async (force) => {
-    await pnpmWorkspace()
-    await mkdir(resolve(workspace.root, "generated"))
+  it.each([false, true])(
+    "names a directory on the path itself, --force %s or not",
+    async (force) => {
+      await pnpmWorkspace()
+      await mkdir(resolve(workspace.root, "generated"))
 
-    const error = await errorFrom(CliError, () =>
-      runInit({ cwd: workspace.root, output: "generated", force }),
-    )
+      const error = await errorFrom(CliError, () =>
+        runInit({ cwd: workspace.root, output: "generated", force }),
+      )
 
-    expect(error.code).toBe("input-error")
-    expect(error.message).toContain(resolve(workspace.root, "generated"))
-    expect(error.message).toContain("is a directory")
-    expect(error.message).not.toContain("--force")
-  })
+      expect(error.code).toBe("input-error")
+      expect(error.message).toContain(resolve(workspace.root, "generated"))
+      expect(error.message).toContain("is a directory")
+      expect(error.message).not.toContain("--force")
+    },
+  )
 
   onPosixAsAUser("reports a directory it may not write to as its runtime failure", async () => {
     await pnpmWorkspace()

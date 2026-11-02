@@ -123,25 +123,22 @@ describe("aburi diff --max-bytes on the command line", () => {
     ).toBeLessThanOrEqual(2000)
   })
 
-  it.each([
-    "64kb",
-    "0",
-    "-1",
-    "1.5",
-    "",
-  ])("refuses %j, which is not a plain byte count", async (value) => {
-    const { code, stderr } = await runCliIn(workspace.root, [
-      "diff",
-      "--base",
-      "./b.json",
-      "--head",
-      "./h.json",
-      "--max-bytes",
-      value,
-    ])
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toContain(`--max-bytes must be a positive integer (got "${value}")`)
-  })
+  it.each(["64kb", "0", "-1", "1.5", ""])(
+    "refuses %j, which is not a plain byte count",
+    async (value) => {
+      const { code, stderr } = await runCliIn(workspace.root, [
+        "diff",
+        "--base",
+        "./b.json",
+        "--head",
+        "./h.json",
+        "--max-bytes",
+        value,
+      ])
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toContain(`--max-bytes must be a positive integer (got "${value}")`)
+    },
+  )
 
   it("refuses a byte count too large to hold exactly", async () => {
     const { code, stderr } = await runCliIn(workspace.root, [

@@ -98,7 +98,7 @@ export interface ParseDeadline {
 
 export function startParseDeadline(timeoutMs?: number): ParseDeadline {
   const configured = timeoutMs ?? DEFAULT_PARSE_TIMEOUT_MS
-  const budgetMs = configured < PARSE_TIMEOUT_MIN_MS ? PARSE_TIMEOUT_MIN_MS : configured
+  const budgetMs = Math.max(configured, PARSE_TIMEOUT_MIN_MS)
   let start = performance.now()
   return {
     budgetMs,

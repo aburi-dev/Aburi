@@ -118,17 +118,20 @@ describe("diff — a route's middleware", () => {
       [`router.get("/a", requireAdmin, listA)`, `router.get("/x", requireAdmin, listX)`],
       [`router.delete("/zzz", requireAdmin, removeZ)`, `router.get("/x", requireAdmin, listX)`],
     ],
-  ])("does not pair a removed route with an added one that shares only its middleware, %s", async (_case, before, after) => {
-    const { diff } = await diffOfEditWith(
-      workspace,
-      lineup,
-      SOURCE,
-      routes(before.join("\n")),
-      routes(after.join("\n")),
-    )
+  ])(
+    "does not pair a removed route with an added one that shares only its middleware, %s",
+    async (_case, before, after) => {
+      const { diff } = await diffOfEditWith(
+        workspace,
+        lineup,
+        SOURCE,
+        routes(before.join("\n")),
+        routes(after.join("\n")),
+      )
 
-    expect(diff.summary).toMatchObject({ added: 1, removed: 1, moved: 0, movedChanged: 0 })
-  })
+      expect(diff.summary).toMatchObject({ added: 1, removed: 1, moved: 0, movedChanged: 0 })
+    },
+  )
 
   it("does not pair a route removed from one file with one added to another that shares only its middleware", async () => {
     await workspace.writeSource("src/one.ts", routes(`router.get("/a", requireAdmin, listA)`))

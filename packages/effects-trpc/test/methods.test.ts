@@ -31,8 +31,11 @@ describe("tRPC terminal vocabulary", () => {
       isTrpcSubscriptionTerminal,
       ["subscribe", "useSubscription"],
     ],
-  ] as const)("lists exactly the %s terminals, and its guard accepts each", (_family, set, guard, members) => {
-    expect([...set]).toEqual(members)
-    for (const terminal of members) expect(guard(terminal)).toBe(true)
-  })
+  ] as const)(
+    "lists exactly the %s terminals, and its guard accepts each",
+    (_family, set, guard, members) => {
+      expect([...set]).toEqual(members)
+      for (const terminal of members) expect(guard(terminal)).toBe(true)
+    },
+  )
 })

@@ -53,21 +53,24 @@ describe("aburi, when the reader of stdout or stderr has gone", () => {
     ["diff HEAD~1..HEAD", "stderr", EXIT.SUCCESS],
     ["diff HEAD~1..HEAD --fail-on added", "stderr", EXIT.GATE],
     ["scan", "stderr", EXIT.SUCCESS],
-  ])("`aburi %s` with nothing reading its %s exits %i, writes the other stream in full and cleans up", async (command, unread, code) => {
-    const argv = command.split(" ")
-    const other: OutputStream = unread === "stdout" ? "stderr" : "stdout"
+  ])(
+    "`aburi %s` with nothing reading its %s exits %i, writes the other stream in full and cleans up",
+    async (command, unread, code) => {
+      const argv = command.split(" ")
+      const other: OutputStream = unread === "stdout" ? "stderr" : "stdout"
 
-    const read = await runFromScratch(argv)
-    expect(read.code).toBe(code)
-    expect(read[unread], `the command writes to ${unread}`).not.toBe("")
+      const read = await runFromScratch(argv)
+      expect(read.code).toBe(code)
+      expect(read[unread], `the command writes to ${unread}`).not.toBe("")
 
-    const unreadRun = await runFromScratch(argv, unread)
-    expect(unreadRun.code, unreadRun[other]).toBe(code)
-    expect(unreadRun[other]).toBe(read[other])
-    expect(unreadRun.written).toEqual(read.written)
-    expect(linkedWorktrees(workspace.root)).toEqual([])
-    expect(await worktreeTempDirs(workspace.root)).toEqual([])
-  })
+      const unreadRun = await runFromScratch(argv, unread)
+      expect(unreadRun.code, unreadRun[other]).toBe(code)
+      expect(unreadRun[other]).toBe(read[other])
+      expect(unreadRun.written).toEqual(read.written)
+      expect(linkedWorktrees(workspace.root)).toEqual([])
+      expect(await worktreeTempDirs(workspace.root)).toEqual([])
+    },
+  )
 
   it("still exits 1, with Node's report of the error, when stdout refuses a write for another reason", async () => {
     // A descriptor opened only for reading refuses every write, with EBADF on every OS.

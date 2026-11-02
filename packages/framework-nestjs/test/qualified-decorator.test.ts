@@ -102,16 +102,19 @@ describe("classifyNestjsSymbol — a decorator written through a receiver", () =
       [makeImport(NEST, ["Controller"])],
       "high",
     ],
-  ])("trusts a qualified @Controller as far as %s allows", (_label, qualifier, imports, confidence) => {
-    const result = classifyDecorated(
-      "class",
-      [decorator({ name: "Controller", qualifier })],
-      imports,
-    )
+  ])(
+    "trusts a qualified @Controller as far as %s allows",
+    (_label, qualifier, imports, confidence) => {
+      const result = classifyDecorated(
+        "class",
+        [decorator({ name: "Controller", qualifier })],
+        imports,
+      )
 
-    expect(result?.extKind).toBe("framework:nestjs:controller")
-    expect(result?.confidence ?? "high").toBe(confidence)
-  })
+      expect(result?.extKind).toBe("framework:nestjs:controller")
+      expect(result?.confidence ?? "high").toBe(confidence)
+    },
+  )
 
   it("names a qualified route after its leaf, which a namespace import cannot rename", () => {
     expect(

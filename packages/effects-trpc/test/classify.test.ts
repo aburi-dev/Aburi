@@ -50,21 +50,19 @@ describe("classifyTrpcCall — client procedure calls", () => {
 })
 
 describe("classifyTrpcCall — a file that imports @trpc/server too", () => {
-  it.each([
-    "client.user.byId.query",
-    "publicProcedure.input.query",
-    "t.procedure.query",
-  ])("returns null for %s — `query` is the router's own builder verb there", (target) => {
-    expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toBeNull()
-  })
+  it.each(["client.user.byId.query", "publicProcedure.input.query", "t.procedure.query"])(
+    "returns null for %s — `query` is the router's own builder verb there",
+    (target) => {
+      expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toBeNull()
+    },
+  )
 
-  it.each([
-    "client.user.create.mutate",
-    "client.onAdd.subscribe",
-    "trpc.post.list.useQuery",
-  ])("still classifies %s, which the router does not spell", (target) => {
-    expect(classifyTrpcCall(makeCall({ target }), bothCtx)?.effectId).toBe("network.rpc")
-  })
+  it.each(["client.user.create.mutate", "client.onAdd.subscribe", "trpc.post.list.useQuery"])(
+    "still classifies %s, which the router does not spell",
+    (target) => {
+      expect(classifyTrpcCall(makeCall({ target }), bothCtx)?.effectId).toBe("network.rpc")
+    },
+  )
 })
 
 describe("classifyTrpcCall — calls that are not a procedure call", () => {
@@ -120,13 +118,16 @@ describe("classifyTrpcCall — upstream contract violations", () => {
     ["client..user.query", 'CallCandidate.target "client..user.query" has empty segment(s)'],
     [".client.user.query", 'CallCandidate.target ".client.user.query" has empty segment(s)'],
     ["client.user.query.", 'CallCandidate.target "client.user.query." has empty segment(s)'],
-  ])("throws on the malformed target %j, naming itself and the file, before the import gate", (target, message) => {
-    for (const imports of [[makeTrpcClientImport()], []]) {
-      expect(() => classifyTrpcCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-        `effects-trpc (${path}): ${message}`,
-      )
-    }
-  })
+  ])(
+    "throws on the malformed target %j, naming itself and the file, before the import gate",
+    (target, message) => {
+      for (const imports of [[makeTrpcClientImport()], []]) {
+        expect(() => classifyTrpcCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
+          `effects-trpc (${path}): ${message}`,
+        )
+      }
+    },
+  )
 
   it("throws on an import edge with an empty source rather than skipping it", () => {
     const brokenEdge = makeCtx({

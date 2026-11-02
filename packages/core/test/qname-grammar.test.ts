@@ -110,13 +110,12 @@ describe("what is not a name is still refused, and named", () => {
     expect(isQualifiedName(sentinel)).toBe(true)
   })
 
-  it.each([
-    "<other>",
-    "<module>.m",
-    "<Module>",
-  ])("refuses %s, which no sentinel spells", (qname) => {
-    expect(() => build(qname)).toThrowError(REFUSED)
-  })
+  it.each(["<other>", "<module>.m", "<Module>"])(
+    "refuses %s, which no sentinel spells",
+    (qname) => {
+      expect(() => build(qname)).toThrowError(REFUSED)
+    },
+  )
 })
 
 describe("a producer can ask whether a name is a segment before it builds one", () => {

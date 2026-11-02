@@ -8,10 +8,10 @@ describe("syntaxFingerprint", () => {
     expect(syntaxFingerprint(a)).not.toBe(syntaxFingerprint(b))
   })
 
-  it.each([
-    "",
-    "  \n\t ",
-  ])("refuses %j so a broken language plugin cannot collapse every Symbol to SHA-256(''), the well-known e3b0c44298fc hash", (input) => {
-    expect(() => syntaxFingerprint(input)).toThrowError(/empty normalized AST/)
-  })
+  it.each(["", "  \n\t "])(
+    "refuses %j so a broken language plugin cannot collapse every Symbol to SHA-256(''), the well-known e3b0c44298fc hash",
+    (input) => {
+      expect(() => syntaxFingerprint(input)).toThrowError(/empty normalized AST/)
+    },
+  )
 })

@@ -35,26 +35,32 @@ describe("classifyNestCall — a receiver declared as the emitter class", () => 
   it.each([
     ["this.eventEmitter.emit", "EventEmitter2"],
     ["this.events.emit", "EventEmitter2"],
-  ])("classifies %s, whatever the field is called, tagged with the class", (target, receiverType) => {
-    expect(classifyNestCall(makeCall({ target, receiverType }), ctx)).toEqual({
-      effectId: "event.publish",
-      confidence: "high",
-      derivedBy: "effects-plugin:nest:EventEmitter2.emit",
-    })
-  })
+  ])(
+    "classifies %s, whatever the field is called, tagged with the class",
+    (target, receiverType) => {
+      expect(classifyNestCall(makeCall({ target, receiverType }), ctx)).toEqual({
+        effectId: "event.publish",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      })
+    },
+  )
 
   it.each([
     ["the emitter class", "EventEmitter2"],
     ["a type the file's emitter import does not bind", "Server"],
-  ])("lets a recognised name decide, under its own tag, whatever it is declared as: %s", (_label, receiverType) => {
-    const call = makeCall({ target: "this.eventBus.emit", receiverType })
+  ])(
+    "lets a recognised name decide, under its own tag, whatever it is declared as: %s",
+    (_label, receiverType) => {
+      const call = makeCall({ target: "this.eventBus.emit", receiverType })
 
-    expect(classifyNestCall(call, ctx)).toEqual({
-      effectId: "event.publish",
-      confidence: "high",
-      derivedBy: "effects-plugin:nest:eventBus.emit",
-    })
-  })
+      expect(classifyNestCall(call, ctx)).toEqual({
+        effectId: "event.publish",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:eventBus.emit",
+      })
+    },
+  )
 
   it.each([
     ["a type the file's emitter import does not bind", "this.socket.emit", "Server", ctx],
@@ -108,13 +114,16 @@ describe("classifyNestCall — upstream contract violations", () => {
     ["eventBus..emit", 'CallCandidate.target "eventBus..emit" has empty segment(s)'],
     [".emit", 'CallCandidate.target ".emit" has empty segment(s)'],
     ["eventBus.", 'CallCandidate.target "eventBus." has empty segment(s)'],
-  ])("throws on the malformed target %j, naming itself and the file, before the import gate", (target, message) => {
-    for (const imports of [[makeNestEmitterImport()], []]) {
-      expect(() => classifyNestCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-        `effects-nest (${path}): ${message}`,
-      )
-    }
-  })
+  ])(
+    "throws on the malformed target %j, naming itself and the file, before the import gate",
+    (target, message) => {
+      for (const imports of [[makeNestEmitterImport()], []]) {
+        expect(() => classifyNestCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
+          `effects-nest (${path}): ${message}`,
+        )
+      }
+    },
+  )
 
   it("throws on an import edge with an empty source rather than skipping it", () => {
     const brokenEdge = makeCtx({

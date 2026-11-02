@@ -28,18 +28,21 @@ describe("aburi init — the plugins it writes", () => {
   it.each([
     ["@nestjs/core", "nestjs", "framework-nestjs"],
     ["@trpc/server", "trpc", "framework-trpc"],
-  ])("writes the plugin for %s at the top level and its detector id inside components[]", async (dependency, framework, plugin) => {
-    const { report, config } = await initWithDependencies({ [dependency]: "^10.0.0" })
+  ])(
+    "writes the plugin for %s at the top level and its detector id inside components[]",
+    async (dependency, framework, plugin) => {
+      const { report, config } = await initWithDependencies({ [dependency]: "^10.0.0" })
 
-    expect(config.languages).toEqual(["lang-typescript"])
-    expect(config.frameworks).toEqual([plugin])
-    expect(config.components).toEqual([
-      expect.objectContaining({ languages: ["ts"], frameworks: [framework] }),
-    ])
-    expect(report.detectedLanguages).toEqual(["ts"])
-    expect(report.detectedFrameworks).toEqual([framework])
-    expect(report.unmappedFrameworks).toEqual([])
-  })
+      expect(config.languages).toEqual(["lang-typescript"])
+      expect(config.frameworks).toEqual([plugin])
+      expect(config.components).toEqual([
+        expect.objectContaining({ languages: ["ts"], frameworks: [framework] }),
+      ])
+      expect(report.detectedLanguages).toEqual(["ts"])
+      expect(report.detectedFrameworks).toEqual([framework])
+      expect(report.unmappedFrameworks).toEqual([])
+    },
+  )
 
   it("suggests the language plugin ahead of the framework plugins", async () => {
     await writeApp({ "@nestjs/core": "^10.0.0" })

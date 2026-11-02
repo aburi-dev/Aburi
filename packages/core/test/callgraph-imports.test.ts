@@ -150,13 +150,12 @@ describe("import scope", () => {
       expect(resolveFrom("src/a.ts", "./repo.mjs", ["src/repo.ts"])).toBeNull()
     })
 
-    it.each([
-      "./",
-      ".",
-      "./repo/..",
-    ])("probes only the directory's index for %s, never the sibling file `<dir>.<ext>`", (specifier) => {
-      expect(resolveFrom("src/a.ts", specifier, ["src.ts"])).toBeNull()
-    })
+    it.each(["./", ".", "./repo/.."])(
+      "probes only the directory's index for %s, never the sibling file `<dir>.<ext>`",
+      (specifier) => {
+        expect(resolveFrom("src/a.ts", specifier, ["src.ts"])).toBeNull()
+      },
+    )
 
     it("takes a path written with a non-emitted extension as written, ahead of any other candidate", () => {
       const files = ["src/repo.tsx", "src/repo.ts.ts", "src/repo.ts"]

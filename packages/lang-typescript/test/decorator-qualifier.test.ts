@@ -59,9 +59,12 @@ describe("what a decorator reads as", () => {
     ["a parenthesized receiver", "@(a).Controller()"],
     ["a call", "@pick().Controller()"],
     ["a computed member", '@ns["Controller"]()'],
-  ])("has nothing to carry where the decorator never reaches the run (%s)", async (_label, written) => {
-    expect(await decoratorsOf(onClass(written), "#C")).toEqual([])
-  })
+  ])(
+    "has nothing to carry where the decorator never reaches the run (%s)",
+    async (_label, written) => {
+      expect(await decoratorsOf(onClass(written), "#C")).toEqual([])
+    },
+  )
 
   it("keeps the qualifier on every decorator of a run, in source order", async () => {
     const decorators = await decoratorsOf(

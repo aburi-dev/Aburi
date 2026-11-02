@@ -17,36 +17,44 @@ describe("scan — App Router special files", () => {
     ["loading", "Loading"],
     ["error", "ErrorBoundary"],
     ["not-found", "NotFound"],
-  ])("classifies the default export of app/**/%s.tsx, and not a helper beside it", async (role, name) => {
-    const file = `app/dashboard/${role}.tsx`
-    await workspace.writeSource(
-      file,
-      [
-        "export function formatDate(d: Date) { return d.toISOString() }",
-        `export default function ${name}() { return null }`,
-        "",
-      ].join("\n"),
-    )
+  ])(
+    "classifies the default export of app/**/%s.tsx, and not a helper beside it",
+    async (role, name) => {
+      const file = `app/dashboard/${role}.tsx`
+      await workspace.writeSource(
+        file,
+        [
+          "export function formatDate(d: Date) { return d.toISOString() }",
+          `export default function ${name}() { return null }`,
+          "",
+        ].join("\n"),
+      )
 
-    const result = await scanWorkspace()
+      const result = await scanWorkspace()
 
-    expect(symbolById(result, `ts:${file}#${name}`).extKind).toBe(`framework:next:${role}`)
-    expect(symbolById(result, `ts:${file}#formatDate`).extKind).toBeNull()
-  })
+      expect(symbolById(result, `ts:${file}#${name}`).extKind).toBe(`framework:next:${role}`)
+      expect(symbolById(result, `ts:${file}#formatDate`).extKind).toBeNull()
+    },
+  )
 
   it.each([
     ["by `export default`", "export default Page"],
     ["by an export clause", "export { Page as default }"],
-  ])("classifies a page whose default export is written apart from its declaration, %s", async (_label, exportLine) => {
-    await workspace.writeSource(
-      "app/dashboard/page.tsx",
-      ["const Page = () => {", "  return null", "}", exportLine, ""].join("\n"),
-    )
+  ])(
+    "classifies a page whose default export is written apart from its declaration, %s",
+    async (_label, exportLine) => {
+      await workspace.writeSource(
+        "app/dashboard/page.tsx",
+        ["const Page = () => {", "  return null", "}", exportLine, ""].join("\n"),
+      )
 
-    const result = await scanWorkspace()
+      const result = await scanWorkspace()
 
-    expect(symbolById(result, "ts:app/dashboard/page.tsx#Page").extKind).toBe("framework:next:page")
-  })
+      expect(symbolById(result, "ts:app/dashboard/page.tsx#Page").extKind).toBe(
+        "framework:next:page",
+      )
+    },
+  )
 
   it.each([
     [

@@ -101,12 +101,15 @@ describe("aburi explain — what the user reads", () => {
       "predates",
       "names 1",
     ],
-  ])("keeps No matches and counts the doubt under it when it %s", async (_, document, says, doesNotSay) => {
-    const { code, stderr } = await explain(document, "handleRequest")
-    expect(code).toBe(EXIT.RUNTIME)
-    expect(stderr).toContain('No matches for "handleRequest".')
-    expect(stderr).toContain("1 file(s)")
-    expect(stderr).toContain(says)
-    expect(stderr).not.toContain(doesNotSay)
-  })
+  ])(
+    "keeps No matches and counts the doubt under it when it %s",
+    async (_, document, says, doesNotSay) => {
+      const { code, stderr } = await explain(document, "handleRequest")
+      expect(code).toBe(EXIT.RUNTIME)
+      expect(stderr).toContain('No matches for "handleRequest".')
+      expect(stderr).toContain("1 file(s)")
+      expect(stderr).toContain(says)
+      expect(stderr).not.toContain(doesNotSay)
+    },
+  )
 })

@@ -239,22 +239,25 @@ describe("the server's lifecycle", () => {
         } satisfies LspFailure),
     ],
     ["throws", (client) => client.installInitializeThrow(new Error("no capabilities"))],
-  ])("disables the language and still shuts the server down when initialize %s", async (_, setup) => {
-    const factory = mockServerFactory(setup)
-    const logger = recordingLogger()
+  ])(
+    "disables the language and still shuts the server down when initialize %s",
+    async (_, setup) => {
+      const factory = mockServerFactory(setup)
+      const logger = recordingLogger()
 
-    const result = await enrich({
-      symbols: [makeClassSymbol("src/a.ts", "C", 1)],
-      fileContents: { "src/a.ts": "class C {}" },
-      serverFactory: factory,
-      logger,
-    })
+      const result = await enrich({
+        symbols: [makeClassSymbol("src/a.ts", "C", 1)],
+        fileContents: { "src/a.ts": "class C {}" },
+        serverFactory: factory,
+        logger,
+      })
 
-    expect(result.stats?.languagesDisabled).toEqual(["ts"])
-    expect(factory.clients.get("ts")?.openFiles).toEqual([])
-    expect(factory.clients.get("ts")?.shutdownCount).toBe(1)
-    expect(logger.warnings).toEqual([expect.stringContaining("no capabilities")])
-  })
+      expect(result.stats?.languagesDisabled).toEqual(["ts"])
+      expect(factory.clients.get("ts")?.openFiles).toEqual([])
+      expect(factory.clients.get("ts")?.shutdownCount).toBe(1)
+      expect(logger.warnings).toEqual([expect.stringContaining("no capabilities")])
+    },
+  )
 
   it.each<[string, (client: MockLspClient) => void, string]>([
     [
@@ -263,25 +266,28 @@ describe("the server's lifecycle", () => {
       "pipe already closed",
     ],
     ["never answers", (client) => client.installShutdownHang(), "no answer in"],
-  ])("warns that a server whose shutdown %s may still be running, and keeps its enrichment", async (_, setup, detail) => {
-    const logger = recordingLogger()
+  ])(
+    "warns that a server whose shutdown %s may still be running, and keeps its enrichment",
+    async (_, setup, detail) => {
+      const logger = recordingLogger()
 
-    const result = await enrich({
-      symbols: [makeClassSymbol("src/a.ts", "C", 1)],
-      fileContents: { "src/a.ts": "class C {}" },
-      serverFactory: mockServerFactory((client) => {
-        client.installHandler(DOC_SYMBOL_METHOD, () => [docSymbol("C", 1, 6)])
-        setup(client)
-      }),
-      logger,
-    })
+      const result = await enrich({
+        symbols: [makeClassSymbol("src/a.ts", "C", 1)],
+        fileContents: { "src/a.ts": "class C {}" },
+        serverFactory: mockServerFactory((client) => {
+          client.installHandler(DOC_SYMBOL_METHOD, () => [docSymbol("C", 1, 6)])
+          setup(client)
+        }),
+        logger,
+      })
 
-    expect(logger.warnings).toHaveLength(1)
-    expect(logger.warnings[0]).toContain("may still be running")
-    expect(logger.warnings[0]).toContain(detail)
-    expect(result.symbols[0]?.source.startColumn).toBe(7)
-    expect(result.stats?.languagesDisabled).toEqual([])
-  })
+      expect(logger.warnings).toHaveLength(1)
+      expect(logger.warnings[0]).toContain("may still be running")
+      expect(logger.warnings[0]).toContain(detail)
+      expect(result.symbols[0]?.source.startColumn).toBe(7)
+      expect(result.stats?.languagesDisabled).toEqual([])
+    },
+  )
 })
 
 describe("lsp.servers keys checked against the loaded language plugins", () => {
@@ -317,9 +323,12 @@ describe("lsp.servers keys checked against the loaded language plugins", () => {
     ["only unknown keys", ["typescript", "python"], "(configured: python, typescript; loaded: ts)"],
     ["an empty servers object", [], "(configured: none; loaded: ts)"],
     ["no servers object", undefined, "(configured: none; loaded: ts)"],
-  ])("warns once, naming every key and every loaded id, when no key matches: %s", async (_, servers, named) => {
-    expect(await warningsFor(servers, ["ts"])).toEqual([expect.stringContaining(named)])
-  })
+  ])(
+    "warns once, naming every key and every loaded id, when no key matches: %s",
+    async (_, servers, named) => {
+      expect(await warningsFor(servers, ["ts"])).toEqual([expect.stringContaining(named)])
+    },
+  )
 
   it.each<[string, readonly string[], string]>([
     ["the run loaded no plugin", [], "loaded: none"],

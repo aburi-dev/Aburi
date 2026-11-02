@@ -185,15 +185,18 @@ describe("loadPlugins — a manifest the registry refuses", () => {
       "effects-b",
       "duplicate-prefix",
     ],
-  ])("reports %s as a fault of the plugin's config entry, keeping the registry's error as the cause", async (_, config, modules, ref, code) => {
-    const error = await errorFrom(CliError, () => loadModules(config, modules))
+  ])(
+    "reports %s as a fault of the plugin's config entry, keeping the registry's error as the cause",
+    async (_, config, modules, ref, code) => {
+      const error = await errorFrom(CliError, () => loadModules(config, modules))
 
-    expect(error.code).toBe("plugin-error")
-    expect(error.cause).toBeInstanceOf(RegistryError)
-    const cause = error.cause as RegistryError
-    expect(cause.code).toBe(code)
-    expect(error.message).toBe(`Plugin "${ref}" cannot be registered: ${cause.message}`)
-  })
+      expect(error.code).toBe("plugin-error")
+      expect(error.cause).toBeInstanceOf(RegistryError)
+      const cause = error.cause as RegistryError
+      expect(cause.code).toBe(code)
+      expect(error.message).toBe(`Plugin "${ref}" cannot be registered: ${cause.message}`)
+    },
+  )
 
   it("lets a failure the registry did not code through unchanged", async () => {
     const boom = new TypeError("serialization exploded")
@@ -281,17 +284,20 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
       },
       'Plugin "./framework-odd.mjs" cannot be registered: Plugin manifest contains a non-JSON value (undefined) at $.homepage',
     ],
-  ])("exits 3 for a plugin that %s, naming its config entry, before writing anything", async (_, frameworks, files, says) => {
-    await writeStubWorkspace(workspace.root, [], { frameworks })
-    for (const [path, content] of Object.entries(files)) {
-      await writeFileAt(workspace.root, path, content)
-    }
+  ])(
+    "exits 3 for a plugin that %s, naming its config entry, before writing anything",
+    async (_, frameworks, files, says) => {
+      await writeStubWorkspace(workspace.root, [], { frameworks })
+      for (const [path, content] of Object.entries(files)) {
+        await writeFileAt(workspace.root, path, content)
+      }
 
-    const { code, stdout, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
+      const { code, stdout, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
 
-    expect(code, stderr).toBe(EXIT.GATE)
-    expect(stderr).toContain(says)
-    expect(stdout).toBe("")
-    expect(await pathExists(resolve(workspace.root, "out"))).toBe(false)
-  })
+      expect(code, stderr).toBe(EXIT.GATE)
+      expect(stderr).toContain(says)
+      expect(stdout).toBe("")
+      expect(await pathExists(resolve(workspace.root, "out"))).toBe(false)
+    },
+  )
 })

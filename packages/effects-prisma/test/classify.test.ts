@@ -42,17 +42,16 @@ describe("classifyPrismaCall — delegate and transaction calls", () => {
     })
   })
 
-  it.each([
-    "prisma.$transaction",
-    "this.prisma.$transaction",
-    "services.prisma.$transaction",
-  ])("classifies %s as db.transaction", (target) => {
-    expect(classifyPrismaCall(makeCall({ target }), ctx)).toEqual({
-      effectId: "db.transaction",
-      confidence: "high",
-      derivedBy: "effects-plugin:prisma:tx",
-    })
-  })
+  it.each(["prisma.$transaction", "this.prisma.$transaction", "services.prisma.$transaction"])(
+    "classifies %s as db.transaction",
+    (target) => {
+      expect(classifyPrismaCall(makeCall({ target }), ctx)).toEqual({
+        effectId: "db.transaction",
+        confidence: "high",
+        derivedBy: "effects-plugin:prisma:tx",
+      })
+    },
+  )
 })
 
 describe("classifyPrismaCall — receiver identification", () => {
@@ -119,23 +118,22 @@ describe("classifyPrismaCall — receiver identification", () => {
 })
 
 describe("classifyPrismaCall — a model segment that names nothing", () => {
-  it.each([
-    "prisma.<computed>.create",
-    "this.prisma.<computed>.update",
-  ])("keeps the write on %s, whose receiver names a client, at the tier the flag sets", (target) => {
-    expect(classifyPrismaCall(makeCall({ target, dynamicReceiver: true }), ctx)).toMatchObject({
-      effectId: "db.write",
-      confidence: "medium",
-    })
-  })
+  it.each(["prisma.<computed>.create", "this.prisma.<computed>.update"])(
+    "keeps the write on %s, whose receiver names a client, at the tier the flag sets",
+    (target) => {
+      expect(classifyPrismaCall(makeCall({ target, dynamicReceiver: true }), ctx)).toMatchObject({
+        effectId: "db.write",
+        confidence: "medium",
+      })
+    },
+  )
 
-  it.each([
-    "queues.<computed>.upsert",
-    "sets.<computed>.delete",
-    "router.<computed>.create",
-  ])("does not let the sentinel buy the delegate shape for %s", (target) => {
-    expect(classifyPrismaCall(makeCall({ target, dynamicReceiver: true }), ctx)).toBeNull()
-  })
+  it.each(["queues.<computed>.upsert", "sets.<computed>.delete", "router.<computed>.create"])(
+    "does not let the sentinel buy the delegate shape for %s",
+    (target) => {
+      expect(classifyPrismaCall(makeCall({ target, dynamicReceiver: true }), ctx)).toBeNull()
+    },
+  )
 
   it("returns null when the verb itself is the segment that names nothing", () => {
     expect(
@@ -182,13 +180,16 @@ describe("classifyPrismaCall — upstream contract violations", () => {
     ["prisma..create", 'CallCandidate.target "prisma..create" has empty segment(s)'],
     [".create", 'CallCandidate.target ".create" has empty segment(s)'],
     ["prisma.user.", 'CallCandidate.target "prisma.user." has empty segment(s)'],
-  ])("throws on the malformed target %j, naming itself and the file, before the import gate", (target, message) => {
-    for (const imports of [[makePrismaImport()], []]) {
-      expect(() => classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-        `effects-prisma (${path}): ${message}`,
-      )
-    }
-  })
+  ])(
+    "throws on the malformed target %j, naming itself and the file, before the import gate",
+    (target, message) => {
+      for (const imports of [[makePrismaImport()], []]) {
+        expect(() => classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
+          `effects-prisma (${path}): ${message}`,
+        )
+      }
+    },
+  )
 
   it("throws on an import edge with an empty source rather than skipping it", () => {
     const brokenEdge = makeCtx({

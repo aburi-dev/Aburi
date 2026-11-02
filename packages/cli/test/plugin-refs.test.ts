@@ -150,15 +150,12 @@ describe("detectorIdRefusal", () => {
     expect(detectorIdRefusal("nestjs", "effects")).not.toContain("framework-nestjs")
   })
 
-  it.each([
-    "lang-typescript",
-    "@aburi/lang-typescript",
-    "./x.mjs",
-    "x.mjs",
-    "Ts",
-  ])("leaves %s to the loader", (ref) => {
-    expect(detectorIdRefusal(ref, "languages")).toBeNull()
-  })
+  it.each(["lang-typescript", "@aburi/lang-typescript", "./x.mjs", "x.mjs", "Ts"])(
+    "leaves %s to the loader",
+    (ref) => {
+      expect(detectorIdRefusal(ref, "languages")).toBeNull()
+    },
+  )
 })
 
 describe("windowsDriveRefusal", () => {
@@ -196,20 +193,17 @@ describe("windowsDriveRefusal", () => {
     expect(windowsDriveRefusal(ref, "win32", ROOT)).toBeNull()
   })
 
-  it.each([
-    "C:/plugins/x.mjs",
-    "C:\\plugins\\x.mjs",
-    "C:plugins/x.mjs",
-  ])("refuses %s on POSIX, which has no drives", (ref) => {
-    expect(windowsDriveRefusal(ref, "linux", "/ws")).toContain("names the Windows drive C:")
-  })
+  it.each(["C:/plugins/x.mjs", "C:\\plugins\\x.mjs", "C:plugins/x.mjs"])(
+    "refuses %s on POSIX, which has no drives",
+    (ref) => {
+      expect(windowsDriveRefusal(ref, "linux", "/ws")).toContain("names the Windows drive C:")
+    },
+  )
 
-  it.each([
-    "/opt/plugins/x.mjs",
-    "./plugins/x.mjs",
-    "lang-typescript",
-    "file:///opt/x.mjs",
-  ])("accepts %s on POSIX", (ref) => {
-    expect(windowsDriveRefusal(ref, "linux", "/ws")).toBeNull()
-  })
+  it.each(["/opt/plugins/x.mjs", "./plugins/x.mjs", "lang-typescript", "file:///opt/x.mjs"])(
+    "accepts %s on POSIX",
+    (ref) => {
+      expect(windowsDriveRefusal(ref, "linux", "/ws")).toBeNull()
+    },
+  )
 })

@@ -51,11 +51,12 @@ describe("a diff buildDiff writes validates against aburi.diff.v1", () => {
     expect(diffSchemaViolations(diff)).toEqual([])
   })
 
-  it.each(
-    irSchema.$defs.SkippedFile.properties.reason.enum,
-  )("with every skip reason the IR can carry: %s", (reason) => {
-    expect(diffSchemaViolations(lossyDiff(reason as SkipReason))).toEqual([])
-  })
+  it.each(irSchema.$defs.SkippedFile.properties.reason.enum)(
+    "with every skip reason the IR can carry: %s",
+    (reason) => {
+      expect(diffSchemaViolations(lossyDiff(reason as SkipReason))).toEqual([])
+    },
+  )
 
   it("with no Slice Node, and so an empty slices[]", () => {
     const diff = diffSymbols([kept], [kept])

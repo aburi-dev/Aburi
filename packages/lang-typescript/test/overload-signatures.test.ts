@@ -108,17 +108,20 @@ describe("an overload signature beside its implementation", () => {
       "ts:src/a.ts#N.f",
       { kind: "function", visibility: "public" },
     ],
-  ])("folds %s's overload under the id its implementation has", async (_label, source, id, scalars) => {
-    const symbol = await symbolOf(source, id)
-    expect(symbol).toMatchObject(scalars)
-    expect(symbol.bodyNode).not.toBeNull()
-    expect(symbol.signature?.inputs).toEqual([{ name: "a", type: "any" }])
-    expect(symbol.mergedDeclarations?.map((d) => d.bodyNode)).toEqual([null])
-    await expectDistinctIds(source)
+  ])(
+    "folds %s's overload under the id its implementation has",
+    async (_label, source, id, scalars) => {
+      const symbol = await symbolOf(source, id)
+      expect(symbol).toMatchObject(scalars)
+      expect(symbol.bodyNode).not.toBeNull()
+      expect(symbol.signature?.inputs).toEqual([{ name: "a", type: "any" }])
+      expect(symbol.mergedDeclarations?.map((d) => d.bodyNode)).toEqual([null])
+      await expectDistinctIds(source)
 
-    const retyped = source.replace("(a: string)", "(a: number)")
-    expect(normalizeAst(await symbolOf(retyped, id))).not.toBe(normalizeAst(symbol))
-  })
+      const retyped = source.replace("(a: string)", "(a: number)")
+      expect(normalizeAst(await symbolOf(retyped, id))).not.toBe(normalizeAst(symbol))
+    },
+  )
 
   it("gives overloads with no implementation no Symbol, as tsc refuses them", async () => {
     expect(await idsOf("export function lone(a: string): void;\n")).toEqual([])

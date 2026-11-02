@@ -29,19 +29,15 @@ describe("checkIRIntegrity — documents that are not shaped like a Document", (
     expect(shapeViolations(document).length).toBeGreaterThan(0)
   })
 
-  it.each([
-    "components",
-    "symbols",
-    "dependencies",
-    "workspace",
-    "stats",
-    "generator",
-  ])("names the enclosing record and the missing field for %s", (key) => {
-    const violations = shapeViolations(without(key))
-    expect(violations).toHaveLength(1)
-    expect(violations[0]?.subject).toBe("document")
-    expect(violations[0]?.message).toContain(`"${key}" is absent`)
-  })
+  it.each(["components", "symbols", "dependencies", "workspace", "stats", "generator"])(
+    "names the enclosing record and the missing field for %s",
+    (key) => {
+      const violations = shapeViolations(without(key))
+      expect(violations).toHaveLength(1)
+      expect(violations[0]?.subject).toBe("document")
+      expect(violations[0]?.message).toContain(`"${key}" is absent`)
+    },
+  )
 
   it.each([
     ["symbols", {}, "not an array"],

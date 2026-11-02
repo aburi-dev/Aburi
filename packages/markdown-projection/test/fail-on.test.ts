@@ -11,13 +11,12 @@ import {
 } from "../src"
 
 describe("formatFailOnClause", () => {
-  it.each<FailOnStatus>([
-    "changed",
-    "dropped-toggled",
-    "dropped-toggled:to-kept",
-  ])("writes a bare %s clause as the status alone", (status) => {
-    expect(formatFailOnClause({ kind: "bare", status })).toBe(status)
-  })
+  it.each<FailOnStatus>(["changed", "dropped-toggled", "dropped-toggled:to-kept"])(
+    "writes a bare %s clause as the status alone",
+    (status) => {
+      expect(formatFailOnClause({ kind: "bare", status })).toBe(status)
+    },
+  )
 
   it.each<[FailOnComparator, string]>([
     [">", "changed:>10"],
@@ -123,29 +122,29 @@ describe("evaluateFailOn — the count each status watches", () => {
     ).toBe(0)
   })
 
-  it.each<FailOnStatus>([
-    "removed",
-    "removed:duplicate",
-  ])("refuses %s over more duplicates than removals rather than read a negative count", (status) => {
-    const inconsistent = { ...emptySummary(), removed: 1, removedDuplicates: 2 }
-    expect(() => evaluateFailOn({ kind: "bare", status }, inconsistent)).toThrow(
-      "evaluateFailOn: summary.removedDuplicates (2) exceeds summary.removed (1)",
-    )
-  })
+  it.each<FailOnStatus>(["removed", "removed:duplicate"])(
+    "refuses %s over more duplicates than removals rather than read a negative count",
+    (status) => {
+      const inconsistent = { ...emptySummary(), removed: 1, removedDuplicates: 2 }
+      expect(() => evaluateFailOn({ kind: "bare", status }, inconsistent)).toThrow(
+        "evaluateFailOn: summary.removedDuplicates (2) exceeds summary.removed (1)",
+      )
+    },
+  )
 
   it("reports zero unknowns for a diff written before the counter existed", () => {
     const { unknown: _dropped, ...older } = summary
     expect(evaluateFailOn({ kind: "bare", status: "unknown" }, older, breakdown).observed).toBe(0)
   })
 
-  it.each<FailOnStatus>([
-    "dropped-toggled:to-kept",
-    "dropped-toggled:to-dropped",
-  ])("refuses %s without a breakdown rather than report zero", (status) => {
-    expect(() => evaluateFailOn({ kind: "bare", status }, emptySummary())).toThrow(
-      /droppedToggledBreakdown/,
-    )
-  })
+  it.each<FailOnStatus>(["dropped-toggled:to-kept", "dropped-toggled:to-dropped"])(
+    "refuses %s without a breakdown rather than report zero",
+    (status) => {
+      expect(() => evaluateFailOn({ kind: "bare", status }, emptySummary())).toThrow(
+        /droppedToggledBreakdown/,
+      )
+    },
+  )
 
   it("needs no breakdown for the bare dropped-toggled count", () => {
     const counted = { ...emptySummary(), droppedToggled: 4 }

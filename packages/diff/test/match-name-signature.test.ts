@@ -76,10 +76,13 @@ describe("stage 4 settles candidates in score order", () => {
         "moved+changed ts:src/mid.ts#Alpha.createOrderRecord -> ts:src/aaa.ts#Alpha.createOrderRecord",
       ],
     ],
-  ])("settles a tie on the lower %s id, whichever way the arrays are written", (_, base, head, expected) => {
-    expect(changesBetween(base, head)).toEqual(expected)
-    expect(changesBetween([...base].reverse(), [...head].reverse())).toEqual(expected)
-  })
+  ])(
+    "settles a tie on the lower %s id, whichever way the arrays are written",
+    (_, base, head, expected) => {
+      expect(changesBetween(base, head)).toEqual(expected)
+      expect(changesBetween([...base].reverse(), [...head].reverse())).toEqual(expected)
+    },
+  )
 
   it.each([
     ["the renamed member", "src/aaa.ts", "src/zzz.ts", "AccountService.createUserAccount"],
@@ -89,18 +92,21 @@ describe("stage 4 settles candidates in score order", () => {
       "src/aaa.ts",
       "AccountService.createUserAccountRecord",
     ],
-  ])("settles an exact tie between scores made of different axes on the lower base id, when that is %s", (_, renamedAt, keptAt, winner) => {
-    const head = method("src/mid.ts", "AccountService.createUserAccountRecord", "z", {
-      signature: withInputs(CREATE_INPUTS),
-    })
-    const renamed = method(renamedAt, "AccountService.createUserAccount", "p", {
-      signature: withInputs(["string", "number", "Date", "Options"]),
-    })
-    const kept = method(keptAt, "AccountService.createUserAccountRecord", "q", {
-      signature: withInputs(["string", "number", "Options", "Flags"], ["Account"]),
-    })
-    expect(stage4([renamed, kept], [head])).toEqual([`${winner} -> ${head.name}`])
-  })
+  ])(
+    "settles an exact tie between scores made of different axes on the lower base id, when that is %s",
+    (_, renamedAt, keptAt, winner) => {
+      const head = method("src/mid.ts", "AccountService.createUserAccountRecord", "z", {
+        signature: withInputs(CREATE_INPUTS),
+      })
+      const renamed = method(renamedAt, "AccountService.createUserAccount", "p", {
+        signature: withInputs(["string", "number", "Date", "Options"]),
+      })
+      const kept = method(keptAt, "AccountService.createUserAccountRecord", "q", {
+        signature: withInputs(["string", "number", "Options", "Flags"], ["Account"]),
+      })
+      expect(stage4([renamed, kept], [head])).toEqual([`${winner} -> ${head.name}`])
+    },
+  )
 
   it("refuses a pair without signatures, whose signature axis would score a free 1.0", () => {
     const noSignature = (file: string, seed: string) =>

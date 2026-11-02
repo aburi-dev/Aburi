@@ -42,15 +42,18 @@ describe("parseConfig", () => {
     ["a lexical error", "{not json"],
     ["two byte order marks opening it", `\uFEFF\uFEFF{ "strict": true }`],
     ["a byte order mark after its first character", `{\uFEFF "strict": true }`],
-  ])("throws config-parse-failed on a config with %s, with the offset in the message and the parse errors as cause", async (_, text) => {
-    const caught = await errorFrom(ConfigError, () => parseConfig(text, "inline"))
-    expect(caught.code).toBe("config-parse-failed")
-    expect(caught.message).toMatch(
-      /^Config at inline is not valid JSONC: InvalidSymbol at offset \d+/,
-    )
-    expect(Array.isArray(caught.cause)).toBe(true)
-    expect((caught.cause as unknown[]).length).toBeGreaterThan(0)
-  })
+  ])(
+    "throws config-parse-failed on a config with %s, with the offset in the message and the parse errors as cause",
+    async (_, text) => {
+      const caught = await errorFrom(ConfigError, () => parseConfig(text, "inline"))
+      expect(caught.code).toBe("config-parse-failed")
+      expect(caught.message).toMatch(
+        /^Config at inline is not valid JSONC: InvalidSymbol at offset \d+/,
+      )
+      expect(Array.isArray(caught.cause)).toBe(true)
+      expect((caught.cause as unknown[]).length).toBeGreaterThan(0)
+    },
+  )
 
   it("throws config-invalid on a schema violation, with the ajv errors as cause and their params in the message", async () => {
     const caught = await errorFrom(ConfigError, () =>

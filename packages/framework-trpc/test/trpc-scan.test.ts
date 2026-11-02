@@ -254,9 +254,12 @@ describe("scan — what a const's initializer makes it", () => {
   it.each([
     ["the instance's procedure", "t.procedure"],
     ["a procedure field of a domain object", "form.procedure"],
-  ])("%s is not classified in a file that does not import @trpc/server", async (_shape, initializer) => {
-    expect(await subjectIn(initializer, "")).toBeNull()
-  })
+  ])(
+    "%s is not classified in a file that does not import @trpc/server",
+    async (_shape, initializer) => {
+      expect(await subjectIn(initializer, "")).toBeNull()
+    },
+  )
 
   // Only the receiver's name tells these from tRPC's, and the file's imports keep them at medium.
   it.each([

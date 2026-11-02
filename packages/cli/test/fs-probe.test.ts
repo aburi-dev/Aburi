@@ -24,15 +24,15 @@ describe("pathExists and pathKind", () => {
     expect(await pathKind(path)).toBe(kind)
   })
 
-  it.each([
-    pathExists,
-    pathKind,
-  ])("report a probe that failed for any reason but absence, rather than answering absent", async (probe) => {
-    const path = resolve(workspace.root, "nul\0byte")
+  it.each([pathExists, pathKind])(
+    "report a probe that failed for any reason but absence, rather than answering absent",
+    async (probe) => {
+      const path = resolve(workspace.root, "nul\0byte")
 
-    const error = await errorFrom(CliError, () => probe(path))
+      const error = await errorFrom(CliError, () => probe(path))
 
-    expect(error.code).toBe("runtime-error")
-    expect(error.message).toContain(`Failed to probe ${path}`)
-  })
+      expect(error.code).toBe("runtime-error")
+      expect(error.message).toContain(`Failed to probe ${path}`)
+    },
+  )
 })

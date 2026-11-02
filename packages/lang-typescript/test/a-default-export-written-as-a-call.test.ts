@@ -21,10 +21,13 @@ describe("a default export written as a call handed a function", () => {
     ["a call in parentheses", "export default (withAuth(() => { q() }))", ["q"]],
     ["a call behind `as`", "export default withAuth(() => { q() }) as Handler", ["q"]],
     ["a chain of calls", "export default compose(log)(() => { a() }, () => { b() })", ["a", "b"]],
-  ])("walks the functions in %s, and not the call that wraps them", async (_label, source, calls) => {
-    expect(await idsOf(source)).toEqual([DEFAULT])
-    expect(await callsOf(source, DEFAULT)).toEqual(calls)
-  })
+  ])(
+    "walks the functions in %s, and not the call that wraps them",
+    async (_label, source, calls) => {
+      expect(await idsOf(source)).toEqual([DEFAULT])
+      expect(await callsOf(source, DEFAULT)).toEqual(calls)
+    },
+  )
 
   it("lays the first function out as its body and the rest beside it, over the whole statement", async () => {
     const symbol = await symbolOf(

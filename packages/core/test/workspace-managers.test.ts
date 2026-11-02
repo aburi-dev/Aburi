@@ -149,20 +149,23 @@ describe("detectManagers", () => {
     ])
   })
 
-  it.each([
-    ["pkg"],
-    ...(process.platform === "win32" ? [] : [["x\\pkg"]]),
-  ])("refuses a declared package that lies outside the workspace root, at ../outside/%s", async (name) => {
-    await tree.writePackage(`outside/${name}`, { name: "o" })
-    await tree.writePackage("repo/apps/a", { name: "a" })
-    await tree.writeSource("repo/pnpm-workspace.yaml", "packages:\n  - apps/*\n  - ../outside/*\n")
+  it.each([["pkg"], ...(process.platform === "win32" ? [] : [["x\\pkg"]])])(
+    "refuses a declared package that lies outside the workspace root, at ../outside/%s",
+    async (name) => {
+      await tree.writePackage(`outside/${name}`, { name: "o" })
+      await tree.writePackage("repo/apps/a", { name: "a" })
+      await tree.writeSource(
+        "repo/pnpm-workspace.yaml",
+        "packages:\n  - apps/*\n  - ../outside/*\n",
+      )
 
-    const error = await errorFrom(CoreError, () => detectManagers(join(tree.root, "repo")))
+      const error = await errorFrom(CoreError, () => detectManagers(join(tree.root, "repo")))
 
-    expect(error.code).toBe("workspace-root-outside")
-    expect(error.message).toContain("pnpm workspace root")
-    expect(error.value).toContain("..")
-  })
+      expect(error.code).toBe("workspace-root-outside")
+      expect(error.message).toContain("pnpm workspace root")
+      expect(error.value).toContain("..")
+    },
+  )
 
   it("spells a workspace root in Unicode NFC, as the paths beside it are spelled", async () => {
     const decomposed = "café".normalize("NFD")

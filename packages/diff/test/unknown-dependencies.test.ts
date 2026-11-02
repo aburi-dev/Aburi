@@ -70,19 +70,22 @@ describe("an edge into a file the other side never analysed", () => {
   it.each([
     ["different reasons", "parse-timeout", "extraction-failed"],
     ["the same reason", "parse-failed", "parse-failed"],
-  ] as const)("names both files, path-sorted, when its two ends went for %s", (_, alsoReason, goneReason) => {
-    const diff = diffOf(
-      makeIR({ symbols: [gone, alsoGone, kept], dependencies: [callEdge(gone.id, alsoGone.id)] }),
-      withSkipped(makeIR({ symbols: [kept] }), [
+  ] as const)(
+    "names both files, path-sorted, when its two ends went for %s",
+    (_, alsoReason, goneReason) => {
+      const diff = diffOf(
+        makeIR({ symbols: [gone, alsoGone, kept], dependencies: [callEdge(gone.id, alsoGone.id)] }),
+        withSkipped(makeIR({ symbols: [kept] }), [
+          lost("src/also.ts", alsoReason),
+          lost("src/gone.ts", goneReason),
+        ]),
+      )
+      expect(diff.dependencies.unknown?.[0]?.lostFiles).toEqual([
         lost("src/also.ts", alsoReason),
         lost("src/gone.ts", goneReason),
-      ]),
-    )
-    expect(diff.dependencies.unknown?.[0]?.lostFiles).toEqual([
-      lost("src/also.ts", alsoReason),
-      lost("src/gone.ts", goneReason),
-    ])
-  })
+      ])
+    },
+  )
 
   it("asks the document where the Symbol says it is, not where its id says", () => {
     const edge = callEdge(relocated.id, kept.id)

@@ -83,17 +83,22 @@ describe("aburi scan with an --output-dir that cannot hold the outputs", () => {
   it.each([
     ["the IR", "md", IR_JSON_FILENAME],
     ["the workspace Markdown", "json", WORKSPACE_MD_FILENAME],
-  ])("names %s, which --format %s does not write, when a directory stands in its place", async (artefact, format, filename) => {
-    await writeTypeScriptWorkspace(workspace.root, "write-fixture")
-    await mkdir(under("out", filename), { recursive: true })
+  ])(
+    "names %s, which --format %s does not write, when a directory stands in its place",
+    async (artefact, format, filename) => {
+      await writeTypeScriptWorkspace(workspace.root, "write-fixture")
+      await mkdir(under("out", filename), { recursive: true })
 
-    const { code, stderr } = await run("scan", "--format", format)
+      const { code, stderr } = await run("scan", "--format", format)
 
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toContain(`aburi scan could not remove ${artefact} at ${under("out", filename)}`)
-    expect(stderr).toContain("a directory stands where an earlier run's file would be")
-    expect(stderr).toContain("--output-dir")
-  })
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toContain(
+        `aburi scan could not remove ${artefact} at ${under("out", filename)}`,
+      )
+      expect(stderr).toContain("a directory stands where an earlier run's file would be")
+      expect(stderr).toContain("--output-dir")
+    },
+  )
 
   it("keeps the IR an earlier run wrote when --format md stops at a page it cannot write", async () => {
     await writeTypeScriptWorkspace(workspace.root, "write-fixture")
@@ -240,16 +245,21 @@ describe("aburi diff with an --output-dir that cannot hold the outputs", () => {
     ["the diff JSON", DIFF_JSON_FILENAME, []],
     ["the diff Markdown", DIFF_MD_FILENAME, ["--format", "json"]],
     ["the uncapped diff Markdown", DIFF_FULL_MD_FILENAME, []],
-  ])("names %s an earlier run left when a directory stands in its place", async (artefact, filename, flags) => {
-    await mkdir(under("out", filename), { recursive: true })
+  ])(
+    "names %s an earlier run left when a directory stands in its place",
+    async (artefact, filename, flags) => {
+      await mkdir(under("out", filename), { recursive: true })
 
-    const { code, stderr } = await run("diff", ...(await documents()), ...flags)
+      const { code, stderr } = await run("diff", ...(await documents()), ...flags)
 
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toContain(`aburi diff could not remove ${artefact} at ${under("out", filename)}`)
-    expect(stderr).toContain("a directory stands where an earlier run's file would be")
-    expect(stderr).toContain("--output-dir")
-  })
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toContain(
+        `aburi diff could not remove ${artefact} at ${under("out", filename)}`,
+      )
+      expect(stderr).toContain("a directory stands where an earlier run's file would be")
+      expect(stderr).toContain("--output-dir")
+    },
+  )
 
   it("refuses a malformed invocation with nothing created for it", async () => {
     const { code } = await run("diff", "--base", under("base.json"))

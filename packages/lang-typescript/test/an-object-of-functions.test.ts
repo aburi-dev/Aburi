@@ -119,18 +119,15 @@ describe("a function an object literal holds is a member Symbol", () => {
     expect((await symbolOf(source, "ts:src/a.ts#api.get")).visibility).toBe("public")
   })
 
-  it.each([
-    "src/a.ts",
-    "src/a.tsx",
-    "src/a.js",
-    "src/a.jsx",
-    "src/a.mts",
-  ])("declares one in %s", async (path) => {
-    expect(await idsOf("export const api = { get: () => q() }", path)).toEqual([
-      `ts:${path}#api`,
-      `ts:${path}#api.get`,
-    ])
-  })
+  it.each(["src/a.ts", "src/a.tsx", "src/a.js", "src/a.jsx", "src/a.mts"])(
+    "declares one in %s",
+    async (path) => {
+      expect(await idsOf("export const api = { get: () => q() }", path)).toEqual([
+        `ts:${path}#api`,
+        `ts:${path}#api.get`,
+      ])
+    },
+  )
 })
 
 describe("the binding an object is read under", () => {

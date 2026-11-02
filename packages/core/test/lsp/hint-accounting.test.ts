@@ -76,22 +76,25 @@ describe("what the enrichment pass counts", () => {
       "memberNotFound",
       thisFooFile().symbols.filter((s) => s.id !== "ts:src/a.ts#C.foo"),
     ],
-  ])("rejects %s as %s while every request counter says the run went well", async (_, hover, bucket, symbols) => {
-    const enrichment = await enrich({
-      ...thisFooFile(),
-      ...(symbols === undefined ? {} : { symbols }),
-      serverFactory: hoverServer(() => hover),
-    })
+  ])(
+    "rejects %s as %s while every request counter says the run went well",
+    async (_, hover, bucket, symbols) => {
+      const enrichment = await enrich({
+        ...thisFooFile(),
+        ...(symbols === undefined ? {} : { symbols }),
+        serverFactory: hoverServer(() => hover),
+      })
 
-    expect(statsOf(enrichment)).toMatchObject({
-      hintsProduced: 0,
-      hintsRejected: noRejections({ [bucket]: 1 }),
-      requestsFailed: 0,
-      requestsTimedOut: 0,
-      filesEnriched: 1,
-      filesFellBack: 0,
-    })
-  })
+      expect(statsOf(enrichment)).toMatchObject({
+        hintsProduced: 0,
+        hintsRejected: noRejections({ [bucket]: 1 }),
+        requestsFailed: 0,
+        requestsTimedOut: 0,
+        filesEnriched: 1,
+        filesFellBack: 0,
+      })
+    },
+  )
 
   it("accounts for every hover that came back, in exactly one place", async () => {
     const answers = new Map<number, unknown>([

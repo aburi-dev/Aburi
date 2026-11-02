@@ -196,19 +196,22 @@ describe("the confidence a propagated effect carries", () => {
   it.each<[string, CallEdge[]]>([
     ["without", []],
     ["with", [edge(B, A, { confidence: "low" })]],
-  ])("is the weakest hop's on the only path to it, %s a call back into the caller", (_case, back) => {
-    const symbols = [
-      makeSymbol(A),
-      makeSymbol(B, { effects: [localEffect({ id: "db.write", target: "x" })] }),
-      makeSymbol(X),
-    ]
-    const edges = [edge(X, A), edge(A, B, { confidence: "low" }), ...back]
+  ])(
+    "is the weakest hop's on the only path to it, %s a call back into the caller",
+    (_case, back) => {
+      const symbols = [
+        makeSymbol(A),
+        makeSymbol(B, { effects: [localEffect({ id: "db.write", target: "x" })] }),
+        makeSymbol(X),
+      ]
+      const edges = [edge(X, A), edge(A, B, { confidence: "low" }), ...back]
 
-    const { symbols: out } = propagateEffects({ symbols, edges })
+      const { symbols: out } = propagateEffects({ symbols, edges })
 
-    expect(propagatedOf(out, A).map((e) => e.confidence)).toEqual(["low"])
-    expect(propagatedOf(out, X).map((e) => e.confidence)).toEqual(["low"])
-  })
+      expect(propagatedOf(out, A).map((e) => e.confidence)).toEqual(["low"])
+      expect(propagatedOf(out, X).map((e) => e.confidence)).toEqual(["low"])
+    },
+  )
 
   it.each<[string, Array<[string, Confidence]>, CallEdge[], Array<[string, Confidence]>]>([
     [

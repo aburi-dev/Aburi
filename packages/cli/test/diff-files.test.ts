@@ -48,21 +48,21 @@ describe("aburi diff --base/--head", () => {
     })
   })
 
-  it.each([
-    [[]],
-    [""],
-  ])("refuses --fail-on %j, a gate with no clause, before it removes an earlier report", async (failOn) => {
-    const earlier = await writeEarlierReports(workspace.root, ["out"])
+  it.each([[[]], [""]])(
+    "refuses --fail-on %j, a gate with no clause, before it removes an earlier report",
+    async (failOn) => {
+      const earlier = await writeEarlierReports(workspace.root, ["out"])
 
-    const error = await errorFrom(FailOnParseError, () =>
-      runDiff({ cwd: workspace.root, base: "missing.json", head: "also.json", failOn }),
-    )
+      const error = await errorFrom(FailOnParseError, () =>
+        runDiff({ cwd: workspace.root, base: "missing.json", head: "also.json", failOn }),
+      )
 
-    expect(error.message).toBe(
-      '--fail-on value "" is invalid: expected at least one clause; an empty --fail-on value would silently disable the CI gate.',
-    )
-    expect(await filesUnder(workspace.root)).toEqual(earlier)
-  })
+      expect(error.message).toBe(
+        '--fail-on value "" is invalid: expected at least one clause; an empty --fail-on value would silently disable the CI gate.',
+      )
+      expect(await filesUnder(workspace.root)).toEqual(earlier)
+    },
+  )
 
   it("names the tripped clause on stderr from the command line", async () => {
     const { base, head } = await writeIRs(workspace.root, EMPTY, ADDED_FOO)
@@ -96,19 +96,22 @@ describe("aburi diff --base/--head", () => {
   it.each([
     ["md", [DIFF_MD_FILENAME]],
     ["json", [DIFF_JSON_FILENAME]],
-  ] as const)("leaves only what --format %s writes of an earlier capped report, beside the caller's own file", async (format, written) => {
-    await workspace.writeSource("out/notes.md", "# Notes\n")
-    const { report: capped } = await diffDocuments(workspace.root, EMPTY, ADDED_FOO, {
-      maxBytes: 10,
-    })
-    expect(await pathExists(capped.diffFullMdPath ?? "")).toBe(true)
+  ] as const)(
+    "leaves only what --format %s writes of an earlier capped report, beside the caller's own file",
+    async (format, written) => {
+      await workspace.writeSource("out/notes.md", "# Notes\n")
+      const { report: capped } = await diffDocuments(workspace.root, EMPTY, ADDED_FOO, {
+        maxBytes: 10,
+      })
+      expect(await pathExists(capped.diffFullMdPath ?? "")).toBe(true)
 
-    await diffDocuments(workspace.root, EMPTY, ADDED_FOO, { format })
+      await diffDocuments(workspace.root, EMPTY, ADDED_FOO, { format })
 
-    expect((await readdir(resolve(workspace.root, "out"))).sort()).toEqual(
-      [...written, "notes.md"].sort(),
-    )
-  })
+      expect((await readdir(resolve(workspace.root, "out"))).sort()).toEqual(
+        [...written, "notes.md"].sort(),
+      )
+    },
+  )
 })
 
 describe("aburi diff — the head's call-resolution census", () => {

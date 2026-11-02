@@ -60,22 +60,19 @@ describe("hasTrpcClientImport", () => {
 })
 
 describe("hasTrpcServerImport", () => {
-  it.each([
-    "@trpc/server",
-    "@trpc/server/adapters/next",
-    "@trpc/server/adapters/fetch",
-  ])("returns true for %s", (source) => {
-    expect(hasTrpcServerImport([edge(source)], PATH)).toBe(true)
-  })
+  it.each(["@trpc/server", "@trpc/server/adapters/next", "@trpc/server/adapters/fetch"])(
+    "returns true for %s",
+    (source) => {
+      expect(hasTrpcServerImport([edge(source)], PATH)).toBe(true)
+    },
+  )
 
-  it.each([
-    "@trpc/client",
-    "@trpc/react-query",
-    "@trpc/next",
-    "@trpc/server-mock",
-  ])("returns false for %s", (source) => {
-    expect(hasTrpcServerImport([edge(source)], PATH)).toBe(false)
-  })
+  it.each(["@trpc/client", "@trpc/react-query", "@trpc/next", "@trpc/server-mock"])(
+    "returns false for %s",
+    (source) => {
+      expect(hasTrpcServerImport([edge(source)], PATH)).toBe(false)
+    },
+  )
 
   it("returns false when the import list is empty", () => {
     expect(hasTrpcServerImport([], PATH)).toBe(false)

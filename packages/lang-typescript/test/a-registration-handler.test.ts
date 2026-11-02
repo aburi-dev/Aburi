@@ -112,10 +112,13 @@ describe("a registration call's inline handler is its body", () => {
       ["call-statement:prisma.delete"],
       ["prisma.user.delete"],
     ],
-  ])("walks the call itself for a registration with %s, which defers nothing", async (_label, source, id, derivedBy, calls) => {
-    expect((await symbolOf(source, id)).derivedBy).toEqual(derivedBy)
-    expect(await callsOf(source, id)).toEqual(calls)
-  })
+  ])(
+    "walks the call itself for a registration with %s, which defers nothing",
+    async (_label, source, id, derivedBy, calls) => {
+      expect((await symbolOf(source, id)).derivedBy).toEqual(derivedBy)
+      expect(await callsOf(source, id)).toEqual(calls)
+    },
+  )
 
   it.each([
     ['app.get("/x", () => { a() })', "ts:src/a.ts#app__get__$x__d0", false],
