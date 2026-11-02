@@ -1,5 +1,71 @@
 # @aburi/framework-nestjs
 
+## 0.4.0
+
+### Minor Changes
+
+- dde9172: A NestJS decorator re-exported through a workspace barrel is now graded by the module that declares it, so `import { Controller } from "@app/common"`, where `@app/common` is a `tsconfig.json` path alias to a barrel that re-exports `@nestjs/common`, classifies at `high` confidence rather than `medium`. The same holds for a relative barrel (`../common`), for a chain of barrels, for a decorator renamed on import or read through a namespace import, for a barrel that republishes an import in an export clause or as its default export, and for one that re-exports `@nestjs/common` as a namespace (`export * as nest from`). A barrel that re-exports a competing library, declares the decorator itself, exports `@nestjs/common`'s only under another name, imports it only for its own use, or reaches it only through `export *` still grades `medium`, as does an alias that maps to no file in the workspace.
+
+  The new `ImportEdge.reexports` says what a module exports through an edge: `{ imported, exported }` for each name a re-export or a republished import exports, with `imported: "*"` for a whole module. The TypeScript plugin writes it. Before framework classification the scan follows each name a decorator binds through those entries alone, and records on the new `ImportEdge.origins` the module outside the workspace the name comes from. `origins` is the scan's to write: `ParseResult.imports` is typed without it, and one a language plugin returns is dropped. A bare specifier reaches a barrel through the new optional `LanguagePlugin.createImportResolver`, which the TypeScript plugin implements by reading the nearest `tsconfig.json` (or `jsconfig.json`): `compilerOptions.paths` and `baseUrl`, through `extends` chains, relative or from a package, and `${configDir}`. It reads a config with a byte order mark and an empty one as `tsc` does, and warns once about a config it cannot read or parse, an `extends` entry that names no config, and a `paths` or `baseUrl` value `tsc` refuses. A resolver failure ends the chain without an origin; the first is a warning and a plugin whose resolver failed more than once is warned with the count. Only decorators are followed, and only when a framework plugin is loaded, so a barrel is parsed at most once more per scan, a scan without framework plugins does no extra work, and the time a chain takes does not count against the importing file's `parseTimeoutMs`. A framework plugin that grades provenance reads `edge.origins?.get(importedName) ?? edge.source`. `@aburi/core` exports `decoratorReference`, which reads the name a decorator is looked up by, and `AsyncMemo`, `describeJsonType` and `errorCode`.
+
+  A controller, provider or route that reached its decorator through such a barrel moves from `medium` to `high`, so an IR scanned before this release, compared with one scanned after, reports a `confidence: medium → high` change on each. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with the installed plugins, but it scans the base in a fresh worktree with no `node_modules`, so `paths` that a package's config supplies through `extends` apply only to the head: a decorator reached through one of those aliases reads as moving from `medium` to `high` in every such diff.
+
+- 3b52db9: A call through a default import resolves to the module's default export
+
+  `import connect from "./client"` was read as a named import of `connect`, so `connect()` linked at `high` confidence to the module's named `connect` (and took its effects) when the default export was another function, and a default export that was anonymous (`export default () => …`) or imported under another name than its declaration's was never reached. The language plugin now reports a default binding as `default as <local>`, as `{ default as x }` already was, and call resolution looks it up as the file's `<default>` Symbol or the declaration carrying `export-default`, including a member reached through it (`Svc.run()`). A module with no default export leaves the call unresolved, bucketed `no-match`, and one with two (TS2528) leaves it `ambiguous`. `@aburi/core` exports the `"default"` half of that spelling as `DEFAULT_EXPORT_NAME`. The NestJS plugin reads a default-imported decorator by the name the file gave it, at `high` from `@nestjs/*` and `medium` from anywhere else, and `import { default as Controller }` now classifies the same way instead of being matched as `default`, which no vocabulary lists.
+
+  A default export that is a value (`export default withAuth(Page)`), a member of an anonymous default class and a default re-exported from another module stay unresolved, as they were. A language plugin that reports a default import as a bare name is read as before: nothing checks the spelling.
+
+  A call that resolves differently can change the effects its caller inherits, so with an effect plugin loaded this moves the `logic` fingerprint of every Symbol whose propagated effects change with it. A NestJS class or method whose decorator is imported as `{ default as … }` now classifies, which moves its `api` fingerprint. An IR scanned before this release, compared with one scanned after, reports those Symbols as changed. On this repository, which has no relative default import in its scanned sources and loads no effect plugin, scanning one tree with both versions gives a byte-identical IR. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with the installed plugins and is unaffected.
+
+### Patch Changes
+
+- b7a7148: The declaration files carry less JSDoc: comments that restated the code, and citations of design documents in the IR, diff, config and plugin schemas' descriptions, are gone. No behaviour changes.
+- Updated dependencies [19ead65]
+- Updated dependencies [af4b970]
+- Updated dependencies [c6ce311]
+- Updated dependencies [b7a7148]
+- Updated dependencies [f2a6916]
+- Updated dependencies [50ea5bb]
+- Updated dependencies [90fa1cb]
+- Updated dependencies [b7a7148]
+- Updated dependencies [9c21737]
+- Updated dependencies [dde9172]
+- Updated dependencies [7d4dbf9]
+- Updated dependencies [3b52db9]
+- Updated dependencies [dfffac9]
+- Updated dependencies [ad04fff]
+- Updated dependencies [13f8ba9]
+- Updated dependencies [1a56ce7]
+- Updated dependencies [107c1c6]
+- Updated dependencies [b2155c1]
+- Updated dependencies [b2155c1]
+- Updated dependencies [bb90fea]
+- Updated dependencies [f32e45b]
+- Updated dependencies [b7a7148]
+- Updated dependencies [80be216]
+- Updated dependencies [50c0bd2]
+- Updated dependencies [a6cd1ac]
+- Updated dependencies [f9d300c]
+- Updated dependencies [1a41bef]
+- Updated dependencies [6be7d2e]
+- Updated dependencies [ad21560]
+- Updated dependencies [517eb21]
+- Updated dependencies [36fd72f]
+- Updated dependencies [6afef8b]
+- Updated dependencies [eb4ab00]
+- Updated dependencies [d4fca12]
+- Updated dependencies [635be83]
+- Updated dependencies [659f00c]
+- Updated dependencies [7830c96]
+- Updated dependencies [463d616]
+- Updated dependencies [7830c96]
+- Updated dependencies [47f8ef9]
+- Updated dependencies [65c758f]
+  - @aburi/core@0.6.0
+  - @aburi/types@0.6.0
+  - @aburi/plugin-registry@0.5.1
+
 ## 0.3.0
 
 ### Minor Changes

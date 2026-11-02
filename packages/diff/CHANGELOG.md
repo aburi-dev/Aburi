@@ -1,5 +1,114 @@
 # @aburi/diff
 
+## 0.6.0
+
+### Minor Changes
+
+- f2a6916: `aburi scan` now writes the edges between Components. Before this release, `dependencies[]` held only Symbol-to-Symbol `via: "call"` edges, so the Component dependencies graph in every `workspace.md` drew its nodes and no arrow, its fallback list read `_No Component edges recorded._`, and a diff never had a `Component-level added` or `Component-level removed` group.
+
+  For each ordered pair of distinct Components where a file in the first imports a module of the second, the IR now carries one `{ from, to, via: "import", direction: "outbound", effect: null }`. In a pnpm workspace, `packages/web/src/app.ts` writing `import { format } from "@acme/shared"` gives `acme-web` → `acme-shared`:
+
+  ```
+  Fallback list:
+
+  - `acme-web` → `acme-shared` (via `import`)
+  ```
+
+  Static imports, dynamic `import()`, re-exports, side-effect imports, `import x = require(…)` and type-only imports all count, and a bundler query such as `?raw` is dropped before the specifier is read. A relative specifier names the Component its joined path lies in, whether or not that path is a file the scan read; one that climbs exactly to the workspace root names the Component rooted at `.`. A bare specifier names a workspace package by its `package.json#name`, a subpath such as `@acme/shared/format` included. A package belongs to the Component that holds its `package.json`. A registry dependency, a Node built-in, a path alias, a CommonJS `require()` call, an import inside one Component, and the imports of a file the scan left out produce no edge. A package name the manifests of two Components declare names neither, and the scan warns once for each such name an import uses. A resolved call between Components adds no edge of its own: a call matched only by a globally unique name is not evidence of a dependency.
+
+  Every IR of a workspace where one Component imports another changes, and so does its `workspace.md`. A diff against an IR scanned before this release reports every Component edge as `Component-level added`. No fingerprint moves.
+
+  The scan now reads `package.json` at each workspace package root and each root a config's `components[]` declares, wherever a Component holds it; a root no Component holds is not read. A manifest it reads that cannot be read or parsed stops the scan with exit 2 (`Failed to resolve components: …`). Before this release a config that declared its Components never read those manifests, so the same tree scanned with exit 0. A malformed `package.json` at the workspace root still stops workspace detection first, with exit 1, as before.
+
+  A diff now reads a Component edge one side lacks as `unknown` when that side skipped a file of the Component the edge leaves, since any of those files could have held the import, and lists every such file in `lostFiles`. Before, a `parse-timeout` on one file put a `Component-level removed` line in the report for a dependency that still existed.
+
+  `@aburi/core`: `ScanInput` takes an optional `workspacePackages` (`{ name, root }[]`), which `readWorkspacePackages(workspaceRoot, roots)` reads; `NPM_MANIFEST` is exported beside it. A caller that passes none gets edges from relative imports alone. `@aburi/diff`: `DependencySideView` carries `componentLostFiles`, the skipped files of each Component, which `dependencySideView` fills in.
+
+- b2155c1: A changed Symbol's delta says which export names it gained and lost. `SymbolDelta` gains `exportedAs`, an `ArrayDelta` of the names the module exports the Symbol under compared as a set, the Symbol's own name included: `export { handler as GET }` becoming `export { handler as GET, handler as DELETE }` gives `added: ["DELETE"]`, and `export default function Page` becoming `export function Page` gives `added: ["Page"], removed: ["default"]`. `aburi diff` writes it for every changed and moved+changed entry, empty included, so a reader can tell a diff with nothing to report from one written before the field existed. The Markdown report renders it after the decorator rows as `- export name added: …` and `- export name removed: …`, and those rows explain the API flag, so the "no field-level detail was recorded" note no longer follows an API change that only the export names made.
+- a143dc9: A call edge whose caller or callee was paired under a new id — moved to another file, renamed in its file, or either with its body changed — is no longer reported as one removed and one added dependency. `diffDependencies` keys a base edge under the head ids the Symbol pairing gave its endpoints (a `moved`, `moved+changed`, `changed` or `dropped-toggled` entry's `after` id), as Slice View already does for base call edges, so the same call between the same two Symbols compares as unchanged. `summary.depsAdded` / `depsRemoved` count only calls that appeared or went, and `depsUnknown` can fall too: an edge through a moved Symbol whose old file the head skipped, until now one `unknown` and one `added`, is no change when the head holds the call under the new id. A removed or unknown edge is still reported under the ids the base wrote.
+
+  `diffDependencies` now requires the mapping as its fourth argument: each paired change's `before.id` to its `after.id`. An empty map compares edges by the ids each document wrote, as before. Two base edges that read as one key under the mapping, which a Document the integrity checker accepts cannot hold, raise `DiffError` with code `ir-identity-collision` instead of one of them dropping out of the diff.
+
+- 635be83: Report a registration's middleware as logic, by name
+
+  Removing a middleware from an Express route (`router.get("/users", requireAdmin, h)` → `router.get("/users", h)`) was reported as a syntax-only change: the middleware is an argument, which is neither a rule nor an effect, so the only fingerprint it moved was `syntax`, and a route that lost its authorization check read in the report like a reformat. `--fail-on logic-changed` could not stop it.
+
+  - **IR.** A Symbol carries an optional `middleware`: what a framework registration runs before its handler, by name, in order. It is omitted when the Symbol names none, never `[]`, so every other Symbol is written as before.
+  - **Plugins.** `SymbolClassification` takes an optional `middleware`. The scan writes each name in Unicode NFC with every run of whitespace collapsed to one space and the ends trimmed, drops a name left empty, and keeps none on a dropped Symbol. The fingerprint and the delta below read the names as the IR holds them, so the two agree on what counts as one name.
+  - **Fingerprint.** The `logic` fingerprint reads `middleware` when it is present, in order, so adding, removing, reordering or renaming one is a logic change. A Symbol without it hashes to the value it had. Middleware is not evidence that two Symbols are one: `logicNamesNothing` does not count it, so a route deleted and an unrelated one added behind the same guard are reported as removed and added rather than paired as a move.
+  - **Diff.** A changed Symbol's delta carries `middleware: { added, removed, reordered }` when either side names any, the lists compared as multisets of names, and the report writes ``- middleware removed: `requireAdmin` `` (and `added`, and `reordered: before → after`) under Logic changes. The component page and `aburi explain` show a **Middleware** line.
+  - **`@aburi/framework-express`** names a route's middleware as every handler argument but the last, and a `use`'s as every argument after the path, through arrays, spreads of arrays and every registration of a chain. An `all` with a later method in its chain (`app.route("/users").all(requireUser).get(listUsers)`) names every argument it takes, and a `use` path is skipped in every form Express reads as one: a string, a template, a regex, or an array of them. Names are read off the syntax tree, so line breaks, comments and quote style do not reach them: `requireAdmin`, `auth.required`, `requireRole("admin")` however the string is quoted, `rateLimit(…)` for an argument that is not a name or a literal, `...guards`, and `<computed>` for anything no name spells. An inline function is left out, its body being the registration's own.
+  - **`@aburi/core`** exports the string-literal readers the TypeScript plugin used (`readStaticString`, `decodeStringLiteral`, `decodeStringLiteralOrRaw`, `decodeEscapeSequence`), so a framework plugin reads a literal's value the same way.
+
+  **Logic values change once** for a route or `use` registration with a path that names middleware: an IR scanned before this release, compared with one scanned after, reports each as a logic change. Rescan the base rather than comparing against a stored IR; `aburi diff <base>..<head>` scans both sides and is unaffected.
+
+- 659f00c: A removal whose body a head Symbol still holds says so. Deduplicating two identical helpers into one pairs one of them with the survivor and leaves the other `removed`, and nothing joined the two for a reader. A `removed` entry now carries `duplicateOf`: the id of the head Symbol, paired or not, with its kind, its logic fingerprint and its syntax fingerprint, when that logic names something and the removed Symbol has no `extKind`; the closest name when several qualify, ties to the lower id; `null` otherwise. The syntax has to agree because unrelated helpers share a logic fingerprint often (one `if (x === null) throw new Error(…)` guard is the whole logic of many), and a duplicate is left out of `--fail-on removed`. A Symbol with an `extKind` is never a duplicate, because a plugin read its role from outside its body: two Next.js `GET` handlers in two route files can share a body, and deleting one still retires an endpoint. `summary.removedDuplicates` counts the entries with a `duplicateOf`, which `summary.removed` still counts too. `aburi diff` writes both on every diff, `null` and `0` included, so a reader can tell "not a duplicate" from a diff written before the field existed. Both fields are additive and optional in `aburi.diff.v1.json`.
+- dd28468: `buildDiff` takes an optional `logger`, and `matchStageNameSignature` takes one as an optional third argument. Given one, the name-and-signature stage of the matcher writes a `debug` line for each Symbol it will not compare by name, because its name says too little to pair on or it has no signature. Once it has chosen its pairings, it also writes one for each pair whose base and head both stay unpaired, that cleared its threshold, and whose owners do not correspond. A Symbol line stands for one `added`, `removed` or `unknown` entry, and a pair line for two Symbols the report lists separately, where the report itself gives no reason. The diff result is the same with and without a logger. `aburi diff` passes one at `--log-level debug` or `ABURI_LOG_LEVEL=debug`, which prints the lines on stderr, and the `--log-level` help now says so.
+- 47f8ef9: A file git renamed between the revisions and skipped by one scan now leaves its Symbols `unknown` instead of confidently `removed` or `added`. The skip was looked up only under the leftover's own path, while the other scan had recorded the file under its other name, so `src/big.ts → src/billing.ts` with `src/billing.ts` over the size cap at head reported every Symbol of `src/big.ts` as removed and tripped `--fail-on removed`.
+
+  - Such an entry carries the new optional `SymbolUnknown.lostPath` (`aburi.diff.v1`), the path the skipping scan recorded. `diff.md` names that path as this file's head (or base) name, where it used to name the other revision's path as the one skipped.
+  - Dependency edges get the same lookup, and their `lostFiles[].path` is the path the skipping scan recorded, not the holder's.
+  - A renamed file both scans skipped appears in `notCompared[]` under the head path, with the base path in the new optional `NotComparedFile.basePath`. `diff.md` and the stderr line name it as `base → head`.
+  - `diffDependencies` now requires `renames`. `RenameDirections` and `renameDirections` are exported to build it, and a caller with no rename information passes `renameDirections(null)`.
+
+### Patch Changes
+
+- b7a7148: The errors `buildDiff` and `computeSlices` raise for a document that repeats a Symbol, Component or Dependency, or for a malformed Slice record, no longer cite design-doc sections; each says on its own why the input is refused.
+- 38317cb: The name-and-signature stage of the matcher now compares its score with the threshold in exact fractions. The score, `0.5 × member + 0.3 × signature + 0.2`, was summed in floating point, so a pair that scored exactly its row's threshold could land a rounding error to one side of it or the other. A method that moved file and gained a fourth name token with one of four parameters retyped (`createUserAccount(a: string, b: number, c: Date, d: boolean)` → `createUserAccountRecord(…, d: Options)`, exactly 0.85) scored `0.8499999999999999` and was reported as one `added` and one `removed`, tripping `--fail-on removed`, while other pairs at the same score rounded up and paired. Every term of the score is a ratio of two counts, so it is now kept as one fraction and compared with its row (1, 19/20 or 17/20) by cross-multiplying integers, and such a pair is one `moved+changed` with rationale `name-signature`. Two candidates whose scores are the same fraction now also tie, and the lower base id, then head id, settles them, where rounding used to choose.
+
+  The IR does not change, so no rescan is needed: two stored IRs compared with this release report these pairs as `moved+changed` where the previous release reported an addition and a removal. `signatureSimilarity` now returns its exact mean divided out once, which can differ from the previous value in the last bit; `jaccard`, `nameSimilarity` and `memberSimilarity` return what they did.
+
+- b4e6a5f: An edited rule, call or decorator is paired with its predecessor by its line within the Symbol rather than its line in the file, so an edit in a Symbol that moved down its file reads as `modified` where it read as one `removed` and one `added`.
+- 36fd72f: A parameter's optional marker, default and rest marker now reach the `api` fingerprint. Each `Signature.inputs` entry can carry two new optional fields, written only when true: `optional` for a parameter written `a?: T` or with a default, and `rest` for `...ids: T[]`. The api fingerprint hashes them beside `type`, which stays the annotation alone; a rest parameter's `name` is now the bare binding (`ids` rather than `...ids`). Making an optional parameter required, dropping a default, or turning `T[]` into `...T[]` used to leave every fingerprint identical, so `aburi diff` reported no change and `--fail-on api-changed` passed. The diff now reports an api change and names the parameter under `signature.inputs modified`. The Markdown output prints the markers where TypeScript writes them (`a?: string`, `...ids: string[]`, and `limit?` for a default), and an untyped parameter as its name alone rather than `x: `. A parameter whose name a recovered parse left missing, such as `f(?: string)`, is named by the text the source wrote rather than by an empty string.
+
+  Functions with an optional, defaulted or rest parameter get a new `api` value once. A parameter with neither carries no new key, so its hash is byte-identical. Scanning this repository, 191 of its 2,714 kept Symbols moved `api`, and none moved `logic`, `syntax`, `calls[].resolved` or `dependencies[]`. Those can move in one narrow case: a function calls, by its bare name, a Symbol that one of its own rest parameters also names, as in `function run(...save) { save() }` with a `save` declared in or imported into the module. The bare name now shadows that Symbol, as any other parameter's name does, so the call no longer resolves to it. The edge and the effects it carried leave the function, and because `logic` is computed after effect propagation, callers that inherited those effects move `logic` too. An IR scanned before this release, compared with one scanned after, reports the affected Symbols as changed; rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides and is unaffected.
+
+- 7830c96: `representativeSymbol` is a new export: the head's Symbol of a pair, and the one Symbol of any other change. The report files a change under it and `--fail-on-scope` judges the change by it, and `@aburi/diff` reads it from here in place of its own copy, so the three cannot drift apart. No output changes.
+- ad101d5: Slice View reads each base call edge in the ids its Nodes carry. A Symbol whose id changed between the revisions (a `moved+changed` relocated to another file or renamed within its own, or a `dropped-toggled` matched under a new id) used to lose every base-only edge from or to it, so a callee its caller stopped calling became a singleton. Such a Symbol now clusters through its base edges, as it does when its id stays the same.
+- Updated dependencies [19ead65]
+- Updated dependencies [af4b970]
+- Updated dependencies [c6ce311]
+- Updated dependencies [b7a7148]
+- Updated dependencies [f2a6916]
+- Updated dependencies [50ea5bb]
+- Updated dependencies [90fa1cb]
+- Updated dependencies [b7a7148]
+- Updated dependencies [9c21737]
+- Updated dependencies [dde9172]
+- Updated dependencies [7d4dbf9]
+- Updated dependencies [3b52db9]
+- Updated dependencies [dfffac9]
+- Updated dependencies [ad04fff]
+- Updated dependencies [13f8ba9]
+- Updated dependencies [1a56ce7]
+- Updated dependencies [107c1c6]
+- Updated dependencies [b2155c1]
+- Updated dependencies [b2155c1]
+- Updated dependencies [bb90fea]
+- Updated dependencies [f32e45b]
+- Updated dependencies [b7a7148]
+- Updated dependencies [80be216]
+- Updated dependencies [50c0bd2]
+- Updated dependencies [a6cd1ac]
+- Updated dependencies [f9d300c]
+- Updated dependencies [1a41bef]
+- Updated dependencies [6be7d2e]
+- Updated dependencies [ad21560]
+- Updated dependencies [517eb21]
+- Updated dependencies [36fd72f]
+- Updated dependencies [6afef8b]
+- Updated dependencies [eb4ab00]
+- Updated dependencies [d4fca12]
+- Updated dependencies [635be83]
+- Updated dependencies [659f00c]
+- Updated dependencies [7830c96]
+- Updated dependencies [463d616]
+- Updated dependencies [7830c96]
+- Updated dependencies [47f8ef9]
+- Updated dependencies [65c758f]
+  - @aburi/core@0.6.0
+  - @aburi/types@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
