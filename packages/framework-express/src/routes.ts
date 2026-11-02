@@ -1,5 +1,5 @@
-import { asSyntaxNode, type SyntaxNode, unwrapValue } from "@aburi/core"
-import { isPathLiteral, writtenChildren } from "./ast-helpers"
+import { asSyntaxNode, type SyntaxNode, unwrapValue, writtenChildren } from "@aburi/core"
+import { isPathLiteral } from "./ast-helpers"
 
 /** Route-registering method names, lower-case to match `member_expression` property text verbatim. */
 export const EXPRESS_ROUTE_METHODS: ReadonlySet<string> = new Set([
@@ -20,10 +20,14 @@ export function isRouteMethod(leaf: string): boolean {
 export function hasRouteArguments(callExpression: unknown): boolean {
   const node = asSyntaxNode(callExpression)
   if (node === null) return false
-  const args = writtenChildren(node.childForFieldName("arguments"))
+  return handlerArguments(node).some(isHandlerShaped)
+}
+
+export function handlerArguments(call: SyntaxNode): SyntaxNode[] {
+  const args = writtenChildren(call.childForFieldName("arguments"))
   // A `.route(path)` chain has written the path already, and a leading spread may carry it.
-  const noPathToSkip = hasRouteCallUpTheChain(node) || args[0]?.type === "spread_element"
-  return (noPathToSkip ? args : args.slice(1)).some(isHandlerShaped)
+  const noPathToSkip = hasRouteCallUpTheChain(call) || args[0]?.type === "spread_element"
+  return noPathToSkip ? args : args.slice(1)
 }
 
 function isHandlerShaped(node: SyntaxNode): boolean {

@@ -40,6 +40,22 @@ export interface ImportEdge {
   /** True for `import()` and equivalent dynamic forms. */
   dynamic: boolean
   namespaceBinding?: string
+  /**
+   * What the importing module exports from the edge's module: a named or namespace re-export
+   * (`export { A as B } from`, `export * as ns from`), or an import that an export clause or
+   * `export default` republishes. `symbols` cannot say it: a re-export binds no local, and an
+   * import says nothing of what the module exports. Absent when the module republishes nothing
+   * from the edge; `export * from` names nothing, so it adds no entry.
+   */
+  reexports?: readonly Reexport[]
+  /**
+   * Set by the scan, never by the language plugin, and only for a name a decorator in the file
+   * binds while a framework plugin is loaded. Keyed by that name as the edge's module exports it,
+   * the first bare specifier the module's `reexports` lead to that no workspace file answers, which
+   * may be a workspace package the package manager links. A name without a key may be declared
+   * anywhere: in the workspace, or behind a re-export the scan could not follow.
+   */
+  origins?: ReadonlyMap<string, string>
 }
 
 /** An `ImportEdge.symbols` entry split into the name the module exports and the local it binds. */
@@ -48,10 +64,19 @@ export interface ImportBinding {
   readonly local: string
 }
 
+/** A name a module exports that it takes from an import edge's module. */
+export interface Reexport {
+  /** The name the edge's module exports, or `*` for the whole module as a namespace. */
+  readonly imported: string
+  /** The name the importing module exports it under. */
+  readonly exported: string
+}
+
 export interface ParseResult<TTree = ParsedTree> {
   tree: TTree | null
   errors: ParseError[]
-  imports: ImportEdge[]
+  /** `origins` is the scan's to write; the scan drops any a plugin returns. */
+  imports: Omit<ImportEdge, "origins">[]
 }
 
 export type WrittenSourceRange = Omit<SourceRange, "startColumn" | "endColumn"> & {
@@ -123,6 +148,22 @@ export interface PluginContext {
   log: Logger
 }
 
+export interface ImportResolverContext {
+  /** Absolute. */
+  workspaceRoot: string
+  log: Logger
+}
+
+/** One scan's view of the build config a language reads its non-relative specifiers through. */
+export interface ImportResolver {
+  /**
+   * The workspace-relative POSIX paths `specifier`, written in `fromFile`, maps to, in the order
+   * the language tries them. The core probes each as it probes a relative specifier, so a path may
+   * leave out the extension or name a directory.
+   */
+  resolve(specifier: string, fromFile: string): Promise<readonly string[]>
+}
+
 export interface ExtractionContext {
   file: SourceFile
   registry: VocabRegistry
@@ -178,6 +219,8 @@ export interface SymbolClassification {
   /** Plugin-defined rationale. */
   derivedBy: string
   confidence?: Confidence
+  /** The middleware the registration hands its handler to, in the order they run. */
+  middleware?: readonly string[]
 }
 
 export interface LanguageCapabilities {
@@ -222,6 +265,9 @@ export interface LanguagePlugin<TTree = ParsedTree, TNode = OpaqueAstNode> {
   /** Language-specific glob list (e.g. `["** /*.d.ts"]`, sans the space). */
   fileDropPatterns?: string[]
   symbolDropHint?(symbol: SymbolCandidate<TNode>, ctx: ExtractionContext): DropHint | null
+
+  /** Called at most once per scan; the resolver may cache what it reads for that scan's length. */
+  createImportResolver?(ctx: ImportResolverContext): ImportResolver
 }
 
 export interface EffectPlugin {

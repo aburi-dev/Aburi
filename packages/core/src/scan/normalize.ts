@@ -1,4 +1,10 @@
-import type { CallCandidate, ImportEdge, OpaqueAstNode, SymbolCandidate } from "@aburi/types"
+import type {
+  CallCandidate,
+  ImportEdge,
+  OpaqueAstNode,
+  Reexport,
+  SymbolCandidate,
+} from "@aburi/types"
 import { toNfc } from "../codepoints"
 
 export function normalizeCandidateStrings(
@@ -17,14 +23,17 @@ export function normalizeCandidateStrings(
   return { ...candidate, source: { ...candidate.source, file }, signature, decorators }
 }
 
-function mapPreservingIdentity<T>(items: T[], transform: (item: T) => T): T[] {
+function mapPreservingIdentity<L extends readonly unknown[]>(
+  items: L,
+  transform: (item: L[number]) => L[number],
+): L {
   let changed = false
   const next = items.map((item) => {
     const out = transform(item)
     if (out !== item) changed = true
     return out
   })
-  return changed ? next : items
+  return changed ? (next as unknown as L) : items
 }
 
 function normalizeDecoratorNames(
@@ -55,21 +64,37 @@ function normalizeSignatureStrings<T extends SymbolCandidate<OpaqueAstNode>["sig
   return inputs === signature.inputs ? signature : ({ ...signature, inputs } as T)
 }
 
-export function normalizeImportEdge(edge: ImportEdge): ImportEdge {
-  const source = toNfc(edge.source)
-  const binding = edge.namespaceBinding
+export function normalizeImportEdge(written: Omit<ImportEdge, "origins">): ImportEdge {
+  const source = toNfc(written.source)
+  const binding = written.namespaceBinding
   const namespaceBinding = typeof binding === "string" ? toNfc(binding) : binding
-  const symbols = edge.symbols === "*" ? edge.symbols : mapPreservingIdentity(edge.symbols, toNfc)
+  const symbols =
+    written.symbols === "*" ? written.symbols : mapPreservingIdentity(written.symbols, toNfc)
+  const reexports =
+    written.reexports === undefined
+      ? undefined
+      : mapPreservingIdentity(written.reexports, normalizeReexport)
   if (
-    source === edge.source &&
-    namespaceBinding === edge.namespaceBinding &&
-    symbols === edge.symbols
+    !("origins" in written) &&
+    source === written.source &&
+    namespaceBinding === binding &&
+    symbols === written.symbols &&
+    reexports === written.reexports
   ) {
-    return edge
+    return written
   }
-  const next: ImportEdge = { ...edge, source, symbols }
+  const next: ImportEdge = { source, symbols, line: written.line, dynamic: written.dynamic }
   if (namespaceBinding !== undefined) next.namespaceBinding = namespaceBinding
+  if (reexports !== undefined) next.reexports = reexports
   return next
+}
+
+function normalizeReexport(reexport: Reexport): Reexport {
+  const imported = toNfc(reexport.imported)
+  const exported = toNfc(reexport.exported)
+  return imported === reexport.imported && exported === reexport.exported
+    ? reexport
+    : { imported, exported }
 }
 
 export function normalizeCallStrings(call: CallCandidate): CallCandidate {

@@ -1,9 +1,8 @@
-import { unwrapValue } from "@aburi/core"
+import { readStaticString, unwrapValue } from "@aburi/core"
 import type { ExtractionContext, MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { asFunctionValue, findChild, firstNonCommentChild, makeSourceRange } from "./ast-helpers"
 import { makeTsSymbolId, nestedQname } from "./qname"
-import { readStaticString } from "./string-escape"
 
 const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "get",

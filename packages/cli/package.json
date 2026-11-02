@@ -19,6 +19,9 @@
   "bin": {
     "aburi": "./dist/bin/aburi.mjs"
   },
+  "imports": {
+    "#scan-worker": "./dist/scan-worker.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -57,6 +60,7 @@
     "@aburi/framework-nestjs": "workspace:*",
     "@aburi/framework-next": "workspace:*",
     "@aburi/framework-react": "workspace:*",
+    "@aburi/framework-trpc": "workspace:*",
     "@aburi/lang-typescript": "workspace:*",
     "@aburi/schema": "workspace:*",
     "@aburi/test-harness": "workspace:*",

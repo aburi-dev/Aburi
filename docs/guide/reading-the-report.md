@@ -28,9 +28,11 @@ added and removed counts beside it as lower bounds.
 duplicates: the head revision still has a symbol of the same kind with the same
 body, as when two identical helpers become one. `--fail-on removed` does not
 count them, and `--fail-on removed:duplicate` does. Only a body with something
-to compare counts (a guard, a branch, a return value, an effect), and never a
-symbol a framework plugin classified, such as a route handler or a React
-component, because its role is not in its body.
+to compare counts: a guard (an `if` that returns or throws), a `throw`, a
+`switch`, a computed return value or an effect. A body that only calls
+something, or returns a literal, a variable or a property, never counts, and
+neither does a symbol a framework plugin classified, such as a route handler or
+a React component, because its role is not in its body.
 
 ## The sections
 
@@ -125,6 +127,16 @@ branches. A removed `guard` line means somebody removed a condition.
 `db.transaction`, `event.publish`, `network.rpc`. A method that gained
 `db.write` now writes to your database.
 
+A framework registration also lists its **Middleware**, the functions an
+Express route or `use` runs before its handler, in order. Removing one is a
+logic change that names it:
+
+```md
+- middleware removed: `requireAdmin`
+```
+
+A route that lost its authorization check reads as that, not as a reformat.
+
 ## A slice
 
 The Slice View groups the changed symbols that call one another, so a feature
@@ -169,7 +181,7 @@ its row under `effects modified` ends with the old one, `(was high)`.
 | Marker | Meaning |
 |---|---|
 | *(no badge)* | Confident. |
-| `⚠ medium` | The signal matched through an indirection, such as a re-exported decorator or an aliased import. |
+| `⚠ medium` | The signal matched through an indirection, such as a decorator re-exported through a barrel Aburi could not trace, or an aliased import. |
 | `⚠ low` | A weak match. Verify before you rely on it. |
 
 ## Gaps in the report

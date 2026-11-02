@@ -55,6 +55,8 @@ Keeping the responsibilities narrow lets a new language addition focus solely on
           plugin.walkBody(symbol, ctx) → BodyExtraction { rules, calls, returns }
           plugin.normalizeAst(symbol) → string  (syntax fingerprint input)
      d. plugin.releaseTree?(tree) — on every way out of a–c, including a throw
+   plugin.createImportResolver?() runs at most once, the first time the core
+   follows a decorator's import through a non-relative specifier (§4.8, §5.2.4)
 4. After all files, plugin.cleanup?() is called
 ```
 
@@ -96,6 +98,9 @@ interface LanguagePlugin {
   // per-file / per-symbol drop hints (optional)
   fileDropPatterns?: string[]                  // language-specific globs (e.g. ["**/*.d.ts"])
   symbolDropHint?(symbol: SymbolCandidate, ctx: ExtractionContext): DropHint | null
+
+  // where a non-relative specifier points in the workspace (optional, §4.8)
+  createImportResolver?(ctx: ImportResolverContext): ImportResolver
 }
 ```
 
@@ -110,7 +115,7 @@ interface SourceFile {
 interface ParseResult {
   tree: ParsedTree | null                      // plugin-internal type (opaque); null → parse produced nothing
   errors: ParseError[]
-  imports: ImportEdge[]
+  imports: Omit<ImportEdge, "origins">[]       // an `origins` written here is dropped (§5.2.4)
 }
 
 interface ParseError {
@@ -126,8 +131,17 @@ interface ImportEdge {
   line: number
   dynamic: boolean                             // true for import()
   namespaceBinding?: string                    // the local name bound to the whole module, when there is one
+  reexports?: Reexport[]                       // what the module exports through this edge
+  origins?: ReadonlyMap<string, string>        // set by the scan alone (§5.2.4)
+}
+
+interface Reexport {
+  imported: string                             // the name taken from `source`, or "*" for the whole module
+  exported: string                             // the name the module exports it under
 }
 ```
+
+`reexports` is the only part of an edge that says what the module exports. `symbols` lists what an edge takes from its source, which for `export { A as B } from "m"` is `A`, and an import the module only uses lists its names the same way as one it republishes. A re-export carries an entry for each value it exports — `export { A as B } from "m"` gives `{ imported: "A", exported: "B" }`, `export * as ns from "m"` gives `{ imported: "*", exported: "ns" }` — and so does an import that an export clause or `export default` in the same module republishes: `import { A as L } from "m"` with `export { L as B }` gives `{ imported: "A", exported: "B" }`. A type-only clause or specifier exports nothing a decorator or call can name and adds no entry, and `export * from` names nothing, so it adds none either. A plugin for a language without re-exports leaves the field out.
 
 `tree` is nullable so a plugin can report a parse that produced nothing without fabricating a tree its own type would refuse. It and `recoverable: false` are companion signals: a plugin that has no tree is expected to say why in `errors[]` too, and §7.1 reads the two as one condition, so a plugin that sets only one still gets the withdrawal it asked for.
 
@@ -427,6 +441,40 @@ interface PluginContext {
 }
 ```
 
+### 4.8 `ImportResolver`
+
+```ts
+interface ImportResolverContext {
+  workspaceRoot: string                        // absolute
+  log: Logger
+}
+
+interface ImportResolver {
+  // the workspace-relative POSIX paths `specifier`, written in `fromFile`, maps to,
+  // in the order the language tries them
+  resolve(specifier: string, fromFile: string): Promise<readonly string[]>
+}
+```
+
+A bare specifier can name a workspace file through build configuration the core does not read, such as TypeScript's `compilerOptions.paths`. The language plugin knows its build configuration and the core knows the file set, so the plugin maps the specifier and the core decides which path is a file: it probes each path, in the order given, the way it probes a relative specifier ([call-resolution.md](./call-resolution.md) §4.4.1, steps 1 and 3), against the files discovery found. A path may therefore leave out its extension or name a directory, and one that names no file costs nothing. The core never asks about a relative specifier.
+
+The core calls `createImportResolver` at most once per scan, and only when it has a non-relative specifier to ask about. A resolver may cache what it reads for the length of that scan and no longer: the next scan creates a new one, which reads the configuration afresh. A plugin's first resolver failure — `createImportResolver` throwing or returning something with no `resolve` method, or `resolve` throwing — is a warning, later ones are logged at debug, and a plugin whose resolver failed more than once is warned with the count at the end of the scan. A specifier the resolver failed on ends the chain it was part of without an origin (§5.2.4).
+
+The TypeScript plugin reads the `tsconfig.json` nearest above the importing file, or a `jsconfig.json` where no `tsconfig.json` sits beside it, and looks no higher than the workspace root for it; an `extends` entry may still name a config outside the root. Comments, trailing commas, a leading byte order mark and an empty file (read as `{}`) are accepted, as `tsc` accepts them. It applies `compilerOptions.paths` and `baseUrl` the way `tsc` does:
+
+- An exact key wins outright; otherwise the wildcard key with the longest prefix does, its match put in place of each substitution's `*`. Every substitution is returned, in the order written, followed by `baseUrl` joined with the specifier when `baseUrl` is set.
+- Substitutions resolve against `baseUrl` when it is set, and otherwise against the directory of the config that declared `paths`.
+- `extends`, a string or an array, is followed. A relative or absolute entry resolves against the extending config's directory, with `.json` added when the entry has no such extension and names no file as written. A package entry is looked up as `node_modules/<entry>`, `node_modules/<entry>.json` and `node_modules/<entry>/tsconfig.json` in each directory upwards. A later entry overrides an earlier one and the extending config overrides them all, an option at a time, so its own `paths` replaces the inherited ones whole. A config that extends itself, directly or through others, is read once.
+- `${configDir}` at the start of a value is the directory of the config the file is compiled under, whichever config in the chain wrote it.
+
+It does not read a package's `package.json` `exports` or `tsconfig` field when an `extends` entry names the package, project references, a config's `files` and `include`, or a `package.json` `imports` field. A path outside the workspace is dropped. What it cannot use, it warns about once and leaves out:
+
+- A config that is not valid JSON, named with the line and column of the first error, or one that exists and cannot be read. It maps nothing, and the search for the nearest config stops at it rather than moving on to the one above, which the file is not compiled under. A name that is not there, or is a directory, is not a config, and the search moves on.
+- An `extends` entry that names no config file. The rest of the chain still applies.
+- A value `tsc` refuses: a `paths` that is not an object, a key whose value is not a list, a key or substitution with more than one `*`, a substitution that is not a string, or a `baseUrl` that is not a string. Only that key, substitution or option is left out.
+
+A package entry in `extends` is found only where `node_modules` is installed. `aburi diff <base>..<head>` scans the base revision in a fresh worktree with no `node_modules`, so `paths` from a package's config apply to the head's scan and not to the base's, and a decorator reached through one of those aliases reads as moving from `medium` to `high`. The base's scan warns about the entry.
+
 ## 5. Cooperation with Other Plugins
 
 ### 5.1 Cooperation with effect plugins
@@ -462,6 +510,7 @@ A `const`'s `fullNode` is its whole declaration statement, shared by every name 
 Against these it may:
 - override `decorator.boundary`
 - fill in `Symbol.extKind` (e.g. `framework:nestjs:controller`)
+- name the middleware a registration hands its handler to, in the order it runs (`middleware`, §5.2.5), which the core writes to `Symbol.middleware` ([`ir-schema.md`](./ir-schema.md) §5.8)
 - provide a Category B drop exclusion hint (e.g. a class carrying only `@Module` must not be treated as a pure DTO)
 - drop the Symbol through `symbolDropHint` (`drop-list.md` §6.3). Unlike `classifySymbol`, every framework plugin is asked, whichever of them won, and the first non-null answer is the drop
 
@@ -473,12 +522,14 @@ The language plugin reports a decorator under the identifier the source wrote. T
 
 | What the edges say about the name | Match against | Confidence |
 |---|---|---|
-| imported by name from a module the plugin owns | the imported name | `high` |
+| imported by name from a module the plugin owns, or from a workspace barrel the core traced to one (§5.2.4) | the imported name | `high` |
 | imported by name from any other module | the imported name | `medium` |
 | bound by a default import (`import Controller from './decorators'`, `import { default as Controller } from …`) | the written name | `high` from a module the plugin owns, `medium` from any other |
 | no edge binds it | the written name | `high` |
 
-The second row **downgrades rather than refuses**. Re-exporting a framework's vocabulary through a project-local barrel is ordinary practice, and a barrel reached through a build-tool path alias (`@app/common`) is indistinguishable from a foreign package without reading the build config — so refusing would take the boundary off a whole project's worth of Symbols to close a narrower false positive. `medium` is the `confidence` criterion for an identifier match (`ir-schema.md` §5.4), which is exactly what is left when provenance is unknown.
+The module a name is imported from is `ImportEdge.origins` under the imported name, where the core recorded one, and `ImportEdge.source` otherwise. Through a namespace import, the key is the member the receiver reads: its second segment, or the leaf when the receiver has one segment.
+
+The second row **downgrades rather than refuses**. Re-exporting a framework's vocabulary through a project-local barrel is ordinary practice. The core traces the barrels it can read (§5.2.4), so a decorator re-exported through `../common` or a path alias such as `@app/common` lands in the first row, but not every barrel can be read: one that re-exports through `export *` names no source for the name, and a workspace package reached through the package manager's links is a bare specifier no `paths` key maps. Those are still indistinguishable from a foreign package, so refusing would take the boundary off a whole project's worth of Symbols to close a narrower false positive. `medium` is the `confidence` criterion for an identifier match (`ir-schema.md` §5.4), which is exactly what is left when provenance is unknown.
 
 The third row exists because a default import's imported name is `default` (LP24a), which no vocabulary lists. Matched on it, every default-imported decorator would classify as nothing, so the written name is the only evidence left of which decorator the file means; the module it came from still decides how far that is trusted, as in the first two rows.
 
@@ -492,13 +543,34 @@ A qualified decorator must **not** fall back to the named-import index for its *
 
 Both halves are necessary for the table to be ordered by how much the file disclosed. A plugin that drops the qualifier sees only the leaf, and a namespace import from a competing library then lands in the last row — trusted further than the named import of the very same decorator. A plugin that keeps the qualifier but indexes only one of the two binding forms gets the same result one spelling over.
 
-Two shapes reach the edge list without binding anything in local scope, and a plugin matching names should know both. A re-export (`export { X } from './y'`) names a symbol the file republishes rather than uses — and its aliased form arrives as the source-side name alone, since the language plugin composes `" as "` on imports but not on re-exports. Because re-exports do not bind, a name can appear on two edges in a file that compiles, so a plugin needs a duplicate rule and should say which of its outcomes are order-independent.
+Two shapes reach the edge list without binding anything in local scope, and a plugin matching names should know both. A re-export (`export { X } from './y'`) names a symbol the file republishes rather than uses — and its aliased form arrives in `symbols` as the source-side name alone, since the language plugin composes `" as "` on imports but not on re-exports; the name it is exported under is on `reexports` (§4.2). Because re-exports do not bind, a name can appear on two edges in a file that compiles, so a plugin needs a duplicate rule and should say which of its outcomes are order-independent.
 
 #### 5.2.3 Naming a call in `derivedBy`
 
 A framework plugin that names a call in `derivedBy` — the registration it classified, or the factory or wrapper call a `const` holds in its own declarator (§5.2) — reads the name off the tree, not off the callee's text (`ir-schema.md` §5.5). The text carries the call's formatting: a chain a formatter wrapped over several lines put its line breaks and indentation into the entry, a comment inside the chain was copied in, and a `;` in that comment split the entry in two, because the core splits a classification's `derivedBy` on `;`. A filter matching `framework:express:route:router.delete` then missed the wrapped spelling of the same call, and a whitespace-only edit changed the entry.
 
 The name is `<receiver>.<method>`. The method is the callee's property. The receiver is the name the receiver chain **starts** from, read through LP7a's wrappers and through every call, member access and index on the way; for every registration the TypeScript plugin extracts, that is the receiver its `call-statement:` entry carries, which LP20i1 slugs into its name. So `app.get(p, h)`, `(app as Express).get(p, h)`, `app!.get(p, h)`, the same call wrapped over two lines or with a comment before the `.get`, and `app.route(p).get(h)` are all `app.get`, and `express.Router().get(p, h)` is `express.get`. A chain that starts from something that is not a name, `new Registry().memo(Inner)`, starts from `<computed>`, the segment a call target uses for such a receiver (§4.4): its text would carry the formatting back in. A callee that is a bare name is that name, `Router()` being `Router`; one that is neither a name nor a member access, `(memo)(Inner)`, names nothing, and a plugin matching the name's leaf against its vocabulary matches nothing either. `@aburi/core` exports this reading as `calleeName`, and the wrappers it reads through as `unwrapValue`, so every framework plugin reads a callee one way.
+
+#### 5.2.4 Following a decorator's name through re-exports
+
+Before framework classification, the core traces each name a decorator in the file binds through the workspace's re-exports, and records the result on `ImportEdge.origins`: keyed by the name the edge's module exports, the specifier of the module outside the workspace that the chain ends at.
+
+- **Which names.** A decorator's leaf, through the named-import edge that binds it, and a qualified decorator's receiver head, through the named-import edge that binds it (keyed by its imported name) or the namespace edge that binds it (keyed by the member the receiver reads, as in §5.2.2). No other name is followed: an origin for every import would parse most of the workspace twice, and a decorator is the only name a framework plugin matches by its imported name. A plugin that grades on which modules a file imports reads `ImportEdge.source` and gets no origin. A scan with no framework plugin follows nothing.
+- **One hop.** The specifier resolves against the importing file: a relative one as call resolution resolves it ([call-resolution.md](./call-resolution.md) §4.4.1), a bare one through the language plugin's `ImportResolver` (§4.8). In the module it resolves to, the next hop is the edge whose `reexports` exports the name (§4.2), and the chain carries on from that edge's source with the name the entry takes from it. Nothing else on an edge is read, so an import the module only uses, and a re-export of the name under another one, lead nowhere, whichever order the edges are in.
+- **Where it ends.** A bare specifier that resolves to no workspace file ends the chain outside the workspace, and that specifier is the origin. It is the first such specifier, so a workspace package the package manager links in, which no `paths` key maps, is an origin too. A whole module exported under the name (`export * as ns from`) ends the chain there: outside the workspace its specifier is the origin, and inside it there is none, because which member the decorator reads is not carried past it. A module with no edge exporting the name, because it declares the name itself or reaches it through `export *`, ends the chain inside the workspace, and so do a relative specifier that names no file, a module the chain already visited for the name, and a specifier the resolver failed on (§4.8). Those leave no origin. An origin equal to the edge's own specifier is not recorded, so `origins` holds only what the core learned.
+- **Cost.** A module the chain reaches is parsed once for its edges, unless its own turn in the scan came first, and that tree is released at once (§8.1). The chain does not count against the importing file's `parseTimeoutMs` (§7.1.2): which file reaches a barrel first depends on discovery order, and a file's outcome should not.
+
+`export *` is not followed because the module it names may be outside the workspace, where nothing says whether it exports the name, and a guess would put a module in `origins` that the source does not name.
+
+`origins` is the scan's alone. An `origins` a language plugin returns is dropped before any plugin sees the edge, so a language plugin cannot vouch for its own edges. Effect plugins see the same edges through `FileSummary.imports`, and there as here a missing key says nothing about where a name is declared.
+
+#### 5.2.5 Naming a registration's middleware
+
+`SymbolClassification.middleware` lists what a registration hands its framework before the handler, by name, in the order it runs. The core takes it from the classification that won (§5.2.1), brings each name to the form the fingerprint reads text in (NFC, `ir-schema.md` §1.2, with each run of whitespace collapsed to one space and the ends trimmed), drops a name left empty, and writes the rest to `Symbol.middleware`, leaving the key out when nothing is left and on a dropped Symbol. Normalizing once, where the names enter the IR, means the fingerprint and the diff's middleware delta read the same strings: a name that differs only in its whitespace is one name to both. The `logic` fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1). LP20i keeps the arguments on the syntax axis, which saw `app.get(p, authenticate, h)` → `app.get(p, h)` and filed it as a reformat, the one reading a reviewer most needs to be wrong.
+
+A name is composed from the tree, as a `derivedBy` entry is (§5.2.3), never copied from the argument's text: the text carries the line breaks and comments it was written with into the fingerprint, so a reformat would read as a changed gate. An identifier is its name (`requireAdmin`). A member access is its object's name and its property joined by `.` (`auth.required`); a bracketed property written as a number, a string or a backtick with no substitution is that value (`handlers["auth"]` and ``handlers[`auth`]`` → `handlers.auth`), and any other is `<computed>`, the segment a call target uses (§4.4). A call is its callee's name and its arguments, each a literal, a name, or `…` for anything else (`requireRole("admin")`; `rateLimit(…)` for `rateLimit({ max: 10 })`): a factory's arguments decide what its middleware lets through, and swapping `"admin"` for `"user"` is a change to review. A string, or a backtick with no substitution, is its value, escapes decoded, written back in double quotes, so `'admin'`, `` `admin` `` and `"\x61dmin"` all give `requireRole("admin")`: the quotes a formatter picks are not a changed gate, and LP20i1 already reads a backtick with no substitution as the string it spells. A backtick with a substitution is `…`, its value being decided at run time. A spread whose contents the statement does not show is `...` and the name of what it spreads (`...guards`). Anything else — a choice between handlers, an `await`, a `new` — is `<computed>`.
+
+An inline function is left out, since its body is the registration's own and its rules, effects and calls are already the Symbol's. Arrays are flattened, as the framework flattens them. `@aburi/framework-express` names, for a route, every handler argument but the last, and for `use`, every argument after the path, the router a mount hands over included, each route or `use` of a chain in the order it registers them. Two shapes follow Express rather than that rule. An `all` with a later method in its chain (`app.route("/users").all(requireUser).get(listUsers)`) runs ahead of each of them and passes the request on, so every argument it takes is middleware, its last included. A `use` path is what Express reads as one: a string, a backtick with or without substitutions, a regex, or an array whose first entry, at any depth, is one of those, an empty array included; none of it is a name. Its README lists the shapes.
 
 ### 5.3 Extraction order
 
@@ -570,7 +642,7 @@ Files whose size exceeds `config.maxFileSizeBytes` (default: `2 * 1024 * 1024` =
 ### 7.1.2 Timeout
 
 If the total of parse + extractSymbols + walkBody for one file exceeds `config.parseTimeoutMs` (default: `5000` = 5 seconds; the config schema's minimum is 100 and it has no maximum), abort, skip that file, and warn.
-This prevents a broken grammar or pathological source (deep nesting, etc.) from stalling the whole run.
+This prevents a broken grammar or pathological source (deep nesting, etc.) from stalling the whole run. Following a decorator's name into other modules (§5.2.4) is not part of the total: the clock stops while it runs.
 
 The budget is **cooperative**, for the reason [effect-plugin.md](./effect-plugin.md) §5.1.1 gives for the classify budget: `extractSymbols` and `walkBody` are synchronous plugin calls, and nothing can interrupt one that has already started. It is read at the three points that bound the work still to come — after `parseFile`, after `extractSymbols`, and before each candidate's `walkBody` — so what it guarantees is that an over-budget file is handed no *further* work. A file costs at most its budget plus one stage, and one enormous candidate can still overrun by however long that candidate takes. A hang inside a single call is not something a wall-clock budget can catch at all.
 
@@ -772,7 +844,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP20f1 | a field holding a **call** handed a function — `handle = withAuth(async (d) => { … })`, `debounced = debounce(() => { … }, 300)`, `q = t.procedure.query(() => { … })` | a member, as LP20f's. Constructing the owner, or defining it for a `static` field, calls `withAuth` and stores what it returns, and a wrapper's function runs when the member is called, so the function is read as the member's body and the owner stops carrying it. The functions are LP7c's: the direct arguments of a call on the value's spine, read through LP7a's wrappers, the first as `bodyNode` and the rest on `mergedDeclarations` (LP20h), each with its own parameter defaults (LP20d). `kind = "method"`, with a null `signature` and `derivedBy` carrying `call-argument-function` where LP20f's carries `field-assigned-function`: LP7b's line holds, and the call, not the function, decides what the member is called with. The calls the functions sit under run on construction or definition and stay on the owner's walk, with anything else the field's value evaluates outside those functions: `debounce(() => { … }, delay())` puts `debounce` and `delay` on the owner. The normalized string is the whole field, for LP7c's reason, so `withAuth` becoming `withRole`, or a type annotation or modifier written on the field, moves the member's `syntax`: adding `private` moves its `api` and its `syntax`, where a field holding the function itself moves only `api`. The drop list reads the same predicate ([drop-list.md](./drop-list.md) §4.2), so a class of such fields is not a data model. The member takes the `empty body` hint only when every body is an empty block, so `ready = p.then(() => {}).catch((e) => report(e))` is kept with `report` on it. What LP7c does not reach stays on the owner here too: a function inside an argument (`withAuth(withLogging(() => …))`) and one handed to `new`. **A known cost, shared with LP7c's const.** The reading asks nothing about the call, and nothing in the tree tells a wrapper from another call handed a function, so two kinds of call that are not wrappers read as one. One runs its argument at once: `doubled = xs.map((x) => …)`, `migrate = this.prisma.$transaction(async () => { … })`. The other registers it to run later: `timer = setInterval(() => { … }, 1000)`, `sub = store.subscribe(() => { … })`, `ready = this.prisma.$connect().then(() => { … })`, `off = emitter.on("x", () => { … })`, Angular's `effect(…)`, MobX's `reaction(…)`. Construction is what runs or schedules either kind of callback, but the callback is reported on the member, so its effects no longer reach the callers of `new C()`; and where the call returns a disposer the class calls later (`close() { this.off() }`), a `this.off()` that LSP enrichment resolves reaches the member and takes the callback's effects. Telling these apart from a wrapper would take a list of callee names, which would have to be one list for the const and the field, so the field reads as the const does. An object literal's entry stops short of this reading (LP7f) |
 | LP20g | a Symbol whose declaration is a **call** that registers a function — `app.post('/users', async (req, res) => { … })` | the registered function is the Symbol's body. The registration is the only Symbol the statement produces, so a handler written inline is otherwise in no Symbol at all; and it is what the registration runs, so it is the body by the same reading as LP20a. Every function written as a **direct** argument of a call on the statement's spine counts, in source order — a chained registration (`app.route(p).get(h1).post(h2)`) is one statement and one Symbol, and so is `app.use(h0).router.get(h1)`, where a property access stands between the two calls. "Function" is the plugin's own predicate (LP7, read through LP7a's wrappers) and no wider; a generator argument (Koa's `app.use(function* (ctx, next) {…})`) is in it and registers its body as an arrow does. A body of no width is refused, so a half-written handler the parser recovered does not claim one. The Symbol's `signature` stays null: it is the registration, and reading the handler's would publish the framework's callback shape as the route's API |
 | LP20h | LP20g with more than one handler | the first in source order is `bodyNode` and the rest ride on `mergedDeclarations`, which is a **stretch of that field**: they are further bodies of one declaration, not further declarations of one entity (§4.3.1), so each entry's `fullNode` is that declaration, and they carry no `declaration-merged`. The field is reused because every reader of it (`bodyNodesOf`, the empty-body hint) wants exactly "every body this Symbol has". A single-body reader gets the source-order-first function, which need not be the handler: `makeRouter(() => setup()).get(p, h)` leads with the factory's callback |
-| LP20i | LP20g's normalized string | the **whole call**, not the body. What the registration runs is the walk's question; what it *is* — its path, its method, the middleware between them and the handler — is the fingerprint's, and narrowing to the body makes `app.get(p, authenticate, h)` and `app.get(p, h)` serialize identically. This is LP8j's rule read from the other side: a describing node dropped from the string is a change the axis stops seeing |
+| LP20i | LP20g's normalized string | the **whole call**, not the body. What the registration runs is the walk's question; what it *is* — its path, its method, the middleware between them and the handler — is the fingerprint's, and narrowing to the body makes `app.get(p, authenticate, h)` and `app.get(p, h)` serialize identically. This is LP8j's rule read from the other side: a describing node dropped from the string is a change the axis stops seeing. The syntax axis is not where a reviewer looks for a removed gate, so a framework plugin also names the middleware (§5.2.5), and the logic axis sees it too |
 | LP20i1 | LP20g's name, the one qname segment `<receiver>__<method>__<discriminator>__d<N>` | the discriminator is the **path** when a method call on the statement's chain is handed a literal string as its first argument — quoted, or a backtick with no substitution, which is the same value (`` app.get(`/users`, h) `` names the route `app.get("/users", h)` does, as LP26j reads a specifier), read past a comment and through LP7a's wrappers (LP26i's hazard: a comment written in front of the path must not rename the route). The chain is one Symbol (LP20g), so the path may be written up it — `app.route('/a').get(h)` is named by `/a` — and the earliest written wins when it carries several. The call that *starts* the chain is not read (`require("express")().get(h)`): its argument makes the receiver rather than mounting it. The path is slugged (`/` → `$`, `:` → `Z`, anything else outside the segment grammar → `_`), and an empty literal is no path. With no path, it is the **names the leaf call's arguments carry**, joined by `$`: an identifier (`authMw`), a dotted reference (`express.json` → `express_json`), the callee of a call (`cors()` → `cors`, `express.static("public")` → `express_static`), a constructor (`new Logger()` → `Logger`), what a spread spreads (`...mws` → `mws`). Absent when neither says anything (an inline function, a number). The characters kept are the qualified-name grammar's (ir-schema.md §3.1), so `app.use(認証)` is `app__use__認証__d0` rather than a fold to `_`, and the segment is in NFC (§1.2 there). `derivedBy` carries `call-statement:<receiver>.<method>`, the receiver being the name the call's receiver chain starts from, unslugged (`call-statement:app.get` for `app.route('/a').get(h)`); `chained-call` when that chain passes through a call; `inline-handler` when the registration has a body (LP20g); and `path-literal:<path>` or `argument-names:<slug>`, whichever named it and never both: `$` is both a path's `/` and the joiner, so `app.use($api)` and `app.use("/api", x)` share a stem and only the tag says which reading it was. `N` counts earlier registrations with the same stem — the uniqueness tiebreaker ir-schema.md §3.3 admits, never the name. With only the bare `app__use` stem, inserting `app.use(compression())` above `app.use(cors())` renamed every later middleware, and the diff paired each with the body its id used to hold. **Three trades are deliberate.** The discriminators are exclusive: a registration with a path is named by the path alone, so `app.use('/api', authenticate)` and `app.use('/api', apiRouter)` share `app__use__$api` and stay separated by order — inserting a third `app.use('/api', …)` above them renumbers both — because naming them by their arguments as well would rename every route that gains a middleware, where `app.get(p, h)` → `app.get(p, auth, h)` is one `changed` (LP20i). The reverse follows for a registration with no path: its arguments *are* its name, so `app.use(a)` → `app.use(a, b)` moves the stem from `a` to `a$b` and reports as removed and added, and renaming the binding it passes renames it (ir-schema.md §3.4). And what a call is handed is not read: `express.static("public")` and `express.static("uploads")` share `express_static`, so renaming a directory does not rename the registration serving it. A backtick with a substitution is not a path, its value being decided at run time |
 | LP20j | `prisma["user"].create(d)`, `prisma.user["create"](d)` | one call each, target `prisma.user.create`, no `dynamicReceiver` — a string-literal index is the segment it spells, in the receiver slot and in the terminal one (§4.4), unless that segment is a private name (LP20k) |
 | LP20j1 | `prisma["user" "audit"].create(d)`, `obj["a\u12b"].m()` | `prisma.<computed>.create` / `obj.<computed>.m` — an index the parser recovered rather than read names no segment, whether the ERROR stands beside the literal or inside it |
@@ -819,6 +891,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP26l | an escape the grammar refuses — `"./a\uZZZZb"`, `"./a\xZZb"` | recoverable syntax errors from the parser, and the fragment that survived. These parse as ERROR nodes rather than `escape_sequence`, so no decoder is asked to repair source the grammar rejected. The criterion is that the grammar rejected it — see LP26n for the escapes it accepts without a legal value |
 | LP26m | a literal that is only a line continuation — `"\<newline>"` | no edge, and the LP26a diagnostic. A continuation joins two source lines and contributes no character, so the literal names no module. A literal made only of *other* escapes (`"\n\t"`) is a non-empty name and gets an ordinary edge, on LP26d's terms |
 | LP26n | an escape the grammar accepts and ECMAScript has no value for — `"./a\u{110000}b"`, `"./a\1b"`, `"./a\8b"` | the escape's own text, minus the backslash, with no diagnostic and no throw. The grammar checks a braced escape's shape and not its range, so `\u{110000}` reaches the reader where `\uZZZZ` does not, and `String.fromCodePoint` throws on it — which would cost the whole file. Legacy octal and non-octal decimal escapes are the same case: a SyntaxError in a module, so no correct value exists, and inventing one would put a module name in the IR the source does not contain |
+| LP26o | `export { A as B } from './m'`; `export * as ns from './m'`; `import { A as L } from './m'` with `export { L as B }`; `import A from './m'` with `export default A`; `export type { T } from './m'`, `export { type T } from './m'`, `export * from './m'`, and an import the module only uses | `reexports` = `[{imported: "A", exported: "B"}]`, `[{imported: "*", exported: "ns"}]`, `[{imported: "A", exported: "B"}]` on the import's edge, `[{imported: "default", exported: "default"}]`, and no entry for the rest (§4.2) |
 
 ### 9.7 Error recovery
 
@@ -849,6 +922,32 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP32 | Many files scanned in one process | the parser's heap does not grow with the file count — the core released every tree the plugin handed over |
 | LP33 | A file whose `extractSymbols` / `walkBody` / `normalizeAst` throws, is withdrawn, or overruns `parseTimeoutMs` | its tree is released all the same; the diagnostic the file was already carrying is what the caller sees |
 | LP34 | A `releaseTree` that throws | the file keeps its Symbols and its exit code; the plugin, the file and the message are on `ScanResult.treeReleaseFailures` |
+
+### 9.10 Import resolution and origins (§4.8, §5.2.4)
+
+| ID | Input | Expected |
+|---|---|---|
+| LP37 | `paths: { "@app/common": ["libs/common/src/index.ts"] }`, asked for `@app/common` | `["libs/common/src/index.ts"]` |
+| LP38 | wildcard keys `@app/*` and `@app/common/*`, asked for `@app/common/x` | the substitutions of `@app/common/*` alone, with `x` in place of each `*` |
+| LP39 | an exact key beside a wildcard key that also matches | the exact key's substitutions |
+| LP40 | `baseUrl: "src"` and `paths: { "@/*": ["*"] }`, asked for `@/x` | `["src/x", "src/@/x"]` |
+| LP41 | `paths` declared by a config that `extends` reaches, relative or in a package | resolved against the declaring config's directory; a value starting `${configDir}` against the extending config's |
+| LP42 | the nearest config is not valid JSON, or exists and cannot be read | one warning naming it, with the line and column of a JSON error, and nothing mapped for any file under it, the config above it included |
+| LP42a | a config with a byte order mark, and an empty config | read as `tsc` reads them, with no warning: the first maps its `paths`, the second maps nothing in place of the config above it |
+| LP42b | `baseUrl` declared by a config that `extends` reaches (`tsconfig.base.json` with `baseUrl: "."`, extended from `apps/*`) | resolved against the declaring config's directory |
+| LP42c | an `extends` entry that names no config | one warning, and the rest of the chain applies |
+| LP42d | a `paths` or `baseUrl` value `tsc` refuses | one warning per value, and the rest of the config applies |
+| LP42e | an `extends` entry that names a config outside the workspace root | that config is read |
+| LP43 | a decorator imported through a path alias, or a relative specifier, to a barrel that re-exports it from `@nestjs/common`, directly or through another barrel | `origins` maps the imported name to `@nestjs/common`, and the NestJS plugin grades the decorator `high`, renamed on import or read through a namespace import alike |
+| LP43a | the barrel republishes an import of `@nestjs/common` in an export clause or as its default export, re-exports `@nestjs/common` as a namespace the decorator reads through, or re-exports a competing library's decorator under another name before `@nestjs/common`'s | `high` |
+| LP44 | the barrel reaches the name through `export *`, declares it itself, or the alias maps to no file | no origin, and the decorator stays `medium` |
+| LP44a | the barrel exports `@nestjs/common`'s decorator only under another name, before or after re-exporting or declaring its own, or imports it only for its own use | no origin, and the decorator stays `medium`, whichever order the edges are in |
+| LP44b | the resolver fails on a specifier in the middle of a chain, or a module the chain reaches cannot be parsed | no origin |
+| LP44c | a language plugin returns an edge with `origins` | the scan drops it |
+| LP45 | two barrels re-exporting the name from each other | the chain ends, with no origin |
+| LP46 | one barrel imported by several files | parsed once beyond its own turn if discovery reaches an importer first, not at all beyond it otherwise, and every tree it was parsed into released |
+| LP46a | a barrel whose parse takes longer than `parseTimeoutMs` | the barrel is skipped in its own turn, and the file whose chain reached it is not |
+| LP47 | no framework plugin loaded | no resolver created and no barrel parsed |
 
 ## 10. Design Decisions
 
