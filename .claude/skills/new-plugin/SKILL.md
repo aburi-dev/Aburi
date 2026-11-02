@@ -56,6 +56,12 @@ pnpm --filter @aburi/<name> add -D '@aburi/lang-typescript@workspace:*' '@aburi/
   fixture's `aburi.json`, and add its rows to both cases of `effects-coverage.test.ts`: what the scan
   attributes, and the report rows one edit produces. That test is the only one that checks what each
   effects plugin attributes.
-- Docs: `docs/guide/supported-stacks.md`, the root `README.md` list, and — worth it for anything users
-  will search for — a showcase example (see the `add-showcase-example` skill).
+- Docs: `docs/guide/supported-stacks.md` and — worth it for anything users will search for — a
+  showcase example (see the `add-showcase-example` skill).
 - `pnpm changeset` for the new package and every published package you touched.
+
+## First release
+
+The release workflow cannot publish a package npm has never seen. Before the release PR that
+versions the new package is merged, the maintainer publishes a `0.0.0` by hand and adds its trusted
+publisher (CONTRIBUTING.md, Releases). Say so in the pull request that adds the package.
