@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       published: ${{ steps.changesets.outputs.published }}
-      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+      publishedPackages: ${{ steps.changesets.outputs.published-packages }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,7 +43,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      # Written before changesets/action runs, or it writes an _authToken template that forces token auth.
       - name: Configure .npmrc for Trusted Publishing
         run: |
           {
@@ -56,15 +55,13 @@ jobs:
 
       - name: Create Release PR or Publish
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm changeset version
-          publish: pnpm release
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
-          createGithubReleases: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset version
+          publish-script: pnpm release
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
+          create-github-releases: true
 
   tag-action:
     name: tag the action release

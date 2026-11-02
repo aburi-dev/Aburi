@@ -2,14 +2,14 @@ import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { commitAll, gitTestEnv, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { expect, it } from "vitest"
 
 const run = promisify(execFile)
 const changesetBin = createRequire(import.meta.url).resolve("@changesets/cli/bin.js")
-const changelogModule = fileURLToPath(new URL("../src/index.mjs", import.meta.url))
+// `changeset version` import()s the changelog, and a Windows path is no import specifier.
+const changelogModule = new URL("../src/index.mjs", import.meta.url).href
 
 const workspace = useScratchWorkspace("changelog")
 
