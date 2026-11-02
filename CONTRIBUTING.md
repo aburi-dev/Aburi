@@ -174,3 +174,19 @@ Publishing uses npm Trusted Publishing (OIDC), so no npm token exists anywhere. 
 `@aburi/*` package needs a trusted publisher entry for repository `kage1020/Aburi` and workflow
 `.github/workflows/release.yml`, with no environment restriction. Renaming that workflow, or adding
 an `environment:` to its job, breaks publishing until every entry is updated to match.
+
+npm accepts a trusted publisher only for a package that already exists, so a new package is
+published once by hand before the release PR that first versions it is merged:
+
+1. From an account that can publish to the `@aburi` scope, publish a `0.0.0` that holds no code —
+   a `package.json` with the package's name, license and `repository`, its `LICENSE`, and a README
+   saying the version only reserves the name — with `npm publish <directory> --access public`.
+   That leaves the first real version to the release workflow, which publishes it with provenance.
+2. On the package's access page (`https://www.npmjs.com/package/@aburi/<name>/access`), add the
+   trusted publisher above and allow **npm publish**. A new entry allows only `npm stage publish`,
+   which `changeset publish` never runs.
+3. Merge the release PR the same day: an entry that no publish uses within two days expires.
+4. Once the release is out, deprecate `0.0.0` and the `0.0.0-stage` npm creates beside it.
+
+Skip a step and the release run publishes every other package, fails on the new one, and skips
+the docs deploy and the action tag.
