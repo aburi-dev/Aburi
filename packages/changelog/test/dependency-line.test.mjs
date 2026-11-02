@@ -29,6 +29,23 @@ describe("getDependencyReleaseLine", () => {
     )
   })
 
+  it("names the dependencies in name order, whatever order the release plan lists them in", async () => {
+    const unordered = [
+      { name: "@aburi/types", newVersion: "0.6.1" },
+      { name: "@aburi/config", newVersion: "0.4.2" },
+      { name: "@aburi/core", newVersion: "0.6.1" },
+    ]
+    await expect(
+      changelog.getDependencyReleaseLine(
+        changesets(1, () => undefined),
+        unordered,
+        null,
+      ),
+    ).resolves.toBe(
+      "- Updated dependencies: `@aburi/config@0.4.2`, `@aburi/core@0.6.1`, `@aburi/types@0.6.1`",
+    )
+  })
+
   it("writes nothing for a release that picked up no dependency", async () => {
     await expect(
       changelog.getDependencyReleaseLine(
