@@ -26,6 +26,9 @@ jobs:
       # Two tasks at a time: Windows runners now and then fail to start a process (0xC0000142), which is
       # usually blamed on many starting at once. All logs, streamed, so a dying run shows what was running.
       TURBO_ARGS: ${{ startsWith(matrix.os, 'windows') && '--concurrency=2 --output-logs=full --log-order=stream' || '' }}
+      # On Windows a task runs under a sampler of the runner, which reads TURBO_ARGS, because a run that dies
+      # of 0xC0000142 can start nothing afterwards to look at what the runner held.
+      RUN_TASK: ${{ startsWith(matrix.os, 'windows') && './.github/scripts/run-sampled.ps1' || 'pnpm' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -48,20 +51,10 @@ jobs:
         run: pnpm hygiene
 
       - name: Typecheck
-        run: pnpm typecheck ${{ env.TURBO_ARGS }}
+        run: ${{ env.RUN_TASK }} typecheck
 
       - name: Build
-        run: pnpm build ${{ env.TURBO_ARGS }}
+        run: ${{ env.RUN_TASK }} build
 
       - name: Test
-        run: pnpm test ${{ env.TURBO_ARGS }}
-
-      # A process that fails to initialise (0xC0000142) prints nothing, and from then on no new process on
-      # the runner starts. If this step can still start, its memory figures and System log show what ran out.
-      - name: Windows resources after a failure
-        if: failure() && runner.os == 'Windows'
-        run: |
-          Get-CimInstance Win32_OperatingSystem | Format-List TotalVisibleMemorySize, FreePhysicalMemory, TotalVirtualMemorySize, FreeVirtualMemory
-          Get-CimInstance Win32_PageFileUsage | Format-List Name, AllocatedBaseSize, CurrentUsage, PeakUsage
-          Get-WinEvent -MaxEvents 50 -ErrorAction SilentlyContinue -FilterHashtable @{ LogName = 'System'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-1) } | Format-List TimeCreated, ProviderName, Id, Message
-          Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 15 Count, Name | Format-Table -AutoSize
+        run: ${{ env.RUN_TASK }} test
