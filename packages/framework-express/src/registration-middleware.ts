@@ -14,7 +14,7 @@ const UNREAD_ARGUMENT = "…"
 
 // An inline function is left out: its body is the registration's own, and already read as such.
 export function registrationMiddleware(call: SyntaxNode): string[] {
-  const chain = chainCalls(call).reverse()
+  const chain = chainCalls(call).toReversed()
   return chain.flatMap((registration, index) => {
     const leaf = calleeName(registration)?.leaf
     if (leaf === EXPRESS_MIDDLEWARE_METHOD) return named(useArguments(registration))

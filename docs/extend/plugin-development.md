@@ -262,8 +262,8 @@ Contracts:
   `app.route("/x").get(…)` alike. To read more of a chain than its name, take
   the nodes from the same walk: `walkReceiverChain(node)` returns `{ steps, root }`,
   every call, member access and index on the way down, outermost first, and the
-  node the chain starts from; `chainCalls(call)` returns the calls a registration
-  chains, up to the first index.
+  node the chain starts from; `chainCalls(call)` returns the calls the chain
+  passes, the call itself first.
 - A plugin for a framework that registers handlers by call can return
   `middleware`: what the registration runs before its handler, in order, named
   from the syntax tree by the same rule as `derivedBy`. The pipeline writes it to

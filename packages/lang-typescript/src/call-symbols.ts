@@ -173,7 +173,9 @@ function parseMemberCallee(callee: Node): MemberCall | null {
 }
 
 // A name through an index would drop what the index picks (`routers["admin"].get` and
-// `routers["user"].get` alike), and a root that is not a name, `this` included, has none to slug.
+// `routers["user"].get` alike). A statement read here is at module scope, where `this` is
+// `undefined` in an ES module, `module.exports` in CommonJS and the global object in a script:
+// never an app or a router.
 function rootReceiver(node: Node): { name: string; chained: boolean } | null {
   const { steps, root } = walkReceiverChain(node)
   if (root.type !== "identifier" || root.text.length === 0) return null
@@ -204,7 +206,7 @@ function registrationPath(call: Node): string | null {
     const callee = step.childForFieldName("function")
     if (callee === null || unwrapValue(callee).type !== "member_expression") continue
     const args = argumentsOf(step)
-    // The spine is walked outermost first, so the earliest-written list comes last.
+    // The chain is walked outermost first, so the earliest-written list comes last.
     if (args === null || args.startIndex >= at) continue
     const literal = firstStringLiteralArg(args)
     if (literal === null || literal === "") continue

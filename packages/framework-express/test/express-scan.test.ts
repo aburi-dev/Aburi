@@ -469,6 +469,16 @@ describe("scan — the middleware a registration hands its handler to", () => {
       ["requireUser", "requireAdmin", "validate(user)"],
     ],
     [
+      "a route of a chain behind a type assertion",
+      `;(app.route("/users") as IRoute).get(requireUser, listUsers)`,
+      ["requireUser"],
+    ],
+    [
+      "what all takes ahead of a method in a chain behind parentheses",
+      `;(app.route("/users").all(requireUser)).get(listUsers)`,
+      ["requireUser"],
+    ],
+    [
       "what all takes ahead of a method in a chain, its last handler included",
       `app.route("/users").all(requireUser, audit).get(listUsers).post(createUser)`,
       ["requireUser", "audit"],

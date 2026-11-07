@@ -77,12 +77,14 @@ function eitherIsHandlerShaped(a: SyntaxNode | null, b: SyntaxNode | null): bool
 const ROUTE_CHAIN_METHOD = "route"
 
 function hasRouteCallUpTheChain(call: SyntaxNode): boolean {
-  return chainCalls(call)
-    .slice(1)
-    .some((step) => {
-      const callee = step.childForFieldName("function")
-      return callee !== null && isRouteCall(unwrapValue(callee), step)
+  const callee = call.childForFieldName("function")
+  return (
+    callee !== null &&
+    chainCalls(callee).some((step) => {
+      const stepCallee = step.childForFieldName("function")
+      return stepCallee !== null && isRouteCall(unwrapValue(stepCallee), step)
     })
+  )
 }
 
 function isRouteCall(callee: SyntaxNode, call: SyntaxNode): boolean {

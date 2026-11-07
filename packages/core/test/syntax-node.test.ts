@@ -228,11 +228,10 @@ describe("chainCalls", () => {
     expect(chainCalls(get)).toEqual([get, route, start])
   })
 
-  it("stops at the first index", () => {
-    const get = call(
-      member(withFields("subscript_expression", { object: call(identifier("x")) }), "get"),
-    )
-    expect(chainCalls(get)).toEqual([get])
+  it("passes an index as it passes a member access", () => {
+    const start = call(identifier("x"))
+    const get = call(member(withFields("subscript_expression", { object: start }), "get"))
+    expect(chainCalls(get)).toEqual([get, start])
   })
 })
 

@@ -1,12 +1,18 @@
 import { COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import { DEFAULT_EXPORT_QNAME } from "./id"
 
-export interface SyntaxNode {
-  readonly type: string
+export interface SyntaxNode extends ChainNode<SyntaxNode> {
   readonly text: string
-  readonly namedChildren: readonly (SyntaxNode | null)[]
   readonly children: readonly (SyntaxNode | null)[]
-  childForFieldName(name: string): SyntaxNode | null
+}
+
+interface ValueNode<N> {
+  readonly type: string
+  readonly namedChildren: readonly (N | null)[]
+}
+
+interface ChainNode<N> extends ValueNode<N> {
+  childForFieldName(name: string): N | null
 }
 
 export function asSyntaxNode(value: unknown): SyntaxNode | null {
@@ -58,9 +64,7 @@ const VALUE_WRAPPER_TYPES: ReadonlySet<string> = new Set([
   "non_null_expression",
 ])
 
-export function unwrapValue<
-  N extends { readonly type: string; readonly namedChildren: readonly (N | null)[] },
->(node: N): N {
+export function unwrapValue<N extends ValueNode<N>>(node: N): N {
   let cursor = node
   while (VALUE_WRAPPER_TYPES.has(cursor.type)) {
     const inner = cursor.namedChildren.find((child) => child !== null && child.type !== "comment")
@@ -127,12 +131,6 @@ export function receiverChain(node: SyntaxNode): ReceiverChain {
   return { path, root: rootName(root) }
 }
 
-interface ChainNode<N> {
-  readonly type: string
-  readonly namedChildren: readonly (N | null)[]
-  childForFieldName(name: string): N | null
-}
-
 export interface ReceiverChainWalk<N> {
   /** Each call, member access and index passed on the way down to the root, outermost first. */
   readonly steps: readonly N[]
@@ -141,8 +139,9 @@ export interface ReceiverChainWalk<N> {
 }
 
 /**
- * The one walk down a receiver chain, through `unwrapValue`'s wrappers. Every reader of a chain
- * takes it from here, so a framework's name for a call and the language plugin's cannot drift.
+ * The walk down a receiver chain, through `unwrapValue`'s wrappers. A registration's receiver and
+ * the calls it chains are read off this walk, so a framework's name for a registration and the
+ * `call-statement:` entry cannot drift.
  */
 export function walkReceiverChain<N extends ChainNode<N>>(node: N): ReceiverChainWalk<N> {
   const steps: N[] = []
@@ -154,15 +153,10 @@ export function walkReceiverChain<N extends ChainNode<N>>(node: N): ReceiverChai
   return { steps, root: cursor }
 }
 
-/** The calls a chain passes before its first index, outermost first, where it starts included. */
-export function chainCalls<N extends ChainNode<N>>(node: N): N[] {
+/** The calls a chain passes, outermost first, starting with the call itself. */
+export function chainCalls<N extends ChainNode<N>>(node: N): readonly N[] {
   const { steps, root } = walkReceiverChain(node)
-  const calls: N[] = []
-  for (const step of [...steps, root]) {
-    if (step.type === "subscript_expression") break
-    if (step.type === "call_expression") calls.push(step)
-  }
-  return calls
+  return [...steps, root].filter((step) => step.type === "call_expression")
 }
 
 const NAMED_ROOT_TYPES: ReadonlySet<string> = new Set(["identifier", "this"])
