@@ -228,8 +228,8 @@ export class ProjectionInvariantError extends Error {
   }
 }
 
-// Unlike `dropReason`, these fields carry no `minLength` in the schema, so an empty payload is a
-// valid document and renders; only a missing one is refused.
+// Unlike `dropReason`, `condition` / `what` / `expr` carry no `minLength` in the schema, so an empty
+// payload is a valid document and renders; only a missing one is refused.
 function requireNonNull(rule: Rule, field: "condition" | "what" | "expr" | "loopKind"): string {
   const value = rule[field]
   if (value === null || value === undefined) {
