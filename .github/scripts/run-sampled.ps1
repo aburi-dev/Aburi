@@ -75,6 +75,20 @@ $sampler = Start-ThreadJob {
     }
 }
 
+function Show-SystemEvents([string] $Heading, [hashtable] $Filter) {
+    Write-Host $Heading
+    try {
+        Get-WinEvent -MaxEvents 50 -ErrorAction Stop -FilterHashtable (@{ LogName = 'System' } + $Filter) |
+            Format-List TimeCreated, ProviderName, Id, Message | Out-String -Width 400 | Write-Host
+    } catch {
+        if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+            Write-Host 'None.'
+        } else {
+            Write-Host "The System log could not be read: $_"
+        }
+    }
+}
+
 $turboArgs = @($env:TURBO_ARGS -split ' ' | Where-Object { $_ })
 $code = $null
 try {
@@ -113,17 +127,10 @@ try {
         Write-Host "The runner while pnpm $Task ran, which $($outcome):"
         $all | Format-Table Time, Processes, Handles, InSession, CommitFreeMB, PhysicalFreeMB, Most, Failed -AutoSize -Wrap |
             Out-String -Width 400 | Write-Host
-        Write-Host "Warnings and errors in the System log since pnpm $Task started:"
-        try {
-            Get-WinEvent -MaxEvents 50 -ErrorAction Stop -FilterHashtable @{
-                LogName = 'System'; Level = 1, 2, 3; StartTime = $started
-            } | Format-List TimeCreated, ProviderName, Id, Message | Out-String -Width 400 | Write-Host
-        } catch {
-            if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
-                Write-Host 'None.'
-            } else {
-                Write-Host "The System log could not be read: $_"
-            }
+        # Windows logs a failed desktop heap allocation once per session, so it may predate this task.
+        Show-SystemEvents 'Events 243 and 244 in the System log, which Win32k writes when desktop heap runs out:' @{ Id = 243, 244 }
+        Show-SystemEvents "Warnings and errors in the System log since pnpm $Task started:" @{
+            Level = 1, 2, 3; StartTime = $started
         }
     }
 }
