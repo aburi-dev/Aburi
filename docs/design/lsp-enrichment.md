@@ -10,7 +10,7 @@ References:
 - [`ir-schema.md`](./ir-schema.md) §1.1 — the absent-key vs explicit-`null` convention both fields below are classified under; §7 — `Signature` (extended here with an optional `inferredThrows` field); §12 — `SourceRange` (existing optional `startColumn` / `endColumn` populated here); §15.2 — the non-breaking optional-field policy this pass relies on
 - [`fingerprint.md`](./fingerprint.md) §3.1 — the `api` fingerprint input this pass MUST NOT perturb; §4.1 — the `logic` fingerprint input likewise; §5.1 — the `syntax` fingerprint input likewise
 - [`lang-plugin.md`](./lang-plugin.md) §2.1 — Symbol existence and call sites are the plugin's authority, never LSP's; §2.2 — call resolution (and by extension LSP-tier resolution) is out of scope for the plugin; §4.7 — `PluginContext.workspaceRoot` supplies the LSP `rootUri`
-- [`config.md`](./config.md) §5.4 — `pluginOptions` scope hosts opaque per-plugin options (used only for `initializationOptions` here, not for timeouts); §11 — CLI override convention followed by `--lsp` / `--no-lsp`; §14.1 — the Config Schema Compatibility Policy that timeout-default revisions live under
+- [`config.md`](./config.md) §5.4 — `pluginOptions`, cited only as the precedent for an opaque value forwarded verbatim, which `lsp.servers.<lang>.initializationOptions` follows (§12.2); every LSP option, `initializationOptions` and the timeouts alike, is read from `lsp.servers`, never from `pluginOptions`; §11 — CLI override convention followed by `--lsp` / `--no-lsp`; §14.1 — the Config Schema Compatibility Policy that timeout-default revisions live under
 
 ---
 

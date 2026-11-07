@@ -121,12 +121,13 @@ describe("aburi scan — a plugin name where a framework id belongs", () => {
   })
 })
 
+const unmatched = (key: string, loaded: string) =>
+  `⚠ pluginOptions["${key}"] names no loaded plugin (loaded: ${loaded}).`
+const hint = (key: string, entry: string) =>
+  `⚠ pluginOptions["${key}"] names the plugin built from the frameworkHints entry "${entry}", which takes no options; write its rules in that entry.`
+
 describe("aburi scan — pluginOptions keys and the plugins it loaded", () => {
   const PRISMA = { ...TYPESCRIPT, effects: ["effects-prisma"] }
-  const unmatched = (key: string, loaded: string) =>
-    `⚠ pluginOptions["${key}"] names no loaded plugin (loaded: ${loaded}).`
-  const hint = (key: string, entry: string) =>
-    `⚠ pluginOptions["${key}"] names the plugin built from the frameworkHints entry "${entry}", which takes no options; write its rules in that entry.`
 
   it.each([
     [
@@ -185,5 +186,25 @@ describe("aburi scan — pluginOptions keys and the plugins it loaded", () => {
 
     expect(code, output).toBe(EXIT.SUCCESS)
     expect(stderr).toBe(expected.map((line) => `${line}\n`).join(""))
+  })
+})
+
+describe("aburi explain — pluginOptions keys, through the scan it runs", () => {
+  it("says each line once, unlabelled, in config order, and answers", async () => {
+    await writeConfig(workspace.root, {
+      ...TYPESCRIPT,
+      frameworkHints: [{ name: "acme", decorators: {} }],
+      pluginOptions: { "hint-acme": {}, "effects-prsima": {} },
+    })
+
+    const { code, stdout, stderr } = await runCliIn(workspace.root, ["explain", "x"])
+
+    expect(code, stderr).toBe(EXIT.SUCCESS)
+    expect(stderr).toBe(
+      [hint("hint-acme", "acme"), unmatched("effects-prsima", "lang-typescript, hint-acme")]
+        .map((line) => `${line}\n`)
+        .join(""),
+    )
+    expect(stdout).toContain("# `x`")
   })
 })
