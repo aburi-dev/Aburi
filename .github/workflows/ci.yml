@@ -18,6 +18,8 @@ jobs:
   verify:
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Well above a normal run: a runner that can start no process could otherwise hold a task for six hours.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

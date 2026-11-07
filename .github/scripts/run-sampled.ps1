@@ -1,13 +1,18 @@
 # Runs `pnpm <task>` with the flags in TURBO_ARGS while a thread of this process samples the runner.
 # Once a process on a Windows runner fails to initialise (0xC0000142), no new process starts there, not
-# even a step that would look. This process is already running, so its samples still show what the
-# runner held when that happened.
+# even a step that would look. This process is already running, so its samples and its read of the System
+# log still show what the runner held when that happened.
 param([Parameter(Mandatory)] [string] $Task)
 
-# The workflow's shell stops at the first error, and a failed sample must not cost the task's exit code.
+# The workflow's shell stops at the first error, and the report after the task must still run and keep the
+# task's exit code.
 $ErrorActionPreference = 'Continue'
+$started = Get-Date
+# Desktop heap belongs to a session's desktop, so the processes that pile up are counted by session.
+$session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
 
 Add-Type -TypeDefinition @'
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 public static class RunnerMemory
@@ -32,57 +37,94 @@ public static class RunnerMemory
     public static Status Read()
     {
         var status = new Status { Length = (uint)Marshal.SizeOf<Status>() };
-        GlobalMemoryStatusEx(ref status);
+        if (!GlobalMemoryStatusEx(ref status)) throw new Win32Exception();
         return status;
     }
 }
 '@
 
 $sampler = Start-ThreadJob {
+    $session = $using:session
     while ($true) {
+        $sample = [ordered]@{
+            Time = Get-Date -Format 'HH:mm:ss'; Processes = $null; Handles = $null; InSession = $null
+            CommitFreeMB = $null; PhysicalFreeMB = $null; Most = $null; Failed = $null
+        }
+        $failures = @()
         try {
             $processes = [System.Diagnostics.Process]::GetProcesses()
-            $memory = [RunnerMemory]::Read()
-            [pscustomobject]@{
-                Time           = Get-Date -Format 'HH:mm:ss'
-                Processes      = $processes.Count
-                Handles        = ($processes | Measure-Object -Property HandleCount -Sum).Sum
-                CommitFreeMB   = [math]::Round($memory.AvailPageFile / 1MB)
-                PhysicalFreeMB = [math]::Round($memory.AvailPhys / 1MB)
-                Most           = ($processes | Group-Object ProcessName | Sort-Object Count -Descending |
-                        Select-Object -First 6 | ForEach-Object { "$($_.Name) $($_.Count)" }) -join ', '
-            }
+            $mine = @($processes | Where-Object SessionId -EQ $session)
+            $sample.Processes = $processes.Count
+            $sample.Handles = [long]($processes | Measure-Object -Property HandleCount -Sum).Sum
+            $sample.InSession = $mine.Count
+            $sample.Most = ($mine | Group-Object ProcessName | Sort-Object Count -Descending |
+                    Select-Object -First 6 | ForEach-Object { "$($_.Name) $($_.Count)" }) -join ', '
         } catch {
-            [pscustomobject]@{ Time = Get-Date -Format 'HH:mm:ss'; Most = "sample failed: $_" }
+            $failures += "processes: $_"
         }
+        try {
+            $memory = [RunnerMemory]::Read()
+            $sample.CommitFreeMB = [long]($memory.AvailPageFile / 1MB)
+            $sample.PhysicalFreeMB = [long]($memory.AvailPhys / 1MB)
+        } catch {
+            $failures += "memory: $_"
+        }
+        $sample.Failed = $failures -join '; '
+        [pscustomobject]$sample
         Start-Sleep -Seconds 5
     }
 }
 
 $turboArgs = @($env:TURBO_ARGS -split ' ' | Where-Object { $_ })
+$code = $null
 try {
     pnpm $Task @turboArgs
     $code = $LASTEXITCODE ?? 1
 } catch {
     Write-Host "pnpm $Task did not start: $_"
     $code = 1
-}
+} finally {
+    # Here rather than after the task, so a step that is cancelled or times out still reports.
+    $all = @()
+    $state = 'never started'
+    if ($sampler) {
+        $state = $sampler.State
+        Stop-Job $sampler
+        $all = @(Receive-Job $sampler)
+    }
 
-Stop-Job $sampler
-$all = @(Receive-Job $sampler -ErrorAction SilentlyContinue)
-Remove-Job $sampler -Force
-$samples = @($all | Where-Object { $null -ne $_.Processes })
+    $samples = @($all | Where-Object { $null -ne $_.Processes })
+    if ($samples.Count -gt 0) {
+        $busiest = $samples | Sort-Object InSession -Descending | Select-Object -First 1
+        $processes = ($samples | Measure-Object Processes -Maximum).Maximum
+        $handles = ($samples | Measure-Object Handles -Maximum).Maximum
+        $withMemory = @($samples | Where-Object { $null -ne $_.CommitFreeMB })
+        $commit = if ($withMemory.Count -gt 0) {
+            "$(($withMemory | Measure-Object CommitFreeMB -Minimum).Minimum) MB"
+        } else { 'an unknown amount' }
+        Write-Host "Runner over $($samples.Count) samples: at most $processes processes and $handles handles, at most $($busiest.InSession) processes in session $session, at least $commit of commit free. Busiest moment in session $($session): $($busiest.Most)"
+    } else {
+        $first = ($all | Where-Object Failed | Select-Object -First 1).Failed
+        Write-Host "The sampler recorded no process counts. Its job was $state; the first failure it recorded: $($first ?? 'none')"
+    }
 
-if ($samples.Count -gt 0) {
-    $busiest = $samples | Sort-Object Processes -Descending | Select-Object -First 1
-    $handles = ($samples | Measure-Object Handles -Maximum).Maximum
-    $commit = ($samples | Measure-Object CommitFreeMB -Minimum).Minimum
-    Write-Host "Runner over $($samples.Count) samples: at most $($busiest.Processes) processes and $handles handles, at least $commit MB of commit free. Busiest moment: $($busiest.Most)"
+    if ($code -ne 0) {
+        $outcome = if ($null -eq $code) { 'was stopped' } else { "exited with $code" }
+        Write-Host "The runner while pnpm $Task ran, which $($outcome):"
+        $all | Format-Table Time, Processes, Handles, InSession, CommitFreeMB, PhysicalFreeMB, Most, Failed -AutoSize -Wrap |
+            Out-String -Width 400 | Write-Host
+        Write-Host "Warnings and errors in the System log since pnpm $Task started:"
+        try {
+            Get-WinEvent -MaxEvents 50 -ErrorAction Stop -FilterHashtable @{
+                LogName = 'System'; Level = 1, 2, 3; StartTime = $started
+            } | Format-List TimeCreated, ProviderName, Id, Message | Out-String -Width 400 | Write-Host
+        } catch {
+            if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+                Write-Host 'None.'
+            } else {
+                Write-Host "The System log could not be read: $_"
+            }
+        }
+    }
 }
-if ($code -ne 0) {
-    Write-Host "The runner in the minute before pnpm $Task exited with $($code):"
-    $all | Select-Object -Last 12 |
-        Format-Table Time, Processes, Handles, CommitFreeMB, PhysicalFreeMB, Most -AutoSize -Wrap |
-        Out-String -Width 400 | Write-Host
-}
-exit $code
+exit ($code ?? 1)
