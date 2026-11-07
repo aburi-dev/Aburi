@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { matchStageDroppedWeak } from "../src"
 import { changesBetween, diffSymbols, dropped } from "./helpers"
 
 describe("a key several dropped Symbols carry is not evidence of a pairing", () => {
@@ -152,5 +153,19 @@ describe("a conflict between the two keys", () => {
   ])("is settled the same in either order when %s", (_, base, head, expected) => {
     expect(changesBetween(base, head)).toEqual([expected])
     expect(changesBetween([...base].reverse(), [...head].reverse())).toEqual([expected])
+  })
+})
+
+describe("a dropped tree larger than one call can take as arguments", () => {
+  it("pairs every Symbol of a moved tree of 130,000", () => {
+    const count = 130_000
+    const tree = (dir: string) =>
+      Array.from({ length: count }, (_, i) => dropped(`gen/${dir}/m${i}.ts`, `f${i}`))
+    const { matched, remainingBase, remainingHead } = matchStageDroppedWeak(
+      tree("old"),
+      tree("new"),
+    )
+    expect(matched).toHaveLength(count)
+    expect([remainingBase.length, remainingHead.length]).toEqual([0, 0])
   })
 })
