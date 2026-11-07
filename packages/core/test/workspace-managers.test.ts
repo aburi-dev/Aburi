@@ -136,21 +136,7 @@ describe("detectManagers", () => {
     ])
   })
 
-  it("lists a tool and a directory once when two manifests of that tool declare it", async () => {
-    await tree.writePnpmWorkspace("apps/*")
-    await tree.writeJson("package.json", { name: "root", workspaces: ["apps/*"] })
-    await tree.writeSource("pnpm-lock.yaml", "")
-    await tree.writePackage("apps/billing", { name: "billing" })
-
-    const result = await detectManagers(tree.root)
-
-    expect(result.managers).toEqual([{ tool: "pnpm", roots: ["apps/billing"] }])
-    expect(result.workspaces.map((w) => `${w.relativeRoot} ${w.managerTool}`)).toEqual([
-      "apps/billing pnpm",
-    ])
-  })
-
-  it("gives a tool two manifests declare every root either names", async () => {
+  it("lists a tool once with every root either of its manifests names, and a directory once", async () => {
     await tree.writePnpmWorkspace("apps/*")
     await tree.writeJson("package.json", { name: "root", workspaces: ["libs/*", "apps/*"] })
     await tree.writeSource("pnpm-lock.yaml", "")
@@ -160,6 +146,24 @@ describe("detectManagers", () => {
     const result = await detectManagers(tree.root)
 
     expect(result.managers).toEqual([{ tool: "pnpm", roots: ["apps/billing", "libs/shared"] }])
+    expect(result.workspaces.map((w) => `${w.relativeRoot} ${w.managerTool}`)).toEqual([
+      "apps/billing pnpm",
+      "libs/shared pnpm",
+    ])
+  })
+
+  it("keeps the manifest of a tool that resolves nothing as unresolved beside the one that does", async () => {
+    await tree.writePnpmWorkspace("tools/*")
+    await tree.writeJson("package.json", { name: "root", workspaces: ["apps/*"] })
+    await tree.writeSource("pnpm-lock.yaml", "")
+    await tree.writePackage("apps/a", { name: "a" })
+
+    const result = await detectManagers(tree.root)
+
+    expect(result.managers).toEqual([{ tool: "pnpm", roots: ["apps/a"] }])
+    expect(result.unresolved).toEqual([
+      { tool: "pnpm", manifestPath: "pnpm-workspace.yaml", patterns: ["tools/*"] },
+    ])
   })
 
   it.each([["pkg"], ...(process.platform === "win32" ? [] : [["x\\pkg"]])])(
