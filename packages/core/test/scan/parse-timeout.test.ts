@@ -101,10 +101,13 @@ describe("runFilePipeline — parse deadline", () => {
       "a non-recoverable error",
       { parseMs: 250, parseErrors: [{ ...RECOVERABLE, recoverable: false }] },
     ],
-  ])("reports a file with %s as a parse failure even when its parse overran", async (_label, script) => {
-    const { result } = await run(script, 100)
-    expect(result.kind).toBe("parse-failed")
-  })
+  ])(
+    "reports a file with %s as a parse failure even when its parse overran",
+    async (_label, script) => {
+      const { result } = await run(script, 100)
+      expect(result.kind).toBe("parse-failed")
+    },
+  )
 
   it("leaves a file that finishes inside its budget untouched", async () => {
     const { result, order } = await run({ candidates: ["one", "two"] }, 600_000)

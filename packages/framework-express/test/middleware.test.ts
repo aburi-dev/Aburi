@@ -69,10 +69,10 @@ describe("analyzeUseArguments", () => {
     expect(analyzeUseArguments(call.fullNode)?.firstArgIsPathLiteral).toBe(false)
   })
 
-  it.each([
-    null,
-    { placeholder: true },
-  ])("returns null for %o, which is not a syntax node", (value) => {
-    expect(analyzeUseArguments(value)).toBeNull()
-  })
+  it.each([null, { placeholder: true }])(
+    "returns null for %o, which is not a syntax node",
+    (value) => {
+      expect(analyzeUseArguments(value)).toBeNull()
+    },
+  )
 })

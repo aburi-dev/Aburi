@@ -73,12 +73,15 @@ describe("diffComponents", () => {
     ["a description edited", { description: "Invoices" }, { description: "Invoices and dunning" }],
     ["a description removed", { description: "Invoices" }, { description: null }],
     ["an empty description where there was none", { description: null }, { description: "" }],
-  ])("reports %s as changed, carrying both sides whole with all three axes false", (_, before, after) => {
-    const result = diffComponents([billing(before)], [billing(after)])
-    expect(result.changed).toEqual([
-      { before: billing(before), after: billing(after), delta: UNCHANGED_AXES },
-    ])
-  })
+  ])(
+    "reports %s as changed, carrying both sides whole with all three axes false",
+    (_, before, after) => {
+      const result = diffComponents([billing(before)], [billing(after)])
+      expect(result.changed).toEqual([
+        { before: billing(before), after: billing(after), delta: UNCHANGED_AXES },
+      ])
+    },
+  )
 
   it("does not report a change when a document respells absence", () => {
     const explicit = billing({ publicApi: [], frameworks: [], description: null })

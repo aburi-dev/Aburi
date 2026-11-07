@@ -254,11 +254,14 @@ describe("projectDiff — Summary lines", () => {
   it.each([
     [1, "· -3 removed (1 duplicate) ·"],
     [2, "· -3 removed (2 duplicates) ·"],
-  ])("says how many of the removals were duplicates, in the document's Summary line alone: %i", (removedDuplicates, written) => {
-    const diff = makeDiff({ summary: { ...summary, removedDuplicates } })
-    expect(projectDiff(diff)).toContain(written)
-    expect(projectDiffSummaryLine(diff)).toBe("+5 -3 ~12 ↔2 ⤴1")
-  })
+  ])(
+    "says how many of the removals were duplicates, in the document's Summary line alone: %i",
+    (removedDuplicates, written) => {
+      const diff = makeDiff({ summary: { ...summary, removedDuplicates } })
+      expect(projectDiff(diff)).toContain(written)
+      expect(projectDiffSummaryLine(diff)).toBe("+5 -3 ~12 ↔2 ⤴1")
+    },
+  )
 
   it.each([0, undefined])("names no duplicates when the count is %s", (removedDuplicates) => {
     const diff = makeDiff({

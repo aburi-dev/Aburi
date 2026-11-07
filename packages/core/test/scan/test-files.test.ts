@@ -58,15 +58,15 @@ describe("scan — the Symbols of test code", () => {
     { testFiles: ["**/test/**", "!tools"], files: ["test/helpers.stub"] },
     { testFiles: ["!tools/**"], files: [] },
     { testFiles: [], files: [] },
-  ])("are those of the files $testFiles names in place of the default list", async ({
-    testFiles,
-    files,
-  }) => {
-    expect(await markedFiles({ testFiles })).toEqual({
-      files,
-      values: files.length === 0 ? [] : [true],
-    })
-  })
+  ])(
+    "are those of the files $testFiles names in place of the default list",
+    async ({ testFiles, files }) => {
+      expect(await markedFiles({ testFiles })).toEqual({
+        files,
+        values: files.length === 0 ? [] : [true],
+      })
+    },
+  )
 
   it("include a dropped one, in a document the IR schema accepts", async () => {
     const language = oneSymbolPerFile({

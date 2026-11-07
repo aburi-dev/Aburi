@@ -41,10 +41,13 @@ describe("Prisma method vocabulary", () => {
         "deleteMany",
       ],
     ],
-  ] as const)("lists exactly the delegate %s methods, and its guard accepts each", (_family, set, guard, members) => {
-    expect([...set]).toEqual(members)
-    for (const method of members) expect(guard(method)).toBe(true)
-  })
+  ] as const)(
+    "lists exactly the delegate %s methods, and its guard accepts each",
+    (_family, set, guard, members) => {
+      expect([...set]).toEqual(members)
+      for (const method of members) expect(guard(method)).toBe(true)
+    },
+  )
 
   it("recognizes $transaction alone as the transaction method", () => {
     expect(PRISMA_TRANSACTION_METHOD).toBe("$transaction")

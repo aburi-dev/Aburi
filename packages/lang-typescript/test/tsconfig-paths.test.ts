@@ -303,11 +303,14 @@ describe("the TypeScript import resolver — a config it cannot use", () => {
       ["libs/a"],
       "declares compilerOptions.baseUrl as a number, not a string, so it is ignored",
     ],
-  ])("warns about %s, which `tsc` refuses, and maps the rest", async (_case, config, expected, problem) => {
-    const logger = recordingLogger()
-    await write({ "tsconfig.json": config })
+  ])(
+    "warns about %s, which `tsc` refuses, and maps the rest",
+    async (_case, config, expected, problem) => {
+      const logger = recordingLogger()
+      await write({ "tsconfig.json": config })
 
-    expect(await resolverAt(workspace.root, logger)("@a")).toEqual(expected)
-    expect(logger.warnings).toEqual([`tsconfig.json ${problem}.`])
-  })
+      expect(await resolverAt(workspace.root, logger)("@a")).toEqual(expected)
+      expect(logger.warnings).toEqual([`tsconfig.json ${problem}.`])
+    },
+  )
 })

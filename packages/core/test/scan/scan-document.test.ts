@@ -236,19 +236,19 @@ describe("languageFileDropPatterns", () => {
 })
 
 describe("writeCanonicalIR", () => {
-  it.each([
-    "pretty",
-    "compact",
-  ] as const)("writes the %s canonical bytes, creating the directory, and returns them", async (format) => {
-    await workspace.writeSource("a.stub", "a")
-    const { ir } = await scanStubs(workspace.root, { languages: [oneSymbolPerFile()] })
-    const out = join(workspace.root, "out", "deep", "aburi.ir.json")
+  it.each(["pretty", "compact"] as const)(
+    "writes the %s canonical bytes, creating the directory, and returns them",
+    async (format) => {
+      await workspace.writeSource("a.stub", "a")
+      const { ir } = await scanStubs(workspace.root, { languages: [oneSymbolPerFile()] })
+      const out = join(workspace.root, "out", "deep", "aburi.ir.json")
 
-    const written = await writeCanonicalIR(ir, out, { format })
+      const written = await writeCanonicalIR(ir, out, { format })
 
-    expect(written).toBe(serializeCanonical(ir, { format }))
-    expect(await readFile(out, "utf8")).toBe(written)
-  })
+      expect(written).toBe(serializeCanonical(ir, { format }))
+      expect(await readFile(out, "utf8")).toBe(written)
+    },
+  )
 
   it("writes pretty bytes when no format is named", async () => {
     const { ir } = await scanStubs(workspace.root)

@@ -55,16 +55,15 @@ describe.skipIf(process.platform === "win32")("the action's step bodies", () => 
       status: 1,
       outputs: { "cli-exit-code": "1" },
     },
-  ])("refspec-step.sh, after a resolver that answers $answer, exits $status", async ({
-    source,
-    status,
-    outputs,
-  }) => {
-    const actionPath = await actionWithResolver(source)
-    const result = await step("refspec-step.sh", { GITHUB_ACTION_PATH: actionPath })
-    expect(result.status).toBe(status)
-    expect(result.outputs).toEqual(outputs)
-  })
+  ])(
+    "refspec-step.sh, after a resolver that answers $answer, exits $status",
+    async ({ source, status, outputs }) => {
+      const actionPath = await actionWithResolver(source)
+      const result = await step("refspec-step.sh", { GITHUB_ACTION_PATH: actionPath })
+      expect(result.status).toBe(status)
+      expect(result.outputs).toEqual(outputs)
+    },
+  )
 
   it("refspec-step.sh keeps a multi-line refspec input out of the step's output", async () => {
     const result = await step("refspec-step.sh", {

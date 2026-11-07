@@ -28,14 +28,12 @@ async function treeOf(path: string, content: string): Promise<string> {
 }
 
 describe("a JavaScript file containing JSX", () => {
-  it.each([
-    "app/layout.js",
-    "app/layout.mjs",
-    "app/layout.cjs",
-    "app/layout.jsx",
-  ])("parses %s", async (path) => {
-    expect(await parseErrorsOf(NEXT_APP_TEMPLATE, path)).toEqual([])
-  })
+  it.each(["app/layout.js", "app/layout.mjs", "app/layout.cjs", "app/layout.jsx"])(
+    "parses %s",
+    async (path) => {
+      expect(await parseErrorsOf(NEXT_APP_TEMPLATE, path)).toEqual([])
+    },
+  )
 
   it("extracts the component the file declares", async () => {
     const symbols = await symbolsOf(NEXT_APP_TEMPLATE, "app/layout.js")

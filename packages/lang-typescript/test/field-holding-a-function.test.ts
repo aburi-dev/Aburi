@@ -86,17 +86,14 @@ describe("a field holding a function is a member Symbol", () => {
     ])
   })
 
-  it.each([
-    "src/a.ts",
-    "src/a.tsx",
-    "src/a.js",
-    "src/a.jsx",
-    "src/a.mts",
-  ])("declares one in %s", async (path) => {
-    const ids = (await symbolsOf(classOf("  f = () => { q() }"), path)).map((s) => s.id)
+  it.each(["src/a.ts", "src/a.tsx", "src/a.js", "src/a.jsx", "src/a.mts"])(
+    "declares one in %s",
+    async (path) => {
+      const ids = (await symbolsOf(classOf("  f = () => { q() }"), path)).map((s) => s.id)
 
-    expect(ids).toEqual([`ts:${path}#C`, `ts:${path}#C.f`])
-  })
+      expect(ids).toEqual([`ts:${path}#C`, `ts:${path}#C.f`])
+    },
+  )
 
   it("reports the field's own source range, not the function's", async () => {
     const source = [

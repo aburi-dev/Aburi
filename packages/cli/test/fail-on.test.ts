@@ -372,24 +372,30 @@ describe("aburi diff --fail-on", () => {
     [["--fail-on", "changed,removed"], EXIT.GATE, [CHANGED_TRIPPED]],
     [["--fail-on", "removed", "--fail-on", "added"], EXIT.SUCCESS, []],
     [[], EXIT.SUCCESS, []],
-  ])("gates on every clause it is given: %j over one changed Symbol exits %i and prints %j", async (gate, code, tripped) => {
-    const run = await diffTo(documentWith({ symbols: [ALPHA_EDITED, BETA] }), gate)
-    expect({ code: run.code, tripped: run.tripped }).toEqual({ code, tripped })
-  })
+  ])(
+    "gates on every clause it is given: %j over one changed Symbol exits %i and prints %j",
+    async (gate, code, tripped) => {
+      const run = await diffTo(documentWith({ symbols: [ALPHA_EDITED, BETA] }), gate)
+      expect({ code: run.code, tripped: run.tripped }).toEqual({ code, tripped })
+    },
+  )
 
   it.each([
     ["changed", "removed"],
     ["removed", "changed"],
-  ])("reads --fail-on %s --fail-on %s in that order, naming the first that trips", async (first, second) => {
-    const run = await diffTo(documentWith({ symbols: [ALPHA_EDITED] }), [
-      "--fail-on",
-      first,
-      "--fail-on",
-      second,
-    ])
-    expect(run.code).toBe(EXIT.GATE)
-    expect(run.tripped).toEqual([`--fail-on ${first} tripped (observed: 1 ${first})`])
-  })
+  ])(
+    "reads --fail-on %s --fail-on %s in that order, naming the first that trips",
+    async (first, second) => {
+      const run = await diffTo(documentWith({ symbols: [ALPHA_EDITED] }), [
+        "--fail-on",
+        first,
+        "--fail-on",
+        second,
+      ])
+      expect(run.code).toBe(EXIT.GATE)
+      expect(run.tripped).toEqual([`--fail-on ${first} tripped (observed: 1 ${first})`])
+    },
+  )
 
   it("names the Symbols that tripped it under the line, on stderr", async () => {
     const run = await diffTo(documentWith({ symbols: [ALPHA] }), ["--fail-on", "removed"])
@@ -436,14 +442,17 @@ describe("aburi diff --fail-on", () => {
         ["--fail-on changed tripped (observed: 1 changed outside test files)"],
         ["  ts:src/a.ts#alpha"],
       ],
-    ])("%s, --fail-on %s over %s, exits %i, prints %j and names %j", async (scope, spec, _over, head, code, tripped, named) => {
-      const run = await diffTo(head, ["--fail-on", spec, "--fail-on-scope", scope], WITH_FIXTURE)
-      expect({ code: run.code, tripped: run.tripped, named: run.named }).toEqual({
-        code,
-        tripped,
-        named,
-      })
-    })
+    ])(
+      "%s, --fail-on %s over %s, exits %i, prints %j and names %j",
+      async (scope, spec, _over, head, code, tripped, named) => {
+        const run = await diffTo(head, ["--fail-on", spec, "--fail-on-scope", scope], WITH_FIXTURE)
+        expect({ code: run.code, tripped: run.tripped, named: run.named }).toEqual({
+          code,
+          tripped,
+          named,
+        })
+      },
+    )
 
     it("refuses a scope it does not know at exit 2", async () => {
       const { code, stderr } = await runCliIn(workspace.root, [
@@ -486,18 +495,21 @@ describe("aburi diff --fail-on", () => {
     ],
     ["test", ["removed"], EXIT.SUCCESS, [], [uncounted("ts:src/b.test.ts#makeEmptyIR")]],
     ["test", ["removed", "--fail-on-scope", "non-test"], EXIT.SUCCESS, [], []],
-  ])("reads a removed duplicate of a head Symbol in %s code under --fail-on %j: exit %i", async (where, gate, code, tripped, noted) => {
-    const run = await diffTo(
-      documentWith({ symbols: [KEPT] }),
-      ["--fail-on", ...gate],
-      documentWith({ symbols: [KEPT, DUPLICATES[where]] }),
-    )
-    expect({
-      code: run.code,
-      tripped: [...run.tripped, ...run.named],
-      noted: run.noted,
-    }).toEqual({ code, tripped, noted })
-  })
+  ])(
+    "reads a removed duplicate of a head Symbol in %s code under --fail-on %j: exit %i",
+    async (where, gate, code, tripped, noted) => {
+      const run = await diffTo(
+        documentWith({ symbols: [KEPT] }),
+        ["--fail-on", ...gate],
+        documentWith({ symbols: [KEPT, DUPLICATES[where]] }),
+      )
+      expect({
+        code: run.code,
+        tripped: [...run.tripped, ...run.named],
+        noted: run.noted,
+      }).toEqual({ code, tripped, noted })
+    },
+  )
 
   const EMPTY_VALUE =
     '--fail-on value "" is invalid: expected at least one clause; an empty --fail-on value would silently disable the CI gate.'
@@ -510,18 +522,21 @@ describe("aburi diff --fail-on", () => {
       ["removed,", "changed"],
       '--fail-on value "removed," is invalid: clause 2 of 2 is empty; remove the extra comma or write the clause.',
     ],
-  ])("refuses the values %j at exit 2, quoting the one at fault, before it reads either IR or removes an earlier report", async (values, says) => {
-    const earlier = await writeEarlierReports(workspace.root, ["out"])
-    const { code, stderr } = await runCliIn(workspace.root, [
-      "diff",
-      "--base",
-      "./missing.json",
-      "--head",
-      "./also.json",
-      ...values.flatMap((value) => ["--fail-on", value]),
-    ])
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toBe(`${says}\n`)
-    expect(await filesUnder(workspace.root)).toEqual(earlier)
-  })
+  ])(
+    "refuses the values %j at exit 2, quoting the one at fault, before it reads either IR or removes an earlier report",
+    async (values, says) => {
+      const earlier = await writeEarlierReports(workspace.root, ["out"])
+      const { code, stderr } = await runCliIn(workspace.root, [
+        "diff",
+        "--base",
+        "./missing.json",
+        "--head",
+        "./also.json",
+        ...values.flatMap((value) => ["--fail-on", value]),
+      ])
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toBe(`${says}\n`)
+      expect(await filesUnder(workspace.root)).toEqual(earlier)
+    },
+  )
 })

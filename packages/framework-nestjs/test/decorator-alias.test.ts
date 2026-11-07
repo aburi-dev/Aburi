@@ -43,9 +43,12 @@ describe("classifyNestjsSymbol — a decorator renamed on import", () => {
         derivedBy: "framework:nestjs:route:MessagePattern",
       },
     ],
-  ] as const)("classifies %s by the imported name, and flags the written one", (_label, kind, written, edge, expected) => {
-    expect(classifyDecorated(kind, [written], [edge])).toEqual(expected)
-  })
+  ] as const)(
+    "classifies %s by the imported name, and flags the written one",
+    (_label, kind, written, edge, expected) => {
+      expect(classifyDecorated(kind, [written], [edge])).toEqual(expected)
+    },
+  )
 
   it.each([
     [
@@ -60,19 +63,25 @@ describe("classifyNestjsSymbol — a decorator renamed on import", () => {
       "Get",
       makeImport(NEST, ["Controller as Get"]),
     ],
-  ] as const)("returns null for %s — the written name alone decides nothing", (_label, kind, written, edge) => {
-    expect(classifyDecorated(kind, [written], [edge])).toBeNull()
-  })
+  ] as const)(
+    "returns null for %s — the written name alone decides nothing",
+    (_label, kind, written, edge) => {
+      expect(classifyDecorated(kind, [written], [edge])).toBeNull()
+    },
+  )
 
   it.each([
     ["a local module, at medium", "./decorators", "medium"],
     ["NestJS, at high", NEST, "high"],
-  ])("reads a default-imported decorator from %s by the name the file gave it", (_label, source, confidence) => {
-    const result = classifyDecorated("method", ["Get"], [makeImport(source, ["default as Get"])])
+  ])(
+    "reads a default-imported decorator from %s by the name the file gave it",
+    (_label, source, confidence) => {
+      const result = classifyDecorated("method", ["Get"], [makeImport(source, ["default as Get"])])
 
-    expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
-    expect(result?.confidence ?? "high").toBe(confidence)
-  })
+      expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
+      expect(result?.confidence ?? "high").toBe(confidence)
+    },
+  )
 
   it("resolves each file against its own import edges", () => {
     const aliased = classifyDecorated("class", ["Ctrl"], [makeImport(NEST, ["Controller as Ctrl"])])

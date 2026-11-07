@@ -90,13 +90,16 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       ["Injectable", "Controller"],
       ["framework:nestjs:provider", "medium"],
     ],
-  ])("takes a class's confidence from the decorator that won the role (%s)", (_label, decorators, expected) => {
-    const imports = [makeImport(NEST, ["Controller"], 1), makeImport("./di", ["Injectable"], 2)]
-    const result = classifyDecorated("class", decorators, imports)
+  ])(
+    "takes a class's confidence from the decorator that won the role (%s)",
+    (_label, decorators, expected) => {
+      const imports = [makeImport(NEST, ["Controller"], 1), makeImport("./di", ["Injectable"], 2)]
+      const result = classifyDecorated("class", decorators, imports)
 
-    expect(rated(result)).toEqual(expected)
-    expect(result?.decoratorBoundaries).toEqual({ Injectable: true, Controller: true })
-  })
+      expect(rated(result)).toEqual(expected)
+      expect(result?.decoratorBoundaries).toEqual({ Injectable: true, Controller: true })
+    },
+  )
 
   it.each([
     [
@@ -111,11 +114,14 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       [makeImport(NEST, ["Get"], 1), makeImport("./local", ["UseGuards"], 2)],
       "high",
     ],
-  ])("takes a method's confidence from its route decorator, not its handler (%s)", (_label, decorators, imports, confidence) => {
-    const result = classifyDecorated("method", decorators, imports)
+  ])(
+    "takes a method's confidence from its route decorator, not its handler (%s)",
+    (_label, decorators, imports, confidence) => {
+      const result = classifyDecorated("method", decorators, imports)
 
-    expect(rated(result)).toEqual(["framework:nestjs:route", confidence])
-    expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
-    expect(result?.decoratorBoundaries).toEqual({ Get: true, UseGuards: true })
-  })
+      expect(rated(result)).toEqual(["framework:nestjs:route", confidence])
+      expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
+      expect(result?.decoratorBoundaries).toEqual({ Get: true, UseGuards: true })
+    },
+  )
 })

@@ -179,7 +179,9 @@ need a hand before they merge:
 
 - Biome changes its formatter output even in patch releases. Run `pnpm format`
   on the branch, and `pnpm exec biome migrate --write` to move the schema URL in
-  `biome.json`.
+  `biome.json`. Its Markdown formatter stays off and `pnpm-workspace.yaml` stays
+  out of its files: changesets writes every CHANGELOG, and pnpm and Dependabot
+  write the catalog, each in a style the next check would flag.
 - The workflow examples in the READMEs and under `docs/` use the same action
   versions as `.github/workflows/`; move them in the same pull request. A bump
   that reaches [`packages/github-action/action.yml`](packages/github-action/action.yml)

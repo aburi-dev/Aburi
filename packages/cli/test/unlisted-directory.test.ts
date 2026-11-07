@@ -51,15 +51,18 @@ describe("a directory the scan cannot list", () => {
     ["the nx search", {}, "nx", true],
     ["a declared package pattern", {}, "pnpm", true],
     ["discovery", DECLARED, null, false],
-  ])("ends aburi scan at exit 1 when %s meets it, naming it", async (_, config, search, resolving) => {
-    const locked = await writeLockedWorkspace(config, search)
+  ])(
+    "ends aburi scan at exit 1 when %s meets it, naming it",
+    async (_, config, search, resolving) => {
+      const locked = await writeLockedWorkspace(config, search)
 
-    const { code, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
+      const { code, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
 
-    expect(code).toBe(EXIT.RUNTIME)
-    expect(stderr).toContain(`Directory "${locked}" could not be listed: EACCES`)
-    expect(stderr.includes(`Failed to resolve components: Directory "${locked}"`)).toBe(resolving)
-  })
+      expect(code).toBe(EXIT.RUNTIME)
+      expect(stderr).toContain(`Directory "${locked}" could not be listed: EACCES`)
+      expect(stderr.includes(`Failed to resolve components: Directory "${locked}"`)).toBe(resolving)
+    },
+  )
 
   it.each<[string, ManifestSearch | null]>([
     ["the component census", null],

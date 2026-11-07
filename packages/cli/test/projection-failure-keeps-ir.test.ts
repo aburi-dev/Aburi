@@ -59,15 +59,18 @@ describe("a Markdown projection that throws", () => {
   it.each([
     ["workspace", "the workspace Markdown"],
     ["component", 'the Markdown for component "projection-failure-fixture"'],
-  ] as const)("reports the %s page's failure as a bug in Aburi, naming the page", async (page, named) => {
-    failing.page = page
+  ] as const)(
+    "reports the %s page's failure as a bug in Aburi, naming the page",
+    async (page, named) => {
+      failing.page = page
 
-    const error = await errorFrom(CliError, () => runScan({ cwd: workspace.root }))
+      const error = await errorFrom(CliError, () => runScan({ cwd: workspace.root }))
 
-    expect(error.code).toBe("runtime-error")
-    expect(error.message).toContain(`Internal error while rendering ${named}: ${FAILURE}`)
-    expect(error.message).toContain("This is a bug in Aburi")
-  })
+      expect(error.code).toBe("runtime-error")
+      expect(error.message).toContain(`Internal error while rendering ${named}: ${FAILURE}`)
+      expect(error.message).toContain("This is a bug in Aburi")
+    },
+  )
 
   it("reports the scan's incidents before it ends the command", async () => {
     failing.page = "component"

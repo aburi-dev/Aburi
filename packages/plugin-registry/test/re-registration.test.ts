@@ -54,12 +54,15 @@ describe("registering one plugin name twice", () => {
     ["a Map", new Map(), "non-plain object (Map)"],
     ["undefined", undefined, "non-JSON value (undefined)"],
     ["a function", () => 0, "non-JSON value (function)"],
-  ])("refuses a manifest holding %s, whose contents could not be compared", async (_, held, what) => {
-    const m = { ...langManifest(), capabilities: { wasmHeapPerWorkerMB: held } }
-    const err = await errorFrom(RegistryError, () =>
-      new VocabRegistry().register(m as unknown as PluginManifest),
-    )
-    expect(err.code).toBe("manifest-invalid")
-    expect(err.message).toContain(`${what} at $.capabilities.wasmHeapPerWorkerMB`)
-  })
+  ])(
+    "refuses a manifest holding %s, whose contents could not be compared",
+    async (_, held, what) => {
+      const m = { ...langManifest(), capabilities: { wasmHeapPerWorkerMB: held } }
+      const err = await errorFrom(RegistryError, () =>
+        new VocabRegistry().register(m as unknown as PluginManifest),
+      )
+      expect(err.code).toBe("manifest-invalid")
+      expect(err.message).toContain(`${what} at $.capabilities.wasmHeapPerWorkerMB`)
+    },
+  )
 })

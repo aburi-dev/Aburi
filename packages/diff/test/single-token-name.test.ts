@@ -33,18 +33,12 @@ describe("a name that says one thing is not evidence of identity", () => {
     expect(movedAndEdited(name, build)).toEqual([])
   })
 
-  it.each([
-    "値",
-    "取得",
-    "する",
-    "初期化",
-    "メイン",
-    "초기화",
-    "ユーザー",
-    "ハンドラー",
-  ])("refuses a single word written without word boundaries: `%s`", (name) => {
-    expect(movedAndEdited(name)).toEqual([])
-  })
+  it.each(["値", "取得", "する", "初期化", "メイン", "초기화", "ユーザー", "ハンドラー"])(
+    "refuses a single word written without word boundaries: `%s`",
+    (name) => {
+      expect(movedAndEdited(name)).toEqual([])
+    },
+  )
 
   it("refuses such a word on the base side too", () => {
     expect(

@@ -68,18 +68,12 @@ describe("nameEvidence", () => {
     expect(nameEvidence("ユーザー情報を取得する")).toBe(4 / 3 + 1)
   })
 
-  it.each([
-    "値",
-    "取得",
-    "する",
-    "初期化",
-    "メイン",
-    "초기화",
-    "ユーザー",
-    "ハンドラー",
-  ])("counts a single word of a script that writes no word boundary as one word at most: %s", (word) => {
-    expect(nameEvidence(word)).toBeLessThanOrEqual(1)
-  })
+  it.each(["値", "取得", "する", "初期化", "メイン", "초기화", "ユーザー", "ハンドラー"])(
+    "counts a single word of a script that writes no word boundary as one word at most: %s",
+    (word) => {
+      expect(nameEvidence(word)).toBeLessThanOrEqual(1)
+    },
+  )
 
   it("keeps a prolonged sound mark with the kana it lengthens", () => {
     expect(nameEvidence("ユーザー")).toBe(3 / 6)

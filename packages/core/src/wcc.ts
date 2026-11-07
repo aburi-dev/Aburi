@@ -55,9 +55,7 @@ export function computeWeaklyConnectedComponents<TNode>(
     const bIdx = indexByKey.get(keyOf(bNode))
     if (aIdx === undefined || bIdx === undefined) continue
     if (aIdx === bIdx) continue
-    const lo = aIdx < bIdx ? aIdx : bIdx
-    const hi = aIdx < bIdx ? bIdx : aIdx
-    canonEdges.push({ lo, hi })
+    canonEdges.push({ lo: Math.min(aIdx, bIdx), hi: Math.max(aIdx, bIdx) })
   }
   canonEdges.sort((x, y) => (x.lo !== y.lo ? x.lo - y.lo : x.hi - y.hi))
   for (const edge of canonEdges) union(edge.lo, edge.hi)

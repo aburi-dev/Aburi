@@ -107,9 +107,12 @@ describe("a class a binding holds is the class it declares", () => {
       "public",
       ["variable-assigned-class", "export-clause:R"],
     ],
-  ])("reads a binding %s as the declared class reads", async (_label, source, visibility, derivedBy) => {
-    expect(await symbolOf(source, "ts:src/a.ts#R")).toMatchObject({ visibility, derivedBy })
-  })
+  ])(
+    "reads a binding %s as the declared class reads",
+    async (_label, source, visibility, derivedBy) => {
+      expect(await symbolOf(source, "ts:src/a.ts#R")).toMatchObject({ visibility, derivedBy })
+    },
+  )
 
   it("spans the statement, from the binding's line", async () => {
     const symbol = await symbolOf("export const R =\n  class {\n    m() {}\n  }", "ts:src/a.ts#R")

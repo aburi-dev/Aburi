@@ -46,23 +46,26 @@ describe("projectWorkspace — component dependency graph", () => {
   it.each<[string, Dependency[]]>([
     ["no edge at all", []],
     ["only a Symbol edge", [symbolEdge]],
-  ])("draws a lone component as a node, then a list saying there is no component edge, given %s", (_, dependencies) => {
-    expect(
-      sectionOf(projectWorkspace(makeIR({ components: [billing], dependencies })), HEADING),
-    ).toEqual([
-      HEADING,
-      "",
-      "```mermaid",
-      "graph LR",
-      '  c_billing["Billing"]',
-      "```",
-      "",
-      "Fallback list:",
-      "",
-      "_No Component edges recorded._",
-      "",
-    ])
-  })
+  ])(
+    "draws a lone component as a node, then a list saying there is no component edge, given %s",
+    (_, dependencies) => {
+      expect(
+        sectionOf(projectWorkspace(makeIR({ components: [billing], dependencies })), HEADING),
+      ).toEqual([
+        HEADING,
+        "",
+        "```mermaid",
+        "graph LR",
+        '  c_billing["Billing"]',
+        "```",
+        "",
+        "Fallback list:",
+        "",
+        "_No Component edges recorded._",
+        "",
+      ])
+    },
+  )
 
   it("draws one arrow for two edges between the same pair, and lists both", () => {
     const md = projectWorkspace(
@@ -123,18 +126,17 @@ describe("projectWorkspace — component dependency graph", () => {
     expect(md).toContain('  c_foo["A &quot;b&quot; &amp; &lt;c&gt; [d&rbrack;"]\n')
   })
 
-  it.each([
-    "\n",
-    "\r\n",
-    "\r",
-  ])("keeps a label holding the line ending %j on its own line", (ending) => {
-    const md = projectWorkspace(
-      makeIR({
-        components: [component({ id: "foo", name: `A${ending}\`\`\`${ending}# Injected` })],
-      }),
-    )
-    expect(md).toContain('  c_foo["A<br/>```<br/># Injected"]\n')
-  })
+  it.each(["\n", "\r\n", "\r"])(
+    "keeps a label holding the line ending %j on its own line",
+    (ending) => {
+      const md = projectWorkspace(
+        makeIR({
+          components: [component({ id: "foo", name: `A${ending}\`\`\`${ending}# Injected` })],
+        }),
+      )
+      expect(md).toContain('  c_foo["A<br/>```<br/># Injected"]\n')
+    },
+  )
 })
 
 describe("projectWorkspace — component ids that are mermaid keywords", () => {

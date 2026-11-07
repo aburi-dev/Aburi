@@ -34,24 +34,27 @@ describe("scan — a write reached through a namespace call the writer calls bac
   it.each<[string, string[], number]>([
     ["without", [], 1],
     ["with", ["    if (n > 0) Service.run(n - 1)"], 2],
-  ])("keeps the caller's write at the call's medium, %s the call back", async (_case, callBack, maxSccSize) => {
-    await workspace.writeSource("a.ts", SERVICE)
-    await workspace.writeSource("b.ts", store(callBack))
+  ])(
+    "keeps the caller's write at the call's medium, %s the call back",
+    async (_case, callBack, maxSccSize) => {
+      await workspace.writeSource("a.ts", SERVICE)
+      await workspace.writeSource("b.ts", store(callBack))
 
-    const result = await scanWith(workspace.root, {
-      languages: [langTypescriptPlugin],
-      effects: [prismaEffectsPlugin],
-    })
+      const result = await scanWith(workspace.root, {
+        languages: [langTypescriptPlugin],
+        effects: [prismaEffectsPlugin],
+      })
 
-    expect(result.ir.stats.effectPropagation.maxSccSize).toBe(maxSccSize)
-    expect(symbolById(result, "ts:a.ts#Service.run").effects).toMatchObject([
-      {
-        id: "db.write",
-        target: "prisma.invoice.create",
-        confidence: "medium",
-        propagated: true,
-        derivedFrom: ["ts:b.ts#Store.save"],
-      },
-    ])
-  })
+      expect(result.ir.stats.effectPropagation.maxSccSize).toBe(maxSccSize)
+      expect(symbolById(result, "ts:a.ts#Service.run").effects).toMatchObject([
+        {
+          id: "db.write",
+          target: "prisma.invoice.create",
+          confidence: "medium",
+          propagated: true,
+          derivedFrom: ["ts:b.ts#Store.save"],
+        },
+      ])
+    },
+  )
 })

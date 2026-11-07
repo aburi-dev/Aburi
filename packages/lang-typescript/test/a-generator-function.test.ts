@@ -52,16 +52,19 @@ describe("a generator function is a function wherever one is read", () => {
       "method",
       false,
     ],
-  ])("gives %s a Symbol of its own whose body is the generator's", async (_site, source, id, kind, async) => {
-    const symbol = await symbolOf(source, id)
+  ])(
+    "gives %s a Symbol of its own whose body is the generator's",
+    async (_site, source, id, kind, async) => {
+      const symbol = await symbolOf(source, id)
 
-    expect([symbol.kind, symbol.signature?.async, symbol.signature?.generator]).toEqual([
-      kind,
-      async,
-      true,
-    ])
-    expect(await callsOf(source, id)).toEqual(["fetchPage"])
-  })
+      expect([symbol.kind, symbol.signature?.async, symbol.signature?.generator]).toEqual([
+        kind,
+        async,
+        true,
+      ])
+      expect(await callsOf(source, id)).toEqual(["fetchPage"])
+    },
+  )
 
   it("takes the generator off the class it is a field of", async () => {
     const source = classOf("  pages = function* () { yield fetchPage() }")

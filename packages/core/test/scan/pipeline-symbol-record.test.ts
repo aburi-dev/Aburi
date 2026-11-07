@@ -74,10 +74,13 @@ describe("runFilePipeline — list fields leave in line order", () => {
       (symbol) => symbol.rules.map((r) => r.line),
       [3, 9],
     ],
-  ])("orders %s by line, whatever order the plugin produced it in", async (_field, file, read, expected) => {
-    const { symbols } = await extractOneSymbol(file)
-    expect(read(symbols[0] as IRSymbol)).toEqual(expected)
-  })
+  ])(
+    "orders %s by line, whatever order the plugin produced it in",
+    async (_field, file, read, expected) => {
+      const { symbols } = await extractOneSymbol(file)
+      expect(read(symbols[0] as IRSymbol)).toEqual(expected)
+    },
+  )
 
   it("orders calls on one line by target, not by where the source wrote them", async () => {
     const { symbols } = await extractOneSymbol({

@@ -48,20 +48,19 @@ describe("a Document diffed against itself", () => {
 })
 
 describe("a pair whose fingerprint moved", () => {
-  it.each<keyof Fingerprint>([
-    "api",
-    "logic",
-    "syntax",
-  ])("is changed, with only the %s axis set on the delta", (axis) => {
-    const base = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp("v1") })
-    const head = makeSymbol({ ...base, fingerprint: { ...fp("v1"), [axis]: "moved0000000" } })
-    expect(soleChange(diffSymbols([base], [head]).symbols, "changed").delta).toMatchObject({
-      apiChanged: false,
-      logicChanged: false,
-      syntaxChanged: false,
-      [`${axis}Changed`]: true,
-    })
-  })
+  it.each<keyof Fingerprint>(["api", "logic", "syntax"])(
+    "is changed, with only the %s axis set on the delta",
+    (axis) => {
+      const base = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp("v1") })
+      const head = makeSymbol({ ...base, fingerprint: { ...fp("v1"), [axis]: "moved0000000" } })
+      expect(soleChange(diffSymbols([base], [head]).symbols, "changed").delta).toMatchObject({
+        apiChanged: false,
+        logicChanged: false,
+        syntaxChanged: false,
+        [`${axis}Changed`]: true,
+      })
+    },
+  )
 })
 
 describe("a pair matched under a different id", () => {
@@ -102,11 +101,14 @@ describe("a pair matched under a different id", () => {
       null,
       "dropped-weak-match",
     ],
-  ])("is moved when %s, with the stage that paired it as rationale", (_, base, head, gitRenames, rationale) => {
-    const diff = diffSymbols([base], [head], { gitRenames })
-    expect(soleChange(diff.symbols, "moved").rationale).toBe(rationale)
-    expect(diff.summary.moved).toBe(1)
-  })
+  ])(
+    "is moved when %s, with the stage that paired it as rationale",
+    (_, base, head, gitRenames, rationale) => {
+      const diff = diffSymbols([base], [head], { gitRenames })
+      expect(soleChange(diff.symbols, "moved").rationale).toBe(rationale)
+      expect(diff.summary.moved).toBe(1)
+    },
+  )
 
   it("is moved+changed, with rationale and delta, when its content changed too", () => {
     const head = makeSymbol({

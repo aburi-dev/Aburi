@@ -461,19 +461,22 @@ describe("scan — a language's import resolver that fails", () => {
       () => undefined as unknown as ImportResolver,
       /^Plugin lang-stub: createImportResolver returned no resolver: expected an object with a resolve method, got undefined\./,
     ],
-  ])("warns once when creating the resolver %s, and records no origin", async (_case, createResolver, warning) => {
-    const logger = recordingLogger()
-    const seen = await importsSeen(
-      {
-        [CONSUMER]: importsDecorate("@app/common"),
-        "src/second.stub": importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
-      },
-      moduleLanguage({ createResolver }),
-      logger,
-    )
+  ])(
+    "warns once when creating the resolver %s, and records no origin",
+    async (_case, createResolver, warning) => {
+      const logger = recordingLogger()
+      const seen = await importsSeen(
+        {
+          [CONSUMER]: importsDecorate("@app/common"),
+          "src/second.stub": importsDecorate("@app/common"),
+          [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        },
+        moduleLanguage({ createResolver }),
+        logger,
+      )
 
-    expect(originsOf(seen.get(CONSUMER))).toEqual([["@app/common", null]])
-    expect(logger.warnings).toEqual([expect.stringMatching(warning)])
-  })
+      expect(originsOf(seen.get(CONSUMER))).toEqual([["@app/common", null]])
+      expect(logger.warnings).toEqual([expect.stringMatching(warning)])
+    },
+  )
 })

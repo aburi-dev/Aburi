@@ -76,32 +76,32 @@ describe("a manifest whose shape register cannot read", () => {
       { id: "framework:demo:thing", baseKind: "class", description: 1 },
       "number",
     ],
-  ] as const)("refuses a provides.%s entry whose own %s is not a string", async (key, field, entry, got) => {
-    const m = frameworkManifest({ name: "framework-demo" })
-    const err = await refusal({ ...m, provides: { ...m.provides, [key]: [entry] } })
-    expect(err.message).toBe(
-      `Plugin "framework-demo" provides.${key}[0].${field} must be a string (got ${got}).`,
-    )
-  })
+  ] as const)(
+    "refuses a provides.%s entry whose own %s is not a string",
+    async (key, field, entry, got) => {
+      const m = frameworkManifest({ name: "framework-demo" })
+      const err = await refusal({ ...m, provides: { ...m.provides, [key]: [entry] } })
+      expect(err.message).toBe(
+        `Plugin "framework-demo" provides.${key}[0].${field} must be a string (got ${got}).`,
+      )
+    },
+  )
 
-  it.each([
-    "effectPrefixes",
-    "extKindPrefixes",
-    "frameworks",
-    "derivedByPrefixes",
-  ] as const)("refuses a provides.%s entry that is not a string", async (key) => {
-    const m = langManifest({ name: "lang-demo" })
-    const err = await refusal({ ...m, provides: { ...m.provides, [key]: [null] } })
-    expect(err.message).toBe(`Plugin "lang-demo" provides.${key}[0] must be a string (got null).`)
-  })
+  it.each(["effectPrefixes", "extKindPrefixes", "frameworks", "derivedByPrefixes"] as const)(
+    "refuses a provides.%s entry that is not a string",
+    async (key) => {
+      const m = langManifest({ name: "lang-demo" })
+      const err = await refusal({ ...m, provides: { ...m.provides, [key]: [null] } })
+      expect(err.message).toBe(`Plugin "lang-demo" provides.${key}[0] must be a string (got null).`)
+    },
+  )
 
-  it.each([
-    "toString",
-    "constructor",
-    "__proto__",
-  ])("refuses type %s rather than reading Object.prototype", async (type) => {
-    const err = await refusal({ ...langManifest({ name: "lang-demo" }), type })
-    expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["lang-demo"] })
-    expect(err.message).toBe(`Plugin "lang-demo" has unknown type "${type}"`)
-  })
+  it.each(["toString", "constructor", "__proto__"])(
+    "refuses type %s rather than reading Object.prototype",
+    async (type) => {
+      const err = await refusal({ ...langManifest({ name: "lang-demo" }), type })
+      expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["lang-demo"] })
+      expect(err.message).toBe(`Plugin "lang-demo" has unknown type "${type}"`)
+    },
+  )
 })

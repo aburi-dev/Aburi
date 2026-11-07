@@ -201,17 +201,20 @@ describe("resolveCallGraph", () => {
       ["the caller's component", "billing"],
       ["another component", "reporting"],
     ])("over same-named members in %s", (_elsewhere, component) => {
-      it.each(
-        BINDINGS,
-      )("leaves a call through $scope unresolved, bucketed `no-match`, when it lacks the member", (c) => {
-        const result = resolveFromBilling({
-          ...c,
-          callees: [c.declaration, ...namesakes(c.target, component)],
-        })
-        expect(result.edges).toEqual([])
-        expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
-        expect(result.diagnostics.map((d) => [d.bucket, d.candidates])).toEqual([["no-match", []]])
-      })
+      it.each(BINDINGS)(
+        "leaves a call through $scope unresolved, bucketed `no-match`, when it lacks the member",
+        (c) => {
+          const result = resolveFromBilling({
+            ...c,
+            callees: [c.declaration, ...namesakes(c.target, component)],
+          })
+          expect(result.edges).toEqual([])
+          expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
+          expect(result.diagnostics.map((d) => [d.bucket, d.candidates])).toEqual([
+            ["no-match", []],
+          ])
+        },
+      )
     })
 
     it.each(BINDINGS)("reaches the member through $scope when it declares it", (c) => {
@@ -477,22 +480,25 @@ describe("resolveCallGraph", () => {
         ],
       ]),
     ],
-  ])("keeps a call that arrived resolved, despite %s, and emits no edge for it", (_despite, target, receiverHints) => {
-    const caller = makeSymbol("ts:src/a.ts#Svc.run", {
-      calls: [{ target, line: 4, resolved: "ts:src/x.ts#elsewhere" }],
-    })
-    const result = resolveCallGraph({
-      symbols: [
-        caller,
-        makeSymbol("ts:src/a.ts#helper"),
-        makeSymbol("ts:src/a.ts#Svc.other", { kind: "method" }),
-      ],
-      importsByFile: NO_IMPORTS,
-      receiverHints,
-    })
-    expect(result.symbols[0]?.calls[0]?.resolved).toBe("ts:src/x.ts#elsewhere")
-    expect(result.edges).toEqual([])
-    expect(result.diagnostics).toEqual([])
-    expect(result.stats.resolvedCalls).toBe(1)
-  })
+  ])(
+    "keeps a call that arrived resolved, despite %s, and emits no edge for it",
+    (_despite, target, receiverHints) => {
+      const caller = makeSymbol("ts:src/a.ts#Svc.run", {
+        calls: [{ target, line: 4, resolved: "ts:src/x.ts#elsewhere" }],
+      })
+      const result = resolveCallGraph({
+        symbols: [
+          caller,
+          makeSymbol("ts:src/a.ts#helper"),
+          makeSymbol("ts:src/a.ts#Svc.other", { kind: "method" }),
+        ],
+        importsByFile: NO_IMPORTS,
+        receiverHints,
+      })
+      expect(result.symbols[0]?.calls[0]?.resolved).toBe("ts:src/x.ts#elsewhere")
+      expect(result.edges).toEqual([])
+      expect(result.diagnostics).toEqual([])
+      expect(result.stats.resolvedCalls).toBe(1)
+    },
+  )
 })

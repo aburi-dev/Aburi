@@ -68,16 +68,19 @@ describe("aburi scan — a plugin name where a framework id belongs", () => {
       "framework-next",
       'Write "nextjs".',
     ],
-  ])("warns about %s, naming the framework id, and keeps the value", async (_, config, value, fix) => {
-    const { code, output } = await scanWith(config)
+  ])(
+    "warns about %s, naming the framework id, and keeps the value",
+    async (_, config, value, fix) => {
+      const { code, output } = await scanWith(config)
 
-    expect(code, output).toBe(EXIT.SUCCESS)
-    expect(output).toContain(
-      `Component "app" lists "${value}" in frameworks, which names a plugin, not a framework`,
-    )
-    expect(output).toContain(fix)
-    expect(await componentFrameworks()).toEqual([value])
-  })
+      expect(code, output).toBe(EXIT.SUCCESS)
+      expect(output).toContain(
+        `Component "app" lists "${value}" in frameworks, which names a plugin, not a framework`,
+      )
+      expect(output).toContain(fix)
+      expect(await componentFrameworks()).toEqual([value])
+    },
+  )
 
   it("says nothing about framework ids, hyphenated or provided by no plugin", async () => {
     const { code, output } = await scanWith({

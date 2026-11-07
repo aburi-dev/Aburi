@@ -27,13 +27,12 @@ describe("buildDropCFilter", () => {
     expect(drops({}, target)).toBe(true)
   })
 
-  it.each([
-    "prisma.user.create",
-    "this.service.method",
-    "consoleWrap.method",
-  ])("keeps %s with nothing configured", (target) => {
-    expect(drops({}, target)).toBe(false)
-  })
+  it.each(["prisma.user.create", "this.service.method", "consoleWrap.method"])(
+    "keeps %s with nothing configured",
+    (target) => {
+      expect(drops({}, target)).toBe(false)
+    },
+  )
 
   it.each<[string, DropCFilterInput, string, boolean]>([
     [

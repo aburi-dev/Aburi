@@ -42,7 +42,7 @@
     "tinyglobby": "^0.2.17",
     "vscode-jsonrpc": "^10.0.0",
     "vscode-languageserver-protocol": "^3.18.5",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@aburi/schema": "workspace:*",

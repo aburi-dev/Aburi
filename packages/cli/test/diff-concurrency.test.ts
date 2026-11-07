@@ -175,16 +175,19 @@ describe("aburi diff — its two scans at once", () => {
       'emitted extKind "stub:odd:thing" at odd-base.stub',
       false,
     ],
-  ])("says, writes and exits what it does with one scan at a time when %s", async (_, files, code, says, wrote) => {
-    await writeStubRepository(workspace.root, files, { pluginOptions: { "effects-prsima": {} } })
+  ])(
+    "says, writes and exits what it does with one scan at a time when %s",
+    async (_, files, code, says, wrote) => {
+      await writeStubRepository(workspace.root, files, { pluginOptions: { "effects-prsima": {} } })
 
-    const inTurn = await diffWith("--no-parallel-scans")
+      const inTurn = await diffWith("--no-parallel-scans")
 
-    expect(inTurn.code).toBe(code)
-    expect(inTurn.said.join("")).toContain(says)
-    expect(inTurn.report.every((written) => written !== null)).toBe(wrote)
-    expect(await diffWith("--parallel-scans")).toEqual(inTurn)
-  })
+      expect(inTurn.code).toBe(code)
+      expect(inTurn.said.join("")).toContain(says)
+      expect(inTurn.report.every((written) => written !== null)).toBe(wrote)
+      expect(await diffWith("--parallel-scans")).toEqual(inTurn)
+    },
+  )
 
   it("waits for the head scan when the base scan stops, and leaves no temporary directory", async () => {
     const tmp = await temporaryDirectory()
@@ -216,25 +219,32 @@ describe("aburi diff — its two scans at once", () => {
       'setTimeout(() => { throw new Error("thrown later") }, 0)\n    await sleep(60000)',
       'The scan of base ref "main" threw outside its own error handling, on its worker thread: Error: thrown later',
     ],
-  ])("ends the run when a plugin on the base's thread %s, and removes the base's checkout", async (_, call, says) => {
-    const tmp = await temporaryDirectory()
-    const repository = await timedRepository(
-      { base: ["ok-base.timed"], head: ["ok-head.timed"] },
-      `    const { isMainThread } = await import("node:worker_threads")
+  ])(
+    "ends the run when a plugin on the base's thread %s, and removes the base's checkout",
+    async (_, call, says) => {
+      const tmp = await temporaryDirectory()
+      const repository = await timedRepository(
+        { base: ["ok-base.timed"], head: ["ok-head.timed"] },
+        `    const { isMainThread } = await import("node:worker_threads")
     if (!isMainThread) {
     ${call}
     }`,
-    )
+      )
 
-    const { code, stderr } = await runCliIn(repository, ["diff", "main..HEAD", "--parallel-scans"])
+      const { code, stderr } = await runCliIn(repository, [
+        "diff",
+        "main..HEAD",
+        "--parallel-scans",
+      ])
 
-    expect(code).toBe(EXIT.RUNTIME)
-    expect(stderr).toContain(says)
-    expect(stderr).toContain("Run with --no-parallel-scans (parallelScans: false)")
-    const worktrees = await git(["worktree", "list", "--porcelain"], repository)
-    expect(worktrees.split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
-    expect(await readdir(tmp)).toEqual([".keep"])
-  })
+      expect(code).toBe(EXIT.RUNTIME)
+      expect(stderr).toContain(says)
+      expect(stderr).toContain("Run with --no-parallel-scans (parallelScans: false)")
+      const worktrees = await git(["worktree", "list", "--porcelain"], repository)
+      expect(worktrees.split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
+      expect(await readdir(tmp)).toEqual([".keep"])
+    },
+  )
 })
 
 describe("runDiff with parallelScans", () => {

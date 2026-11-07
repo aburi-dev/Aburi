@@ -209,22 +209,19 @@ describe("hasLiteralFirstArgument", () => {
 describe("matchesModuleOrSubpath", () => {
   const isDrizzle = matchesModuleOrSubpath("drizzle-orm")
 
-  it.each([
-    "drizzle-orm",
-    "drizzle-orm/postgres-js",
-    "drizzle-orm/aws-data-api/pg",
-  ])("accepts the root or any subpath: %s", (source) => {
-    expect(isDrizzle(source)).toBe(true)
-  })
+  it.each(["drizzle-orm", "drizzle-orm/postgres-js", "drizzle-orm/aws-data-api/pg"])(
+    "accepts the root or any subpath: %s",
+    (source) => {
+      expect(isDrizzle(source)).toBe(true)
+    },
+  )
 
-  it.each([
-    "drizzle",
-    "drizzle-orm-mock",
-    "not-drizzle-orm",
-    "@drizzle/kit",
-  ])("rejects the lookalike %s — the `/` is the boundary", (source) => {
-    expect(isDrizzle(source)).toBe(false)
-  })
+  it.each(["drizzle", "drizzle-orm-mock", "not-drizzle-orm", "@drizzle/kit"])(
+    "rejects the lookalike %s — the `/` is the boundary",
+    (source) => {
+      expect(isDrizzle(source)).toBe(false)
+    },
+  )
 
   it("accepts any of several roots", () => {
     const isTrpcClient = matchesModuleOrSubpath("@trpc/client", "@trpc/next")

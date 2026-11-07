@@ -380,10 +380,13 @@ describe("settles", () => {
     ["dynamic", "dynamic", null, true],
     ["untyped", "no-match", null, true],
     ["local-scope", "no-match", null, false],
-  ])("takes a call expected as %s that lands in %s (%s) as settled: %s", (expected, outcome, resolved, settled) => {
-    const expectedSymbol = expected === "edge" ? TARGET : null
-    expect(settles(sample({ expected, expectedSymbol }), { outcome, resolved })).toBe(settled)
-  })
+  ])(
+    "takes a call expected as %s that lands in %s (%s) as settled: %s",
+    (expected, outcome, resolved, settled) => {
+      const expectedSymbol = expected === "edge" ? TARGET : null
+      expect(settles(sample({ expected, expectedSymbol }), { outcome, resolved })).toBe(settled)
+    },
+  )
 })
 
 describe("renderCheck", () => {

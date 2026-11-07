@@ -88,19 +88,19 @@ describe("reportScanIncidents — the files that contributed no Symbols", () => 
     for (const fragment of doesNotSay) expect(group).not.toContain(fragment)
   })
 
-  it.each([
-    undefined,
-    "",
-  ])("lists a file whose detail is %j without a dangling separator", (detail) => {
-    const lines = incidentLinesFrom({
-      skipped: [
-        detail === undefined
-          ? { path: "src/quiet.ts", reason: "over-size" }
-          : { path: "src/quiet.ts", reason: "over-size", detail },
-      ],
-    })
-    expect(lines.at(-1)).toBe("    src/quiet.ts")
-  })
+  it.each([undefined, ""])(
+    "lists a file whose detail is %j without a dangling separator",
+    (detail) => {
+      const lines = incidentLinesFrom({
+        skipped: [
+          detail === undefined
+            ? { path: "src/quiet.ts", reason: "over-size" }
+            : { path: "src/quiet.ts", reason: "over-size", detail },
+        ],
+      })
+      expect(lines.at(-1)).toBe("    src/quiet.ts")
+    },
+  )
 
   it("caps each reason's listing at ten, and leaves the tail unlabelled with the rest of it", () => {
     const skipped = skippedFiles(12, "extraction-failed", (i) => `src/f${i}.ts`)

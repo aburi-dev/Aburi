@@ -232,9 +232,12 @@ describe("a changed Symbol's export name rows", () => {
       ["isAdminUser"],
       "- export name added: `canAdministerSite`, `isAdmin`\n- export name removed: `isAdminUser`\n",
     ],
-  ])("names every name gained and lost when a rename also %s another", (_, added, removed, rows) => {
-    expect(renamedExport(added, removed)).toContain(rows)
-  })
+  ])(
+    "names every name gained and lost when a rename also %s another",
+    (_, added, removed, rows) => {
+      expect(renamedExport(added, removed)).toContain(rows)
+    },
+  )
 })
 
 describe("a changed Symbol's rule, effect and call rows", () => {

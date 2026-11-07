@@ -17,13 +17,13 @@ describe("buildLanguageRouter", () => {
     expect(router.route("scripts/build.py")).toBe(py)
   })
 
-  it.each([
-    "README.md",
-    "Makefile",
-  ])("answers null for %s, whose extension nobody claims", (path) => {
-    const router = buildLanguageRouter([plugin("lang-typescript", [".ts"])])
-    expect(router.route(path)).toBeNull()
-  })
+  it.each(["README.md", "Makefile"])(
+    "answers null for %s, whose extension nobody claims",
+    (path) => {
+      const router = buildLanguageRouter([plugin("lang-typescript", [".ts"])])
+      expect(router.route(path)).toBeNull()
+    },
+  )
 
   it.each([
     ["a decomposed declaration and a composed file name", ".ts\u0301", "src/a.t\u015b"],

@@ -56,11 +56,14 @@ describe("aburi explain with no IR on disk — the scan it runs", () => {
       "not-found",
       "1 file(s) discovered, 0 parsed",
     ],
-  ])("exits 3 on %s when the scan faulted, and reports the fault", async (_, files, argument, kind, incident) => {
-    const { outcome, said } = await explainAfterScan(files, argument)
-    expect(outcome).toMatchObject({ kind, exitCode: EXIT.GATE })
-    expect(said).toContain(incident)
-  })
+  ])(
+    "exits 3 on %s when the scan faulted, and reports the fault",
+    async (_, files, argument, kind, incident) => {
+      const { outcome, said } = await explainAfterScan(files, argument)
+      expect(outcome).toMatchObject({ kind, exitCode: EXIT.GATE })
+      expect(said).toContain(incident)
+    },
+  )
 
   it("prints the answer and the scan's incidents from the command", async () => {
     await writeStubWorkspace(workspace.root, ["boom.stub", "ok.stub"])
@@ -136,12 +139,15 @@ describe("aburi explain --debug-resolution", () => {
       { irPath: "out/aburi.ir.json" },
       /--debug-resolution needs a fresh scan .* cannot read an existing --ir file/,
     ],
-  ])("refuses %j, which would answer from a document without the per-call buckets", async (options, refusal) => {
-    await writeScannedWorkspace(workspace.root, { symbols: [] })
-    await expect(
-      runExplain({ cwd: workspace.root, argument: "x", debugResolution: true, ...options }),
-    ).rejects.toThrow(refusal)
-  })
+  ])(
+    "refuses %j, which would answer from a document without the per-call buckets",
+    async (options, refusal) => {
+      await writeScannedWorkspace(workspace.root, { symbols: [] })
+      await expect(
+        runExplain({ cwd: workspace.root, argument: "x", debugResolution: true, ...options }),
+      ).rejects.toThrow(refusal)
+    },
+  )
 
   it("rescans rather than answering from the IR sitting on disk", async () => {
     await writeScannedWorkspace(workspace.root, { symbols: [symbolFor("ts:src/a.ts#getUser")] })

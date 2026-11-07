@@ -34,17 +34,20 @@ describe("a caller's parameter shadows the Symbols its name would reach", () => 
       ],
       NO_IMPORTS,
     ],
-  ])("leaves the call unresolved, bucketed `local-scope`, over a Symbol %s", (_where, target, callees, importsByFile) => {
-    const caller = makeSymbol("ts:src/a.ts#caller", {
-      component: "billing",
-      signature: params("helper"),
-      calls: [{ target, line: 5, resolved: null }],
-    })
-    const result = resolveCallGraph({ symbols: [caller, ...callees], importsByFile })
-    expect(result.edges).toEqual([])
-    expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
-    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["local-scope"])
-  })
+  ])(
+    "leaves the call unresolved, bucketed `local-scope`, over a Symbol %s",
+    (_where, target, callees, importsByFile) => {
+      const caller = makeSymbol("ts:src/a.ts#caller", {
+        component: "billing",
+        signature: params("helper"),
+        calls: [{ target, line: 5, resolved: null }],
+      })
+      const result = resolveCallGraph({ symbols: [caller, ...callees], importsByFile })
+      expect(result.edges).toEqual([])
+      expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
+      expect(result.diagnostics.map((d) => d.bucket)).toEqual(["local-scope"])
+    },
+  )
 
   describe("a destructuring parameter shadows the names it binds", () => {
     function resolvedTargets(inputs: Signature["inputs"], targets: readonly string[]) {

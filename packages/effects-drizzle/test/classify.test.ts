@@ -11,17 +11,16 @@ const classify = (target: string, overrides: Partial<CallCandidate> = {}) =>
   classifyDrizzleCall(makeCall({ target, ...overrides }), ctx)
 
 describe("classifyDrizzleCall — terminals", () => {
-  it.each([
-    "select",
-    "selectDistinct",
-    "selectDistinctOn",
-  ])("classifies db.%s as db.read", (method) => {
-    expect(classify(`db.${method}`)).toEqual({
-      effectId: "db.read",
-      confidence: "high",
-      derivedBy: "effects-plugin:drizzle:read",
-    })
-  })
+  it.each(["select", "selectDistinct", "selectDistinctOn"])(
+    "classifies db.%s as db.read",
+    (method) => {
+      expect(classify(`db.${method}`)).toEqual({
+        effectId: "db.read",
+        confidence: "high",
+        derivedBy: "effects-plugin:drizzle:read",
+      })
+    },
+  )
 
   it.each(["insert", "update", "delete"])("classifies db.%s(table) as db.write", (method) => {
     expect(classify(`db.${method}`, { argumentCount: 1 })).toEqual({
@@ -39,17 +38,16 @@ describe("classifyDrizzleCall — terminals", () => {
     })
   })
 
-  it.each([
-    "db.query.users.findMany",
-    "db.query.users.findFirst",
-    "this.db.query.users.findMany",
-  ])("classifies the relational query %s as db.read", (target) => {
-    expect(classify(target, { argumentCount: 1 })).toEqual({
-      effectId: "db.read",
-      confidence: "high",
-      derivedBy: "effects-plugin:drizzle:read",
-    })
-  })
+  it.each(["db.query.users.findMany", "db.query.users.findFirst", "this.db.query.users.findMany"])(
+    "classifies the relational query %s as db.read",
+    (target) => {
+      expect(classify(target, { argumentCount: 1 })).toEqual({
+        effectId: "db.read",
+        confidence: "high",
+        derivedBy: "effects-plugin:drizzle:read",
+      })
+    },
+  )
 })
 
 describe("classifyDrizzleCall — one classification per fluent chain", () => {
@@ -92,9 +90,12 @@ describe("classifyDrizzleCall — receiver and arguments decide the tier", () =>
     ["form.delete", 1, "db.write"],
     ["sequelize.transaction", 1, "db.transaction"],
     ["cache.query.users.findMany", 0, "db.read"],
-  ])("still records %s, on a receiver it cannot place, at medium", (target, argumentCount, effectId) => {
-    expect(classify(target, { argumentCount })).toMatchObject({ effectId, confidence: "medium" })
-  })
+  ])(
+    "still records %s, on a receiver it cannot place, at medium",
+    (target, argumentCount, effectId) => {
+      expect(classify(target, { argumentCount })).toMatchObject({ effectId, confidence: "medium" })
+    },
+  )
 
   it("caps a dynamic receiver at medium", () => {
     expect(classify("getDb.select", { dynamicReceiver: true })).toMatchObject({
@@ -122,9 +123,12 @@ describe("classifyDrizzleCall — receiver and arguments decide the tier", () =>
     "firestore.batch",
     "sequelize.transaction",
     "this.transaction",
-  ])("returns null for a zero-argument %s — every write and transaction terminal takes one", (target) => {
-    expect(classify(target, { argumentCount: 0 })).toBeNull()
-  })
+  ])(
+    "returns null for a zero-argument %s — every write and transaction terminal takes one",
+    (target) => {
+      expect(classify(target, { argumentCount: 0 })).toBeNull()
+    },
+  )
 
   it.each([
     ["router.delete", ["/users/:id", null]],
@@ -133,9 +137,12 @@ describe("classifyDrizzleCall — receiver and arguments decide the tier", () =>
     ["emitter.select", ["/path"]],
     ["log.transaction", ["begin"]],
     ["cache.query.users.findMany", ["key"]],
-  ])("returns null for %s handed a literal first argument — no Drizzle terminal takes one", (target, literalArgs) => {
-    expect(classify(target, { argumentCount: literalArgs.length, literalArgs })).toBeNull()
-  })
+  ])(
+    "returns null for %s handed a literal first argument — no Drizzle terminal takes one",
+    (target, literalArgs) => {
+      expect(classify(target, { argumentCount: literalArgs.length, literalArgs })).toBeNull()
+    },
+  )
 })
 
 describe("classifyDrizzleCall — calls that are not Drizzle's", () => {
@@ -173,13 +180,16 @@ describe("classifyDrizzleCall — upstream contract violations", () => {
     ["db..insert", 'CallCandidate.target "db..insert" has empty segment(s)'],
     [".select", 'CallCandidate.target ".select" has empty segment(s)'],
     ["db.select.", 'CallCandidate.target "db.select." has empty segment(s)'],
-  ])("throws on the malformed target %j, naming itself and the file, before the import gate", (target, message) => {
-    for (const imports of [[makeDrizzleImport()], []]) {
-      expect(() => classifyDrizzleCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-        `effects-drizzle (${path}): ${message}`,
-      )
-    }
-  })
+  ])(
+    "throws on the malformed target %j, naming itself and the file, before the import gate",
+    (target, message) => {
+      for (const imports of [[makeDrizzleImport()], []]) {
+        expect(() => classifyDrizzleCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
+          `effects-drizzle (${path}): ${message}`,
+        )
+      }
+    },
+  )
 
   it("throws on an import edge with an empty source rather than skipping it", () => {
     const brokenEdge = makeCtx({

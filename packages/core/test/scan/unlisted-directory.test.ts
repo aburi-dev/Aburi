@@ -64,19 +64,19 @@ const WALKS: [string, Walk][] = [
 ]
 
 describe.each(WALKS)("a directory %s cannot list", (_, walk) => {
-  it.each([
-    "src/locked",
-    ".config/locked",
-  ])("ends the run at %s, naming the directory and the operating system's error", async (directory) => {
-    await walk.plant(directory)
-    const locked = unlistable(directory)
+  it.each(["src/locked", ".config/locked"])(
+    "ends the run at %s, naming the directory and the operating system's error",
+    async (directory) => {
+      await walk.plant(directory)
+      const locked = unlistable(directory)
 
-    const error = await errorFrom(CoreError, () => walk.run({}))
+      const error = await errorFrom(CoreError, () => walk.run({}))
 
-    expect(error).toMatchObject({ code: "scan-directory-unreadable", value: locked })
-    expect(error.message).toContain(`"${locked}"`)
-    expect(error.message).toContain("EACCES")
-  })
+      expect(error).toMatchObject({ code: "scan-directory-unreadable", value: locked })
+      expect(error.message).toContain(`"${locked}"`)
+      expect(error.message).toContain("EACCES")
+    },
+  )
 })
 
 // Declared patterns never read .gitignore, as pnpm and npm do not.
@@ -200,19 +200,18 @@ describe("a directory a declared pattern reaches", () => {
     return link
   }
 
-  it.each([
-    "EACCES",
-    "EIO",
-    "EPERM",
-  ])("ends the run when a link to it cannot be resolved (%s), naming the link", async (code) => {
-    const link = await linkedPackage()
-    faults.links.set(link, code)
+  it.each(["EACCES", "EIO", "EPERM"])(
+    "ends the run when a link to it cannot be resolved (%s), naming the link",
+    async (code) => {
+      const link = await linkedPackage()
+      faults.links.set(link, code)
 
-    const error = await errorFrom(CoreError, () => detectManagers(tree.root))
+      const error = await errorFrom(CoreError, () => detectManagers(tree.root))
 
-    expect(error).toMatchObject({ code: "scan-directory-unreadable", value: link })
-    expect(error.message).toContain(`Link "${link}" could not be followed: ${code}`)
-  })
+      expect(error).toMatchObject({ code: "scan-directory-unreadable", value: link })
+      expect(error.message).toContain(`Link "${link}" could not be followed: ${code}`)
+    },
+  )
 
   it("names the link when what it resolves to cannot be looked up", async () => {
     const link = await linkedPackage()
@@ -223,18 +222,18 @@ describe("a directory a declared pattern reaches", () => {
     expect(error).toMatchObject({ code: "scan-directory-unreadable", value: link })
   })
 
-  it.each([
-    "ENOENT",
-    "ELOOP",
-  ])("passes over a link that dangles or loops (%s), as every checkout does", async (code) => {
-    const link = await linkedPackage()
-    faults.links.set(link, code)
+  it.each(["ENOENT", "ELOOP"])(
+    "passes over a link that dangles or loops (%s), as every checkout does",
+    async (code) => {
+      const link = await linkedPackage()
+      faults.links.set(link, code)
 
-    const result = await detectManagers(tree.root)
+      const result = await detectManagers(tree.root)
 
-    expect(faults.refused).toContain(link)
-    expect(result.workspaces.map((candidate) => candidate.relativeRoot)).toEqual(["packages/bar"])
-  })
+      expect(faults.refused).toContain(link)
+      expect(result.workspaces.map((candidate) => candidate.relativeRoot)).toEqual(["packages/bar"])
+    },
+  )
 })
 
 describe("detectComponents", () => {
@@ -265,35 +264,33 @@ describe("detectManagers", () => {
 })
 
 describe("discovery's walk", () => {
-  it.each([
-    "EIO",
-    "EMFILE",
-    "ELOOP",
-    "EPERM",
-  ])("ends the run on %s, as on a permission", async (code) => {
-    await discovery.plant("src/locked")
-    const locked = unlistable("src/locked", code)
+  it.each(["EIO", "EMFILE", "ELOOP", "EPERM"])(
+    "ends the run on %s, as on a permission",
+    async (code) => {
+      await discovery.plant("src/locked")
+      const locked = unlistable("src/locked", code)
 
-    const error = await errorFrom(CoreError, () => discovery.run({}))
+      const error = await errorFrom(CoreError, () => discovery.run({}))
 
-    expect(error).toMatchObject({ code: "scan-directory-unreadable", value: locked })
-    expect(error.message).toContain(code)
-  })
+      expect(error).toMatchObject({ code: "scan-directory-unreadable", value: locked })
+      expect(error.message).toContain(code)
+    },
+  )
 
-  it.each([
-    "ENOENT",
-    "ENOTDIR",
-  ])("passes over a directory gone by the time it is listed (%s)", async (code) => {
-    await discovery.plant("src")
-    await discovery.plant("src/gone")
-    const gone = unlistable("src/gone", code)
+  it.each(["ENOENT", "ENOTDIR"])(
+    "passes over a directory gone by the time it is listed (%s)",
+    async (code) => {
+      await discovery.plant("src")
+      await discovery.plant("src/gone")
+      const gone = unlistable("src/gone", code)
 
-    const result = await discoverFiles({ workspaceRoot: tree.root, languageExtensions: [".ts"] })
+      const result = await discoverFiles({ workspaceRoot: tree.root, languageExtensions: [".ts"] })
 
-    expect(faults.refused).toContain(gone)
-    expect(result.files.map((file) => file.path)).toEqual(["src/b.ts"])
-    expect(result.skipped).toEqual([])
-  })
+      expect(faults.refused).toContain(gone)
+      expect(result.files.map((file) => file.path)).toEqual(["src/b.ts"])
+      expect(result.skipped).toEqual([])
+    },
+  )
 
   it("ends the run when an entry, not its directory, vanishes mid-listing", async () => {
     await discovery.plant("src/gen")

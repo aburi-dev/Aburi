@@ -59,20 +59,16 @@ describe("readIR", () => {
     expect(refusal.message).toContain(says)
   })
 
-  it.each([
-    "workspace",
-    "stats",
-    "symbols",
-    "components",
-    "dependencies",
-    "generator",
-  ])("names a missing %s instead of failing on it later", async (key) => {
-    const refusal = await refusalOf(documentWithout(key))
-    expect(refusal.code).toBe("config-error")
-    expect(refusal.message).toContain("failed integrity check")
-    expect(refusal.message).toContain(key)
-    expect(refusal.message).not.toContain("Cannot read properties")
-  })
+  it.each(["workspace", "stats", "symbols", "components", "dependencies", "generator"])(
+    "names a missing %s instead of failing on it later",
+    async (key) => {
+      const refusal = await refusalOf(documentWithout(key))
+      expect(refusal.code).toBe("config-error")
+      expect(refusal.message).toContain("failed integrity check")
+      expect(refusal.message).toContain(key)
+      expect(refusal.message).not.toContain("Cannot read properties")
+    },
+  )
 
   it.each([
     ["symbols", {}],

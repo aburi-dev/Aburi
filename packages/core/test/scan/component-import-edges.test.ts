@@ -62,15 +62,18 @@ describe("scan — Component edges", () => {
   it.each([
     ["refuses to parse it", "web/refused.stub", "parse-failed"],
     ["declares two Symbols under one id in it", "web/twins.stub", "extraction-failed"],
-  ])("leave out the imports of a file the Document leaves out, as a plugin %s", async (_, withdrawn, reason) => {
-    const { ir, skipped } = await scanImports({
-      "web/good.stub": "@acme/shared\n",
-      [withdrawn]: "@acme/api\n",
-    })
+  ])(
+    "leave out the imports of a file the Document leaves out, as a plugin %s",
+    async (_, withdrawn, reason) => {
+      const { ir, skipped } = await scanImports({
+        "web/good.stub": "@acme/shared\n",
+        [withdrawn]: "@acme/api\n",
+      })
 
-    expect(skipped.map((file) => [file.path, file.reason])).toEqual([[withdrawn, reason]])
-    expect(ir.dependencies).toEqual([dependency({ from: "web", to: "shared" })])
-  })
+      expect(skipped.map((file) => [file.path, file.reason])).toEqual([[withdrawn, reason]])
+      expect(ir.dependencies).toEqual([dependency({ from: "web", to: "shared" })])
+    },
+  )
 
   it.each([
     ["the workspace root directory", "../.."],
