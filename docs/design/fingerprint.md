@@ -242,6 +242,8 @@ By design, the order of effects can carry meaning (transaction boundaries, idemp
 
 As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise.
 
+The order kept is source order (§4.1), which is the order effects run in only for calls written one after another. A language plugin writes a call before the calls inside it ([lang-plugin.md](./lang-plugin.md) §5.1), so `x.save(y.publish())` hashes as `[x.save, y.publish]` although `y.publish` runs first, and rewriting it as `x.save(); y.publish()` leaves `logic` where it was.
+
 This applies to locally detected effects, each of which sits at a call site in the body. Propagated effects have none: propagation appends them after the local ones in `(id, target)` order ([`effect-propagation.md`](./effect-propagation.md) §8), an order that never followed the sequence in which the callees' side effects run. The fingerprint therefore reads them by target alone (§4.1, §4.5), which loses no ordering this section protects.
 
 ### 4.8 A value that names nothing
@@ -422,7 +424,7 @@ The reference implementation and every language plugin must pass the following t
 | ID | Mutation | Expected |
 |---|---|---|
 | L6 | Reorder rules | logic changes |
-| L7 | Reorder locally detected effects | logic changes |
+| L7 | Reorder locally detected effects, including two written one after another on one line | logic changes |
 | L8 | Change a rule's condition | logic changes |
 | L9 | Change an effect's target | logic changes |
 | L10 | Add / remove an effect, locally detected or propagated (a propagated one on a target no other effect of the Symbol names) | logic changes |

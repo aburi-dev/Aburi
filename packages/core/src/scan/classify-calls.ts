@@ -118,6 +118,6 @@ export function classifyCalls(input: ClassifyCallsInput): {
   }
 
   // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
-  // so two effects on one line keep the order they run in, which the `logic` fingerprint reads.
+  // so two effects on one line keep the order they are written in, which `logic` reads.
   return { effects: classifiedEffects, calls: survivingCalls, dynamicCallSites }
 }
