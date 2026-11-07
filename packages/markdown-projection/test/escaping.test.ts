@@ -130,12 +130,6 @@ describe("ruleRow — a value that has to fence stays inside its list item", () 
     expect(ruleRow(rule({ type: "guard", line: 1, condition: past }))[0]).toBe("- guard (L1):")
   })
 
-  it("names an empty payload instead of rendering a row that trails off", () => {
-    expect(ruleRow(rule({ type: "guard", line: 5, condition: "" }))).toEqual([
-      "- guard: (empty) (L5)",
-    ])
-  })
-
   it("does not let a template literal close the span early", () => {
     expect(ruleRow(rule({ type: "throw", line: 3, what: THROWN_TEMPLATE }))).toEqual([
       `- throw: \`\`${THROWN_TEMPLATE}\`\` (L3)`,

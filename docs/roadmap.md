@@ -90,8 +90,6 @@ Nothing here is committed.
 - `aburi review`, feeding the diff to a model for automated review comments.
 - Name Slice View clusters automatically. The report heads each with the
   members its calls start from today.
-- Warn when the two analyses `aburi diff --base --head` compares were made with
-  different plugins, from the plugin list each one records.
 - `aburi vocab`, listing the effect ids and extension kinds the loaded plugins
   declare, and which plugin owns each.
 - Colour and a progress line on an interactive terminal, honouring `NO_COLOR`
