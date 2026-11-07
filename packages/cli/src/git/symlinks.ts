@@ -1,38 +1,48 @@
+import { lstat } from "node:fs/promises"
+import { resolve } from "node:path"
+import type { IR } from "@aburi/types"
 import { joinCapped } from "../listing"
-import type { WarnFn } from "../warn"
-import type { GitRunner } from "./runner"
+import { pathsWithMode } from "./index-listing"
 
-export async function warnOnPlainFileLinks(
-  git: GitRunner,
-  workspaceRoot: string,
-  baseRef: string,
-  warn: WarnFn,
-): Promise<void> {
-  // `true` is git's own default: unset, it creates the link, and fails loudly where it cannot.
-  const { stdout: symlinks } = await git.run(
-    ["config", "--bool", "--default", "true", "core.symlinks"],
-    { cwd: workspaceRoot },
-  )
-  if (symlinks.trim() !== "false") return
-  // From the workspace root and without --full-tree, so the paths are the ones the base scan walks.
-  const { stdout } = await git.run(["ls-tree", "-r", "-z", baseRef], { cwd: workspaceRoot })
-  const links = parseLinkPaths(stdout)
-  if (links.length === 0) return
-  warn(
-    `⚠ The base ref "${baseRef}" holds ${links.length} symbolic link(s): ${joinCapped(links)}. ` +
-      "core.symlinks is false, so git checks each out in the base worktree as a plain file holding the link's target, " +
-      "and the base scan reads one with a source extension as source, where it passes over a link. " +
-      "A working tree checked out the same way is read the same on the head side. " +
-      "Set core.symlinks to true where links can be created (on Windows, with Developer Mode) to keep them links.",
-  )
+/** Tracked links that git wrote under `checkoutRoot` as plain files holding their targets. */
+export async function plainFileLinks(
+  indexListing: string,
+  checkoutRoot: string,
+): Promise<string[]> {
+  const links = pathsWithMode(indexListing, "120000")
+  const regular = await Promise.all(links.map((path) => isRegularFile(resolve(checkoutRoot, path))))
+  return links.filter((_, at) => regular[at])
 }
 
-export function parseLinkPaths(stdout: string): string[] {
-  const paths: string[] = []
-  for (const record of stdout.split("\0")) {
-    const tab = record.indexOf("\t")
-    if (tab === -1 || !record.startsWith("120000 ")) continue
-    paths.push(record.slice(tab + 1))
+async function isRegularFile(path: string): Promise<boolean> {
+  try {
+    return (await lstat(path)).isFile()
+  } catch {
+    // Deleted from the working tree, or a name the filesystem cannot hold: nothing a scan reads.
+    return false
   }
-  return paths.sort()
+}
+
+/** A link no Symbol came from puts nothing into a diff, whatever git wrote in its place. */
+export function linksReadAsSource(links: readonly string[], ir: IR): string[] {
+  if (links.length === 0) return []
+  const files = new Set(ir.symbols.map((symbol) => symbol.source.file))
+  return links.filter((path) => files.has(path.normalize("NFC")))
+}
+
+const REMEDY: Record<"base" | "head", string> = {
+  base: "git writes a link that way while core.symlinks is false; set it to true where links can be created (on Windows, with Developer Mode).",
+  head:
+    "Set core.symlinks to true where links can be created (on Windows, with Developer Mode), then check them out again with `git checkout -- <path>`, " +
+    "since a change to the setting leaves the files already checked out as they are.",
+}
+
+export function describeLinksReadAsSource(
+  side: keyof typeof REMEDY,
+  read: readonly string[],
+): string {
+  return (
+    `${read.length} symbolic link(s) checked out as plain files holding their targets were read as source, ` +
+    `where a scan passes over a link: ${joinCapped(read)}. ${REMEDY[side]}`
+  )
 }
