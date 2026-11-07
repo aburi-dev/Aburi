@@ -1,3 +1,4 @@
+import { lastSegment } from "@aburi/types"
 import { NONE, quotient, type Ratio, WHOLE } from "./ratio"
 
 export function tokenizeName(input: string): string[] {
@@ -105,21 +106,8 @@ export function jaccardTokens(a: string, b: string): number {
   return jaccard(tokenizeName(a), tokenizeName(b))
 }
 
-function splitQualifiedName(qname: string): { owner: string; member: string } {
-  const lastStatic = qname.lastIndexOf("::")
-  const lastDot = qname.lastIndexOf(".")
-  if (lastStatic > lastDot)
-    return { owner: qname.slice(0, lastStatic), member: qname.slice(lastStatic + 2) }
-  if (lastDot >= 0) return { owner: qname.slice(0, lastDot), member: qname.slice(lastDot + 1) }
-  return { owner: "", member: qname }
-}
-
-export function lastSegment(qname: string): string {
-  return splitQualifiedName(qname).member
-}
-
 export function ownerOf(qname: string): string {
-  return splitQualifiedName(qname).owner
+  return qname.slice(0, Math.max(0, qname.lastIndexOf("::"), qname.lastIndexOf(".")))
 }
 
 type TokenSets = (value: string) => ReadonlySet<string>

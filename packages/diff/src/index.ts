@@ -37,7 +37,6 @@ export { signatureSimilarity } from "./signature"
 export {
   jaccard,
   jaccardTokens,
-  lastSegment,
   memberSimilarity,
   nameEvidence,
   nameSimilarity,
