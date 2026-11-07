@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { lastSegment } from "../src"
+import { lastSegment } from "../src/index"
 
 describe("lastSegment", () => {
   it.each([
@@ -11,7 +11,10 @@ describe("lastSegment", () => {
     ["C::K::s", "s"],
     ["A.C::m", "m"],
     ["C.#v", "#v"],
+    ["C::#v", "#v"],
+    ["A:::b", ":b"],
     ["<default>", "<default>"],
+    ["<module>", "<module>"],
   ])("gives %j the segment %j", (name, segment) => {
     expect(lastSegment(name)).toBe(segment)
   })

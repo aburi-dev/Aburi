@@ -107,7 +107,7 @@ export function jaccardTokens(a: string, b: string): number {
 }
 
 function ownerPart(qname: string): string {
-  return qname.slice(0, Math.max(0, Math.max(qname.lastIndexOf("::"), qname.lastIndexOf("."))))
+  return qname.slice(0, Math.max(0, qname.lastIndexOf("::"), qname.lastIndexOf(".")))
 }
 
 type TokenSets = (value: string) => ReadonlySet<string>

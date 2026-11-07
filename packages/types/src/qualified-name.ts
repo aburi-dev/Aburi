@@ -1,8 +1,12 @@
 /**
- * The segment of a qualified Symbol name that follows its last `::`, then its last `.`: the
- * `shortName` the api fingerprint hashes. An empty name, or one ending in a separator, gives `""`.
+ * The api fingerprint, the diff's name matchers and the report's name-row check all read a Symbol's
+ * short name here, so none of them can disagree on it.
  */
 export function lastSegment(name: string): string {
-  const tail = name.split("::").at(-1) ?? name
-  return tail.split(".").at(-1) ?? tail
+  // Scanned forward, so a name holding `:::` keeps the reading `split("::")` gives it, without the
+  // arrays a split allocates on a path the matchers take for every candidate pair.
+  let last = -2
+  for (let at = name.indexOf("::"); at !== -1; at = name.indexOf("::", at + 2)) last = at
+  const tail = name.slice(last + 2)
+  return tail.slice(tail.lastIndexOf(".") + 1)
 }
