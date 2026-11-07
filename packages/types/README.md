@@ -16,7 +16,8 @@ constants and small helpers, among them the `$schema` URL each kind of document
 is written with (`IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`,
 `PLUGIN_SCHEMA_URL`) and `isIRSchemaURL`, which accepts every `$schema` an IR v1
 may carry: the `aburi.dev` URL and the `aburi.kage1020.com` one the schemas were
-served from before.
+served from before. `lastSegment` gives the short name of a qualified Symbol name;
+the api fingerprint, the diff's name matchers and the report all read it there.
 
 ## Install
 

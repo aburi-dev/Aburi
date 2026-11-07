@@ -801,6 +801,17 @@ someone else's incident, on documents the caller pinned deliberately. `DiffRepor
 is `null` in this mode rather than empty, because "ran no scan" is not the same answer as "ran
 two clean scans".
 
+File mode also compares the `generator.plugins[]` the two documents record, by plugin name, and
+when they differ says so on one stderr line: each plugin only one side loaded,
+with its version and type, and each that both loaded under another type, version or grammar
+revision, ordered by name. The same source scanned with another plugin set is another IR — an
+effect plugin that only the base loaded leaves its `db.write` effects on the base side alone, and
+every Symbol that carried one reads as `changed` — so without the line a reviewer has no way to
+tell that wave from an edit. It is a warning, not a gate, and `diff.json` holds nothing of it. Ref
+mode never says it: both scans load the head's plugins (§6.4 step 3). A `frameworkHints` entry
+records its `hint-<name>` plugin at version `0.0.0` whatever its rules say, so the line names an
+entry added or removed but not one whose rules were edited.
+
 A planned `--quiet` would print the glyph line alone:
 ```
 +5 -3 ~12 ↔2 ⤴1
@@ -1508,10 +1519,11 @@ a command's option, not a global one (§3).
 | CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
-| CL62 | `aburi vocab who-owns` for an id a manifest enumerates, an id only an `effectPrefixes` entry covers, a core effect id, and an extKind a framework plugin's `derivedByPrefixes` also covers | exit 0. One block each: the first with `explicit` and the manifest's description, the second naming the prefix with no description, the third naming no plugin; the last two blocks, the extKind before the derivedBy value (§8.5) |
-| CL63 | `aburi vocab list` with no config found; with a config that lists an effect plugin alone, whose `init` throws | exit 0 both. The first lists the core effect ids alone and says on stderr that no config was found; the second lists that plugin's vocabulary, since nothing calls `init` and no language plugin is needed (§8) |
-| CL64 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value; `aburi vocab list` with a configured plugin that fails to import; with a `frameworkHints` entry the registry refuses | exit 2, 2, 2; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
-| CL65 | `aburi vocab plugins`, `effects` and `extkinds`, with and without `--json`, over plugins listed under `effects`, `languages` and `frameworkHints` in that order in the file | The plugins in the order `languages`, `effects`, `frameworkHints`, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space (§8.4–§8.5) |
+| CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
+| CL75 | `aburi vocab who-owns` for an id a manifest enumerates, an id only an `effectPrefixes` entry covers, a core effect id, and an extKind a framework plugin's `derivedByPrefixes` also covers | exit 0. One block each: the first with `explicit` and the manifest's description, the second naming the prefix with no description, the third naming no plugin; the last two blocks, the extKind before the derivedBy value (§8.5) |
+| CL76 | `aburi vocab list` with no config found; with a config that lists an effect plugin alone, whose `init` throws | exit 0 both. The first lists the core effect ids alone and says on stderr that no config was found; the second lists that plugin's vocabulary, since nothing calls `init` and no language plugin is needed (§8) |
+| CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value; `aburi vocab list` with a configured plugin that fails to import; with a `frameworkHints` entry the registry refuses | exit 2, 2, 2; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
+| CL78 | `aburi vocab plugins`, `effects` and `extkinds`, with and without `--json`, over plugins listed under `effects`, `languages` and `frameworkHints` in that order in the file | The plugins in the order `languages`, `effects`, `frameworkHints`, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space (§8.4–§8.5) |
 
 ## 18. Design Decisions
 

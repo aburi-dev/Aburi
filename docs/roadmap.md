@@ -89,8 +89,6 @@ Nothing here is committed.
 - `aburi review`, feeding the diff to a model for automated review comments.
 - Name Slice View clusters automatically. The report heads each with the
   members its calls start from today.
-- Warn when the two analyses `aburi diff --base --head` compares were made with
-  different plugins, from the plugin list each one records.
 - `--quiet` for `scan` and `diff`, and `aburi diff --filter`, narrowing the
   report to chosen statuses.
 - Colour and a progress line on an interactive terminal, honouring `NO_COLOR`
