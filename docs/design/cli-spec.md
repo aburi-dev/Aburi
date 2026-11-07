@@ -1112,9 +1112,12 @@ reads the command's own answer, and `aburi explain` listing candidates into a cl
 `2` rather than the `1` that means "not found". Any other failure to write either stream — a
 descriptor opened only for reading, a disk that refuses stdout or stderr redirected to a file —
 is held until the run has finished, so the run goes on as it would for a reader that left: the
-artefacts, the base worktree's removal and its temporary directory. The command then exits `1`
-whatever code it reached, since the output it was asked for is incomplete, and writes one line
-naming the stream and the error on the other: `aburi: could not write to stderr: EBADF`. When
+artefacts, and the removal of the base worktree and its temporary directory. The command then
+exits `1` whatever code it reached, short of a fatal signal (§6.4 step 8), since the output it
+was asked for is incomplete, and writes one line naming the stream and the error on the other:
+`aburi: could not write to stderr: EBADF: bad file descriptor, write`. When stderr is the one
+that refused, that line goes to stdout, after everything the command wrote there: the exit code
+alone would not say which stream failed or why, so a stdout redirected to a file ends in it. When
 both streams refuse, that line is lost too, and the code still says `1`.
 
 The line between `1` and `2` is who has to act, not which subsystem failed. `2` covers the whole
@@ -1371,7 +1374,7 @@ a command's option, not a global one (§3).
 | CL52 | `aburi diff --base <ir> --head <ir>` or `aburi explain --ir <ir>` where the file opens with one byte order mark (U+FEFF) | Read as without it. Two of them, or one after the first character, is exit 2, `IR file "<path>" is not valid JSON` |
 | CL53 | `aburi scan` where `package.json` and `aburi.json` both open with one byte order mark | exit 0, the Component named after the `package.json` |
 | CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind |
-| CL54a | `aburi scan`, or `aburi diff HEAD~1..HEAD` with and without a `--fail-on` that trips, whose stdout or stderr is a descriptor that refuses writes (one opened read-only) | exit 1 once the run has finished: the other stream as the run writes it plus `aburi: could not write to <stream>: EBADF`, the same artefacts, and no base worktree or temporary directory left behind |
+| CL54a | `aburi scan`, or `aburi diff HEAD~1..HEAD` with and without a `--fail-on` that trips, whose stdout or stderr is a descriptor that refuses writes (one opened read-only), or `aburi explain` listing the candidates for an ambiguous target to a stdout that is one | exit 1 once the run has finished, over `0`, `3` or `2`: the other stream as the run writes it plus `aburi: could not write to <stream>: EBADF: bad file descriptor, write`, the same artefacts, and no base worktree or temporary directory left behind; with both streams faulted, one refusing and the other refusing or unread, exit 1 all the same |
 | CL55 | `aburi diff main..HEAD` with a `pluginOptions` key that names no loaded plugin (`config.md` C10) | The warning once, with no side label, while the base scan's own lines keep theirs; the exit code is the one the run has without the key |
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
 | CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |

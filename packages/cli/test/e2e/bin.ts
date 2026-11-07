@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process"
-import { closeSync, existsSync, openSync } from "node:fs"
+import { closeSync, existsSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs"
 import { readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -24,10 +24,7 @@ export type OutputStream = "stdout" | "stderr"
  * `refused`: the stream is a descriptor opened only for reading, which refuses every write, with
  * EBADF on every OS.
  */
-export interface StreamFault {
-  stream: OutputStream
-  kind: "unread" | "refused"
-}
+export type StreamFaults = Partial<Record<OutputStream, "unread" | "refused">>
 
 export interface BinRun {
   code: number | null
@@ -39,11 +36,11 @@ export function runBin(
   cwd: string,
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
-  fault: StreamFault | null = null,
+  faults: StreamFaults = {},
 ): Promise<BinRun> {
-  const readOnly = fault?.kind === "refused" ? openSync(CLI_BIN, "r") : null
+  const refusing = Object.values(faults).includes("refused") ? readOnlyDescriptor() : null
   const stdio = (name: OutputStream) =>
-    readOnly !== null && fault?.stream === name ? readOnly : "pipe"
+    refusing !== null && faults[name] === "refused" ? refusing.fd : "pipe"
   return new Promise<BinRun>((resolve, reject) => {
     const child = spawn(process.execPath, [CLI_BIN, ...argv], {
       cwd,
@@ -54,7 +51,7 @@ export function runBin(
     for (const name of ["stdout", "stderr"] as const) {
       const stream = child[name]
       if (stream === null) continue
-      if (fault?.kind === "unread" && fault.stream === name) {
+      if (faults[name] === "unread") {
         stream.destroy()
         continue
       }
@@ -65,9 +62,21 @@ export function runBin(
     }
     child.on("error", reject)
     child.on("close", (code) => resolve({ code, ...read }))
-  }).finally(() => {
-    if (readOnly !== null) closeSync(readOnly)
-  })
+  }).finally(() => refusing?.close())
+}
+
+function readOnlyDescriptor(): { fd: number; close: () => void } {
+  const directory = mkdtempSync(join(tmpdir(), "aburi-refused-"))
+  const path = join(directory, "output")
+  writeFileSync(path, "")
+  const fd = openSync(path, "r")
+  return {
+    fd,
+    close: () => {
+      closeSync(fd)
+      rmSync(directory, { recursive: true, force: true })
+    },
+  }
 }
 
 /** The linked worktrees git has registered for `repo`, the main one excluded. */
