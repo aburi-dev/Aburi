@@ -1274,9 +1274,9 @@ after it.
 What has no single-thread counterpart is a worker that ends — a plugin that calls `process.exit()`,
 an error thrown outside the scan's own handling, a worker out of memory — and it costs the file the
 worker was extracting rather than the run. That file is withdrawn as a file whose extraction threw
-is ([`lang-plugin.md`](./lang-plugin.md) §7.2), `Skipped <file>: the parser worker extracting it
-<what ended it>. Run with --concurrency 1 to extract every file on the main thread.` on stderr,
-and the scan exits `3`; the worker's next file is handed to another worker, and nothing already
+is ([`lang-plugin.md`](./lang-plugin.md) §7.2), with
+`Skipped <file>: the parser worker extracting it <what ended it>. Run with --concurrency 1 to extract every file on the main thread.`
+on stderr, and the scan exits `3`; the worker's next file is handed to another worker, and nothing already
 extracted is lost. A file whose extraction holds a value that cannot leave the worker is withdrawn the same way.
 The third worker to end in one scan ends the run with exit `1`, naming the three files, and so does
 a worker that cannot load the scan's plugins, `A parser worker failed: <error>`; both name
