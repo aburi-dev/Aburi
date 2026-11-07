@@ -31,20 +31,29 @@ async function documents(): Promise<string[]> {
 
 const onPosixAsAUser = it.skipIf(process.platform === "win32" || process.getuid?.() === 0)
 
+const fileInTheWay = [
+  ["where it would go", "notadir", "EEXIST"],
+  ["where its parent would go", "notadir/out", "ENOTDIR"],
+] as const
+
 describe("aburi scan with an --output-dir that cannot hold the outputs", () => {
-  it("names the command, the directory and the flag when a file stands where it would go", async () => {
-    await writeTypeScriptWorkspace(workspace.root, "write-fixture")
-    await workspace.writeSource("notadir", "not a directory\n")
+  it.each(fileInTheWay)(
+    "names the command, the directory and the flag when a file stands %s",
+    async (_, outputDir, errno) => {
+      await writeTypeScriptWorkspace(workspace.root, "write-fixture")
+      await workspace.writeSource("notadir", "not a directory\n")
 
-    const { code, stderr } = await run("scan", "--output-dir", "notadir")
+      const { code, stderr } = await run("scan", "--output-dir", outputDir)
 
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toContain(
-      `aburi scan could not write the output directory to ${under("notadir")}`,
-    )
-    expect(stderr).toContain("--output-dir")
-    expect(stderr).toContain("EEXIST")
-  })
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toContain(
+        `aburi scan could not write the output directory to ${under(outputDir)}`,
+      )
+      expect(stderr).toContain("a file stands where the directory would go")
+      expect(stderr).toContain("--output-dir")
+      expect(stderr).toContain(errno)
+    },
+  )
 
   it("refuses the directory before it reads the workspace", async () => {
     await writeConfig(workspace.root, TYPESCRIPT)
@@ -211,17 +220,22 @@ describe("aburi scan into a place the machine refuses", () => {
 })
 
 describe("aburi diff with an --output-dir that cannot hold the outputs", () => {
-  it("names the command, the directory and the flag when a file stands where it would go", async () => {
-    await workspace.writeSource("notadir", "not a directory\n")
+  it.each(fileInTheWay)(
+    "names the command, the directory and the flag when a file stands %s",
+    async (_, outputDir, errno) => {
+      await workspace.writeSource("notadir", "not a directory\n")
 
-    const { code, stderr } = await run("diff", ...(await documents()), "--output-dir", "notadir")
+      const { code, stderr } = await run("diff", ...(await documents()), "--output-dir", outputDir)
 
-    expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr).toContain(
-      `aburi diff could not write the output directory to ${under("notadir")}`,
-    )
-    expect(stderr).toContain("--output-dir")
-  })
+      expect(code).toBe(EXIT.INPUT_ERROR)
+      expect(stderr).toContain(
+        `aburi diff could not write the output directory to ${under(outputDir)}`,
+      )
+      expect(stderr).toContain("a file stands where the directory would go")
+      expect(stderr).toContain("--output-dir")
+      expect(stderr).toContain(errno)
+    },
+  )
 
   it("refuses the directory before it reads either IR", async () => {
     await workspace.writeSource("notadir", "not a directory\n")
