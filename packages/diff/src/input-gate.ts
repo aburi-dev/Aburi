@@ -1,5 +1,5 @@
 import { checkDocumentShape, DOCUMENT_SUBJECT } from "@aburi/core"
-import type { IR } from "@aburi/types"
+import { type IR, isIRSchemaURL } from "@aburi/types"
 import {
   DEPENDENCY_IDENTITY_FIELDS,
   dependencyIdentity,
@@ -8,7 +8,9 @@ import {
 import { DiffError } from "./errors"
 
 export function ensureSchemasAgree(base: IR, head: IR): void {
-  if (base.$schema !== head.$schema) {
+  const oneVersion =
+    base.$schema === head.$schema || (isIRSchemaURL(base.$schema) && isIRSchemaURL(head.$schema))
+  if (!oneVersion) {
     throw new DiffError(
       `Base IR schema "${base.$schema}" does not match head IR schema "${head.$schema}"; a diff across schema versions is not supported.`,
       { code: "schema-mismatch", value: base.$schema },

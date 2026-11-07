@@ -27,6 +27,7 @@ function importing(spelling: string): ImportEdge {
     namespaceBinding: spelling,
     line: 1,
     dynamic: false,
+    reexports: [{ imported: spelling, exported: `${spelling}Out` }],
   }
 }
 

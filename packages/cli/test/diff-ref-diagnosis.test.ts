@@ -75,14 +75,17 @@ describe("aburi diff — why a ref did not resolve, in a real repository", () =>
       ["Head ref 'nosuch' could not be resolved", "no such revision"],
       [],
     ],
-  ])("says when %s, with git's own words, at exit 2", async (_, arrange, refSpec, says, doesNotSay) => {
-    const error = await refusal(refSpec, await arrange())
+  ])(
+    "says when %s, with git's own words, at exit 2",
+    async (_, arrange, refSpec, says, doesNotSay) => {
+      const error = await refusal(refSpec, await arrange())
 
-    expect(error.code).toBe("input-error")
-    for (const fragment of says) expect(error.message).toContain(fragment)
-    for (const fragment of doesNotSay) expect(error.message).not.toContain(fragment)
-    expect(error.message).toContain((error.cause as Error).message.trim())
-  })
+      expect(error.code).toBe("input-error")
+      for (const fragment of says) expect(error.message).toContain(fragment)
+      for (const fragment of doesNotSay) expect(error.message).not.toContain(fragment)
+      expect(error.message).toContain((error.cause as Error).message.trim())
+    },
+  )
 })
 
 describe("aburi diff — a ref git would not explain", () => {

@@ -150,7 +150,10 @@ describe("checkIRIntegrity — skippedFiles census", () => {
       ],
       19,
     ],
-  ])("holds the paths to the rule every path-bearing array obeys: refuses them %s", (_label, list, invariant) => {
-    expect(invariantsBroken(list)).toContain(invariant)
-  })
+  ])(
+    "holds the paths to the rule every path-bearing array obeys: refuses them %s",
+    (_label, list, invariant) => {
+      expect(invariantsBroken(list)).toContain(invariant)
+    },
+  )
 })

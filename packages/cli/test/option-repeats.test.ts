@@ -55,6 +55,10 @@ describe("an option that takes one value, given twice", () => {
       repeated("--config", "a.json", "b.json"),
     ],
     [
+      ["diff", "main..HEAD", "--fail-on-scope", "all", "--fail-on-scope", "non-test"],
+      repeated("--fail-on-scope", "all", "non-test"),
+    ],
+    [
       ["explain", "alpha", "--ir", "a.json", "--ir", "b.json"],
       repeated("--ir", "a.json", "b.json"),
     ],
@@ -89,13 +93,13 @@ describe("an option that takes one value, given twice", () => {
 })
 
 describe("a flag, repeated", () => {
-  it.each([
-    [["--compact", "--compact"]],
-    [["--no-timestamp", "--no-timestamp"]],
-  ])("scan %j runs", async (flags) => {
-    await writeTypeScriptWorkspace(workspace.root, "option-repeats")
-    const { code, stderr } = await runCliIn(workspace.root, ["scan", ...flags])
-    expect(stderr).toBe("")
-    expect(code).toBe(EXIT.SUCCESS)
-  })
+  it.each([[["--compact", "--compact"]], [["--no-timestamp", "--no-timestamp"]]])(
+    "scan %j runs",
+    async (flags) => {
+      await writeTypeScriptWorkspace(workspace.root, "option-repeats")
+      const { code, stderr } = await runCliIn(workspace.root, ["scan", ...flags])
+      expect(stderr).toBe("")
+      expect(code).toBe(EXIT.SUCCESS)
+    },
+  )
 })

@@ -105,17 +105,17 @@ describe("the glob", () => {
     expect(verdicts("d/a**b\n", ["d/ab", "d/a/x/b"])).toEqual(["ignored", "none"])
   })
 
-  it.each([
-    "**/c.ts",
-    "x/**/c.ts",
-  ])("matches `%s` only where whole directories precede `c.ts`", (rule) => {
-    expect(verdicts(`${rule}\n`, ["ac.ts", "a/bc.ts", "x/ac.ts", "x/a/bc.ts"])).toEqual([
-      "none",
-      "none",
-      "none",
-      "none",
-    ])
-  })
+  it.each(["**/c.ts", "x/**/c.ts"])(
+    "matches `%s` only where whole directories precede `c.ts`",
+    (rule) => {
+      expect(verdicts(`${rule}\n`, ["ac.ts", "a/bc.ts", "x/ac.ts", "x/a/bc.ts"])).toEqual([
+        "none",
+        "none",
+        "none",
+        "none",
+      ])
+    },
+  )
 
   it("reads `**` before an escaped slash as directories too, without the zero-directory case", () => {
     expect(verdicts("x/**\\/c.ts\n", ["x/a/b/c.ts", "x/c.ts"])).toEqual(["ignored", "none"])
@@ -129,9 +129,12 @@ describe("the glob", () => {
     ],
     ["a**/b", ["a/b", "a/x/b", "ay/x/b"], ["ignored", "none", "none"]],
     ["a**/*", ["a"], ["none"]],
-  ])("does not read the `**` of `%s`, right after a literal head, as directories", (rule, paths, expected) => {
-    expect(verdicts(`${rule}\n`, paths)).toEqual(expected)
-  })
+  ])(
+    "does not read the `**` of `%s`, right after a literal head, as directories",
+    (rule, paths, expected) => {
+      expect(verdicts(`${rule}\n`, paths)).toEqual(expected)
+    },
+  )
 
   it("leaves a file ignored under a directory re-included by `!/a**`", () => {
     expect(verdicts("*\n!/a**\n", ["a"], true)).toEqual(["kept"])

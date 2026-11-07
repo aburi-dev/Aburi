@@ -50,6 +50,18 @@ pnpm --filter @aburi/<name> add -D '@aburi/lang-typescript@workspace:*' '@aburi/
   (`@aburi/cli`, plugin catalog), so `aburi init` proposes it.
 - Pipeline tests that combine several plugins live in `packages/cli/test/e2e`; add the plugin as a
   devDependency of `@aburi/cli` if one needs it.
-- Docs: `docs/guide/supported-stacks.md`, the root `README.md` list, and — worth it for anything users
-  will search for — a showcase example (see the `add-showcase-example` skill).
+- Effects plugins: add the plugin as a devDependency of `@aburi/cli` (the fixture's `aburi.json`
+  loads it from there by package name), put calls it models in a new file of the `effects-coverage`
+  fixture under `packages/cli/test/e2e/projects` that imports the library, name the plugin in the
+  fixture's `aburi.json`, and add its rows to both cases of `effects-coverage.test.ts`: what the scan
+  attributes, and the report rows one edit produces. That test is the only one that checks what each
+  effects plugin attributes.
+- Docs: `docs/guide/supported-stacks.md` and — worth it for anything users will search for — a
+  showcase example (see the `add-showcase-example` skill).
 - `pnpm changeset` for the new package and every published package you touched.
+
+## First release
+
+The release workflow cannot publish a package npm has never seen. Before the release PR that
+versions the new package is merged, the maintainer publishes a `0.0.0` by hand and adds its trusted
+publisher (CONTRIBUTING.md, Releases). Say so in the pull request that adds the package.

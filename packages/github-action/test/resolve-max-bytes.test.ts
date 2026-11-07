@@ -45,18 +45,15 @@ describe("resolve-max-bytes.mjs", () => {
     expect(await run(env)).toEqual({ status: 0, stdout: "", stderr: "" })
   })
 
-  it.each([
-    "64kb",
-    "-1",
-    "1.5",
-    " 4000",
-    "00",
-  ])("is exit 2 on %j, which is not a byte count", async (value) => {
-    const result = await run({ MAX_BYTES: value, FORMAT: "both" }, [process.execPath])
-    expect(result.status).toBe(2)
-    expect(result.stderr).toMatch(/^::error::max-bytes must be a non-negative integer/)
-    expect(result.stdout).toBe("")
-  })
+  it.each(["64kb", "-1", "1.5", " 4000", "00"])(
+    "is exit 2 on %j, which is not a byte count",
+    async (value) => {
+      const result = await run({ MAX_BYTES: value, FORMAT: "both" }, [process.execPath])
+      expect(result.status).toBe(2)
+      expect(result.stderr).toMatch(/^::error::max-bytes must be a non-negative integer/)
+      expect(result.stdout).toBe("")
+    },
+  )
 
   it("renders uncapped, with a warning naming both upgrade routes, against an older CLI", async () => {
     const older = await fakeCli(

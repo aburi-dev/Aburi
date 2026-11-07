@@ -1,5 +1,5 @@
+import { decodeStringLiteralOrRaw } from "@aburi/core"
 import type { Node, Parser, Tree } from "web-tree-sitter"
-import { decodeStringLiteralOrRaw } from "./string-escape"
 
 export function reparseImportTypes(
   parser: Parser,

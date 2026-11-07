@@ -1,20 +1,21 @@
-import type {
-  Call,
-  Component,
-  ComponentId,
-  Decorator,
-  Dependency,
-  DependencyEndpoint,
-  Effect,
-  EffectId,
-  Fingerprint,
-  IR,
-  Symbol as IRSymbol,
-  LanguageId,
-  Rule,
-  Signature,
-  SliceId,
-  SymbolId,
+import {
+  type Call,
+  type Component,
+  type ComponentId,
+  type Decorator,
+  type Dependency,
+  type DependencyEndpoint,
+  type Effect,
+  type EffectId,
+  type Fingerprint,
+  type IR,
+  IR_SCHEMA_URL,
+  type Symbol as IRSymbol,
+  type LanguageId,
+  type Rule,
+  type Signature,
+  type SliceId,
+  type SymbolId,
 } from "@aburi/types"
 
 export function symbolId(raw: string): SymbolId {
@@ -64,6 +65,7 @@ export function makeSymbol(
     rules: overrides.rules ?? [],
     effects: overrides.effects ?? [],
     calls: overrides.calls ?? [],
+    ...(overrides.middleware === undefined ? {} : { middleware: overrides.middleware }),
     source: overrides.source ?? {
       file: filePartOf(overrides.id),
       startLine: 1,
@@ -76,6 +78,7 @@ export function makeSymbol(
     derivedBy: overrides.derivedBy ?? [],
     dropped: overrides.dropped ?? false,
     dropReason: overrides.dropReason ?? null,
+    ...(overrides.inTestFile === undefined ? {} : { inTestFile: overrides.inTestFile }),
   }
 }
 
@@ -222,7 +225,7 @@ export function dependency(
 
 export function makeIR(overrides: Partial<IR> & { symbols?: IRSymbol[] } = {}): IR {
   return {
-    $schema: overrides.$schema ?? "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+    $schema: overrides.$schema ?? IR_SCHEMA_URL,
     generator: overrides.generator ?? { name: "aburi", version: "0.0.0", plugins: [] },
     workspace: overrides.workspace ?? { root: ".", managers: [], languages: [languageId("ts")] },
     components: overrides.components ?? [],

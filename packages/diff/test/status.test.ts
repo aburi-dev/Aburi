@@ -1,8 +1,23 @@
-import { component, fp, guardedBody, makeIR, makeSymbol, rule, zeroFp } from "@aburi/test-support"
-import type { Fingerprint, Symbol as IRSymbol, MatchRationale } from "@aburi/types"
+import {
+  changeLines,
+  component,
+  fp,
+  guardedBody,
+  makeIR,
+  makeSymbol,
+  rule,
+  soleChange,
+  zeroFp,
+} from "@aburi/test-support"
+import {
+  DIFF_SCHEMA_URL,
+  type Fingerprint,
+  type Symbol as IRSymbol,
+  type MatchRationale,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { buildDiff, classifyStatus, dropDirection } from "../src"
-import { changeLines, diffOf, diffSymbols, dropped, soleChange } from "./helpers"
+import { diffOf, diffSymbols, dropped } from "./helpers"
 
 describe("a Symbol only one side holds", () => {
   const foo = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo" })
@@ -38,20 +53,19 @@ describe("a Document diffed against itself", () => {
 })
 
 describe("a pair whose fingerprint moved", () => {
-  it.each<keyof Fingerprint>([
-    "api",
-    "logic",
-    "syntax",
-  ])("is changed, with only the %s axis set on the delta", (axis) => {
-    const base = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp("v1") })
-    const head = makeSymbol({ ...base, fingerprint: { ...fp("v1"), [axis]: "moved0000000" } })
-    expect(soleChange(diffSymbols([base], [head]).symbols, "changed").delta).toMatchObject({
-      apiChanged: false,
-      logicChanged: false,
-      syntaxChanged: false,
-      [`${axis}Changed`]: true,
-    })
-  })
+  it.each<keyof Fingerprint>(["api", "logic", "syntax"])(
+    "is changed, with only the %s axis set on the delta",
+    (axis) => {
+      const base = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp("v1") })
+      const head = makeSymbol({ ...base, fingerprint: { ...fp("v1"), [axis]: "moved0000000" } })
+      expect(soleChange(diffSymbols([base], [head]).symbols, "changed").delta).toMatchObject({
+        apiChanged: false,
+        logicChanged: false,
+        syntaxChanged: false,
+        [`${axis}Changed`]: true,
+      })
+    },
+  )
 })
 
 describe("a pair matched under a different id", () => {
@@ -92,11 +106,14 @@ describe("a pair matched under a different id", () => {
       null,
       "dropped-weak-match",
     ],
-  ])("is moved when %s, with the stage that paired it as rationale", (_, base, head, gitRenames, rationale) => {
-    const diff = diffSymbols([base], [head], { gitRenames })
-    expect(soleChange(diff.symbols, "moved").rationale).toBe(rationale)
-    expect(diff.summary.moved).toBe(1)
-  })
+  ])(
+    "is moved when %s, with the stage that paired it as rationale",
+    (_, base, head, gitRenames, rationale) => {
+      const diff = diffSymbols([base], [head], { gitRenames })
+      expect(soleChange(diff.symbols, "moved").rationale).toBe(rationale)
+      expect(diff.summary.moved).toBe(1)
+    },
+  )
 
   it("is moved+changed, with rationale and delta, when its content changed too", () => {
     const head = makeSymbol({
@@ -237,7 +254,7 @@ describe("the envelope around the changes", () => {
     const base = { ref: "main", irSchema: ir.$schema }
     const head = { ref: "feature", irSchema: ir.$schema }
     const diff = buildDiff({ baseIR: ir, headIR: ir, base, head })
-    expect(diff.$schema).toBe("https://aburi.kage1020.com/schema/aburi.diff.v1.json")
+    expect(diff.$schema).toBe(DIFF_SCHEMA_URL)
     expect(diff.base).toEqual(base)
     expect(diff.head).toEqual(head)
   })

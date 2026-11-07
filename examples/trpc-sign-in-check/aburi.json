@@ -1,0 +1,6 @@
+{
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
+  "languages": ["@aburi/lang-typescript"],
+  "frameworks": ["@aburi/framework-trpc"],
+  "effects": ["@aburi/effects-prisma"]
+}

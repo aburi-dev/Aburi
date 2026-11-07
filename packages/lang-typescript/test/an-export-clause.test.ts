@@ -133,14 +133,17 @@ describe("an export clause", () => {
     ["a type-only specifier", "const handler = 1\nexport { type handler as GET }", "#handler"],
     ["a type-only clause naming a class", "class Shape {}\nexport type { Shape }", "#Shape"],
     ["a type-only default export", "function Page() {}\nexport type { Page as default }", "#Page"],
-  ])("does not export a value through %s, which is erased at runtime", async (_label, source, suffix) => {
-    const symbol = byId(await symbolsOf(source), suffix)
+  ])(
+    "does not export a value through %s, which is erased at runtime",
+    async (_label, source, suffix) => {
+      const symbol = byId(await symbolsOf(source), suffix)
 
-    expect([
-      symbol.visibility,
-      symbol.derivedBy.filter((token) => token.startsWith("export-")),
-    ]).toEqual(["internal", []])
-  })
+      expect([
+        symbol.visibility,
+        symbol.derivedBy.filter((token) => token.startsWith("export-")),
+      ]).toEqual(["internal", []])
+    },
+  )
 
   it("declares nothing for a name it re-exports from an import", async () => {
     const symbols = await symbolsOf('import { a } from "./a"\nexport { a }')

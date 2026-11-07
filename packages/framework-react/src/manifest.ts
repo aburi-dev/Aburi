@@ -1,4 +1,4 @@
-import type { FrameworkManifest } from "@aburi/types"
+import { type FrameworkManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
 import { REACT_DERIVED_BY_PREFIX, type ReactExtKind } from "./ext-kinds"
 
 /** `id` is pinned to `ReactExtKind` so the manifest cannot drift from `classify.ts`. */
@@ -53,7 +53,7 @@ const EXT_KIND_ENTRIES: ReactExtKindEntry[] = [
 ]
 
 export const frameworkReactManifest: FrameworkManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "framework-react",
   version: "0.0.0",
   type: "framework",

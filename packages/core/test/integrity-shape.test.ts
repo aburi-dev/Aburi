@@ -29,19 +29,15 @@ describe("checkIRIntegrity — documents that are not shaped like a Document", (
     expect(shapeViolations(document).length).toBeGreaterThan(0)
   })
 
-  it.each([
-    "components",
-    "symbols",
-    "dependencies",
-    "workspace",
-    "stats",
-    "generator",
-  ])("names the enclosing record and the missing field for %s", (key) => {
-    const violations = shapeViolations(without(key))
-    expect(violations).toHaveLength(1)
-    expect(violations[0]?.subject).toBe("document")
-    expect(violations[0]?.message).toContain(`"${key}" is absent`)
-  })
+  it.each(["components", "symbols", "dependencies", "workspace", "stats", "generator"])(
+    "names the enclosing record and the missing field for %s",
+    (key) => {
+      const violations = shapeViolations(without(key))
+      expect(violations).toHaveLength(1)
+      expect(violations[0]?.subject).toBe("document")
+      expect(violations[0]?.message).toContain(`"${key}" is absent`)
+    },
+  )
 
   it.each([
     ["symbols", {}, "not an array"],
@@ -150,6 +146,18 @@ describe("checkIRIntegrity — documents that are not shaped like a Document", (
     expect(violations.map((v) => v.subject)).toEqual([
       "symbols[0].signature.inputs[0]",
       "symbols[0].signature.inputs[1].bindings[1]",
+    ])
+  })
+
+  it("checks a Symbol's middleware when it is present", () => {
+    const symbol = makeSymbol("ts:src/a.ts#foo", {
+      middleware: ["requireAdmin"],
+    }) as unknown as Record<string, unknown>
+    expect(shapeViolations(withField("symbols", [symbol]))).toEqual([])
+
+    symbol.middleware = ["requireAdmin", 7]
+    expect(shapeViolations(withField("symbols", [symbol])).map((v) => v.subject)).toEqual([
+      "symbols[0].middleware[1]",
     ])
   })
 

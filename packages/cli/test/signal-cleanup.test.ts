@@ -12,34 +12,35 @@ function listenerCounts(): number[] {
 }
 
 describe("cleanUpOnFatalSignal", () => {
-  it.each(
-    FATAL_SIGNALS,
-  )("stops listening on %s, cleans up, then re-raises the same signal", (signal) => {
-    const before = listenerCounts()
-    const events: string[] = []
-    let atCleanup: number[] = []
-    let atReraise: number[] = []
-    releases.push(
-      cleanUpOnFatalSignal(
-        () => {
-          events.push("cleanup")
-          atCleanup = listenerCounts()
-        },
-        (raised) => {
-          events.push(`reraise:${raised}`)
-          atReraise = listenerCounts()
-        },
-      ),
-    )
-    expect(listenerCounts()).toEqual(before.map((count) => count + 1))
+  it.each(FATAL_SIGNALS)(
+    "stops listening on %s, cleans up, then re-raises the same signal",
+    (signal) => {
+      const before = listenerCounts()
+      const events: string[] = []
+      let atCleanup: number[] = []
+      let atReraise: number[] = []
+      releases.push(
+        cleanUpOnFatalSignal(
+          () => {
+            events.push("cleanup")
+            atCleanup = listenerCounts()
+          },
+          (raised) => {
+            events.push(`reraise:${raised}`)
+            atReraise = listenerCounts()
+          },
+        ),
+      )
+      expect(listenerCounts()).toEqual(before.map((count) => count + 1))
 
-    process.emit(signal)
+      process.emit(signal)
 
-    expect(events).toEqual(["cleanup", `reraise:${signal}`])
-    expect(atCleanup).toEqual(before)
-    expect(atReraise).toEqual(before)
-    expect(listenerCounts()).toEqual(before)
-  })
+      expect(events).toEqual(["cleanup", `reraise:${signal}`])
+      expect(atCleanup).toEqual(before)
+      expect(atReraise).toEqual(before)
+      expect(listenerCounts()).toEqual(before)
+    },
+  )
 
   it("still re-raises, with its listeners already gone, when the cleanup throws", () => {
     const before = listenerCounts()
@@ -80,18 +81,19 @@ describe("cleanUpOnFatalSignal", () => {
     }
   })
 
-  it.each(
-    FATAL_SIGNALS,
-  )("does nothing on %s once released, as after a run that finished on its own", (signal) => {
-    const before = listenerCounts()
-    const events: string[] = []
-    const release = cleanUpOnFatalSignal(
-      () => events.push("cleanup"),
-      () => events.push("reraise"),
-    )
-    release()
-    expect(listenerCounts()).toEqual(before)
-    process.emit(signal)
-    expect(events).toEqual([])
-  })
+  it.each(FATAL_SIGNALS)(
+    "does nothing on %s once released, as after a run that finished on its own",
+    (signal) => {
+      const before = listenerCounts()
+      const events: string[] = []
+      const release = cleanUpOnFatalSignal(
+        () => events.push("cleanup"),
+        () => events.push("reraise"),
+      )
+      release()
+      expect(listenerCounts()).toEqual(before)
+      process.emit(signal)
+      expect(events).toEqual([])
+    },
+  )
 })

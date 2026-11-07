@@ -70,27 +70,19 @@ describe("makeSymbolId", () => {
     expect(trySymbolId(parts(overrides))).toBeNull()
   })
 
-  it.each([
-    "A.",
-    ".A",
-    "A..B",
-    ".",
-    "..",
-    "::",
-    "A::",
-    "::B",
-    "A.::B",
-    "A::.B",
-  ])("refuses %j for its empty segment, and no guard accepts it", (qualifiedName) => {
-    expect(() => makeSymbolId(parts({ qualifiedName }))).toThrowError(
-      expect.objectContaining({
-        code: "anonymous-symbol-id-attempted",
-        message: expect.stringContaining("has an empty segment"),
-      }),
-    )
-    expect(trySymbolId(parts({ qualifiedName }))).toBeNull()
-    expect(isSymbolId(`ts:src/a.ts#${qualifiedName}`)).toBe(false)
-  })
+  it.each(["A.", ".A", "A..B", ".", "..", "::", "A::", "::B", "A.::B", "A::.B"])(
+    "refuses %j for its empty segment, and no guard accepts it",
+    (qualifiedName) => {
+      expect(() => makeSymbolId(parts({ qualifiedName }))).toThrowError(
+        expect.objectContaining({
+          code: "anonymous-symbol-id-attempted",
+          message: expect.stringContaining("has an empty segment"),
+        }),
+      )
+      expect(trySymbolId(parts({ qualifiedName }))).toBeNull()
+      expect(isSymbolId(`ts:src/a.ts#${qualifiedName}`)).toBe(false)
+    },
+  )
 
   it("accepts every shape the qname builders produce", () => {
     const built = [
@@ -112,24 +104,24 @@ describe("makeSymbolId", () => {
 })
 
 describe("the shared path table", () => {
-  it.each(WORKSPACE_PATH_CASES)("$path as the file of a Symbol id ($why)", ({
-    path,
-    symbolPath,
-  }) => {
-    if (symbolPath.ok) {
-      expect(makeSymbolId(parts({ file: path }))).toBe(`ts:${path}#foo`)
-      expect(trySymbolId(parts({ file: path }))).toBe(`ts:${path}#foo`)
-      expect(toPosixRelative(path)).toBe(path)
-      return
-    }
-    const refusal = expect.objectContaining({
-      code: "non-posix-path",
-      message: expect.stringContaining(symbolPath.reason),
-    })
-    expect(() => makeSymbolId(parts({ file: path }))).toThrowError(refusal)
-    expect(() => toPosixRelative(path)).toThrowError(refusal)
-    expect(trySymbolId(parts({ file: path }))).toBeNull()
-  })
+  it.each(WORKSPACE_PATH_CASES)(
+    "$path as the file of a Symbol id ($why)",
+    ({ path, symbolPath }) => {
+      if (symbolPath.ok) {
+        expect(makeSymbolId(parts({ file: path }))).toBe(`ts:${path}#foo`)
+        expect(trySymbolId(parts({ file: path }))).toBe(`ts:${path}#foo`)
+        expect(toPosixRelative(path)).toBe(path)
+        return
+      }
+      const refusal = expect.objectContaining({
+        code: "non-posix-path",
+        message: expect.stringContaining(symbolPath.reason),
+      })
+      expect(() => makeSymbolId(parts({ file: path }))).toThrowError(refusal)
+      expect(() => toPosixRelative(path)).toThrowError(refusal)
+      expect(trySymbolId(parts({ file: path }))).toBeNull()
+    },
+  )
 
   it.each(WORKSPACE_PATH_CASES)("$path as a Document path ($why)", ({ path, root }) => {
     if (root.ok) {
@@ -225,6 +217,7 @@ describe("isSymbolId, symbolIdFile and symbolIdParts", () => {
     ["ts:src/nested/dir/a.ts#Cls.method", "src/nested/dir/a.ts"],
     ["ts:src/a.ts#Cls::fromJson", "src/a.ts"],
     ["ts:src/index.ts#<default>", "src/index.ts"],
+    ["ts:src/a.ts#<module>", "src/a.ts"],
     ["ts:src/a.ts#C.#v", "src/a.ts"],
     ["ts:src/a.ts#C::#v", "src/a.ts"],
   ])("accept %j, whose file is %j", (id, file) => {
@@ -263,16 +256,13 @@ describe("isSymbolId, symbolIdFile and symbolIdParts", () => {
 })
 
 describe("makeComponentId and isComponentId", () => {
-  it.each([
-    "billing",
-    "billing-api-v2",
-    "billing-2",
-    "3d-force-graph",
-    "7zip-bin",
-  ])("accept %j", (id) => {
-    expect(makeComponentId(id)).toBe(id)
-    expect(isComponentId(id)).toBe(true)
-  })
+  it.each(["billing", "billing-api-v2", "billing-2", "3d-force-graph", "7zip-bin"])(
+    "accept %j",
+    (id) => {
+      expect(makeComponentId(id)).toBe(id)
+      expect(isComponentId(id)).toBe(true)
+    },
+  )
 
   it.each([
     "",

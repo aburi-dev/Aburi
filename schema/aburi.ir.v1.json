@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+  "$id": "https://aburi.dev/schema/aburi.ir.v1.json",
   "title": "Aburi IR",
   "description": "Aburi intermediate representation (aburi.ir.v1). Source of truth for L3; L0-L2 Markdown views are derived deterministically from this.",
   "type": "object",
@@ -16,7 +16,11 @@
   ],
   "properties": {
     "$schema": {
-      "const": "https://aburi.kage1020.com/schema/aburi.ir.v1.json"
+      "enum": [
+        "https://aburi.dev/schema/aburi.ir.v1.json",
+        "https://aburi.kage1020.com/schema/aburi.ir.v1.json"
+      ],
+      "description": "The first value is this schema's $id, the one to write. The second is the host the schema was served from before aburi.dev; documents that name it remain valid."
     },
     "generator": { "$ref": "#/$defs/Generator" },
     "generatedAt": {
@@ -497,6 +501,12 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Call" }
         },
+        "middleware": {
+          "description": "The middleware a framework registration hands its handler to, as the framework plugin names them, in the order they run. The logic fingerprint reads it, so adding, removing or reordering one is a logic change. Class B: writers omit the key when the Symbol names no middleware, never emit [].",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "source": { "$ref": "#/$defs/SourceRange" },
         "fingerprint": { "$ref": "#/$defs/Fingerprint" },
         "confidence": { "$ref": "#/$defs/Confidence" },
@@ -505,7 +515,12 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "dropped": { "type": "boolean" },
-        "dropReason": { "type": ["string", "null"], "minLength": 1 }
+        "dropReason": { "type": ["string", "null"], "minLength": 1 },
+        "inTestFile": {
+          "type": "boolean",
+          "const": true,
+          "description": "The Symbol's file matched the config's testFiles patterns: it is test code, analysed like any other but not what a diff report or a gate scoped to non-test Symbols is about. No fingerprint reads it. Class B: writers MUST omit the key for a Symbol of any other file, never emit false."
+        }
       },
       "allOf": [
         {

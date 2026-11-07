@@ -137,16 +137,12 @@ describe("classifyReactSymbol", () => {
     expect(await classified(source, name)).toBeNull()
   })
 
-  it.each([
-    "class",
-    "method",
-    "interface",
-    "type",
-    "enum",
-    "namespace",
-  ] as const)("returns null for a %s", (kind) => {
-    expect(classifyReactSymbol(makeCandidate({ kind, name: "X" }), makeCtx())).toBeNull()
-  })
+  it.each(["class", "method", "interface", "type", "enum", "namespace"] as const)(
+    "returns null for a %s",
+    (kind) => {
+      expect(classifyReactSymbol(makeCandidate({ kind, name: "X" }), makeCtx())).toBeNull()
+    },
+  )
 })
 
 describe("classifyReactSymbol — a const read from its own initializer", () => {

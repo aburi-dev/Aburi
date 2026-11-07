@@ -7,20 +7,16 @@ const DEFAULT_EXPORT: SymbolShape = { derivedBy: ["export-default"] }
 const KEYWORD_EXPORT: SymbolShape = { derivedBy: ["export-keyword"] }
 
 describe("classifyNextSymbol — App Router special files", () => {
-  it.each([
-    "page",
-    "layout",
-    "template",
-    "loading",
-    "error",
-    "not-found",
-  ])("gives the default export of app/**/%s.tsx the extKind its role names", (role) => {
-    const file = `app/dashboard/${role}.tsx`
-    expect(classifyNextSymbol(symbolIn(file, "Fn", DEFAULT_EXPORT), makeCtx(file))).toEqual({
-      extKind: `framework:next:${role}`,
-      derivedBy: `framework:next:${role}`,
-    })
-  })
+  it.each(["page", "layout", "template", "loading", "error", "not-found"])(
+    "gives the default export of app/**/%s.tsx the extKind its role names",
+    (role) => {
+      const file = `app/dashboard/${role}.tsx`
+      expect(classifyNextSymbol(symbolIn(file, "Fn", DEFAULT_EXPORT), makeCtx(file))).toEqual({
+        extKind: `framework:next:${role}`,
+        derivedBy: `framework:next:${role}`,
+      })
+    },
+  )
 
   it("gives the role to a default-exported const whose call is handed a function", () => {
     const file = "app/dashboard/page.tsx"
@@ -35,21 +31,16 @@ describe("classifyNextSymbol — App Router special files", () => {
     })
   })
 
-  it.each([
-    "GET",
-    "POST",
-    "PUT",
-    "DELETE",
-    "PATCH",
-    "OPTIONS",
-    "HEAD",
-  ])("makes the named export %s of app/**/route.ts a route", (verb) => {
-    const file = "app/api/users/route.ts"
-    expect(classifyNextSymbol(symbolIn(file, verb, KEYWORD_EXPORT), makeCtx(file))).toEqual({
-      extKind: "framework:next:route",
-      derivedBy: `framework:next:route:${verb}`,
-    })
-  })
+  it.each(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])(
+    "makes the named export %s of app/**/route.ts a route",
+    (verb) => {
+      const file = "app/api/users/route.ts"
+      expect(classifyNextSymbol(symbolIn(file, verb, KEYWORD_EXPORT), makeCtx(file))).toEqual({
+        extKind: "framework:next:route",
+        derivedBy: `framework:next:route:${verb}`,
+      })
+    },
+  )
 
   it.each<[string, string, SymbolShape, string[]]>([
     [

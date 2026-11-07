@@ -1,6 +1,6 @@
 {
   "name": "@aburi/test-harness",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Runs the real scan and diff for plugin and CLI suites: the core pipeline over a plugin lineup the suite chooses, or one file through a language plugin's parse and extraction. It sits above @aburi/core, @aburi/diff and @aburi/plugin-registry, so their own suites use @aburi/test-support instead. Not published; consumed from source.",
   "type": "module",
@@ -18,7 +18,7 @@
     "@aburi/types": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
-    "typescript": "^6.0.3"
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
   }
 }

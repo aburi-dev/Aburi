@@ -1,6 +1,6 @@
-import { tmpdir } from "node:os"
-import { posix, resolve, win32 } from "node:path"
+import { resolve } from "node:path"
 import { ABURI_COMMENT_BODY_MAX_BYTES } from "@aburi/github-action"
+import { DEFAULT_WORK_DIR, requireCount, requireValue } from "./args.mjs"
 
 const COMPLETED_EXIT_CODES = new Set([0, 3])
 
@@ -58,34 +58,13 @@ export function countRecoverableParseErrors(warnings) {
   return counts.length === 0 ? 0 : Math.max(...counts)
 }
 
-export function containsPath(root, candidate, platform = process.platform) {
-  const api = platform === "win32" ? win32 : posix
-  const rel = api.relative(root, candidate)
-  return rel === "" || (!rel.startsWith("..") && !api.isAbsolute(rel))
-}
-
-function requireValue(argv, index, flag) {
-  const value = argv[index]
-  if (value === undefined) throw new Error(`${flag} needs a value.`)
-  return value
-}
-
-function requireCount(argv, index, flag, minimum) {
-  const raw = requireValue(argv, index, flag)
-  const value = Number(raw)
-  if (!Number.isInteger(value) || value < minimum) {
-    throw new Error(`${flag} needs a whole number of at least ${minimum}, not "${raw}".`)
-  }
-  return value
-}
-
 export function parseArgs(argv) {
   const options = {
     only: null,
     runs: 3,
     warmup: 1,
     diff: true,
-    workDir: resolve(tmpdir(), "aburi-bench-work"),
+    workDir: DEFAULT_WORK_DIR,
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -97,19 +76,6 @@ export function parseArgs(argv) {
     else throw new Error(`Unknown flag: ${arg}`)
   }
   return options
-}
-
-export function resolveRepos(manifest, only) {
-  if (only === null) return manifest.repos
-  const known = manifest.repos.map((repo) => repo.id)
-  const unknown = only.filter((id) => !known.includes(id))
-  if (unknown.length > 0) {
-    throw new Error(
-      `--only names ${unknown.map((id) => `"${id}"`).join(", ")}, which repos.json does not ` +
-        `carry. Known ids: ${known.join(", ")}.`,
-    )
-  }
-  return manifest.repos.filter((repo) => only.includes(repo.id))
 }
 
 function formatMiB(kb) {

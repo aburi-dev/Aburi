@@ -119,18 +119,15 @@ describe("a function an object literal holds is a member Symbol", () => {
     expect((await symbolOf(source, "ts:src/a.ts#api.get")).visibility).toBe("public")
   })
 
-  it.each([
-    "src/a.ts",
-    "src/a.tsx",
-    "src/a.js",
-    "src/a.jsx",
-    "src/a.mts",
-  ])("declares one in %s", async (path) => {
-    expect(await idsOf("export const api = { get: () => q() }", path)).toEqual([
-      `ts:${path}#api`,
-      `ts:${path}#api.get`,
-    ])
-  })
+  it.each(["src/a.ts", "src/a.tsx", "src/a.js", "src/a.jsx", "src/a.mts"])(
+    "declares one in %s",
+    async (path) => {
+      expect(await idsOf("export const api = { get: () => q() }", path)).toEqual([
+        `ts:${path}#api`,
+        `ts:${path}#api.get`,
+      ])
+    },
+  )
 })
 
 describe("the binding an object is read under", () => {
@@ -380,8 +377,11 @@ describe("what an object member does not reach", () => {
     expect(await idsOf("export default { fetch() { q() } }")).toEqual([])
   })
 
-  it("declares nothing for an object assigned to module.exports", async () => {
-    expect(await idsOf("module.exports = { m() { q() } }", "src/a.js")).toEqual([])
+  it("declares no member for an object assigned to module.exports, and leaves its methods' calls on <module>", async () => {
+    const source = "module.exports = { m() { q() } }"
+
+    expect(await idsOf(source, "src/a.js")).toEqual(["ts:src/a.js#<module>"])
+    expect(await callsOf(source, "ts:src/a.js#<module>", "src/a.js")).toEqual(["q"])
   })
 
   it("leaves an object a class field holds on the class", async () => {

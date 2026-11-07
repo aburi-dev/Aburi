@@ -28,21 +28,18 @@ const FAMILIES = [
 ] as const
 
 describe("Drizzle method vocabulary", () => {
-  it.each(
-    FAMILIES,
-  )("lists exactly the %s terminals, and its guard accepts each", (_family, set, guard, members) => {
-    expect([...set]).toEqual(members)
-    for (const method of members) expect(guard(method)).toBe(true)
-  })
+  it.each(FAMILIES)(
+    "lists exactly the %s terminals, and its guard accepts each",
+    (_family, set, guard, members) => {
+      expect([...set]).toEqual(members)
+      for (const method of members) expect(guard(method)).toBe(true)
+    },
+  )
 
-  it.each([
-    "from",
-    "where",
-    "values",
-    "returning",
-    "execute",
-    "findUnique",
-  ])("rejects %s in every family", (method) => {
-    for (const [, , guard] of FAMILIES) expect(guard(method)).toBe(false)
-  })
+  it.each(["from", "where", "values", "returning", "execute", "findUnique"])(
+    "rejects %s in every family",
+    (method) => {
+      for (const [, , guard] of FAMILIES) expect(guard(method)).toBe(false)
+    },
+  )
 })

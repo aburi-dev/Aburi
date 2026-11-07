@@ -5,7 +5,7 @@ projects that generated file is the last you will think about it:
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-next", "framework-react"]
 }
@@ -31,6 +31,13 @@ Generated code, vendored trees, and fixtures rarely belong in the report.
   "ignore": ["src/generated/**", "test/fixtures/**", "**/*.pb.ts"]
 }
 ```
+
+Tests are scanned like the rest of the workspace. A file's top-level code is
+reported as one entry, `<module>`, and in a test file that code is its
+`describe` and `it` blocks, so an edit to a test shows up as a change to that
+file's `<module>`. Like the file's other Symbols, it is test code: the report
+folds it into the `🧪 Test files` section, and the gate can skip it
+([Mark test code](#mark-test-code)), so tests need no `ignore` entry.
 
 Write POSIX globs relative to the workspace root. Aburi adds them to the
 built-in exclusions rather than replacing them. A `*` or `**` matches a name
@@ -61,6 +68,36 @@ excludes is passed over while `.gitignore` is honoured, as git passes over it, s
 directory a container owns does not stop a scan. The rule has to exclude the directory
 itself: `data/pg/*` leaves `data/pg` to be listed. A directory a `pnpm-workspace.yaml` or
 `workspaces` pattern names is the exception, because pnpm and npm never read `.gitignore`.
+
+## Mark test code
+
+Tests, fixtures and mocks are scanned like the rest of your code, so the calls out of them stay in
+the graph, but they are rarely what a pull request asks a reviewer about. Aburi marks the Symbols
+of a test file, lists their changes in a folded `🧪 Test files` section at the end of `diff.md`,
+and lets the gate skip them with `--fail-on-scope non-test` (or the action's `fail-on-scope`).
+
+With no `testFiles` in your config, these files are test code:
+
+```
+**/*.test.*  **/*.spec.*  **/*.test-d.*  **/*.spec-d.*
+**/__tests__/**  **/__mocks__/**  **/__fixtures__/**
+**/test/**  **/tests/**  **/e2e/**
+```
+
+Set `testFiles` to use your own list instead. It replaces the default one, so copy the patterns you
+keep:
+
+```jsonc
+{
+  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"]
+}
+```
+
+The globs read like `ignore`'s: `fixtures` or `fixtures/` marks the root's `fixtures/` directory,
+and `**/fixtures/**` marks every one. A pattern that starts with `!` takes files back out, so
+`["**/test/**", "!src/test"]` keeps a production `src/test/` out of the fold. `[]` marks nothing.
+Use `testFiles` rather than `ignore` for tests: an ignored file is never read, and the calls a
+test makes leave the graph with it.
 
 ## Choose plugins
 
@@ -218,6 +255,7 @@ setting in CI.
 |---|---|---|
 | `ignore` | `[]` | Extra glob patterns to skip. |
 | `respectGitignore` | `true` | Honour `.gitignore` files, in the scan and in finding components. |
+| `testFiles` | test-file globs | Files whose Symbols are test code: reported apart in `diff.md` and skipped by `--fail-on-scope non-test`. |
 | `languages` | `[]` | Language plugins to load. A scan needs at least one; `aburi init` writes the ones it detects. |
 | `frameworks` | `[]` | Framework plugins to load. |
 | `effects` | `[]` | Effects plugins, in priority order. |
@@ -234,7 +272,7 @@ setting in CI.
 | `minParsedFileRatio` | *(unset)* | Smallest share of discovered files a scan may parse and still pass. |
 | `lsp` | off | Opt-in enrichment from a language server you install: column ranges and `this.` / `super.` call resolution. Turn it on with `enabled` (or `aburi scan --lsp`); `servers` is keyed by language plugin id: `"lsp": { "enabled": true, "servers": { "ts": { "command": "typescript-language-server", "args": ["--stdio"] } } }` for `lang-typescript`. |
 
-The [JSON Schema](https://aburi.kage1020.com/schema/aburi.config.v1.json) is the
+The [JSON Schema](https://aburi.dev/schema/aburi.config.v1.json) is the
 authoritative definition — that URL is the one the `$schema` line points at, and it
 serves the same file the loader validates against. The
 [config design doc](../design/config.md) carries the reasoning behind each field.

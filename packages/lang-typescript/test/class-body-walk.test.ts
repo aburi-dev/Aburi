@@ -101,9 +101,12 @@ describe("a member's body belongs to the member's own Symbol", () => {
       MERGED_FIELDS,
       { "ts:src/a.ts#C": [], "ts:src/a.ts#C.first": ["one"], "ts:src/a.ts#C.second": ["two"] },
     ],
-  ])("applies the skip to every body a merged class was written with — %s", async (_l, source, expected) => {
-    await expectCalls(source, expected)
-  })
+  ])(
+    "applies the skip to every body a merged class was written with — %s",
+    async (_l, source, expected) => {
+      await expectCalls(source, expected)
+    },
+  )
 
   it("reads the class off the body, not off the Symbol that leads it", async () => {
     const source = ["const C = 1", "class C { m() { inner() } }"].join("\n")

@@ -28,14 +28,16 @@ added and removed counts beside it as lower bounds.
 duplicates: the head revision still has a symbol of the same kind with the same
 body, as when two identical helpers become one. `--fail-on removed` does not
 count them, and `--fail-on removed:duplicate` does. Only a body with something
-to compare counts (a guard, a branch, a return value, an effect), and never a
-symbol a framework plugin classified, such as a route handler or a React
-component, because its role is not in its body.
+to compare counts: a guard (an `if` that returns or throws), a `throw`, a
+`switch`, a computed return value or an effect. A body that only calls
+something, or returns a literal, a variable or a property, never counts, and
+neither does a symbol a framework plugin classified, such as a route handler or
+a React component, because its role is not in its body.
 
 ## The sections
 
 Sections appear in a fixed order, most important first. Aburi drops the empty
-ones and folds Moved, Dropped changes and Syntax-only changes behind a `<details>`.
+ones and folds Moved, Dropped changes, Syntax-only changes and Test files behind a `<details>`.
 
 | Section | What it tells you | Your next move |
 |---|---|---|
@@ -53,6 +55,7 @@ ones and folds Moved, Dropped changes and Syntax-only changes behind a `<details
 | 💧 Dropped changes | Boilerplate that came or went. | Usually nothing. |
 | 🎚 Confidence changes | Aburi is more or less sure of a symbol, and nothing it fingerprints changed. | Check the new badge (see [Confidence](#confidence)). |
 | 🎨 Syntax-only changes | Bodies reformatted, behaviour identical. | Nothing. |
+| 🧪 Test files | Every change to a symbol of test code, by name, and the call edges those symbols gained or lost. A change listed here is not listed in the sections above, though a Slice that reaches from test code into the code under test still draws its test members. The Summary line ends with how many changes there are. | Open it when the tests are the point of the change. |
 
 Learn the split between **API changes** and **Logic changes** first. An API
 change breaks other people's code. A logic change alters what your own code
@@ -67,6 +70,14 @@ does.
 - signature.outputs: `Promise<Order>` → `Promise<OrderWithReceipt>`
 - signature.throws added: `PaymentDeclined`
 ```
+
+An entry is named after the symbol it is about. Two names are not written in
+the source: `<default>` is a file's anonymous default export, and `<module>` is
+what a file does when it is imported, the statements at its top level that
+declare nothing (`await seed()`, `process.on("SIGTERM", …)`). In a CommonJS
+file that includes the functions assigned to `module.exports` or
+`exports.handler`: an assignment declares nothing, so their calls are
+reported under `<module>` rather than under a name of their own.
 
 A change entry lists what differs. A rule, effect, call or decorator that was
 edited rather than added or removed sits under `modified`, with the old value
@@ -119,6 +130,16 @@ branches. A removed `guard` line means somebody removed a condition.
 `db.transaction`, `event.publish`, `network.rpc`. A method that gained
 `db.write` now writes to your database.
 
+A framework registration also lists its **Middleware**, the functions an
+Express route or `use` runs before its handler, in order. Removing one is a
+logic change that names it:
+
+```md
+- middleware removed: `requireAdmin`
+```
+
+A route that lost its authorization check reads as that, not as a reformat.
+
 ## A slice
 
 The Slice View groups the changed symbols that call one another, so a feature
@@ -163,7 +184,7 @@ its row under `effects modified` ends with the old one, `(was high)`.
 | Marker | Meaning |
 |---|---|
 | *(no badge)* | Confident. |
-| `⚠ medium` | The signal matched through an indirection, such as a re-exported decorator or an aliased import. |
+| `⚠ medium` | The signal matched through an indirection, such as a decorator re-exported through a barrel Aburi could not trace, or an aliased import. |
 | `⚠ low` | A weak match. Verify before you rely on it. |
 
 ## Gaps in the report
@@ -199,9 +220,10 @@ plugin installed, and it will keep showing up until you change the cause.
 
 **`out/workspace.md`** covers the repository at a glance: components and their
 roots, the most common effects, and any files the scan could not read. Hand this
-one to a new joiner. Its Component dependencies graph shows the components alone
-for now: the scan records calls between symbols, which each component page lists,
-and no edges between components yet.
+one to a new joiner. Its Component dependencies graph draws an arrow from one
+component to another wherever a file in the first imports the second, by a
+relative path or by its package name. A CommonJS `require()` call is not an
+import, so it draws no arrow.
 
 **`out/components/<id>.md`** covers one component in full. Every kept symbol,
 grouped by file, with its boundaries, signature, rules, effects, and calls.

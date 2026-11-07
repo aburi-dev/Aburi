@@ -54,17 +54,15 @@ describe("classifyNestjsSymbol — method decorators", () => {
     })
   })
 
-  it.each([
-    "UseGuards",
-    "UseInterceptors",
-    "UsePipes",
-    "UseFilters",
-  ])("flags @%s as a boundary without making the method a route", (name) => {
-    expect(classifyDecorated("method", [name])).toEqual({
-      decoratorBoundaries: { [name]: true },
-      derivedBy: `framework:nestjs:handler:${name}`,
-    })
-  })
+  it.each(["UseGuards", "UseInterceptors", "UsePipes", "UseFilters"])(
+    "flags @%s as a boundary without making the method a route",
+    (name) => {
+      expect(classifyDecorated("method", [name])).toEqual({
+        decoratorBoundaries: { [name]: true },
+        derivedBy: `framework:nestjs:handler:${name}`,
+      })
+    },
+  )
 
   it("makes a guarded method a route by its verb, and flags both decorators", () => {
     expect(classifyDecorated("method", ["UseGuards", "Post"])).toEqual({
@@ -80,16 +78,12 @@ describe("classifyNestjsSymbol — method decorators", () => {
 })
 
 describe("classifyNestjsSymbol — other Symbol kinds", () => {
-  it.each([
-    "function",
-    "interface",
-    "type",
-    "const",
-    "namespace",
-    "enum",
-  ] as const)("returns null for a %s, even one decorated @Controller", (kind) => {
-    expect(classifyDecorated(kind, ["Controller"])).toBeNull()
-  })
+  it.each(["function", "interface", "type", "const", "namespace", "enum"] as const)(
+    "returns null for a %s, even one decorated @Controller",
+    (kind) => {
+      expect(classifyDecorated(kind, ["Controller"])).toBeNull()
+    },
+  )
 })
 
 describe("classifyNestjsSymbol — a decorator with an empty name", () => {

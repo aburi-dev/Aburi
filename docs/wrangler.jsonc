@@ -9,6 +9,12 @@
   },
   "routes": [
     {
+      "pattern": "aburi.dev",
+      "custom_domain": true
+    },
+    // The former host stays attached so its links and `$schema` lines keep resolving; a redirect
+    // rule in its zone answers it with a 301 to aburi.dev before the Worker runs.
+    {
       "pattern": "aburi.kage1020.com",
       "custom_domain": true
     }

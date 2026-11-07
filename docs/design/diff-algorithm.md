@@ -156,7 +156,7 @@ for each group:
 
 Matching logic fingerprint = same meaning. This catches a good share of "file move without rename" and "file move with a minor refactor".
 
-**Except where the logic names nothing.** A rule's `type` and `loopKind` say what shape a body has, not what it does ([`fingerprint.md`](./fingerprint.md) §4.8), so a Symbol with no effect and no rule carrying more — a class, an enum, a constructor, a body that only calls something or returns a literal, a body that is one `for` loop over calls, one `try` — shares its logic value with every unrelated body of that shape. That two Symbols share the hash is still true, and the group is keyed on it, but agreement on an axis that says nothing is no evidence that they are one Symbol, as sharing the dropped sentinel is none. Such a group therefore has no lone-candidate branch: every pair in it must reach the 0.85 name bar, and both names must say more than one word. That is the name half of what §3.4.3 skips in stage 4, for the same reason — the name is all there is to go on. The other half, `h.signature === null`, is not taken: every class carries a null signature, so it would refuse every class this group exists to pair. Without this, a deleted function paired with whatever head of its group was closest by name — an unrelated function, or, before the kind joined the key, an unrelated class added anywhere in the workspace — and `--fail-on removed` never saw the deletion.
+**Except where the logic names nothing.** A rule's `type` and `loopKind` say what shape a body has, not what it does ([`fingerprint.md`](./fingerprint.md) §4.8), so a Symbol with no effect and no rule carrying more — a class, an enum, a constructor, a body that only calls something or returns a literal, a body that is one `for` loop over calls, one `try`, a route whose handler is named and whose only logic is the middleware in front of it — shares its logic value with every unrelated body of that shape. That two Symbols share the hash is still true, and the group is keyed on it, but agreement on an axis that says nothing is no evidence that they are one Symbol, as sharing the dropped sentinel is none. Such a group therefore has no lone-candidate branch: every pair in it must reach the 0.85 name bar, and both names must say more than one word. That is the name half of what §3.4.3 skips in stage 4, for the same reason — the name is all there is to go on. The other half, `h.signature === null`, is not taken: every class carries a null signature, so it would refuse every class this group exists to pair. Without this, a deleted function paired with whatever head of its group was closest by name — an unrelated function, or, before the kind joined the key, an unrelated class added anywhere in the workspace — and `--fail-on removed` never saw the deletion.
 
 A pair below the bar is now refused whether or not its base was the last one left in the group, where the lone branch used to take it. Which of several bases above the bar takes a shared head is still §3.8's call, so group membership still decides that much.
 
@@ -864,6 +864,22 @@ delta.exportedAs = { added: [...], removed: [...], modified: [] }
 
 The names the module exports each side under ([fingerprint.md](./fingerprint.md) §3.8), compared as a set: `export { handler as GET }` becoming `export { handler as GET, handler as DELETE }` gives `added: ["DELETE"]`, and `export default function Page` becoming `export function Page` gives `added: ["Page"], removed: ["default"]`. A name is a string with nothing else to differ in, so `modified` stays empty. The api fingerprint leaves the names out when they are the declaration's own name alone; the delta compares them whole, the own name included, so it says which name an export gained or lost wherever the fingerprint moved for it, and a declaration that stops being exported names the export it lost beside its visibility change. A renamed declaration exported under its own name records both, `removed: ["isAdminUser"], added: ["canAdministerSite"]`; the Markdown leaves that pair to its name row ([`markdown-projection.md`](./markdown-projection.md) MP17d). The key is emitted unconditionally, empty included (§10.1).
 
+### 5.6 middleware delta
+
+```
+delta.middleware = {
+  added:     [...],   // names the head holds more often than the base, in head order
+  removed:   [...],   // names the base holds more often than the head, in base order
+  reordered: bool     // the names both sides hold run in a different order
+}
+```
+
+Present when either side's Symbol carries `middleware` ([`ir-schema.md`](./ir-schema.md) §5.8), the two lists being equal included, and absent when neither does, so a reader can tell "unchanged" from "nothing to compare". A side without the key compares as an empty list, so a route that loses its last middleware reports it removed.
+
+The lists are compared as multisets of names, not by position: removing the first of three middleware is one removal, not three changes. Where a name repeats, its earlier occurrences are the ones paired. `reordered` is true when the longest common subsequence of the two lists is shorter than the names they share. The lists themselves are on `before` and `after`, which is where the report reads the order from.
+
+A changed middleware is a removal and an addition: `requireRole("admin")` → `requireRole("user")` removes one name and adds the other. A name is the whole of what the IR records about an entry, so there is nothing for a `modified` bucket to say that the two rows do not.
+
 ## 6. Component / Dependency diff
 
 Not only Symbols but also Components / Dependencies are diffed, in separate arrays.
@@ -935,7 +951,7 @@ Four properties, two of them differing from the Symbol side:
 - **The endpoint's file comes from the document that holds the edge.** An endpoint is matched against `symbols[].source.file` in that document, which is written in the form `stats.skippedFiles[].path` is and is the space §3.5.1 classifies Symbols by — the same form, though after a git rename not the same name, which the third property deals with. Reading the file out of the id's path segment instead would be a second answer to the same question, and nothing in the schema forces the two to agree — a re-export or a generated file is where they come apart. Both sides read one `DependencySideView` per document, built once, so the agreement is a property of the wiring rather than a convention to be maintained.
 - **`lostFiles` is a list, where `SymbolUnknown` carries one `reason`.** An edge has two endpoints: they can sit in two files skipped for two different reasons, one of which says re-run and the other says fix something. An intra-file edge collapses to the single file it lost.
 - **A renamed endpoint file is looked up under both names**, as §3.5.1 does for a leftover Symbol, and `lostFiles[].path` is the path the absent document recorded — the one its `stats.skippedFiles[]` holds — not the holder's. A reader joining `lostFiles[].path` against the holder's `symbols[].source.file` therefore misses a renamed file; the list joins against the absent document's skip list, which is what it was copied from. It is deduplicated and sorted on those names, so an intra-file edge in a renamed file still collapses to one entry.
-- **Component-level edges are never reclassified.** A Component is an aggregate over roots and has no file to lose, so a component endpoint is simply absent from the lookup. Stated rather than left to be inferred, because the asymmetry is otherwise invisible.
+- **A Component-level edge is looked up by the Component it leaves.** The scan draws one where a file of `from` imports a module of `to` ([`ir-schema.md`](./ir-schema.md) §11.3), and the edge does not say which file, so it is `unknown` when the absent document skipped any file its own `components[]` attribute to `from`, and `lostFiles[]` lists all of them. A lost file of `to` changes no import of `from`, so it is not looked up, and neither is a file that lies in no Component.
 
 A direction or effect flip stays an added + removed pair, and no loss check runs on it. The reason is not that neither document lost an endpoint file — nothing forbids a path from being both a `symbols[].source.file` and a skipped one, so that inference has no invariant behind it. It is that both documents *hold* the edge, so neither is silent about it, and `unknown` exists only to explain a silence.
 
@@ -990,7 +1006,7 @@ state per side (cli-spec.md §6.6) and the artifact does not invent it.
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.diff.v1.json",
   "generator": { "name": "aburi", "version": "1.0.0" },
   "base": {
     "ref": "main",                                   // git ref or "ir-base.json"
@@ -1098,7 +1114,7 @@ Including IR generation: <30 seconds (including a full Workspace scan).
 
 ### 9.1 Schema version mismatch
 
-base.$schema != head.$schema → fatal error.
+base.$schema != head.$schema → fatal error, unless both are URLs of IR v1: the two hosts of [`ir-schema.md`](./ir-schema.md) §15.1 name one version.
 When a future v2 ships, an upgrader will be provided.
 
 ### 9.2 Empty base / empty head
@@ -1166,6 +1182,8 @@ If they survive with the same ID they are treated as unchanged; if caught by sta
 | DF18b | DF18a on a Symbol that also moved file | moved+changed: 1 |
 | DF18c | DF18a on a pair dropped on both sides | unchanged, as DF13 |
 | DF18d | Only the names a declaration is exported under changed: `export { handler as GET }` → `export { handler as GET, handler as DELETE }` | changed: 1, delta.apiChanged true, `delta.exportedAs.added: ["DELETE"]` (§5.5). Writing `export function f` as `function f` with `export { f }` is unchanged ([`fingerprint.md`](./fingerprint.md) A25) |
+| DF18e | `router.get("/users", requireAdmin, h)` → `router.get("/users", h)` | changed: 1, delta.logicChanged true, delta.middleware `{ added: [], removed: ["requireAdmin"], reordered: false }` → in Markdown: a Logic changes entry with ``- middleware removed: `requireAdmin` ``; swapping two middleware gives `reordered: true`, and a route that names none on either side has no delta.middleware (§5.6) |
+| DF18f | `router.get("/a", requireAdmin, listA)` → `router.post("/b", requireAdmin, createB)`, in one file or with the two routes in different files, with or without a third route behind `requireAdmin` left as it was | added: 1, removed: 1 — middleware alone names nothing (§3.3), and neither route name passes the 0.85 bar |
 | DF19 | Two unrelated top-level `main(x: string)` in different files | added: 1, removed: 1 — §3.4.3 does not read a name of one word, and §3.3 applies the same rule where the logic names nothing |
 | DF19a | A name of one word in any script — `главная`, `مستخدم`, `initialize` | as DF19; the rule is about how much the name says, not which script says it |
 | DF19b | `ユーザー情報を取得する` moved file with an edited body | moved+changed: 1, rationale: "name-signature" — `nameEvidence` floors an unsegmentable run to the words it must hold (§3.4.1) |
@@ -1180,6 +1198,7 @@ If they survive with the same ID they are treated as unchanged; if caught by sta
 | DF19k | DF19j with the head skipping `src/billing.ts`, and the base holding an edge `ts:src/big.ts#Billing` → `ts:src/kept.ts#kept` | the edge is in `dependencies.unknown` with `absentFrom: "head"` and `lostFiles: [{ path: "src/billing.ts", … }]` — the head's name for the file, not the holder's `src/big.ts` — never in `removed` (§6.2.1) |
 | DF19l | A rename map handed to `buildDiff` sends two base paths onto one head path, or onto a path the base also skipped — git writes neither | the same `symbols[]` and `notCompared[]`, byte for byte, whatever order the map and the skip lists are in; a `notCompared[]` entry for each base record that reaches a head one (§3.5.1, §6.3) |
 | DF19m | Two Symbols of one kind with no `extKind`, one logic fingerprint that names something and one syntax fingerprint, in two files, become one in a third file | the one the survivor pairs with is `moved` (§3.3); the other is `removed` with `duplicateOf` naming the survivor, and `summary.removedDuplicates` is 1. With the logic naming nothing, the survivor of another kind, its body written otherwise (same logic, other syntax), or an `extKind` on the removed Symbol (a Next.js `GET` in `app/api/v1/users/route.ts` deleted beside an identical one in `app/api/v2/users/route.ts`), the removal carries `duplicateOf: null`. A deleted twin of an unchanged Symbol names that Symbol; of several head Symbols with its body, the closest name, and the lower id of two equally close, whatever order the head lists them in (§3.5.2) |
+| DF19n | The base holds a Component edge `billing` → `pricing`; the head skips a file under `billing`'s root, or only one under `pricing`'s (or the base skips one under `billing`'s and the head holds the edge) | `dependencies.unknown` with `absentFrom: "head"` and every skipped file of `billing` in `lostFiles[]`, never `removed`; a file of `pricing` alone leaves the edge `removed`; the base skipping is `unknown` with `absentFrom: "base"` (§6.2.1) |
 | DF20 | A pair whose stage-4 composite equals its row exactly: member 3/4 with signature 11/12, and member 7/10 with an identical signature, at 0.85; an identical member with signature 5/6 at 0.95; an identical member and signature at 1.0. End to end, `AccountService.createUserAccount(a: string, b: number, c: Date, d: boolean)` moved file and renamed `createUserAccountRecord` with `d: Options` | paired, rationale: "name-signature" — the composite is a fraction compared exactly (§3.4.3); one step below (two of four inputs retyped, a member of 7/11, its only input retyped at 0.95 or 1.0) added: 1, removed: 1 |
 | DF20a | Two bases score the same composite for one head, made of different axes — one renamed its member (3/4, signature 11/12), the other kept it (1, signature 1/2) | the lower base id pairs, whichever of the two it is (§3.8) |
 | DF20b | A Symbol whose name says too little, a Symbol with no signature, and a pair the owner gate refuses after clearing its row, each with a logger | the same result as without one, byte for byte, and one `debug` line per Symbol or refused pair naming the rule (§3.4.7); none for a pair stage 4 made, one that scored below its row, or one whose Symbols pair elsewhere |

@@ -1,9 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { assertIRIntegrity, stripUtf8Bom } from "@aburi/core"
-import type { IR } from "@aburi/types"
+import { type IR, IR_SCHEMA_URL, isIRSchemaURL } from "@aburi/types"
 import { CliError, errorMessage } from "./errors"
-
-const IR_SCHEMA_URL = "https://aburi.kage1020.com/schema/aburi.ir.v1.json"
 
 export async function readIR(path: string): Promise<IR> {
   let raw: string
@@ -27,7 +25,7 @@ export async function readIR(path: string): Promise<IR> {
   if (!isPlainObject(parsed)) {
     throw new CliError(`IR file "${path}" is not an object at the root.`, "config-error")
   }
-  if (parsed.$schema !== IR_SCHEMA_URL) {
+  if (!isIRSchemaURL(parsed.$schema)) {
     throw new CliError(
       `IR file "${path}" has unexpected $schema "${String(parsed.$schema)}"; expected "${IR_SCHEMA_URL}".`,
       "config-error",

@@ -27,16 +27,17 @@
     "release": "pnpm typecheck && pnpm test && pnpm build && changeset publish"
   },
   "devDependencies": {
+    "@aburi/changelog": "workspace:*",
     "@aburi/cli": "workspace:*",
     "@aburi/lang-typescript": "workspace:*",
-    "@biomejs/biome": "^2.5.1",
-    "@changesets/cli": "^2.31.0",
-    "ajv": "^8.20.0",
-    "json-schema-to-typescript": "^15.0.4",
-    "tsdown": "^0.22.3",
-    "tsx": "^4.22.4",
-    "turbo": "^2.10.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "@biomejs/biome": "^2.6.3",
+    "@changesets/cli": "catalog:",
+    "ajv": "catalog:",
+    "json-schema-to-typescript": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "turbo": "^2.11.10",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

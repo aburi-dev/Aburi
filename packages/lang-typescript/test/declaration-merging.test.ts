@@ -262,15 +262,18 @@ describe("a namespace merged into a class declares static members", () => {
   it.each([
     ["overloads", "export class C { static m(a: string): void; static m(a: any) {} }"],
     ["an accessor pair", "export class C { static get m() { return 1 } static set m(v) {} }"],
-  ])("says declaration-merged once when a member folded from %s meets an exported type", async (_label, member) => {
-    const m = await symbolOf(
-      `${member}\nexport namespace C { export type m = number }`,
-      "ts:src/a.ts#C::m",
-    )
+  ])(
+    "says declaration-merged once when a member folded from %s meets an exported type",
+    async (_label, member) => {
+      const m = await symbolOf(
+        `${member}\nexport namespace C { export type m = number }`,
+        "ts:src/a.ts#C::m",
+      )
 
-    expect(m.mergedDeclarations).toHaveLength(2)
-    expect(m.derivedBy.filter((token) => token === "declaration-merged")).toHaveLength(1)
-  })
+      expect(m.mergedDeclarations).toHaveLength(2)
+      expect(m.derivedBy.filter((token) => token === "declaration-merged")).toHaveLength(1)
+    },
+  )
 
   it("still folds an instance member and a namespace local of the same name", async () => {
     const source = "export class C { m() { helper() } }\nexport namespace C { const m = 1 }"

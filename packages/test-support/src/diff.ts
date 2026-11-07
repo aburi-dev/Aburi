@@ -1,13 +1,15 @@
-import type {
-  DiffResult,
-  Symbol as IRSymbol,
-  MatchRationale,
-  SliceRecord,
-  Summary,
-  SymbolChanged,
-  SymbolDelta,
-  SymbolMoved,
-  SymbolMovedChanged,
+import {
+  DIFF_SCHEMA_URL,
+  type DiffResult,
+  type Symbol as IRSymbol,
+  type MatchRationale,
+  type SliceRecord,
+  type Summary,
+  type SymbolChange,
+  type SymbolChanged,
+  type SymbolDelta,
+  type SymbolMoved,
+  type SymbolMovedChanged,
 } from "@aburi/types"
 import { sliceId } from "./ir"
 
@@ -38,7 +40,7 @@ export function emptySummary(): Summary {
 /** A diff of `main` against `HEAD` that reports nothing, with `overrides` laid over it. */
 export function makeDiff(overrides: Partial<DiffResult> = {}): DiffResult {
   return {
-    $schema: "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+    $schema: DIFF_SCHEMA_URL,
     generator: { name: "aburi", version: "0.0.0" },
     base: { ref: "main", irSchema: "aburi.ir.v1.json" },
     head: { ref: "HEAD", irSchema: "aburi.ir.v1.json" },
@@ -87,4 +89,27 @@ export function movedChanged(
   rationale: MatchRationale = "git-rename",
 ): SymbolMovedChanged {
   return { status: "moved+changed", before, after, rationale, delta: delta(flags) }
+}
+
+/** Each change as `status base -> head`, or `status id` when only one side holds it. */
+export function changeLines(changes: readonly SymbolChange[]): string[] {
+  return changes.map((change) =>
+    "before" in change
+      ? `${change.status} ${change.before.id} -> ${change.after.id}`
+      : `${change.status} ${change.symbol.id}`,
+  )
+}
+
+export function soleChange<S extends SymbolChange["status"]>(
+  changes: readonly SymbolChange[],
+  status: S,
+): Extract<SymbolChange, { status: S }> {
+  const found = changes.filter(
+    (change): change is Extract<SymbolChange, { status: S }> => change.status === status,
+  )
+  const [only] = found
+  if (only === undefined || found.length > 1) {
+    throw new Error(`expected one ${status} change; got ${changeLines(changes).join(", ")}`)
+  }
+  return only
 }

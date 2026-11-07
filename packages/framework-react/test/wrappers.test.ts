@@ -31,12 +31,12 @@ describe("extractWrapperCall", () => {
     expect(() => extractWrapperCall(candidate.fullNode, "ui.")).toThrow(CoreError)
   })
 
-  it.each([
-    null,
-    { placeholder: true },
-  ])("returns null for %o, which is not a syntax node", (node) => {
-    expect(extractWrapperCall(node, "X")).toBeNull()
-  })
+  it.each([null, { placeholder: true }])(
+    "returns null for %o, which is not a syntax node",
+    (node) => {
+      expect(extractWrapperCall(node, "X")).toBeNull()
+    },
+  )
 })
 
 describe("isContextCall / isForwardRefCall / isMemoCall", () => {

@@ -1,6 +1,7 @@
 import { component, fp, makeIR, makeSymbol } from "@aburi/test-support"
-import type { Component, IR, Symbol as IRSymbol } from "@aburi/types"
+import { type Component, type IR, IR_SCHEMA_URL, type Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
+import { diffSchemaViolations } from "./diff-schema"
 import { diffOf, refusalOf } from "./helpers"
 
 /** A pair whose Symbol changed, so the delta path runs over the fields it reads. */
@@ -56,20 +57,19 @@ describe("a Document that is not one", () => {
     expect(error.message).toBe(message)
   })
 
-  it.each([
-    "stats",
-    "generator",
-    "workspace",
-  ])("is refused when it lacks %s, with no index to name", async (field) => {
-    const { base, head } = changedPair()
-    expect((await refusalOf(base, without(head, field))).message).toBe(
-      `headIR: "${field}" is absent, not an object.`,
-    )
-  })
+  it.each(["stats", "generator", "workspace"])(
+    "is refused when it lacks %s, with no index to name",
+    async (field) => {
+      const { base, head } = changedPair()
+      expect((await refusalOf(base, without(head, field))).message).toBe(
+        `headIR: "${field}" is absent, not an object.`,
+      )
+    },
+  )
 
   it("is refused when it carries only the three collections", async () => {
     const minimal = {
-      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+      $schema: IR_SCHEMA_URL,
       symbols: [],
       components: [],
       dependencies: [],
@@ -89,57 +89,76 @@ describe("a Document that is not one", () => {
   })
 })
 
+const FORMER_HOST_V1 = "https://aburi.kage1020.com/schema/aburi.ir.v1.json"
+const V2 = "https://aburi.dev/schema/aburi.ir.v2.json"
+
 describe("two Documents of different schemas", () => {
-  it("are refused as schema-mismatch, naming the base schema", async () => {
-    const base = makeIR()
-    const head = makeIR({
-      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v2.json" as IR["$schema"],
-    })
+  it.each([
+    ["a v1 base and a v2 head", IR_SCHEMA_URL, V2],
+    ["a former-host v1 base and a v2 head", FORMER_HOST_V1, V2],
+    ["a v2 base and a former-host v1 head", V2, FORMER_HOST_V1],
+    [
+      "a base of no Aburi schema and a v1 head",
+      "https://example.com/schema/aburi.ir.v1.json",
+      IR_SCHEMA_URL,
+    ],
+  ])("are refused as schema-mismatch, naming the base schema, for %s", async (_, baseSchema, headSchema) => {
+    const base = makeIR({ $schema: baseSchema as IR["$schema"] })
+    const head = makeIR({ $schema: headSchema as IR["$schema"] })
     expect(await refusalOf(base, head)).toMatchObject({
       code: "schema-mismatch",
-      value: base.$schema,
+      value: baseSchema,
     })
+  })
+
+  it.each<[string, IR["$schema"], IR["$schema"]]>([
+    ["a former-host base and an aburi.dev head", FORMER_HOST_V1, IR_SCHEMA_URL],
+    ["an aburi.dev base and a former-host head", IR_SCHEMA_URL, FORMER_HOST_V1],
+  ])("are compared as one v1 when they name it by two hosts: %s", (_, baseSchema, headSchema) => {
+    const base = makeIR({
+      $schema: baseSchema,
+      symbols: [makeSymbol({ id: "ts:src/a.ts#a", name: "a" })],
+    })
+    const head = makeIR({ $schema: headSchema })
+    const diff = diffOf(base, head, {
+      base: { ref: "base", irSchema: base.$schema },
+      head: { ref: "head", irSchema: head.$schema },
+    })
+    expect(diff.summary.removed).toBe(1)
+    expect([diff.base.irSchema, diff.head.irSchema]).toEqual([baseSchema, headSchema])
+    expect(diffSchemaViolations(diff)).toEqual([])
   })
 })
 
 describe("a Symbol missing a field", () => {
-  it.each([
-    "fingerprint",
-    "source",
-    "calls",
-    "decorators",
-    "effects",
-    "rules",
-    "id",
-  ])("is refused by name when it lacks %s, which the diff reads", async (field) => {
-    const { base } = changedPair()
-    const error = await refusalOf(base, headWithoutSymbolField(field))
-    expect(error.code).toBe("ir-shape-invalid")
-    expect(error.message).toContain("headIR.symbols[0]")
-    expect(error.message).toContain(`"${field}" is absent`)
-  })
+  it.each(["fingerprint", "source", "calls", "decorators", "effects", "rules", "id"])(
+    "is refused by name when it lacks %s, which the diff reads",
+    async (field) => {
+      const { base } = changedPair()
+      const error = await refusalOf(base, headWithoutSymbolField(field))
+      expect(error.code).toBe("ir-shape-invalid")
+      expect(error.message).toContain("headIR.symbols[0]")
+      expect(error.message).toContain(`"${field}" is absent`)
+    },
+  )
 
-  it.each([
-    "visibility",
-    "name",
-    "kind",
-    "language",
-    "confidence",
-    "derivedBy",
-  ])("is refused when it lacks %s, although the diff never reads it", async (field) => {
-    const { base } = changedPair()
-    const error = await refusalOf(base, headWithoutSymbolField(field))
-    expect(error.code).toBe("ir-shape-invalid")
-    expect(error.message).toContain(`"${field}"`)
-  })
+  it.each(["visibility", "name", "kind", "language", "confidence", "derivedBy"])(
+    "is refused when it lacks %s, although the diff never reads it",
+    async (field) => {
+      const { base } = changedPair()
+      const error = await refusalOf(base, headWithoutSymbolField(field))
+      expect(error.code).toBe("ir-shape-invalid")
+      expect(error.message).toContain(`"${field}"`)
+    },
+  )
 
-  it.each([
-    "signature",
-    "component",
-  ])("is accepted without %s, which the schema makes optional", (field) => {
-    const { base } = changedPair()
-    expect(() => diffOf(base, headWithoutSymbolField(field))).not.toThrow()
-  })
+  it.each(["signature", "component"])(
+    "is accepted without %s, which the schema makes optional",
+    (field) => {
+      const { base } = changedPair()
+      expect(() => diffOf(base, headWithoutSymbolField(field))).not.toThrow()
+    },
+  )
 })
 
 describe("a malformed entry", () => {

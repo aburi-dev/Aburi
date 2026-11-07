@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  "$id": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "title": "Aburi Plugin Manifest",
   "description": "Plugin manifest declaring extension vocabulary contributed to Aburi. Validated at plugin load time.",
   "type": "object",
@@ -8,7 +8,11 @@
   "required": ["$schema", "engines", "name", "provides", "type", "version"],
   "properties": {
     "$schema": {
-      "const": "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
+      "enum": [
+        "https://aburi.dev/schema/aburi.plugin.v1.json",
+        "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
+      ],
+      "description": "The first value is this schema's $id, the one to write. The second is the host the schema was served from before aburi.dev; documents that name it remain valid."
     },
     "name": {
       "type": "string",

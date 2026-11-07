@@ -61,6 +61,8 @@ The reader rule is what carries backward compatibility, and it is the more impor
 | `Component.description` | **yes** | **A** | always emitted; `null` when the component carries no description |
 | `Symbol.component` | **yes** | **A** | always emitted; `null` when the Symbol lies outside every Component |
 | `Symbol.signature` | **yes** | **A** | always emitted; `null` for Symbols with no callable signature |
+| `Symbol.inTestFile` | no | B | present iff `true`: the Symbol's file matched the config's `testFiles` (schema-enforced by `const: true`, §5.7) |
+| `Symbol.middleware` | no | B | omitted when the Symbol names no middleware; never `[]` (§5.8) |
 | `Decorator.qualifier` | no | B | omitted when the decorator was written as a bare name; never `""` (§6) |
 | `Signature.inferredThrows` | no | B | omitted when nothing was inferred; never `[]` (§7) |
 | `Signature.inputs[].optional` | no | B | present iff `true`: a caller may omit the argument (schema-enforced by `const: true`, which refuses `false`, §7) |
@@ -101,7 +103,7 @@ Normalization therefore happens **where a string enters the process**, not where
 | `toRelativePosix` (workspace detection) | `components[].roots` and `workspace.managers[].roots` |
 | `resolveComponents` (CLI config load) | those same fields when they come from `aburi.json` rather than from detection |
 | `normalizePackagePath` (component detection) | `components[].publicApi` |
-| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, and the call target that becomes `calls[].target` or `effects[].target` |
+| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target` or `effects[].target`, and the names a framework plugin hands back as `symbols[].middleware[]` |
 | `buildDropCFilter` | the `suppress` / `keep` / `dropCallees` prefixes those call targets are matched against |
 
 Normalization is all these entry points do to a path. None of them converts a native path into a POSIX one, because the conversion is not decidable from the string: `\` is a separator on Windows and an ordinary filename character on POSIX, so a rewrite applied to every path silently renames any file whose name holds one. A caller that knows it holds a native path converts it — `toRelativePosix` does, on the platform separator, which is a separator exactly where a filename cannot hold one — and everything else hands over a path that is already POSIX and is validated as it stands.
@@ -127,7 +129,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.ir.v1.json",  // required
+  "$schema": "https://aburi.dev/schema/aburi.ir.v1.json",  // required
   "generator": {                              // required
     "name": "aburi",
     "version": "1.0.0",
@@ -188,7 +190,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 
 - `<language>`: identifier declared by the language plugin (`ts`, `tsx`, `js`, `py`, `go`, `rs`, ...)
 - `<file-path>`: POSIX path relative to the workspace root (forward slashes enforced). §14 invariant #10 states the rule every path in the Document obeys; a file path adds two restrictions of its own, because it is part of an id: it holds neither `:` nor `#` (the id is split on the first of each), and it is never the bare `.` (that names the workspace root, and a directory holds no Symbol)
-- `<qualified-name>`: name unique within the file. `.` and `::` are separators that join two named constructs, so every segment they delimit is a non-empty identifier: `A.`, `.A`, `A..B` and `::` are not qualified names. `<default>` (§3.3) is the one reserved exception to the identifier rule. "Identifier" is ECMAScript's IdentifierName — `ID_Start`/`ID_Continue` plus `$`, `_`, ZWNJ and ZWJ — so `ユーザー取得` and `café` are qualified names, and a destructuring pattern's text or a computed member's brackets are not. A segment after a separator may also open with one `#`, which makes it a PrivateIdentifier (`Q.#v`, `Q::#v`); the first segment never does, so the id's own `#` is always the first one after the language and stays unambiguous. `Symbol.name` (§5) carries a qualified name too and obeys the same grammar — it is what `apiFingerprint` reduces to a short name, and nothing in the Document ties it to the qualified name inside the id, so §14 invariant #17 checks both
+- `<qualified-name>`: name unique within the file. `.` and `::` are separators that join two named constructs, so every segment they delimit is a non-empty identifier: `A.`, `.A`, `A..B` and `::` are not qualified names. `<default>` and `<module>` (§3.3) are the two reserved exceptions to the identifier rule, and each is a whole qualified name: `<module>.m` is not one. "Identifier" is ECMAScript's IdentifierName — `ID_Start`/`ID_Continue` plus `$`, `_`, ZWNJ and ZWJ — so `ユーザー取得` and `café` are qualified names, and a destructuring pattern's text or a computed member's brackets are not. A segment after a separator may also open with one `#`, which makes it a PrivateIdentifier (`Q.#v`, `Q::#v`); the first segment never does, so the id's own `#` is always the first one after the language and stays unambiguous. `Symbol.name` (§5) carries a qualified name too and obeys the same grammar — it is what `apiFingerprint` reduces to a short name, and nothing in the Document ties it to the qualified name inside the id, so §14 invariant #17 checks both
 
 ### 3.2 Building the qualified name
 
@@ -203,6 +205,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 | nested namespace / class | `Billing.Invoice.create` |
 | interface / type alias | `Invoice` |
 | default export (including anonymous functions/classes, and a call handed a function, `export default withAuth(() => …)`) | `<default>` |
+| what the file does when it is evaluated: its top-level statements that are not declarations (`await seed()`, `process.on(…)`, a top-level `for` or `try`) | `<module>`, one per file and only when the file has such a statement, `kind = "module"` (§3.3) |
 | function/class expression assigned to a variable | the variable name becomes the qname (e.g. `const handler = () => ...` → `handler`). A class expression is named by the binding and not by a name of its own, which is in scope only inside its body: `const Registry = class Inner { reset() {} }` → `Registry` and `Registry.reset` ([`lang-plugin.md`](./lang-plugin.md) LP7h) |
 | function an object literal holds, the object initialising a binding (`const api = { get: () => …, post() {} }`) | `api.get` and `api.post`, with `.`, as a class's instance members: defining the object creates the closure, and calling the property runs it. An object nested under a named entry adds its key as a segment (`api.v1.get`), and the object in between has no Symbol. An entry whose key names no segment — computed, numeric, a quoted key that is not an identifier — has **no Symbol**, as a class member's, and its body stays on the binding. So does a `#` name, where the object diverges from a class: a class's `#v` is its private member, and outside a class body `#v` is a SyntaxError the grammar parses anyway ([`lang-plugin.md`](./lang-plugin.md) LP7d–LP7g). An object no binding holds directly, such as `export default { fetch() {} }`, declares no member: `<default>.fetch` is not a qualified name |
 | destructuring declaration | one Symbol per **binding**, each named by the binding (e.g. `const { GET, POST } = handlers` → `GET` and `POST`). The pattern's text is not a name; `{ a: b }` binds `b`, and `{ a = fallback }` binds `a` and reads `fallback` |
@@ -217,6 +220,8 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 Anonymous symbols do not become independent Symbol entries. Callbacks, immediately-invoked function expressions, and anonymous function arguments are **absorbed into the parent Symbol's `calls` / `effects` / `rules`**. Position-dependent IDs (of the `<anon@L42>` kind) must not be used (they break diff stability).
 
 The only exceptions are `<default>`, "function expressions assigned to a variable" and the functions held by an object literal a binding holds, from §3.2. These are named entry points, reached by the name or the path the source writes, so they get a Symbol.
+
+`<module>` is the parent the rule above needs at the top of a file. A statement there that declares nothing — `await prisma.user.deleteMany({})`, `doThing()`, `process.on("SIGTERM", () => shutdown())`, a top-level `if`, `for` or `try`, and the statements of a namespace body, which run when the module does — would otherwise be absorbed into no Symbol at all, so what a file does when it is imported reported no effect anywhere. Every such statement of a file goes to its one `<module>` Symbol, in source order, and a callback written in one is absorbed into it as into any parent. What has a Symbol of its own stays there: a declaration, an import or export, a registration named by what it is written with (below), which walks its own call when it is handed no function (`app.use(cors())`), and a directive (`"use client"`), which runs nothing. A declaration whose value is a call handed no function, `const n = await prisma.user.deleteMany({})` or `export default defineConfig({ … })`, still puts that call on no Symbol ([`lang-plugin.md`](./lang-plugin.md) LP20o). Nothing calls `<module>`, since no binding names it, and an import edge is not a call, so a file that imports one inherits none of its effects ([`effect-propagation.md`](./effect-propagation.md) §12.10).
 
 Position is admitted in one place, and only as a **uniqueness tiebreaker**: the `__d<N>` suffix of a module-level registration's name ([`lang-plugin.md`](./lang-plugin.md) LP20i1). A registration statement (`app.use(cors())`) declares nothing, so its name is built from what it is written with — the path it is handed, or the names its arguments carry — and `N` counts only the earlier registrations that agree on all of that. It separates registrations nothing else tells apart, and never names one that something does: an ordinal standing in for the content is what this section forbids, because inserting one registration above the others renames every one below it.
 
@@ -299,12 +304,14 @@ The core entity of the review unit.
   "rules": [ /* Rule[] */ ],                  // required
   "effects": [ /* Effect[] */ ],              // required
   "calls": [ /* Call[] */ ],                  // required
+  "middleware": ["requireAdmin"],             // Class B (§1.1) — omitted when the Symbol names no middleware (§5.8)
   "source": { /* SourceRange */ },            // required
   "fingerprint": { /* Fingerprint */ },       // required
   "confidence": "high",                       // required, enum §5.4
   "derivedBy": ["framework:nestjs:controller", "branch-condition"],  // required
   "dropped": false,                           // required
-  "dropReason": null                          // required, non-null when dropped=true
+  "dropReason": null,                         // required, non-null when dropped=true
+  "inTestFile": true                          // Class B (§1.1) — present only on a Symbol of test code, §5.7
 }
 ```
 
@@ -313,6 +320,8 @@ The core entity of the review unit.
 ### 5.1 `kind` (core enum)
 
 `"function" | "method" | "class" | "interface" | "type" | "const" | "module" | "namespace" | "variable" | "enum" | "constructor"`
+
+`module` is the kind of `<module>` (§3.3) and of nothing else.
 
 Anything outside the core enum is expressed via `extKind`. A consumer may treat an unknown `kind` as an error (= strict enum).
 
@@ -372,7 +381,23 @@ A Symbol's `derivedBy` entry that names something the source wrote — the call 
 - `false` (default): included in the IR output
 - `true`: judged to be decoration, but kept for transparency about what was dropped
 
-Symbols with `dropped: true` have `rules`/`effects`/`calls`/`fingerprint` set to their prescribed values (empty arrays / all fingerprints = "0"*12). The Markdown projection aggregates them in a collapsed `## Dropped` section (see [markdown-projection.md](./markdown-projection.md) §3.6). `aburi explain` outputs the full details. `dropReason` is a short human-readable phrase (e.g. `"pure DTO"`, `"logger boilerplate"`, `"generated file"`).
+Symbols with `dropped: true` have `rules`/`effects`/`calls`/`fingerprint` set to their prescribed values (empty arrays / all fingerprints = "0"*12), and carry no `middleware`. The Markdown projection aggregates them in a collapsed `## Dropped` section (see [markdown-projection.md](./markdown-projection.md) §3.6). `aburi explain` outputs the full details. `dropReason` is a short human-readable phrase (e.g. `"pure DTO"`, `"logger boilerplate"`, `"generated file"`).
+
+### 5.7 `inTestFile`
+
+`true` on every Symbol whose `source.file` matches the config's `testFiles` patterns, or the default list when the config gives none ([`config.md`](./config.md) §4.1); absent on every other Symbol. Dropped Symbols are marked like any other.
+
+The mark says the Symbol is test code, and nothing about how it was analysed: a Symbol of a test file has the same rules, effects, calls and edges it would have anywhere else, so a call graph through a fixture stays whole. No fingerprint reads it, so a change to `testFiles` alone moves no Symbol in `aburi diff`. Its readers are downstream: the Markdown projection lists the changes of marked Symbols apart ([`markdown-projection.md`](./markdown-projection.md) §6.2), and `aburi diff --fail-on-scope non-test` leaves them out of the gate ([`cli-spec.md`](./cli-spec.md) §6.7). A diff entry with both a base and a head Symbol is judged by the head's mark, as the report places it by the head's file.
+
+### 5.8 `middleware`
+
+The middleware a framework registration hands its handler to, in the order it runs, as the framework plugin names them ([`lang-plugin.md`](./lang-plugin.md) §5.2.5). `router.get("/users", requireAdmin, validate(query), listUsers)` carries `["requireAdmin", "validate(query)"]`.
+
+It exists because a registration's middleware is neither a rule nor an effect, and one passed by name (`requireAdmin`) is no call either, so before it the only axis it moved was `syntax`: a route that lost its authorization check was reported as a reformat. The `logic` fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1), so adding, removing or reordering one is a logic change, and the diff names which ([`diff-algorithm.md`](./diff-algorithm.md) §5.6).
+
+It is **Class B** per §1.1: a Symbol that names no middleware — every Symbol that is not a framework registration, and a registration whose only handlers are written inline — omits the key, never `[]`, and the schema enforces `minItems: 1` and `minLength: 1` on each entry. A dropped Symbol carries none (§5.6).
+
+Each name is held in the form the fingerprint reads text in: NFC (§1.2), each run of whitespace collapsed to one space, the ends trimmed. The scan normalizes a name where it enters the IR and drops one left empty, so the `logic` fingerprint hashes the names as held and the diff's middleware delta compares the same strings. Because the key is absent wherever there is nothing to record, a Symbol without middleware hashes exactly as it did before the field existed.
 
 ## 6. Decorator
 
@@ -544,7 +569,7 @@ never a name spelled oddly.
 
 ## 11. Dependency
 
-An edge between symbols or between components. `aburi scan` writes Symbol edges only, `via: "call"` from the resolved call graph; Component edges are valid v1 for any producer, and the projections and the diff handle them, but the scan emits none yet. Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
+An edge between symbols or between components. `aburi scan` writes two kinds: Symbol edges, `via: "call"`, from the resolved call graph, and Component edges, `via: "import"`, from the imports that cross a Component boundary (§11.3). Both endpoint kinds live in the same `dependencies[]` array — the schema for `from`/`to` is a plain `string`, and the endpoint kind is recovered from the id shape (`<language>:<file>#<qname>` for a Symbol id, ASCII kebab-case for a Component id).
 
 ```jsonc
 {
@@ -567,6 +592,17 @@ An edge between symbols or between components. `aburi scan` writes Symbol edges 
 `"outbound" | "inbound" | "bidirectional"`
 
 The direction as seen from `from`. `bidirectional` is limited to cases such as bidirectional RPC.
+
+### 11.3 Component edges
+
+`aburi scan` writes one `{ from: A, to: B, via: "import", direction: "outbound", effect: null }` for each ordered pair of distinct Components where a file attributed to A — as a Symbol in it is ([`component-detect.md`](./component-detect.md) §12) — imports a module of B. Every import edge the language plugin reports counts — static, dynamic, a re-export, a side-effect import, `import x = require(…)`, and a type-only import, which [`lang-plugin.md`](./lang-plugin.md) reports in the same shape. A CommonJS `require()` call is a call, not an import ([`call-resolution.md`](./call-resolution.md) §4.3), so a workspace that imports only through it has no Component edge. A query such as `?raw` or `?inline` asks a bundler for the module in another form, so it is dropped first. Then the specifier decides which Component the module belongs to:
+
+- **A relative specifier** joins the importing file's directory. The joined path belongs to the Component a file at that path would belong to, so it need not be a file the scan read: a JSON module, a stylesheet or a directory's index lies in the Component whose root holds its path. A specifier that climbs exactly to the workspace root names the module at its top level, which the Component rooted at `.` holds, if one is; one that climbs above the root names none.
+- **A bare specifier** names a workspace package by its package name: `@scope/name` for a scoped specifier, otherwise its first segment, so `@acme/billing/invoice` imports `@acme/billing`. The workspace packages are the `package.json#name` at each `workspace.managers[].roots` entry and each Component root, and a package belongs to the Component that holds its `package.json`; a root no Component holds is not read, since no edge could reach its package. A name two Components' manifests both declare names neither, and the scan warns once for each such name an import uses, naming the Components, so an edge left out for it is not missing silently. Every other bare specifier — a registry dependency, a Node built-in, a path alias — is outside the graph.
+
+A file the Document leaves out (`stats.skippedFiles`) contributes no edge, and neither does a file outside every Component. A `package.json` at one of those roots that cannot be read or parsed ends the scan as Component detection's does ([`component-detect.md`](./component-detect.md) §7), since edges built without it would be missing silently.
+
+A resolved call between two Components adds no Component edge. A call into another Component goes through an import of it, which is already an edge. The resolved calls that do not are the ones workspace scope matched by a globally unique name alone ([`call-resolution.md`](./call-resolution.md) §4.6). Drawing a dependency from that evidence would put an arrow in the graph that no import supports. So every Component edge the scan writes is `via: "import"`.
 
 ## 12. SourceRange
 
@@ -640,7 +676,8 @@ An invariant violation is a **fatal error**, not a warning.
 
 ### 15.1 `$schema` URL
 
-- Fixed to `https://aburi.kage1020.com/schema/aburi.ir.v1.json`
+- Aburi writes `https://aburi.dev/schema/aburi.ir.v1.json`, the schema's `$id`
+- `https://aburi.kage1020.com/schema/aburi.ir.v1.json` names the same v1. The schemas were served from that host before `aburi.dev`, and v1 being frozen, a Document written then stays valid: the schema accepts both values, `aburi diff` and `aburi explain` read both, and two Documents that differ only in which of the two they carry are one schema version to the mismatch check of [`diff-algorithm.md`](./diff-algorithm.md) §9.1. The config, diff and plugin manifest schemas accept their own `aburi.kage1020.com` URL beside the `aburi.dev` one in the same way
 - Backward-compatible field additions: allowed within v1
 - Field removal / type change / semantic change: goes to v2. Change `$schema` to `aburi.ir.v2.json`
 

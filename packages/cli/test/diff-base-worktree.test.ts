@@ -56,6 +56,7 @@ const addedOne = (id: string) => ({
   clause: { token: "added", threshold: null },
   observed: 1,
   symbols: [id],
+  scope: "all",
 })
 
 describe("aburi diff — where the base revision is checked out", () => {
@@ -74,21 +75,21 @@ describe("aburi diff — where the base revision is checked out", () => {
     expect(warnings).toEqual([])
   })
 
-  it.each([
-    ".claude/worktrees/feat",
-    "worktrees/feat",
-  ])("leaves a linked worktree at %s out of the main checkout's scan", async (at) => {
-    const main = resolve(workspace.root, "demo")
-    await repository(main)
-    await git(["worktree", "add", "-q", "-b", "feat", at], main)
-    await addFunction(resolve(main, at), "src/feat.ts", "featOnly")
+  it.each([".claude/worktrees/feat", "worktrees/feat"])(
+    "leaves a linked worktree at %s out of the main checkout's scan",
+    async (at) => {
+      const main = resolve(workspace.root, "demo")
+      await repository(main)
+      await git(["worktree", "add", "-q", "-b", "feat", at], main)
+      await addFunction(resolve(main, at), "src/feat.ts", "featOnly")
 
-    const { report, warnings } = await diffIn(main, "HEAD..HEAD")
+      const { report, warnings } = await diffIn(main, "HEAD..HEAD")
 
-    expect(report.summaryLine).toBe("+0 -0 ~0 ↔0 ⤴0")
-    expect(report.exitCode).toBe(EXIT.SUCCESS)
-    expect(warnings).toEqual([])
-  })
+      expect(report.summaryLine).toBe("+0 -0 ~0 ↔0 ⤴0")
+      expect(report.exitCode).toBe(EXIT.SUCCESS)
+      expect(warnings).toEqual([])
+    },
+  )
 
   it("diffs a repository nested in another without reading every Symbol as moved", async () => {
     await initRepository(workspace.root)

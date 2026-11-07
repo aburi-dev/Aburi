@@ -1,6 +1,6 @@
 import type { SymbolClassification } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { classifyDecorated, makeImport, NEST } from "./fixtures/symbol"
+import { classifyDecorated, makeImport, NEST, reexported } from "./fixtures/symbol"
 
 /** The extKind and the confidence, an omitted one read as the `high` it means. */
 function rated(result: SymbolClassification | null): [string | null, string] | null {
@@ -16,9 +16,28 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       [makeImport("routing-controllers", ["Controller"])],
     ],
     [
-      "imported through a re-export barrel, which looks like any foreign module",
+      "imported through a barrel the scan could not follow, which looks like any foreign module",
       "medium",
       [makeImport("../common", ["Controller"])],
+    ],
+    [
+      "imported through a barrel that re-exports it from @nestjs/common",
+      "high",
+      [reexported(makeImport("@app/common", ["Controller"]), { Controller: NEST })],
+    ],
+    [
+      "imported through a barrel that re-exports it from a competing library",
+      "medium",
+      [
+        reexported(makeImport("@app/common", ["Controller"]), {
+          Controller: "routing-controllers",
+        }),
+      ],
+    ],
+    [
+      "imported through a barrel that re-exports only other names from @nestjs/common",
+      "medium",
+      [reexported(makeImport("@app/common", ["Controller"]), { Get: NEST })],
     ],
     ["the file binds to nothing", "high", [makeImport("./unrelated", ["helper"])]],
     [
@@ -30,6 +49,14 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       "bound twice, the NestJS edge second",
       "high",
       [makeImport("./x", ["Controller"], 1), makeImport(NEST, ["Controller"], 2)],
+    ],
+    [
+      "bound twice, the edge re-exported from @nestjs/common second",
+      "high",
+      [
+        makeImport("./x", ["Controller"], 1),
+        reexported(makeImport("@app/common", ["Controller"], 2), { Controller: NEST }),
+      ],
     ],
   ])("rates @Controller %s at %s", (_label, confidence, imports) => {
     expect(rated(classifyDecorated("class", ["Controller"], imports))).toEqual([
@@ -63,13 +90,16 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       ["Injectable", "Controller"],
       ["framework:nestjs:provider", "medium"],
     ],
-  ])("takes a class's confidence from the decorator that won the role (%s)", (_label, decorators, expected) => {
-    const imports = [makeImport(NEST, ["Controller"], 1), makeImport("./di", ["Injectable"], 2)]
-    const result = classifyDecorated("class", decorators, imports)
+  ])(
+    "takes a class's confidence from the decorator that won the role (%s)",
+    (_label, decorators, expected) => {
+      const imports = [makeImport(NEST, ["Controller"], 1), makeImport("./di", ["Injectable"], 2)]
+      const result = classifyDecorated("class", decorators, imports)
 
-    expect(rated(result)).toEqual(expected)
-    expect(result?.decoratorBoundaries).toEqual({ Injectable: true, Controller: true })
-  })
+      expect(rated(result)).toEqual(expected)
+      expect(result?.decoratorBoundaries).toEqual({ Injectable: true, Controller: true })
+    },
+  )
 
   it.each([
     [
@@ -84,11 +114,14 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       [makeImport(NEST, ["Get"], 1), makeImport("./local", ["UseGuards"], 2)],
       "high",
     ],
-  ])("takes a method's confidence from its route decorator, not its handler (%s)", (_label, decorators, imports, confidence) => {
-    const result = classifyDecorated("method", decorators, imports)
+  ])(
+    "takes a method's confidence from its route decorator, not its handler (%s)",
+    (_label, decorators, imports, confidence) => {
+      const result = classifyDecorated("method", decorators, imports)
 
-    expect(rated(result)).toEqual(["framework:nestjs:route", confidence])
-    expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
-    expect(result?.decoratorBoundaries).toEqual({ Get: true, UseGuards: true })
-  })
+      expect(rated(result)).toEqual(["framework:nestjs:route", confidence])
+      expect(result?.derivedBy).toBe("framework:nestjs:route:Get")
+      expect(result?.decoratorBoundaries).toEqual({ Get: true, UseGuards: true })
+    },
+  )
 })

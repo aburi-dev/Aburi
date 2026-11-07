@@ -1,6 +1,6 @@
 {
   "name": "@aburi/diff",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Aburi diff engine: 5-stage semantic matcher (id / git-rename / logic fingerprint / name+signature / dropped weak) followed by status classification and per-Symbol delta computation, emitting aburi.diff.v1-conformant output for PR-review workflows",
   "license": "Apache-2.0",
   "author": "kage1020",
@@ -43,10 +43,10 @@
   "devDependencies": {
     "@aburi/schema": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
-    "ajv": "^8.20.0",
-    "tsdown": "^0.22.3",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "@types/node": "catalog:",
+    "ajv": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

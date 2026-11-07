@@ -43,13 +43,12 @@ describe("isVanishedFile", () => {
     expect(isVanishedFile(error)).toBe(false)
   })
 
-  it.each([
-    new Error("ENOENT: no such file or directory"),
-    "ENOENT",
-    null,
-  ])("refuses %s, which carries no code", (thrown) => {
-    expect(isVanishedFile(thrown)).toBe(false)
-  })
+  it.each([new Error("ENOENT: no such file or directory"), "ENOENT", null])(
+    "refuses %s, which carries no code",
+    (thrown) => {
+      expect(isVanishedFile(thrown)).toBe(false)
+    },
+  )
 })
 
 describe("errorCode", () => {
@@ -97,6 +96,7 @@ describe("describeJsonType", () => {
   it.each<[unknown, string]>([
     [[], "a list"],
     [null, "null"],
+    [undefined, "undefined"],
     [{}, "an object"],
     ["x", "a string"],
     [1, "a number"],

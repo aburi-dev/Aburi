@@ -57,11 +57,14 @@ describe("runFilePipeline — releasing the parse tree", () => {
     ["walkBody throws", { throwFrom: "walkBody" }, /stub walkBody exploded/],
     ["normalizeAst throws", { throwFrom: "normalizeAst" }, /stub normalizeAst exploded/],
     ["the plugin's own import list is unusable", { imports: null }, TypeError],
-  ])("releases the tree when %s, and lets the throw through unchanged", async (_label, script, thrown) => {
-    const plugin = new ScriptedLanguagePlugin(script)
-    await expect(run(plugin).result).rejects.toThrow(thrown)
-    expectReleasedTheHandedTree(plugin)
-  })
+  ])(
+    "releases the tree when %s, and lets the throw through unchanged",
+    async (_label, script, thrown) => {
+      const plugin = new ScriptedLanguagePlugin(script)
+      await expect(run(plugin).result).rejects.toThrow(thrown)
+      expectReleasedTheHandedTree(plugin)
+    },
+  )
 
   it("calls no releaseTree when the plugin built no tree", async () => {
     const plugin = new ScriptedLanguagePlugin({

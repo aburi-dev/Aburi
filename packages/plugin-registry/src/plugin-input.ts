@@ -1,4 +1,10 @@
-import type { CallCandidate, Confidence, ImportBinding, ImportEdge } from "@aburi/types"
+import {
+  type CallCandidate,
+  type Confidence,
+  type ImportBinding,
+  type ImportEdge,
+  PLUGIN_SCHEMA_URL,
+} from "@aburi/types"
 
 export type NonEmptySegments = readonly [string, ...string[]]
 
@@ -115,7 +121,7 @@ export function receiverConfidence(
 }
 
 export interface EffectsPluginManifest<Name extends string, DerivedByPrefix extends string> {
-  readonly $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
+  readonly $schema: typeof PLUGIN_SCHEMA_URL
   readonly name: Name
   readonly version: "0.0.0"
   readonly type: "effects"
@@ -135,7 +141,7 @@ export function defineEffectsManifest<Name extends string, DerivedByPrefix exten
   derivedByPrefix: DerivedByPrefix,
 ): EffectsPluginManifest<Name, DerivedByPrefix> {
   return {
-    $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+    $schema: PLUGIN_SCHEMA_URL,
     name,
     version: "0.0.0",
     type: "effects",

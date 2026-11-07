@@ -32,7 +32,7 @@ describe("a function behind a wrapper is a function", () => {
   it.each([
     ["a wrapped value that is not a function", "export const h = (1) as any", false],
     ["a call, which is not a wrapper", "export const h = (withAuth(() => { q() }))", true],
-    ["a call it is the callee of", "export const h = (() => { q() })()", false],
+    ["a call it is the callee of", "export const h = (() => { q() })()", true],
   ])("leaves %s a const", async (_label, source, hasBody) => {
     const symbol = await symbolOf(source, "ts:src/a.ts#h")
 
@@ -115,14 +115,17 @@ describe("a function a const hands to a call is the const's body", () => {
       0,
       ["Error"],
     ],
-  ])("reads %s the same way, because it asks nothing about the call", async (_label, source, name, further, targets) => {
-    const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
+  ])(
+    "reads %s the same way, because it asks nothing about the call",
+    async (_label, source, name, further, targets) => {
+      const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
-    expect(symbol.bodyNode).not.toBeNull()
-    expect(symbol.derivedBy).toContain("call-argument-function")
-    expect(symbol.mergedDeclarations?.length ?? 0).toBe(further)
-    expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
-  })
+      expect(symbol.bodyNode).not.toBeNull()
+      expect(symbol.derivedBy).toContain("call-argument-function")
+      expect(symbol.mergedDeclarations?.length ?? 0).toBe(further)
+      expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
+    },
+  )
 
   it("is still described by the whole declaration, as a const with no body is", async () => {
     const withAuth = await symbolOf(POST, "ts:src/a.ts#POST")

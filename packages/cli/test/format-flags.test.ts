@@ -45,15 +45,18 @@ describe("scan format flags", () => {
   it.each([
     [["--format", "json"], IR],
     [["--format", "md"], MARKDOWN],
-  ])("%j after a scan that wrote both leaves %j beside the caller's own files", async (flags, expected) => {
-    expect((await scan()).wrote).toEqual(BOTH)
-    for (const file of CALLERS) await workspace.writeSource(`out/${file}`, "# Notes\n")
+  ])(
+    "%j after a scan that wrote both leaves %j beside the caller's own files",
+    async (flags, expected) => {
+      expect((await scan()).wrote).toEqual(BOTH)
+      for (const file of CALLERS) await workspace.writeSource(`out/${file}`, "# Notes\n")
 
-    const { code, wrote } = await scan(...flags)
+      const { code, wrote } = await scan(...flags)
 
-    expect(code).toBe(EXIT.SUCCESS)
-    expect(wrote).toEqual([...new Set([...expected, "components", ...CALLERS])].sort())
-  })
+      expect(code).toBe(EXIT.SUCCESS)
+      expect(wrote).toEqual([...new Set([...expected, "components", ...CALLERS])].sort())
+    },
+  )
 
   it.each([
     [["--no-md", "--no-json"], "--no-md and --no-json leave scan nothing to write"],

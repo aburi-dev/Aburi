@@ -6,7 +6,7 @@ import {
   type UnnameableRoot,
   type UnresolvedDeclaration,
 } from "@aburi/core"
-import type { Config } from "@aburi/types"
+import { CONFIG_SCHEMA_URL, type Config } from "@aburi/types"
 import { CliError, errorMessage } from "../errors"
 import { EXIT, type ExitCode } from "../exit-codes"
 import { pathKind } from "../fs-probe"
@@ -16,8 +16,6 @@ import { resolveWorkspaceRoot } from "../workspace-root"
 import { isUnreadableTree } from "./scan-components"
 
 const CONFIG_ARTEFACT = "the config"
-
-const CONFIG_SCHEMA_URL = "https://aburi.kage1020.com/schema/aburi.config.v1.json"
 
 export interface InitOptions {
   respectGitignore?: boolean

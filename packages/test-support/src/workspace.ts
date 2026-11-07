@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, beforeEach } from "vitest"
@@ -46,4 +46,21 @@ export function useScratchWorkspace(prefix: string): ScratchWorkspace {
  */
 export async function linkDirectory(target: string, linkPath: string): Promise<void> {
   await symlink(target, linkPath, "junction")
+}
+
+/**
+ * Replace `from` with `to` in the file at `path`. A fixture that no longer holds `from`, or holds it
+ * twice, throws here: otherwise the test would fail later, on a diff the edit never made.
+ */
+export async function editFile(path: string, from: string, to: string): Promise<void> {
+  const source = await readFile(path, "utf8")
+  const occurrences = source.split(from).length - 1
+  if (occurrences !== 1) {
+    throw new Error(`${path} holds ${JSON.stringify(from)} ${occurrences} times, not once`)
+  }
+  await writeFile(
+    path,
+    source.replace(from, () => to),
+    "utf8",
+  )
 }

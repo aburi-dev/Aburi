@@ -63,12 +63,15 @@ describe("the export keyword is evidence on every kind", () => {
       "#a",
       ["destructured-binding", "export-default"],
     ],
-  ])("%s written with both keywords at once answers as the default export", async (_label, source, id, expected) => {
-    const symbol = byId(await symbolsOf(source), id)
+  ])(
+    "%s written with both keywords at once answers as the default export",
+    async (_label, source, id, expected) => {
+      const symbol = byId(await symbolsOf(source), id)
 
-    expect(symbol.visibility).toBe("public")
-    expect(symbol.derivedBy).toEqual(expected)
-  })
+      expect(symbol.visibility).toBe("public")
+      expect(symbol.derivedBy).toEqual(expected)
+    },
+  )
 
   it.each([
     ["class", "export default class C {}", "#C"],

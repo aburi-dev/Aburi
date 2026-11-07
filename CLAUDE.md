@@ -54,6 +54,10 @@ Private packages:
 - `@aburi/docs` (`docs/`) — the VitePress site. Its `build` builds the packages it renders first.
 - `@aburi/benchmark-public-repos` (`benchmarks/public-repos/`) — measures `scan` and `diff` on pinned
   public repositories; run by hand or by `benchmark.yml`. Its report helpers have unit tests.
+- `@aburi/changelog` — the changelog functions `.changeset/config.json` names, which write every
+  CHANGELOG.md and so every GitHub release: each changeset as `@changesets/changelog-git` writes it,
+  and the dependencies a release picked up in one line. Plain `.mjs` with no build, because
+  `changeset version` loads it from source before anything is built.
 
 Generated, gitignored, rebuilt by turbo: `packages/types/src/generated/` (the `codegen` task, from the
 schemas) and `packages/lang-typescript/wasm/` (vendored grammars).
@@ -80,7 +84,9 @@ pipeline, and its tests run against its own built bin.
   spec ids, invariant numbers, issue or PR numbers — in code, comments or test titles.
 - ESM, strict TypeScript, no `any` escapes, no linter-suppression comments.
 - Dependencies are added with `pnpm add` (workspace packages as `'@aburi/x@workspace:*'`), never by
-  writing versions into `package.json`.
+  writing versions into `package.json`. One that two or more packages declare is a `catalog:` entry,
+  its range kept once in `pnpm-workspace.yaml`: `pnpm add` writes `catalog:` for a name the catalog
+  lists, and `pnpm add <dep> --save-catalog`, run for every package that declares it, moves one there.
 - Behaviour is specified in `docs/design/` first; change the doc and schema in the same branch.
 - A change to a published package needs a changeset (`pnpm changeset`).
 - Branch from `main`; changes land through pull requests.
@@ -90,9 +96,12 @@ pipeline, and its tests run against its own built bin.
 - `.gitattributes` forces LF: Biome is configured for LF and Windows checkouts would otherwise fail it.
 - `declarationMap` stays off: turning it on makes rolldown-plugin-dts enable sourcemaps for every
   tsdown build and ships ~1.6 MB of `.map` files.
-- The docs deploy uses `cloudflare/wrangler-action@v4`; v3 pins a Wrangler that cannot deploy an
-  assets-only Worker.
+- The docs deploy runs Wrangler through `pnpm dlx`. `cloudflare/wrangler-action` installs it with npm,
+  which fails on the docs package's `workspace:` dependencies.
 - The docs site ships with a release, not a merge (`release.yml` calls `docs.yml`).
+- `aburi diff <base>..<head>` scans the base on a worker thread that runs cli's built
+  `dist/scan-worker.mjs`, even under a direct vitest run of `src`. Rebuild cli before that run, or the
+  base scans with the last build (and, never built, every ref diff exits 1).
 - `packages/github-action/test/resolve-cli-bin.test.ts` › "anchors on the working directory…" fails in
   a long-lived checkout whose pnpm store exposes `@aburi/cli` through vitest's `NODE_PATH`; it passes in a
   fresh install and in CI.

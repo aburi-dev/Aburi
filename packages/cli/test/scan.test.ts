@@ -170,18 +170,21 @@ describe("aburi scan — a package.json value that names the package directory",
       { exports: { ".": "./src/ok.js", "./": "./" } },
       ["src/ok.js"],
     ],
-  ])("writes no publicApi entry for %s, and the IR satisfies its schema", async (_value, manifest, publicApi) => {
-    await writePackageJson(workspace.root, { name: "scan-fixture", ...manifest })
+  ])(
+    "writes no publicApi entry for %s, and the IR satisfies its schema",
+    async (_value, manifest, publicApi) => {
+      await writePackageJson(workspace.root, { name: "scan-fixture", ...manifest })
 
-    const report = await scan()
+      const report = await scan()
 
-    expect(report.exitCode).toBe(EXIT.SUCCESS)
-    const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as {
-      components: { publicApi?: string[] }[]
-    }
-    expect(ir.components.map((component) => component.publicApi)).toEqual([publicApi])
-    expect(irSchemaViolations(ir)).toEqual([])
-  })
+      expect(report.exitCode).toBe(EXIT.SUCCESS)
+      const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as {
+        components: { publicApi?: string[] }[]
+      }
+      expect(ir.components.map((component) => component.publicApi)).toEqual([publicApi])
+      expect(irSchemaViolations(ir)).toEqual([])
+    },
+  )
 })
 
 describe("aburi scan — files saved with a byte order mark", () => {
@@ -264,16 +267,16 @@ describe("aburi scan — files skipped for a reason that is not a plugin throw",
 describe("aburi scan's removals, when another command runs the scan", () => {
   const outputs = () => listTree(resolve(workspace.root, "out"))
 
-  it.each([
-    "explain",
-    "diff",
-  ] as const)("removes nothing an earlier scan wrote when %s's scan writes only Markdown", async (command) => {
-    await scan({ format: "both" })
-    await workspace.writeSource(`out/${COMPONENTS_DIRNAME}/stale.md`, "# Component: stale\n")
-    const earlier = await outputs()
+  it.each(["explain", "diff"] as const)(
+    "removes nothing an earlier scan wrote when %s's scan writes only Markdown",
+    async (command) => {
+      await scan({ format: "both" })
+      await workspace.writeSource(`out/${COMPONENTS_DIRNAME}/stale.md`, "# Component: stale\n")
+      const earlier = await outputs()
 
-    await scan({ command, format: "md" })
+      await scan({ command, format: "md" })
 
-    expect(await outputs()).toEqual(earlier)
-  })
+      expect(await outputs()).toEqual(earlier)
+    },
+  )
 })

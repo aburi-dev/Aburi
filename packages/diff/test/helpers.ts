@@ -1,5 +1,14 @@
-import { dependency, errorFrom, fp, makeIR, makeSymbol, sig, zeroFp } from "@aburi/test-support"
-import type { Dependency, IR, Symbol as IRSymbol, SkippedFile, SymbolChange } from "@aburi/types"
+import {
+  changeLines,
+  dependency,
+  errorFrom,
+  fp,
+  makeIR,
+  makeSymbol,
+  sig,
+  zeroFp,
+} from "@aburi/test-support"
+import type { Dependency, IR, Symbol as IRSymbol, SkippedFile } from "@aburi/types"
 import { buildDiff, DiffError, type DiffInput, type SymbolPair } from "../src"
 
 const IR_REF = { ref: "test", irSchema: "aburi.ir.v1.json" } as const
@@ -22,15 +31,6 @@ export function diffSymbols(
   return diffOf(makeIR({ symbols: [...base] }), makeIR({ symbols: [...head] }), extras)
 }
 
-/** Each change as `status base -> head`, or `status id` when only one side holds it. */
-export function changeLines(changes: readonly SymbolChange[]): string[] {
-  return changes.map((change) =>
-    "before" in change
-      ? `${change.status} ${change.before.id} -> ${change.after.id}`
-      : `${change.status} ${change.symbol.id}`,
-  )
-}
-
 export function changesBetween(
   base: readonly IRSymbol[],
   head: readonly IRSymbol[],
@@ -48,20 +48,6 @@ export function pairedNames(base: readonly IRSymbol[], head: readonly IRSymbol[]
 
 export function stagePairNames(matched: readonly SymbolPair[]): string[] {
   return matched.map((pair) => `${pair.base.name} -> ${pair.head.name}`)
-}
-
-export function soleChange<S extends SymbolChange["status"]>(
-  changes: readonly SymbolChange[],
-  status: S,
-): Extract<SymbolChange, { status: S }> {
-  const found = changes.filter(
-    (change): change is Extract<SymbolChange, { status: S }> => change.status === status,
-  )
-  const [only] = found
-  if (only === undefined || found.length > 1) {
-    throw new Error(`expected one ${status} change; got ${changeLines(changes).join(", ")}`)
-  }
-  return only
 }
 
 export function withSkipped(ir: IR, skipped: readonly SkippedFile[]): IR {

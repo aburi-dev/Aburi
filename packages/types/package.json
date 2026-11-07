@@ -1,6 +1,6 @@
 {
   "name": "@aburi/types",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Aburi shared types: schema-generated IR / config / diff / plugin manifest, plus hand-written plugin interface signatures",
   "license": "Apache-2.0",
   "author": "kage1020",
@@ -38,11 +38,11 @@
   },
   "devDependencies": {
     "@aburi/schema": "workspace:*",
-    "@types/node": "^26.0.1",
-    "json-schema-to-typescript": "^15.0.4",
-    "tsdown": "^0.22.3",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "@types/node": "catalog:",
+    "json-schema-to-typescript": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

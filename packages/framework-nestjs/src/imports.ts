@@ -1,4 +1,4 @@
-import { DEFAULT_EXPORT_NAME, splitAliasedImportName } from "@aburi/core"
+import { DEFAULT_EXPORT_NAME, decoratorReference, splitAliasedImportName } from "@aburi/core"
 import {
   assertImportBinding,
   assertImportEdgeSource,
@@ -24,6 +24,7 @@ interface NameOrigin {
 interface NamespaceOrigin {
   readonly source: string
   readonly fromNestjs: boolean
+  readonly origins: ReadonlyMap<string, string> | undefined
 }
 
 export interface ImportedBindings {
@@ -42,20 +43,28 @@ export function readImportedNames(
 
   for (const edge of imports) {
     assertImportEdgeSource(edge, origin)
-    const fromNestjs = isNestjsModule(edge.source)
     if (edge.symbols === "*") {
       const binding = edge.namespaceBinding
       if (binding === undefined) continue
       assertNamespaceBinding(binding, edge, origin)
       if (namespaces.get(binding)?.fromNestjs === true) continue
-      namespaces.set(binding, { source: edge.source, fromNestjs })
+      namespaces.set(binding, {
+        source: edge.source,
+        fromNestjs: isNestjsModule(edge.source),
+        origins: edge.origins,
+      })
       continue
     }
     for (const raw of edge.symbols) {
       const binding = splitAliasedImportName(raw)
       assertImportBinding(binding, raw, edge, origin)
       if (names.get(binding.local)?.fromNestjs === true) continue
-      names.set(binding.local, { imported: binding.imported, source: edge.source, fromNestjs })
+      const source = edge.origins?.get(binding.imported) ?? edge.source
+      names.set(binding.local, {
+        imported: binding.imported,
+        source,
+        fromNestjs: isNestjsModule(source),
+      })
     }
   }
 
@@ -71,12 +80,13 @@ export function resolveDecoratorName(
   decorator: Pick<Decorator, "name" | "qualifier">,
   bindings: ImportedBindings,
 ): ResolvedDecoratorName {
-  const { name, qualifier } = decorator
-  if (qualifier !== undefined) {
-    const head = headSegment(qualifier)
+  const { name } = decorator
+  if (decorator.qualifier !== undefined) {
+    const { head, member } = decoratorReference(decorator)
     const viaNamespace = bindings.namespaces.get(head)
     if (viaNamespace !== undefined) {
-      return { canonical: name, confidence: viaNamespace.fromNestjs ? "high" : "medium" }
+      const source = viaNamespace.origins?.get(member) ?? viaNamespace.source
+      return { canonical: name, confidence: isNestjsModule(source) ? "high" : "medium" }
     }
     const viaName = bindings.names.get(head)
     if (viaName !== undefined) {
@@ -88,10 +98,4 @@ export function resolveDecoratorName(
   if (origin === undefined) return { canonical: name, confidence: "high" }
   const canonical = origin.imported === DEFAULT_EXPORT_NAME ? name : origin.imported
   return { canonical, confidence: origin.fromNestjs ? "high" : "medium" }
-}
-
-/** The only segment of a receiver that can name a binding. */
-function headSegment(qualifier: string): string {
-  const dot = qualifier.indexOf(".")
-  return dot === -1 ? qualifier : qualifier.slice(0, dot)
 }

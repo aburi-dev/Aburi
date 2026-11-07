@@ -117,19 +117,22 @@ describe("an id naming another file withdraws the file that wrote it", () => {
   it.each<[string, string, string, string[]]>([
     ["after", "c.stub", "a.stub", ["stub:a.stub#only", "stub:bad.stub#only"]],
     ["before", "a.stub", "c.stub", ["stub:bad.stub#only", "stub:c.stub#only"]],
-  ])("blames the offender when it comes %s the file it names", async (_order, offender, named, kept) => {
-    const { result } = await run((path) =>
-      path === offender ? [declared(named, "only", 1)] : ONE_EACH(path),
-    )
-    expect(result.skipped).toEqual([
-      {
-        path: offender,
-        reason: "extraction-failed",
-        detail: expect.stringContaining(`Symbol id "stub:${named}#only" names ${named}`),
-      },
-    ])
-    expect(result.ir.symbols.map((s) => s.id)).toEqual(kept)
-  })
+  ])(
+    "blames the offender when it comes %s the file it names",
+    async (_order, offender, named, kept) => {
+      const { result } = await run((path) =>
+        path === offender ? [declared(named, "only", 1)] : ONE_EACH(path),
+      )
+      expect(result.skipped).toEqual([
+        {
+          path: offender,
+          reason: "extraction-failed",
+          detail: expect.stringContaining(`Symbol id "stub:${named}#only" names ${named}`),
+        },
+      ])
+      expect(result.ir.symbols.map((s) => s.id)).toEqual(kept)
+    },
+  )
 
   it("withdraws every offending file, in discovery order", async () => {
     const { result } = await run((path) => {

@@ -39,18 +39,21 @@ describe("LSP client write bounds", () => {
     WRITES.flatMap(([name, send]) =>
       (["reject", "throw-sync"] as const).map((behavior) => [name, behavior, send] as const),
     ),
-  )("reports a %s whose write fails (%s) as a server error rather than throwing", async (_, behavior, send) => {
-    const { client } = makeClient({
-      notification: behavior,
-      request: behavior,
-      rejectMessage: "EPIPE",
-    })
-    await expect(send(client, 1000)).resolves.toEqual({
-      kind: "error",
-      reason: "server-error",
-      message: "EPIPE",
-    })
-  })
+  )(
+    "reports a %s whose write fails (%s) as a server error rather than throwing",
+    async (_, behavior, send) => {
+      const { client } = makeClient({
+        notification: behavior,
+        request: behavior,
+        rejectMessage: "EPIPE",
+      })
+      await expect(send(client, 1000)).resolves.toEqual({
+        kind: "error",
+        reason: "server-error",
+        message: "EPIPE",
+      })
+    },
+  )
 
   it("sends the didOpen params unchanged and reports no failure on the happy path", async () => {
     const { client, connection } = makeClient()

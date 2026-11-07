@@ -74,11 +74,14 @@ describe("a getter and a setter declare one member", () => {
       ["export class A {", "  @Memo() get v() { return 1 }", "  @Validate() set v(n) {}", "}"],
       ["Memo", "Validate"],
     ],
-  ])("joins both declarations' decorators in source order where %s", async (_label, lines, names) => {
-    const symbol = await symbolOf(lines.join("\n"), "ts:src/a.ts#A.v")
+  ])(
+    "joins both declarations' decorators in source order where %s",
+    async (_label, lines, names) => {
+      const symbol = await symbolOf(lines.join("\n"), "ts:src/a.ts#A.v")
 
-    expect(symbol.decorators.map((d) => d.name)).toEqual(names)
-  })
+      expect(symbol.decorators.map((d) => d.name)).toEqual(names)
+    },
+  )
 
   it("still says nothing about a computed accessor", async () => {
     expect(await idsOf("export class C { get [k]() { return 1 } set [k](n) {} }")).toEqual([

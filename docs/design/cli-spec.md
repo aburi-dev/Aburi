@@ -145,7 +145,7 @@ in the workspace root or any directory above it, the walk an ESM import from the
 ```jsonc
 {
   // Suggested install: pnpm add -D @aburi/framework-nestjs
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
   "components": [/* ... */]
@@ -181,7 +181,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
 | `--compact` | Compact the JSON to a single line |
 | `--no-timestamp` | Omit `discoveredAt` from `aburi-vocab-discovered.json`. Implied by `CI` (§11). The IR carries no timestamp to omit ([`ir-schema.md`](./ir-schema.md) §1.1) |
 | `--lsp` / `--no-lsp` | Override `config.lsp.enabled` ([`lsp-enrichment.md`](./lsp-enrichment.md)). `--lsp` with no `lsp.servers` entry for a loaded language starts no server, and says so on stderr |
-| `--concurrency <n>` | (planned, §14) Parser concurrency |
+| `--concurrency <n>` | (planned, §14.2) Parser concurrency |
 | `--respect-gitignore` / `--no-respect-gitignore` | Override `config.respectGitignore`. A pair rather than the negative alone, so that a run which typed neither is distinguishable from one that asked for the default — an override the caller did not spell must leave the config alone |
 | `--ignore <glob>` | Append to `config.ignore[]` (repeatable) |
 | `--config <path>` | The config file to read (§13) |
@@ -190,7 +190,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
 
 1. Resolve the config
 2. Load plugins and build the registry
-3. Walk the workspace, parsing one file at a time (the worker pool of §14 is planned)
+3. Walk the workspace, parsing one file at a time (the worker pool of §14.2 is planned)
 4. Extraction pipeline: per file, extraction → framework classification → Symbol drop (category B) → body walk → effect classification and call drop (category C) → fingerprint; then, over the whole workspace, LSP enrichment when `lsp.enabled` → call resolution → effect propagation → the `logic` fingerprint again, now reading propagated effects → the IR's integrity check
 5. Write `<output-dir>/aburi.ir.json` + `<output-dir>/workspace.md` + `<output-dir>/components/*.md` — the IR first, because every page is derived from it: a page that fails to render leaves the IR on disk rather than taking it down too, and an IR the serializer refuses leaves no pages beside it. A page that fails to render is a bug in Aburi (exit `1`, §9) and names the page; the scan's incidents are reported before the command ends, as they are after a clean run
    - **What this run does not write is removed**, once everything it writes is written, so the directory describes this run alone and not a mix of runs: the `aburi.ir.json` a `--format md` run leaves out, which `aburi explain --no-rescan` would otherwise answer from (§7.3); the `workspace.md` and every component page a `--format json` run leaves out; and, under any format, the page of a Component this IR does not hold — one renamed or removed since. A path that cannot be removed is refused like one that cannot be written, and so is a `components/` that cannot be listed or a page whose first line cannot be read. The message names the step that failed — `could not remove <artefact> at <path>`, `could not list the components directory at <path>`, `could not read the Markdown for component "<id>" at <path>` — and is exit `2` for a directory standing where a removed file would be, exit `1` for any other refusal. Each file `aburi scan` removes, the discovered-vocabulary record (§5.2) included, is logged as one `info:` line, `Removed <artefact> at <path>`, so the default level, `warn`, shows none of them (§5.6)
@@ -621,8 +621,10 @@ aburi diff --base <ir.json> --head <ir.json>               # specify existing IR
 | `--format <json\|md\|both>` | Output format |
 | `--filter <kinds>` | (planned) Comma-separated restriction to change kinds (`added,removed,changed,moved,moved+changed`) |
 | `--fail-on <kinds>` | Exit 3 if even one change of the given kinds (status granularity) exists (for CI gates). Repeatable: each occurrence adds its clauses after the earlier ones' (§6.7) |
+| `--fail-on-scope <all\|non-test>` | Which changes every `--fail-on` clause counts: all of them (default), or those whose Symbol is not test code (§6.7) |
 | `--max-bytes <n>` | Cap `diff.md` at n UTF-8 bytes, keeping sections most important first at their smallest (names only for a section of whole Symbols) and then growing the name lists back to full entries from the top ([`markdown-projection.md`](./markdown-projection.md) §6.4). `diff.json` is never capped, and when the cap changed the report the uncapped one is written as `diff.full.md` beside it. Absent: no cap — `0` is exit 2 here, not the opt-out it is on the action input. Warns when `--format json` leaves it nothing to cap, and when the budget could not be met |
 | `--compact` | Compact `diff.json` to a single line |
+| `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once (§14.1). `--no-parallel-scans` runs the base and then the head, which uses less memory; `--parallel-scans` runs both at once even on one CPU. Neither: at once when the machine has two or more CPUs, one after the other on one. No effect with `--base/--head`, which scans nothing |
 | `--config <path>` | The config file both scans read (§13, §6.4 step 3) |
 | `--quiet` | (planned) Limit stdout to the glyph line |
 
@@ -656,6 +658,7 @@ With refs (every git command these steps run gets the caller's environment as §
    - Rationale: using the config as of the base ref would make "config change = the entire IR changes", breaking the diff. Fixing the view to the head automatically resolves config differences
    - A future `--base-config <path>` may be provided to override this (planned — see the [roadmap](../roadmap.md)). The two scans would then no longer read one config, and the `pluginOptions` line (§5.6) would be said by each, labelled by side
 4. Run `aburi scan` on the head (the original cwd)
+   - Steps 3 and 4 run at the same time unless `--no-parallel-scans` or a single CPU says otherwise (§14.1), and what the run says, writes and exits is what it would have been with the two one after the other, save for a failure of the base scan's thread itself
    - Both scans root at the repository: the workspace-root walk stops at the first `.git` ([`component-detect.md`](./component-detect.md) §2.1, CD32), the head checkout's own `.git` (a directory or a file) on one side and the temporary worktree's `.git` file on the other. Rooted anywhere else, the two sides scan different trees (`component-detect.md` §11.1 has the layouts that did), so a base scan that roots anywhere but its worktree ends the run as a bug in Aburi (exit `1`, §9)
 5. Compare the two IRs and compute the diff ([`diff-algorithm.md`](./diff-algorithm.md))
 6. Write `<output-dir>/diff.json` + `<output-dir>/diff.md`, and `<output-dir>/diff.full.md` (the uncapped `diff.md`, written before `diff.md` so the note never points at a file that failed to land) when `--max-bytes` changed the report. Any `diff.json`, `diff.md` or `diff.full.md` already there was removed when the output directory was created, ahead of step 1 and whatever the `--format`, since each would describe another diff: a `--format md` run leaves no `diff.json` of an earlier run's, and a `--format json` run no `diff.md`, so none naming a `diff.full.md` that is gone. So a run that stops before this step (a plugin that fails to load, a strict scan's undeclared value) leaves no report at all rather than an earlier one a caller would take for its own. A path there that cannot be removed is refused like one that cannot be written
@@ -840,6 +843,19 @@ When the clauses hold `removed`, with or without a threshold, and no `removed:du
 ```
 
 A workflow that kept `--fail-on removed` across the release that narrowed it would otherwise pass a pull request it used to fail, with nothing in its log to say why.
+
+#### Test code
+
+`--fail-on-scope non-test` makes every clause count only the changes whose Symbol carries no `inTestFile` — the Symbols of the files the head config's `testFiles` does not name ([`config.md`](./config.md) §4.1, [`ir-schema.md`](./ir-schema.md) §5.7). For a pair it is the head Symbol's mark, as the report places the entry by the head's file: a helper moved out of a test file into the code under test counts, one moved the other way does not. A fixture deleted, renamed or rewritten then trips no gate, while the same change to the code it tests does. The default, `all`, counts every change, as the gate always has.
+
+The scope narrows the clauses rather than adding one, so `--fail-on removed --fail-on-scope non-test` reads as it is meant: fail on a removal outside the tests. Given without `--fail-on`, it has nothing to narrow and the diff exits as it would without it. The tripped line says it counted that way, and names only the Symbols it counted:
+
+```
+--fail-on removed tripped (observed: 1 removed outside test files)
+  ts:src/billing/legacy.ts#refundInvoice
+```
+
+The line naming the removed duplicates a `removed` clause did not count (Removed duplicates, above) reads the same scope, so a duplicate in a test file is not named under `non-test`, where no clause would have counted it.
 
 #### Uses of Direction-Specific fail-on
 
@@ -1183,6 +1199,48 @@ deleted. Either is what §6.4 step 3 forbids.
 
 ## 14. Concurrency
 
+### 14.1 The two scans of `aburi diff`
+
+`aburi diff <base>..<head>` runs its two scans (§6.4 steps 3 and 4) at the same time: the base on a
+worker thread of its own, the head on the main thread. They are independent — each reads its own
+tree and writes its own IR, and the comparison starts once both exist — so this needs none of the
+work partitioning the parser pool would (§14.2, [`performance.md`](./performance.md) §4–§7), and the
+IRs the comparison reads are the ones the scans would write one after the other. The run then takes
+about as long as its slower scan rather than both, and holds two scans in memory at once.
+
+`--no-parallel-scans` runs the base and then the head, and stays the reference the concurrent run
+is held to; `--parallel-scans` runs them at once on any machine. With neither, they run at once
+where `os.availableParallelism()` reports two or more CPUs and one after the other where it reports
+one, which is where a second thread would only take turns with the first. The option is a switch
+rather than a count, and is not named `--concurrency`: that name is reserved for the parser pool
+within a scan (§14.2), so that it can mean the same thing on `aburi diff` as on `aburi scan`.
+
+Running together changes nothing the run says or decides:
+
+- **stderr.** The base's per-file log and incidents (§5.6) come first and the head's after them,
+  as in a sequential run: the head's log is held while the base scan runs and written once it is
+  through. The `pluginOptions` line is still said once.
+- **Failures.** Which failure ends the run, and with which exit code, is the one a sequential run
+  would report. A base scan that fails ends the run with its own error once the head scan has
+  stopped too, and what the head said or threw is discarded, as a sequential run would never have
+  started it. Until then the run says nothing, since the head's log is still held. A head scan that
+  fails waits for the base, whose failure, if it has one, comes first.
+- **Artefacts and stdout.** `diff.json`, `diff.md` and the glyph line are byte for byte the
+  sequential run's.
+
+A failure of the base's thread rather than of its scan has no sequential counterpart, and ends the
+run with exit `1` (§9), naming the base ref and `--no-parallel-scans`. Like a failing base scan it
+waits for the head scan to stop, and the worktree and the temporary directory are removed as on any
+other failure:
+
+- a plugin that calls `process.exit()` ends the thread, not the process;
+- an error thrown outside the scan's own handling, from a timer for instance, reaches the thread's
+  `error` event rather than the scan; one that arrives after the scan finished is a warning instead;
+- the worker script cannot be found, as when a bundle inlines `@aburi/cli` and leaves the script
+  behind.
+
+### 14.2 Parser concurrency for `aburi scan`
+
 **Planned; not implemented.** `aburi scan` parses one file at a time and has no `--concurrency`
 flag, which exits 2 as an unknown option. The [roadmap](../roadmap.md) explains why the worker pool
 waits. This section reserves the interface:
@@ -1195,7 +1253,7 @@ waits. This section reserves the interface:
   - When multiple lang plugins coexist in the same run, the **maximum** of the declared values is used
 - On memory-constrained CI, `--concurrency 1` is recommended (for debugging)
 
-A future release will switch to Node worker_threads instead of a worker pool (see the [roadmap](../roadmap.md)). Architecture details — pool sizing, work partitioning, serialization boundary, and byte-identical merge — are specified in [`performance.md`](./performance.md).
+The pool would run on Node `worker_threads`, as the base scan of `aburi diff` already does (§14.1; [`performance.md`](./performance.md) Rule PF-1). Architecture details — pool sizing, work partitioning, serialization boundary, and byte-identical merge — are specified in [`performance.md`](./performance.md).
 
 ## 15. Planned Features
 
@@ -1207,7 +1265,7 @@ A future release will switch to Node worker_threads instead of a worker pool (se
 | `aburi vocab` | Query the extension vocabulary (§8) |
 | `--quiet` on `scan` and `diff` | Census or glyph line alone (§5.2, §6.2) |
 | `aburi diff --filter` | Restrict the report to some statuses (§6.2) |
-| `--concurrency`, worker pool | §14 |
+| `--concurrency` on `aburi scan`, worker pool | §14.2 |
 | Colour, progress, CI mode | §10–§12 |
 | `aburi vocab list --json` extension | merged with discoverer output |
 
@@ -1293,7 +1351,7 @@ a command's option, not a global one (§3).
 | CL37 | `aburi init --log-level debug` | exit 0: `init` accepts the flag, which has no per-file log there to govern |
 | CL38 | `aburi init --help`, `aburi scan --help`, `aburi diff --help` or `aburi explain --help` | `--log-level` listed under "Global Options" |
 | CL39 | `aburi diff … --fail-on changed --fail-on removed` over one changed Symbol, in either order; over a changed and a removed one, in either order | exit 3 in both orders, as `--fail-on changed,removed` gives, and `--fail-on removed --fail-on added`, or no `--fail-on` at all, exits 0; over both, the tripped line names the clause written first. An invalid occurrence beside a valid one (`--fail-on bogus --fail-on changed`, `--fail-on '' --fail-on changed`) exits 2 quoting that occurrence alone, before either IR is read and with an earlier report in the output directory left as it was. `runDiff` refuses `failOn: []` as it refuses `failOn: ""` |
-| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
+| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--fail-on-scope`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
 | CL41 | An empty value for any option that takes a path — `init --output`; `scan --output-dir`, `--config`; `diff --base`, `--head`, `--output-dir`, `--config`; `explain --ir`, `--output`, `--config` — in either spelling (`--output-dir=`) | exit 2, `error: option '<option> <path>' argument '' is invalid. a path must not be empty` on stderr, nothing on stdout, nothing written, and an earlier report left as it was |
 | CL42 | `aburi diff main..HEAD --base b.json`, or `aburi diff main..HEAD --head h.json` | exit 2, `<option> cannot be combined with a ref spec argument. Use one or the other.`, naming the option given |
 | CL43 | `aburi scan` after one Component was renamed and another removed | The page of each id the IR no longer holds is removed, with LF or CRLF line endings, and on a filesystem that returns a few bytes per read; nothing else in `components/` goes. A file beside them that is not such a page stays: another extension, a first line naming another id or none, the heading with more on its line, a name no Component id takes, the same page in a subdirectory, or a directory named like a page |
@@ -1310,6 +1368,11 @@ a command's option, not a global one (§3).
 | CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind. stdout on a descriptor that refuses writes (one opened read-only) still exits 1, with the errno on stderr |
 | CL55 | `aburi diff main..HEAD` with a `pluginOptions` key that names no loaded plugin (`config.md` C10) | The warning once, with no side label, while the base scan's own lines keep theirs; the exit code is the one the run has without the key |
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
+| CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |
+| CL58 | `aburi diff … --fail-on-scope tests` | exit 2, `--fail-on-scope must be one of: all \| non-test`, before either IR is read |
+| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
+| CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
+| CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
 
 ## 18. Design Decisions
 

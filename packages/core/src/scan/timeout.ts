@@ -92,15 +92,25 @@ export interface ParseDeadline {
   readonly budgetMs: number
   elapsedMs(): number
   expired(): boolean
+  /** Runs work the file's budget does not pay for: the clock stops for its length. */
+  excluding<T>(work: () => Promise<T>): Promise<T>
 }
 
 export function startParseDeadline(timeoutMs?: number): ParseDeadline {
   const configured = timeoutMs ?? DEFAULT_PARSE_TIMEOUT_MS
-  const budgetMs = configured < PARSE_TIMEOUT_MIN_MS ? PARSE_TIMEOUT_MIN_MS : configured
-  const start = performance.now()
+  const budgetMs = Math.max(configured, PARSE_TIMEOUT_MIN_MS)
+  let start = performance.now()
   return {
     budgetMs,
     elapsedMs: () => performance.now() - start,
     expired: () => performance.now() - start >= budgetMs,
+    async excluding(work) {
+      const paused = performance.now()
+      try {
+        return await work()
+      } finally {
+        start += performance.now() - paused
+      }
+    },
   }
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+  "$id": "https://aburi.dev/schema/aburi.diff.v1.json",
   "title": "Aburi Diff Result",
   "description": "Result of aburi diff <base>..<head>. JSON projection of the matched/added/removed/moved/changed symbol pairs.",
   "type": "object",
@@ -18,7 +18,11 @@
   ],
   "properties": {
     "$schema": {
-      "const": "https://aburi.kage1020.com/schema/aburi.diff.v1.json"
+      "enum": [
+        "https://aburi.dev/schema/aburi.diff.v1.json",
+        "https://aburi.kage1020.com/schema/aburi.diff.v1.json"
+      ],
+      "description": "The first value is this schema's $id, the one to write. The second is the host the schema was served from before aburi.dev; documents that name it remain valid."
     },
     "generator": { "$ref": "#/$defs/Generator" },
     "base": { "$ref": "#/$defs/IRRef" },
@@ -66,7 +70,7 @@
         "irSchema": {
           "type": "string",
           "minLength": 1,
-          "description": "Schema id of the input IR. Must match between base and head."
+          "description": "The input IR's $schema, as that IR names it. Base and head are of one IR schema version, but may name it by different hosts: the IR schema accepts two URLs for v1."
         }
       }
     },
@@ -258,6 +262,32 @@
             { "$ref": "#/$defs/SignatureDelta" },
             { "type": "null" }
           ]
+        },
+        "middleware": {
+          "description": "How the Symbol's middleware moved. Present when either side's Symbol carries `middleware`, the lists being equal included, so a reader can tell \"unchanged\" from \"neither side names any\"; absent otherwise. A side without the key compares as an empty list.",
+          "$ref": "#/$defs/MiddlewareDelta"
+        }
+      }
+    },
+
+    "MiddlewareDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "removed", "reordered"],
+      "properties": {
+        "added": {
+          "description": "Entries the head holds more often than the base, once for each extra occurrence, in head order.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "removed": {
+          "description": "Entries the base holds more often than the head, once for each extra occurrence, in base order.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reordered": {
+          "description": "Whether the entries both sides hold run in a different order. The lists themselves are on `before` and `after`.",
+          "type": "boolean"
         }
       }
     },
@@ -356,7 +386,7 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/SkippedFile" },
-          "description": "The endpoint files that document skipped, as its own `stats.skippedFiles[]` names them, sorted by path with no repeats. For an endpoint file git renamed between the revisions that is the name on the absent side, not the holder's `symbols[].source.file`. A list rather than the single `reason` SymbolUnknown carries, because an edge has two endpoints: they can live in two different files with two different reasons, and an intra-file edge collapses to one entry. Component-level endpoints never appear — a Component is an aggregate over roots and has no file to lose."
+          "description": "The endpoint files that document skipped, as its own `stats.skippedFiles[]` names them, sorted by path with no repeats. For an endpoint file git renamed between the revisions that is the name on the absent side, not the holder's `symbols[].source.file`. A list rather than the single `reason` SymbolUnknown carries, because an edge has two endpoints: they can live in two different files with two different reasons, and an intra-file edge collapses to one entry. For a Component-level edge, the files that document skipped and attributes to the edge's `from` Component: the edge stands for the imports of every one of them."
         }
       }
     },

@@ -153,14 +153,17 @@ describe("an edit to what a caller passes or gets is an api change", () => {
       "export function f<T>(): void {\n  use()\n}\n",
       false,
     ],
-  ])("reports %s, and on the syntax axis only an edit to the list", async (_label, before, after, syntaxChanged) => {
-    const diff = await diffOfEdit(workspace, FILE, before, after)
+  ])(
+    "reports %s, and on the syntax axis only an edit to the list",
+    async (_label, before, after, syntaxChanged) => {
+      const diff = await diffOfEdit(workspace, FILE, before, after)
 
-    expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
-    expect(changedSymbols(diff)).toMatchObject([
-      { name: "f", apiChanged: true, logicChanged: false, syntaxChanged },
-    ])
-  })
+      expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
+      expect(changedSymbols(diff)).toMatchObject([
+        { name: "f", apiChanged: true, logicChanged: false, syntaxChanged },
+      ])
+    },
+  )
 })
 
 describe("an edit to the names a declaration is exported under is an api change", () => {
@@ -450,10 +453,13 @@ describe("a formatting edit is no change", () => {
       "export class Module {\n  add(provider: ClassProvider | ValueProvider): void {\n    use(provider)\n  }\n}\n",
       2,
     ],
-  ])("leaves every Symbol unchanged when the only edit is %s", async (_label, before, after, unchanged) => {
-    const diff = await diffOfEdit(workspace, FILE, before, after)
+  ])(
+    "leaves every Symbol unchanged when the only edit is %s",
+    async (_label, before, after, unchanged) => {
+      const diff = await diffOfEdit(workspace, FILE, before, after)
 
-    expect(diff.symbols).toEqual([])
-    expect(diff.summary).toMatchObject({ changed: 0, unchanged })
-  })
+      expect(diff.symbols).toEqual([])
+      expect(diff.summary).toMatchObject({ changed: 0, unchanged })
+    },
+  )
 })

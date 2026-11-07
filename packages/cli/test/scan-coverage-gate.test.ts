@@ -109,11 +109,12 @@ describe("config.minParsedFileRatio — the floor a workspace opts into", () => 
     expect(said).not.toContain("minParsedFileRatio")
   })
 
-  it.each([
-    0, 1.5,
-  ])("refuses %d, a floor nothing can fall below or nothing can reach", async (floor) => {
-    await expect(scanStubs(["ok.stub"], { minParsedFileRatio: floor })).rejects.toThrow(
-      /minParsedFileRatio/,
-    )
-  })
+  it.each([0, 1.5])(
+    "refuses %d, a floor nothing can fall below or nothing can reach",
+    async (floor) => {
+      await expect(scanStubs(["ok.stub"], { minParsedFileRatio: floor })).rejects.toThrow(
+        /minParsedFileRatio/,
+      )
+    },
+  )
 })

@@ -71,29 +71,54 @@ describe("a registration call's inline handler is its body", () => {
 
   it.each([
     [
-      "no argument at all",
+      "no function argument",
       "app.listen(3000)",
       "ts:src/a.ts#app__listen__d0",
       ["call-statement:app.listen"],
+      ["app.listen"],
     ],
     [
       "a handler passed by name",
       'app.get("/x", handler)',
       "ts:src/a.ts#app__get__$x__d0",
       ["call-statement:app.get", "path-literal:/x"],
+      ["app.get"],
     ],
     [
       "a handler whose body the parser only recovered",
       'app.get("/users", async (req, res) =>)',
       "ts:src/a.ts#app__get__$users__d0",
       ["call-statement:app.get", "path-literal:/users"],
+      ["app.get"],
     ],
-  ])("gives a registration with %s no body", async (_label, source, id, derivedBy) => {
-    const symbol = await symbolOf(source, id)
-
-    expect([symbol.bodyNode, symbol.derivedBy]).toEqual([null, derivedBy])
-    expect(await callsOf(source, id)).toEqual([])
-  })
+    [
+      "a middleware it calls to build",
+      "app.use(cors())",
+      "ts:src/a.ts#app__use__cors__d0",
+      ["call-statement:app.use", "argument-names:cors"],
+      ["app.use", "cors"],
+    ],
+    [
+      "a function deeper than an argument",
+      "app.use(withAuth(() => { q() }))",
+      "ts:src/a.ts#app__use__withAuth__d0",
+      ["call-statement:app.use", "argument-names:withAuth"],
+      ["app.use", "withAuth", "q"],
+    ],
+    [
+      "a method a router shares with a client",
+      "await prisma.user.delete({ where: { id: 1 } })",
+      "ts:src/a.ts#prisma__delete__d0",
+      ["call-statement:prisma.delete"],
+      ["prisma.user.delete"],
+    ],
+  ])(
+    "walks the call itself for a registration with %s, which defers nothing",
+    async (_label, source, id, derivedBy, calls) => {
+      expect((await symbolOf(source, id)).derivedBy).toEqual(derivedBy)
+      expect(await callsOf(source, id)).toEqual(calls)
+    },
+  )
 
   it.each([
     ['app.get("/x", () => { a() })', "ts:src/a.ts#app__get__$x__d0", false],

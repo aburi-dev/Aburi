@@ -43,7 +43,11 @@ describe("the edge an import statement makes", () => {
       "import './side-effect'",
       [{ source: "./side-effect", symbols: "*" }],
     ],
-    ["a re-export", "export { X } from './y'", [{ source: "./y", symbols: ["X"] }]],
+    [
+      "a re-export",
+      "export { X } from './y'",
+      [{ source: "./y", symbols: ["X"], reexports: [{ imported: "X", exported: "X" }] }],
+    ],
   ])("reads %s", async (_label, source, edges) => {
     const { imports } = await importsOf(source)
 
@@ -63,6 +67,85 @@ describe("the edge an import statement makes", () => {
       { source: "./a", symbols: "*", line: 1, dynamic: true },
       { source: "./b", symbols: ["B"], line: 2, dynamic: false },
     ])
+  })
+})
+
+describe("what a module exports through an edge", () => {
+  const reexport = (imported: string, exported = imported) => ({ imported, exported })
+
+  it.each<[string, string, object[]]>([
+    [
+      "a re-export under another name, by the name it is exported as",
+      "export { A as B, C } from './m'",
+      [{ source: "./m", symbols: ["A", "C"], reexports: [reexport("A", "B"), reexport("C")] }],
+    ],
+    [
+      "a re-export of the module's default",
+      "export { default as A, default } from './m'",
+      [
+        {
+          source: "./m",
+          symbols: ["default", "default"],
+          reexports: [reexport("default", "A"), reexport("default")],
+        },
+      ],
+    ],
+    [
+      "nothing for a type-only re-export",
+      "export type { T } from './m'",
+      [{ source: "./m", symbols: ["T"] }],
+    ],
+    [
+      "the value specifiers of a re-export that mixes in types",
+      "export { type T, A } from './m'",
+      [{ source: "./m", symbols: ["T", "A"], reexports: [reexport("A")] }],
+    ],
+    [
+      "a namespace re-export, as the whole module under its name",
+      "export * as ns from './m'",
+      [{ source: "./m", symbols: "*", reexports: [reexport("*", "ns")] }],
+    ],
+    [
+      "nothing for `export *`, which names nothing",
+      "export * from './m'",
+      [{ source: "./m", symbols: "*" }],
+    ],
+    [
+      "an import an export clause republishes, under each name it is exported as",
+      "import { A } from './m'\nexport { A, A as B }",
+      [{ source: "./m", symbols: ["A"], reexports: [reexport("A"), reexport("A", "B")] }],
+    ],
+    [
+      "an import renamed on the way in and out, by the name the module exports it as",
+      "import { A as L } from './m'\nexport { L as B }",
+      [{ source: "./m", symbols: ["A as L"], reexports: [reexport("A", "B")] }],
+    ],
+    [
+      "a namespace import an export clause republishes",
+      "import * as ns from './m'\nexport { ns }",
+      [{ source: "./m", symbols: "*", namespaceBinding: "ns", reexports: [reexport("*", "ns")] }],
+    ],
+    [
+      "an import `export default` republishes",
+      "import A from './m'\nexport default A",
+      [{ source: "./m", symbols: ["default as A"], reexports: [reexport("default")] }],
+    ],
+    [
+      "nothing for an import the module only uses",
+      "import { A } from './m'\nexport const b = A",
+      [{ source: "./m", symbols: ["A"] }],
+    ],
+    [
+      "nothing for an import a type-only export clause names",
+      "import { A } from './m'\nexport type { A }",
+      [{ source: "./m", symbols: ["A"] }],
+    ],
+  ])("records %s", async (_label, source, edges) => {
+    const { imports } = await importsOf(source)
+
+    expect(imports).toEqual(
+      edges.map((edge) => ({ ...edge, line: expect.any(Number), dynamic: false })),
+    )
   })
 })
 

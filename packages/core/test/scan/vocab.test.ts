@@ -199,26 +199,26 @@ describe("a run with strict off", () => {
 })
 
 describe("VocabCheck", () => {
-  it.each([
-    true,
-    false,
-  ])("lets a registry failure that is not about vocabulary through when strict is %s", (strict) => {
-    const registry: VocabRegistry = {
-      ...noopRegistry,
-      assertEffectDeclared: () => {
-        throw new Error("registry broke")
-      },
-    }
-    const check = new VocabCheck(registry, strict)
-    expect(() =>
-      check.effect({
-        value: "x-acme:ping",
-        plugin: "effects-acme",
-        file: "a.stub",
-        line: 4,
-        symbol: "s",
-      }),
-    ).toThrow("registry broke")
-    expect(check.occurrences).toEqual([])
-  })
+  it.each([true, false])(
+    "lets a registry failure that is not about vocabulary through when strict is %s",
+    (strict) => {
+      const registry: VocabRegistry = {
+        ...noopRegistry,
+        assertEffectDeclared: () => {
+          throw new Error("registry broke")
+        },
+      }
+      const check = new VocabCheck(registry, strict)
+      expect(() =>
+        check.effect({
+          value: "x-acme:ping",
+          plugin: "effects-acme",
+          file: "a.stub",
+          line: 4,
+          symbol: "s",
+        }),
+      ).toThrow("registry broke")
+      expect(check.occurrences).toEqual([])
+    },
+  )
 })

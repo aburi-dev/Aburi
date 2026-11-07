@@ -36,7 +36,10 @@ describe("computeSymbolFingerprint", () => {
   it.each<[string, ComputeFingerprintInput]>([
     ["no", { symbol }],
     ["a whitespace-only", { symbol, normalizedAstString: "   " }],
-  ])("refuses %s AST string for a kept Symbol, so AST-less Symbols cannot share a hash", (_what, input) => {
-    expect(() => computeSymbolFingerprint(input)).toThrow(CoreError)
-  })
+  ])(
+    "refuses %s AST string for a kept Symbol, so AST-less Symbols cannot share a hash",
+    (_what, input) => {
+      expect(() => computeSymbolFingerprint(input)).toThrow(CoreError)
+    },
+  )
 })

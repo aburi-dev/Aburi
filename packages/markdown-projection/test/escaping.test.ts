@@ -299,16 +299,12 @@ describe("a value written into a row of the report", () => {
     })
   }
 
-  it.each([
-    "_x_",
-    "*x*",
-    "<T>",
-    "`y`",
-    "a\n## z",
-    "~~s~~",
-  ])("%j is rewritten by CommonMark when written bare", (hazard) => {
-    expect(shownText(`- ${hazard}`)).not.toContain(hazard.replace("\n", " "))
-  })
+  it.each(["_x_", "*x*", "<T>", "`y`", "a\n## z", "~~s~~"])(
+    "%j is rewritten by CommonMark when written bare",
+    (hazard) => {
+      expect(shownText(`- ${hazard}`)).not.toContain(hazard.replace("\n", " "))
+    },
+  )
 
   it.each<[string, (value: string) => string]>([
     ["a thrown type", (value) => page([handler({ signature: sig({ throws: [value] }) })])],

@@ -1,5 +1,12 @@
 import { resolve } from "node:path"
-import { errorFrom, makeSymbol, useScratchWorkspace } from "@aburi/test-support"
+import {
+  errorFrom,
+  irSchemaViolations,
+  makeSymbol,
+  useScratchWorkspace,
+  zeroFp,
+} from "@aburi/test-support"
+import { IR_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CliError, readIR } from "../src"
 import { documentWith } from "./ir-documents"
@@ -30,6 +37,17 @@ describe("readIR", () => {
     expect(await readIR(resolve(workspace.root, "aburi.ir.json"))).toEqual(DOCUMENT)
   })
 
+  it("reads a document naming the host the schema was served from before aburi.dev", async () => {
+    const symbols = [makeSymbol({ id: "ts:src/a.ts#a", name: "a", fingerprint: zeroFp() })]
+    const earlier = {
+      ...documentWith({ symbols }),
+      $schema: "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+    }
+    expect(irSchemaViolations(earlier)).toEqual([])
+    await writeFileAt(workspace.root, "aburi.ir.json", JSON.stringify(earlier))
+    expect(await readIR(resolve(workspace.root, "aburi.ir.json"))).toEqual(earlier)
+  })
+
   it.each([
     ["a file that is not there", null, "input-error", "Failed to read IR file"],
     ["text that is not JSON", "{ not json", "input-error", "is not valid JSON"],
@@ -50,7 +68,7 @@ describe("readIR", () => {
       "an object of another format",
       JSON.stringify({ ...DOCUMENT, $schema: "https://example.invalid/v2.json" }),
       "config-error",
-      'has unexpected $schema "https://example.invalid/v2.json"; expected "https://aburi.kage1020.com/schema/aburi.ir.v1.json"',
+      `has unexpected $schema "https://example.invalid/v2.json"; expected "${IR_SCHEMA_URL}"`,
     ],
   ])("refuses %s", async (_, contents, code, says) => {
     const refusal = await refusalOf(contents)
@@ -59,20 +77,16 @@ describe("readIR", () => {
     expect(refusal.message).toContain(says)
   })
 
-  it.each([
-    "workspace",
-    "stats",
-    "symbols",
-    "components",
-    "dependencies",
-    "generator",
-  ])("names a missing %s instead of failing on it later", async (key) => {
-    const refusal = await refusalOf(documentWithout(key))
-    expect(refusal.code).toBe("config-error")
-    expect(refusal.message).toContain("failed integrity check")
-    expect(refusal.message).toContain(key)
-    expect(refusal.message).not.toContain("Cannot read properties")
-  })
+  it.each(["workspace", "stats", "symbols", "components", "dependencies", "generator"])(
+    "names a missing %s instead of failing on it later",
+    async (key) => {
+      const refusal = await refusalOf(documentWithout(key))
+      expect(refusal.code).toBe("config-error")
+      expect(refusal.message).toContain("failed integrity check")
+      expect(refusal.message).toContain(key)
+      expect(refusal.message).not.toContain("Cannot read properties")
+    },
+  )
 
   it.each([
     ["symbols", {}],

@@ -11,12 +11,13 @@ tested, and exercised end to end against a NestJS-shaped fixture project.
 
 **Analysis.** TypeScript and JavaScript, parsed with tree-sitter WASM. Aburi
 detects pnpm, npm, Yarn, and Bun workspaces and nx projects on its own, recognises NestJS, Next.js App
-Router, Express, and React as frameworks, and reads Prisma, Drizzle, tRPC, and
-NestJS events as effects.
+Router, Express, React, and the tRPC server as frameworks, and reads Prisma,
+Drizzle, tRPC client calls, and NestJS events as effects.
 
 **Dependencies.** Aburi resolves calls to the symbols they reach within a file,
 an import, a component, or the workspace, and builds a symbol-level dependency
-graph from them. It counts and buckets the calls it could not resolve, so you
+graph from them. It draws an edge between two components wherever a file of one
+imports a module of the other. It counts and buckets the calls it could not resolve, so you
 can see what the graph is missing. Effects propagate along that graph, so a
 controller that reaches `prisma.invoice.create` through a service carries the
 `db.write` too.
@@ -36,30 +37,33 @@ comments.
 commits, from `zustand`'s 49 files to `cal-com`'s 5,002. On a 4-core runner a
 1,081-file scan takes 3.7 s and a 5,002-file one 14.7 s, single-threaded, with no
 scan passing 470 MiB peak — cost is roughly linear in file count. Three
-consecutive scans of an unchanged tree produce byte-identical IR.
+consecutive scans of an unchanged tree produce byte-identical IR. `aburi diff`
+runs its two scans at once on a machine with two or more CPUs, so it takes about
+1.3× one scan where it took 1.7–2.2×; on one CPU it still runs them in turn.
 
 ## Not yet
 
 | Limitation | Status |
 |---|---|
 | TypeScript and JavaScript only | Other languages planned below |
-| No edges between components: the workspace overview's component graph shows the components alone | Planned. Symbol-level call edges are recorded today |
-| Call resolution is syntactic unless a language server is configured — 2–19% of call sites resolve on public repositories | Opt-in [LSP enrichment](./design/lsp-enrichment.md) (`lsp.enabled` with `lsp.servers.ts`) resolves `this.` / `super.` calls; interface-typed receivers are not resolved yet |
+| Call resolution is syntactic unless a language server is configured — 6–29% of call sites resolve on public repositories | Opt-in [LSP enrichment](./design/lsp-enrichment.md) (`lsp.enabled` with `lsp.servers.ts`) resolves `this.` / `super.` calls; interface-typed receivers are not resolved yet |
 | No graph visualisation beyond the workspace overview and Slice View | No design yet |
 | No LLM integration | Deliberate. Aburi produces the facts, and interpreting them belongs to a separate tool. |
 
 ## Next
 
 - **LSP enrichment.** Use type resolution to sharpen effect inference and fill
-  in column-level source ranges. The number it has to beat is measured: between
-  2.0% of call sites resolved on NestJS itself, where a callee is a
-  constructor-injected interface, and 18.7% on `zod`. `no-match` is the largest
-  unresolved bucket almost everywhere, and classifying a sample of it comes
-  first — whatever share is a resolver gap rather than a genuinely unknowable
-  callee is fixable without type information at all.
-- **`@aburi/framework-trpc`.** The server side of tRPC (`t.router`,
-  `publicProcedure.query` / `mutation` / `subscription`). The existing
-  `effects-trpc` covers the client call side alone.
+  in column-level source ranges. The number it has to beat is measured on the
+  benchmark's public repositories: from 6.3% of call sites resolved on
+  `shadcn-ui` to 29.0% on `zod`, with NestJS itself at 8.1%. `no-match` is the
+  largest unresolved bucket everywhere but NestJS, whose constructor-injected
+  interfaces make `dynamic` larger, and a
+  [hand-classified sample of it](https://github.com/kage1020/Aburi/blob/main/benchmarks/public-repos/no-match/README.md)
+  puts 70% ± 5% of it within reach of a rule that needs no types. Little of that
+  is a missing edge, though: most of it is a global, a binding of the caller or
+  a method of a builtin or package type, filed in the wrong bucket. Rules would
+  turn 4.9% ± 2.3% of `no-match` into call edges, and type information another
+  2.0% ± 1.6%.
 
 ## Later
 
@@ -70,9 +74,7 @@ consecutive scans of an unchanged tree produce byte-identical IR.
 - **Large monorepos.** A 1,000-file scan finishes in under 30 seconds
   single-threaded, so the [worker pool](./design/performance.md) would buy at
   best ~4× on a 4-core runner — the ideal scaling, unmeasured — on a workload
-  already inside its budget. What is left to parallelise is `aburi diff`, which
-  runs two scans and costs a measured 1.7–2.2× one; two independent scans are
-  cheaper to run at once than one sharded scan.
+  already inside its budget.
 - **A functional language.** Scala or Rust, proving that the extension
   vocabulary can express pattern matching and algebraic data types.
 

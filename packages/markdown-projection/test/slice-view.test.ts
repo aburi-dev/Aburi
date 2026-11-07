@@ -469,12 +469,15 @@ describe("projectDiff — the Slice View", () => {
       "members[0]",
       "Slice(id=slice:empty)",
     ],
-  ])("refuses a Slice with %s, naming what it lacks and the Slice", async (_label, invalid, field, subject) => {
-    const error = await errorFrom(ProjectionInvariantError, () =>
-      sliceView([logicChange(ctl)], [invalid]),
-    )
-    expect(error).toMatchObject({ field, subject })
-  })
+  ])(
+    "refuses a Slice with %s, naming what it lacks and the Slice",
+    async (_label, invalid, field, subject) => {
+      const error = await errorFrom(ProjectionInvariantError, () =>
+        sliceView([logicChange(ctl)], [invalid]),
+      )
+      expect(error).toMatchObject({ field, subject })
+    },
+  )
 })
 
 describe("projectDiff — unresolved calls in the Slice View", () => {
@@ -505,9 +508,12 @@ describe("projectDiff — unresolved calls in the Slice View", () => {
       ["this.repo.save", "format"],
       "> ⚠ 2 calls below name a changed symbol in another Slice but were not resolved to it, so those Slices may belong together.",
     ],
-  ])("totals the calls naming a member of another Slice under the heading, for %s", (_, targets, note) => {
-    expect(crossing(unresolvedCaller("Ctl.route", ...targets), repo, format)[2]).toBe(note)
-  })
+  ])(
+    "totals the calls naming a member of another Slice under the heading, for %s",
+    (_, targets, note) => {
+      expect(crossing(unresolvedCaller("Ctl.route", ...targets), repo, format)[2]).toBe(note)
+    },
+  )
 
   it("marks the member making such a call, naming each target once", () => {
     const lines = crossing(

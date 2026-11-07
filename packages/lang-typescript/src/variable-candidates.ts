@@ -1,8 +1,4 @@
-import {
-  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
-  type ExtractionContext,
-  type SymbolCandidate,
-} from "@aburi/types"
+import type { ExtractionContext, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import {
   asClassValue,
@@ -11,7 +7,7 @@ import {
   makeSourceRange,
   nameFieldText,
 } from "./ast-helpers"
-import { layOutBodies, wrappedFunctions } from "./call-symbols"
+import { callFunctions, layOutBodies } from "./call-symbols"
 import { classMemberCandidates } from "./class-candidates"
 import { foldMemberGroup, groupMemberDeclaration, type MemberGroup } from "./declaration-merge"
 import { refuseAnonymousId } from "./declared-name"
@@ -114,7 +110,8 @@ function makeVariableCandidate(
       ...objectMemberCandidates(object, ctx, [...namespacePath, name]),
     ]
   }
-  const bodies = initializer === null ? [] : wrappedFunctions(initializer)
+  const { bodies, evidence } =
+    initializer === null ? { bodies: [], evidence: [] } : callFunctions(initializer)
   return [
     {
       id,
@@ -125,10 +122,7 @@ function makeVariableCandidate(
       decorators: [],
       signature: null,
       source: makeSourceRange(statement, ctx),
-      derivedBy:
-        bodies.length === 0
-          ? exportEvidence(statement)
-          : [CALL_ARGUMENT_FUNCTION_DERIVED_BY, ...exportEvidence(statement)],
+      derivedBy: [...evidence, ...exportEvidence(statement)],
       ...layOutBodies(bodies, statement),
     },
   ]

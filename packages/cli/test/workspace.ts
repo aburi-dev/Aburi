@@ -1,9 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, posix, relative, resolve, sep } from "node:path"
-import type { IR } from "@aburi/types"
+import { CONFIG_SCHEMA_URL, type IR } from "@aburi/types"
 import { DIFF_FULL_MD_FILENAME, DIFF_JSON_FILENAME, DIFF_MD_FILENAME } from "../src"
-
-export const CONFIG_SCHEMA_URL = "https://aburi.kage1020.com/schema/aburi.config.v1.json"
 
 export const TYPESCRIPT = { languages: ["lang-typescript"] }
 

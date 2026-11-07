@@ -1,11 +1,9 @@
-import type { PluginManifest, Provides } from "@aburi/types"
+import { PLUGIN_SCHEMA_URL, type PluginManifest, type Provides } from "@aburi/types"
 
 interface ManifestOverrides {
   name?: string
   provides?: Partial<Provides>
 }
-
-const SCHEMA = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json" as const
 
 function provides(over: Partial<Provides> = {}): Provides {
   return {
@@ -21,7 +19,7 @@ function provides(over: Partial<Provides> = {}): Provides {
 
 export function langManifest(over: ManifestOverrides = {}): PluginManifest {
   return {
-    $schema: SCHEMA,
+    $schema: PLUGIN_SCHEMA_URL,
     name: over.name ?? "lang-foo",
     version: "1.0.0",
     type: "lang",
@@ -34,7 +32,7 @@ export function effectsManifest(
   over: ManifestOverrides & { xPrefix?: string } = {},
 ): PluginManifest {
   return {
-    $schema: SCHEMA,
+    $schema: PLUGIN_SCHEMA_URL,
     name: over.name ?? "effects-foo",
     version: "1.0.0",
     type: "effects",
@@ -46,7 +44,7 @@ export function effectsManifest(
 
 export function frameworkManifest(over: ManifestOverrides = {}): PluginManifest {
   return {
-    $schema: SCHEMA,
+    $schema: PLUGIN_SCHEMA_URL,
     name: over.name ?? "framework-foo",
     version: "1.0.0",
     type: "framework",

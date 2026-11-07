@@ -1,5 +1,5 @@
 import { importEdge } from "@aburi/test-support"
-import type { EffectsManifest, ImportEdge } from "@aburi/types"
+import { type EffectsManifest, type ImportEdge, PLUGIN_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
   assertImportBinding,
@@ -209,22 +209,19 @@ describe("hasLiteralFirstArgument", () => {
 describe("matchesModuleOrSubpath", () => {
   const isDrizzle = matchesModuleOrSubpath("drizzle-orm")
 
-  it.each([
-    "drizzle-orm",
-    "drizzle-orm/postgres-js",
-    "drizzle-orm/aws-data-api/pg",
-  ])("accepts the root or any subpath: %s", (source) => {
-    expect(isDrizzle(source)).toBe(true)
-  })
+  it.each(["drizzle-orm", "drizzle-orm/postgres-js", "drizzle-orm/aws-data-api/pg"])(
+    "accepts the root or any subpath: %s",
+    (source) => {
+      expect(isDrizzle(source)).toBe(true)
+    },
+  )
 
-  it.each([
-    "drizzle",
-    "drizzle-orm-mock",
-    "not-drizzle-orm",
-    "@drizzle/kit",
-  ])("rejects the lookalike %s — the `/` is the boundary", (source) => {
-    expect(isDrizzle(source)).toBe(false)
-  })
+  it.each(["drizzle", "drizzle-orm-mock", "not-drizzle-orm", "@drizzle/kit"])(
+    "rejects the lookalike %s — the `/` is the boundary",
+    (source) => {
+      expect(isDrizzle(source)).toBe(false)
+    },
+  )
 
   it("accepts any of several roots", () => {
     const isTrpcClient = matchesModuleOrSubpath("@trpc/client", "@trpc/next")
@@ -261,7 +258,7 @@ describe("defineEffectsManifest", () => {
   it("builds the shared effects-plugin manifest around the two chosen literals", () => {
     const manifest = defineEffectsManifest("effects-foo", "effects-plugin:foo")
     expect(manifest).toEqual({
-      $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+      $schema: PLUGIN_SCHEMA_URL,
       name: "effects-foo",
       version: "0.0.0",
       type: "effects",

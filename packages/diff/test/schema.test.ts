@@ -1,9 +1,17 @@
 import irSchema from "@aburi/schema/aburi.ir.v1.json" with { type: "json" }
-import { component, dependency, fp, guardedBody, makeIR, makeSymbol } from "@aburi/test-support"
-import type { DiffResult, SkipReason } from "@aburi/types"
+import {
+  component,
+  dependency,
+  fp,
+  guardedBody,
+  makeIR,
+  makeSymbol,
+  soleChange,
+} from "@aburi/test-support"
+import { type DiffResult, IR_SCHEMA_URL, type SkipReason } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { diffSchemaViolations } from "./diff-schema"
-import { diffOf, diffSymbols, soleChange, withSkipped } from "./helpers"
+import { diffOf, diffSymbols, withSkipped } from "./helpers"
 
 const changing = makeSymbol({ id: "ts:src/a.ts#A", name: "A" })
 const gone = makeSymbol({ id: "ts:src/gone.ts#foo", name: "foo" })
@@ -43,11 +51,12 @@ describe("a diff buildDiff writes validates against aburi.diff.v1", () => {
     expect(diffSchemaViolations(diff)).toEqual([])
   })
 
-  it.each(
-    irSchema.$defs.SkippedFile.properties.reason.enum,
-  )("with every skip reason the IR can carry: %s", (reason) => {
-    expect(diffSchemaViolations(lossyDiff(reason as SkipReason))).toEqual([])
-  })
+  it.each(irSchema.$defs.SkippedFile.properties.reason.enum)(
+    "with every skip reason the IR can carry: %s",
+    (reason) => {
+      expect(diffSchemaViolations(lossyDiff(reason as SkipReason))).toEqual([])
+    },
+  )
 
   it("with no Slice Node, and so an empty slices[]", () => {
     const diff = diffSymbols([kept], [kept])
@@ -64,6 +73,19 @@ describe("a diff buildDiff writes validates against aburi.diff.v1", () => {
       rootsChanged: false,
       publicApiChanged: false,
       frameworksChanged: false,
+    })
+    expect(diffSchemaViolations(diff)).toEqual([])
+  })
+
+  it("with a Symbol whose middleware moved", () => {
+    const diff = diffSymbols(
+      [{ ...kept, middleware: ["requireAdmin", "audit"] }],
+      [{ ...kept, middleware: ["audit"], fingerprint: fp("x") }],
+    )
+    expect(soleChange(diff.symbols, "changed").delta.middleware).toEqual({
+      added: [],
+      removed: ["requireAdmin"],
+      reordered: false,
     })
     expect(diffSchemaViolations(diff)).toEqual([])
   })
@@ -141,6 +163,14 @@ describe("a diff written before a field existed still validates", () => {
 
   it("without notCompared", () => {
     const { notCompared: _, ...older } = lossyDiff()
+    expect(diffSchemaViolations(older)).toEqual([])
+  })
+
+  it("naming the diff schema by the host it was served from before aburi.dev", () => {
+    const older = {
+      ...lossyDiff(),
+      $schema: "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+    }
     expect(diffSchemaViolations(older)).toEqual([])
   })
 })
@@ -244,6 +274,16 @@ describe("the schema refuses a malformed diff", () => {
         ],
       }),
       "/notCompared/0 additionalProperties",
+    ],
+    [
+      "the IR schema's URL as the diff's $schema",
+      (diff) => ({ ...diff, $schema: IR_SCHEMA_URL }),
+      "/$schema enum",
+    ],
+    [
+      "a later diff schema version as its $schema",
+      (diff) => ({ ...diff, $schema: "https://aburi.dev/schema/aburi.diff.v2.json" }),
+      "/$schema enum",
     ],
   ])("refuses %s", (_, malform, violation) => {
     expect(diffSchemaViolations(malform(lossyDiff()))).toContain(violation)

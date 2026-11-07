@@ -50,24 +50,25 @@ describe("scan — a function a const or a default export hands to a wrapping ca
     ])
   })
 
-  it.each(
-    SPELLINGS,
-  )("reports an edit to the handler in %s as a logic change", async (_label, head, name) => {
-    const { diff } = await diffOfEditWith(
-      workspace,
-      lineup,
-      "src/users.ts",
-      users(head, READ),
-      users(head, DELETE),
-    )
+  it.each(SPELLINGS)(
+    "reports an edit to the handler in %s as a logic change",
+    async (_label, head, name) => {
+      const { diff } = await diffOfEditWith(
+        workspace,
+        lineup,
+        "src/users.ts",
+        users(head, READ),
+        users(head, DELETE),
+      )
 
-    expect(diff.symbols).toHaveLength(1)
-    const [change] = diff.symbols
-    expect(change?.status).toBe("changed")
-    if (change?.status !== "changed") return
-    expect(change.after.name).toBe(name)
-    expect(change.delta.logicChanged).toBe(true)
-  })
+      expect(diff.symbols).toHaveLength(1)
+      const [change] = diff.symbols
+      expect(change?.status).toBe("changed")
+      if (change?.status !== "changed") return
+      expect(change.after.name).toBe(name)
+      expect(change.delta.logicChanged).toBe(true)
+    },
+  )
 
   it("keeps a wrapped React component classified, and gives it its body", async () => {
     await workspace.writeSource(

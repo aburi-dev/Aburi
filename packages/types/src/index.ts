@@ -16,6 +16,7 @@ export type {
   Generator as DiffGenerator,
   IRRef,
   MatchRationale,
+  MiddlewareDelta,
   NotComparedFile,
   SignatureDelta,
   SkippedFile as DiffSkippedFile,
@@ -95,6 +96,8 @@ export type {
   FrameworkVocab,
   ImportBinding,
   ImportEdge,
+  ImportResolver,
+  ImportResolverContext,
   LangManifest,
   LanguageCapabilities,
   LanguagePlugin,
@@ -107,6 +110,7 @@ export type {
   ParseError,
   ParseResult,
   PluginContext,
+  Reexport,
   SourceFile,
   SymbolCandidate,
   SymbolClassification,
@@ -115,10 +119,19 @@ export type {
   WrittenSourceRange,
 } from "./plugins"
 export {
+  CONFIG_SCHEMA_URL,
+  DIFF_SCHEMA_URL,
+  IR_SCHEMA_URL,
+  isIRSchemaURL,
+  PLUGIN_SCHEMA_URL,
+} from "./schema-urls"
+export { representativeSymbol } from "./symbol-change"
+export {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   COMPUTED_TARGET_SEGMENT,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   EXPORT_DEFAULT_DERIVED_BY,
   EXPORT_KEYWORD_DERIVED_BY,
+  INVOKED_FUNCTION_DERIVED_BY,
   UNNAMED_DECORATOR,
 } from "./vocabulary"

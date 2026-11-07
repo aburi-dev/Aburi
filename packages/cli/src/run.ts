@@ -5,6 +5,7 @@ import {
   deriveFormat,
   deriveStrict,
   type OutputFormat,
+  parseFailOnScope,
   parseFormat,
   parseLogLevel,
   parseMaxBytes,
@@ -19,7 +20,7 @@ import { resolveConfigPath } from "./config-path"
 import { type LogLevel, readEnv } from "./env"
 import { assertNever, CliError, errorCode } from "./errors"
 import { EXIT, type ExitCode } from "./exit-codes"
-import { FailOnParseError, formatTriggered } from "./fail-on"
+import { FailOnParseError, type FailOnScope, formatTriggered } from "./fail-on"
 import { readGeneratorInfo } from "./generator-info"
 import { describeWorkspaceDetection, UNNAMEABLE_BECAUSE } from "./unresolved-report"
 import { VOCAB_DISCOVERED_FILENAME } from "./vocab-discovered"
@@ -234,11 +235,21 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
       collect,
       [],
     )
+    .option(
+      "--fail-on-scope <scope>",
+      "all | non-test: whether --fail-on counts the Symbols of the files config testFiles names (default: all)",
+      parseFailOnScope,
+    )
     .option("--compact", "compact JSON output")
     .option(
       "--max-bytes <n>",
       "cap diff.md at n UTF-8 bytes, shortening sections to names and then dropping them least-important-first (GitHub rejects a comment body over 65536)",
       parseMaxBytes,
+    )
+    .option("--parallel-scans", "scan the base and the head at once, even on a single CPU")
+    .option(
+      "--no-parallel-scans",
+      "scan the base and then the head, which uses less memory (default: at once, unless on a single CPU)",
     )
     .option("--config <path>", "config file path", parsePath)
     .action(
@@ -250,8 +261,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
           outputDir?: string
           format?: OutputFormat
           failOn?: string[]
+          failOnScope?: FailOnScope
           compact?: boolean
           maxBytes?: number
+          parallelScans?: boolean
           config?: string
         },
       ) =>
@@ -268,8 +281,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
                 cmdOptions.failOn !== undefined && cmdOptions.failOn.length > 0
                   ? cmdOptions.failOn
                   : undefined,
+              failOnScope: cmdOptions.failOnScope,
               compact: cmdOptions.compact,
               maxBytes: cmdOptions.maxBytes,
+              parallelScans: cmdOptions.parallelScans,
               logLevel: logLevel(),
               configPath: resolveConfigPath(cmdOptions.config, env),
             }),

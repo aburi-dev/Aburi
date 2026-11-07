@@ -57,19 +57,19 @@ describe("the id a package name yields", () => {
     ])
   })
 
-  it.each([
-    "@acme/---",
-    "---",
-  ])("aborts naming the package and its root when %j cannot yield an id", async (name) => {
-    await tree.writePnpmWorkspace("packages/*")
-    await tree.writePackage("packages/widgets", { name })
+  it.each(["@acme/---", "---"])(
+    "aborts naming the package and its root when %j cannot yield an id",
+    async (name) => {
+      await tree.writePnpmWorkspace("packages/*")
+      await tree.writePackage("packages/widgets", { name })
 
-    const error = await errorFrom(CoreError, () => detectComponents({ workspaceRoot: tree.root }))
+      const error = await errorFrom(CoreError, () => detectComponents({ workspaceRoot: tree.root }))
 
-    expect(error.code).toBe("invalid-component-id")
-    expect(error.message).toContain(`package name "${name}"`)
-    expect(error.message).toContain("packages/widgets")
-  })
+      expect(error.code).toBe("invalid-component-id")
+      expect(error.message).toContain(`package name "${name}"`)
+      expect(error.message).toContain("packages/widgets")
+    },
+  )
 })
 
 describe("colliding ids", () => {

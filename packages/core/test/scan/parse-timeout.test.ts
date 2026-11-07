@@ -1,6 +1,6 @@
 import { useScratchWorkspace } from "@aburi/test-support"
 import type { ParseError } from "@aburi/types"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_PARSE_TIMEOUT_MS, PARSE_TIMEOUT_MIN_MS, startParseDeadline } from "../../src"
 import { runPipeline, type Script, ScriptedLanguagePlugin, scanStubs } from "../fixtures/plugins"
 
@@ -24,6 +24,37 @@ describe("startParseDeadline", () => {
     ["a budget above the minimum as written", 250, 250],
   ])("takes %s", (_label, configured, budget) => {
     expect(startParseDeadline(configured).budgetMs).toBe(budget)
+  })
+
+  describe("excluding work", () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    // The clock is faked: what counts is which milliseconds the budget sees, not how many pass.
+    it.each<[string, () => Promise<void>]>([
+      ["it finishes", async () => {}],
+      [
+        "it throws",
+        async () => {
+          throw new Error("chain failed")
+        },
+      ],
+    ])("stops the clock for its length, when %s", async (_case, settle) => {
+      vi.useFakeTimers({ toFake: ["performance"] })
+      const deadline = startParseDeadline(100)
+      vi.advanceTimersByTime(60)
+      await deadline
+        .excluding(async () => {
+          vi.advanceTimersByTime(500)
+          await settle()
+        })
+        .catch(() => undefined)
+      vi.advanceTimersByTime(30)
+
+      expect(deadline.elapsedMs()).toBe(90)
+      expect(deadline.expired()).toBe(false)
+    })
   })
 })
 
@@ -70,10 +101,13 @@ describe("runFilePipeline — parse deadline", () => {
       "a non-recoverable error",
       { parseMs: 250, parseErrors: [{ ...RECOVERABLE, recoverable: false }] },
     ],
-  ])("reports a file with %s as a parse failure even when its parse overran", async (_label, script) => {
-    const { result } = await run(script, 100)
-    expect(result.kind).toBe("parse-failed")
-  })
+  ])(
+    "reports a file with %s as a parse failure even when its parse overran",
+    async (_label, script) => {
+      const { result } = await run(script, 100)
+      expect(result.kind).toBe("parse-failed")
+    },
+  )
 
   it("leaves a file that finishes inside its budget untouched", async () => {
     const { result, order } = await run({ candidates: ["one", "two"] }, 600_000)

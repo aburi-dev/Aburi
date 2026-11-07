@@ -99,24 +99,27 @@ describe("scan + diff — a call in catch or finally to a helper that writes", (
   it.each([
     ["catch", "    await audit(id)", ""],
     ["finally", "", "    await audit(id)"],
-  ])("resolves the call in %s and inherits the helper's write", async (_label, inCatch, inFinally) => {
-    const { head, diff } = await diffOfTransferEdit(transfer(inCatch, inFinally))
+  ])(
+    "resolves the call in %s and inherits the helper's write",
+    async (_label, inCatch, inFinally) => {
+      const { head, diff } = await diffOfTransferEdit(transfer(inCatch, inFinally))
 
-    const symbol = symbolById(head, TRANSFER)
-    expect(symbol.calls.filter((c) => c.target === "audit")).toEqual([
-      expect.objectContaining({ resolved: AUDIT }),
-    ])
-    expect(head.ir.dependencies).toContainEqual(
-      expect.objectContaining({ from: TRANSFER, to: AUDIT, via: "call" }),
-    )
-    const propagated = symbol.effects.filter((e) => e.propagated === true)
-    expect(propagated.map((e) => [e.id, e.target, e.derivedFrom])).toEqual([
-      ["db.write", "prisma.audit.create", [AUDIT]],
-    ])
-    expect(head.ir.stats.effectPropagation.propagatedEffectCount).toBeGreaterThanOrEqual(1)
+      const symbol = symbolById(head, TRANSFER)
+      expect(symbol.calls.filter((c) => c.target === "audit")).toEqual([
+        expect.objectContaining({ resolved: AUDIT }),
+      ])
+      expect(head.ir.dependencies).toContainEqual(
+        expect.objectContaining({ from: TRANSFER, to: AUDIT, via: "call" }),
+      )
+      const propagated = symbol.effects.filter((e) => e.propagated === true)
+      expect(propagated.map((e) => [e.id, e.target, e.derivedFrom])).toEqual([
+        ["db.write", "prisma.audit.create", [AUDIT]],
+      ])
+      expect(head.ir.stats.effectPropagation.propagatedEffectCount).toBeGreaterThanOrEqual(1)
 
-    expect(diff.symbols).toMatchObject([
-      { status: "changed", after: { id: TRANSFER }, delta: { logicChanged: true } },
-    ])
-  })
+      expect(diff.symbols).toMatchObject([
+        { status: "changed", after: { id: TRANSFER }, delta: { logicChanged: true } },
+      ])
+    },
+  )
 })

@@ -58,6 +58,7 @@ import {
   pluginNamedFrameworks,
   resolveComponents,
   resolveManagers,
+  resolveWorkspacePackages,
 } from "./scan-components"
 import { findCoverageFault } from "./scan-coverage"
 import { reportScanIncidents } from "./scan-incidents"
@@ -78,6 +79,7 @@ export interface ScanOptions {
   strict?: boolean
   lsp?: boolean
   logLevel?: LogLevel
+  log?: (line: string) => void
   incidents?: {
     warn: WarnFn
     label?: string
@@ -107,13 +109,17 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
   const managers = await resolveManagers(config, workspaceRoot)
   const components = await resolveComponents(config, workspaceRoot, plugins.languages)
+  const workspacePackages = await resolveWorkspacePackages(workspaceRoot, managers, components)
   const fellBackToSingleComponent =
     declaredComponents(config) === undefined && managers.workspaces.length === 0
 
   const command = options.command ?? "scan"
   const outputDir = resolveOutputDir(cwd, options.outputDir, config.output?.dir)
   await createOutputDir(command, outputDir)
-  const logger = createLogger(options.logLevel === undefined ? {} : { minimum: options.logLevel })
+  const logger = createLogger({
+    ...(options.logLevel === undefined ? {} : { minimum: options.logLevel }),
+    ...(options.log === undefined ? {} : { write: options.log }),
+  })
   let scanResult: ScanResult
   try {
     scanResult = await scan({
@@ -128,6 +134,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         roots: [...manager.roots],
       })),
       components,
+      workspacePackages,
       generator: await readGeneratorInfo(),
       logger,
     })

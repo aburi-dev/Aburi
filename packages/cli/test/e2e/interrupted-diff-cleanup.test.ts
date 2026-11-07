@@ -71,39 +71,40 @@ describe.skipIf(process.platform === "win32")("aburi diff, interrupted in the ba
     { signal: "SIGTERM", decoyEnv: false },
     { signal: "SIGHUP", decoyEnv: false },
     { signal: "SIGINT", decoyEnv: true },
-  ] as const)("removes the worktree and its checkout on $signal (decoy git env: $decoyEnv), and still dies of the signal", async ({
-    signal,
-    decoyEnv,
-  }) => {
-    const ready = join(repo, "ready")
-    const decoyIndex = join(decoy, ".git", "index")
-    const decoyIndexBefore = await readFile(decoyIndex)
-    const running = spawn(process.execPath, [CLI_BIN, "diff", "HEAD~1..HEAD"], {
-      cwd: repo,
-      env: gitTestEnv(repo, {
-        ABURI_TEST_READY_FILE: ready,
-        ...(decoyEnv ? { GIT_INDEX_FILE: decoyIndex, GIT_PREFIX: "src/" } : {}),
-      }),
-      stdio: "ignore",
-    })
-    child = running
-    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) =>
-      running.on("exit", (code, signalCode) => done({ code, signal: signalCode })),
-    )
+  ] as const)(
+    "removes the worktree and its checkout on $signal (decoy git env: $decoyEnv), and still dies of the signal",
+    async ({ signal, decoyEnv }) => {
+      const ready = join(repo, "ready")
+      const decoyIndex = join(decoy, ".git", "index")
+      const decoyIndexBefore = await readFile(decoyIndex)
+      const running = spawn(process.execPath, [CLI_BIN, "diff", "HEAD~1..HEAD"], {
+        cwd: repo,
+        env: gitTestEnv(repo, {
+          ABURI_TEST_READY_FILE: ready,
+          ...(decoyEnv ? { GIT_INDEX_FILE: decoyIndex, GIT_PREFIX: "src/" } : {}),
+        }),
+        stdio: "ignore",
+      })
+      child = running
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) =>
+        running.on("exit", (code, signalCode) => done({ code, signal: signalCode })),
+      )
 
-    await until(() => existsSync(ready), "the base scan to reach the stalling plugin")
-    const [worktree] = linkedWorktrees(repo)
-    expect(worktree, "the run should be holding a base worktree").toBeDefined()
-    const checkoutParent = dirname(dirname(worktree as string))
-    expect(existsSync(checkoutParent)).toBe(true)
+      await until(() => existsSync(ready), "the base scan to reach the stalling plugin")
+      const [worktree] = linkedWorktrees(repo)
+      expect(worktree, "the run should be holding a base worktree").toBeDefined()
+      const checkoutParent = dirname(dirname(worktree as string))
+      expect(existsSync(checkoutParent)).toBe(true)
 
-    running.kill(signal)
-    const outcome = await exited
+      running.kill(signal)
+      const outcome = await exited
 
-    // Re-raised rather than swallowed: the shell sees 128+N, as without the listener.
-    expect(outcome).toEqual({ code: null, signal })
-    expect(linkedWorktrees(repo)).toEqual([])
-    expect(existsSync(checkoutParent)).toBe(false)
-    expect(await readFile(decoyIndex)).toEqual(decoyIndexBefore)
-  }, 30_000)
+      // Re-raised rather than swallowed: the shell sees 128+N, as without the listener.
+      expect(outcome).toEqual({ code: null, signal })
+      expect(linkedWorktrees(repo)).toEqual([])
+      expect(existsSync(checkoutParent)).toBe(false)
+      expect(await readFile(decoyIndex)).toEqual(decoyIndexBefore)
+    },
+    30_000,
+  )
 })

@@ -204,13 +204,16 @@ describe("a manifest that claims what another plugin already owns", () => {
       'derivedBy prefix "framework:acme" (plugin "framework-b") overlaps with existing prefix ' +
         '"framework:acme:sub" (plugin "framework-a").',
     ],
-  ])("refuses %s, naming the owner first and the newcomer second", async (_, existing, newcomer, code, value, message) => {
-    const reg = new VocabRegistry()
-    reg.register(existing)
-    const err = await errorFrom(RegistryError, () => reg.register(newcomer))
-    expect(err).toMatchObject({ code, value, plugins: [existing.name, newcomer.name] })
-    expect(err.message).toBe(message)
-  })
+  ])(
+    "refuses %s, naming the owner first and the newcomer second",
+    async (_, existing, newcomer, code, value, message) => {
+      const reg = new VocabRegistry()
+      reg.register(existing)
+      const err = await errorFrom(RegistryError, () => reg.register(newcomer))
+      expect(err).toMatchObject({ code, value, plugins: [existing.name, newcomer.name] })
+      expect(err.message).toBe(message)
+    },
+  )
 
   it.each([
     ["extKind", "extKindPrefixes"],

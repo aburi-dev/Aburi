@@ -1,4 +1,4 @@
-import type { ImportBinding } from "@aburi/types"
+import type { Decorator, ImportBinding } from "@aburi/types"
 
 export type { ImportBinding }
 
@@ -14,4 +14,20 @@ export function splitAliasedImportName(raw: string): ImportBinding {
   const imported = raw.slice(0, idx).trim()
   const local = raw.slice(idx + marker.length).trim()
   return { imported, local }
+}
+
+export interface DecoratorReference {
+  /** The local the decorator is read through: its name, or its receiver's first segment. */
+  readonly head: string
+  /** The name it reads from the module `head` binds, when `head` binds a whole module. */
+  readonly member: string
+}
+
+/** One reading for the core, which follows the name, and the framework plugins, which grade it. */
+export function decoratorReference(
+  decorator: Pick<Decorator, "name" | "qualifier">,
+): DecoratorReference {
+  if (decorator.qualifier === undefined) return { head: decorator.name, member: decorator.name }
+  const [head = decorator.qualifier, member = decorator.name] = decorator.qualifier.split(".")
+  return { head, member }
 }

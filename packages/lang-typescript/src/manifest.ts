@@ -1,7 +1,7 @@
-import type { LangManifest } from "@aburi/types"
+import { type LangManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
 
 export const langTypescriptManifest: LangManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "lang-typescript",
   version: "0.0.0",
   type: "lang",
@@ -25,6 +25,8 @@ export const langTypescriptManifest: LangManifest = {
       "argument-names",
       "inline-handler",
       "call-argument-function",
+      "invoked-function",
+      "module-scope",
       "object-literal-initializer",
       "object-method",
       "property-assigned-function",
