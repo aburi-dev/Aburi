@@ -11,7 +11,12 @@ Shared TypeScript types for the Aburi ecosystem. Two flavours:
   that the schemas cannot express — richer generic and function signatures that
   make the plugin contracts type-safe.
 
-Every other `@aburi/*` package depends on this one. It ships no runtime code.
+Every other `@aburi/*` package depends on this one. Its runtime code is a few
+constants and small helpers, among them the `$schema` URL each kind of document
+is written with (`IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`,
+`PLUGIN_SCHEMA_URL`) and `isIRSchemaURL`, which accepts every `$schema` an IR v1
+may carry: the `aburi.dev` URL and the `aburi.kage1020.com` one the schemas were
+served from before.
 
 ## Install
 
@@ -24,6 +29,7 @@ pnpm add @aburi/types
 ```ts
 import type { IR, Symbol as IRSymbol, DiffResult, Config } from "@aburi/types"
 import type { LanguagePlugin, FrameworkPlugin, EffectPlugin } from "@aburi/types"
+import { PLUGIN_SCHEMA_URL } from "@aburi/types"
 ```
 
 ## Regenerating from schema

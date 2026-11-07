@@ -1,7 +1,6 @@
 import type { ScanResult } from "@aburi/core"
-import { IR_SCHEMA_URL } from "@aburi/test-harness"
 import { irSchemaViolations } from "@aburi/test-support"
-import type { IR } from "@aburi/types"
+import { type IR, IR_SCHEMA_URL } from "@aburi/types"
 import { beforeAll, describe, expect, it } from "vitest"
 import { scanFixture, useFixtureCheckout } from "./project"
 

@@ -145,7 +145,7 @@ in the workspace root or any directory above it, the walk an ESM import from the
 ```jsonc
 {
   // Suggested install: pnpm add -D @aburi/framework-nestjs
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
   "components": [/* ... */]

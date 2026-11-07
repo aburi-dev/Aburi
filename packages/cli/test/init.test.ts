@@ -1,11 +1,12 @@
 import { chmod, mkdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import { CONFIG_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CliError, EXIT, runInit } from "../src"
 import { loadPinnedConfig, pinConfig } from "../src/config-load"
 import { runCliIn } from "./run-cli"
-import { CONFIG_SCHEMA_URL, writePackageJson } from "./workspace"
+import { writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("init")
 

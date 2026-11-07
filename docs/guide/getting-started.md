@@ -73,7 +73,7 @@ The file it wrote names the plugins to load and the components it detected:
 
 ```json
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-next", "framework-react"],
   "components": [

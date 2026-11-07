@@ -8,7 +8,7 @@ import {
   makeSymbol,
   soleChange,
 } from "@aburi/test-support"
-import type { DiffResult, SkipReason } from "@aburi/types"
+import { type DiffResult, IR_SCHEMA_URL, type SkipReason } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { diffSchemaViolations } from "./diff-schema"
 import { diffOf, diffSymbols, withSkipped } from "./helpers"
@@ -165,6 +165,14 @@ describe("a diff written before a field existed still validates", () => {
     const { notCompared: _, ...older } = lossyDiff()
     expect(diffSchemaViolations(older)).toEqual([])
   })
+
+  it("naming the diff schema by the host it was served from before aburi.dev", () => {
+    const older = {
+      ...lossyDiff(),
+      $schema: "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+    }
+    expect(diffSchemaViolations(older)).toEqual([])
+  })
 })
 
 describe("the schema refuses a malformed diff", () => {
@@ -266,6 +274,16 @@ describe("the schema refuses a malformed diff", () => {
         ],
       }),
       "/notCompared/0 additionalProperties",
+    ],
+    [
+      "the IR schema's URL as the diff's $schema",
+      (diff) => ({ ...diff, $schema: IR_SCHEMA_URL }),
+      "/$schema enum",
+    ],
+    [
+      "a later diff schema version as its $schema",
+      (diff) => ({ ...diff, $schema: "https://aburi.dev/schema/aburi.diff.v2.json" }),
+      "/$schema enum",
     ],
   ])("refuses %s", (_, malform, violation) => {
     expect(diffSchemaViolations(malform(lossyDiff()))).toContain(violation)

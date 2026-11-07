@@ -107,7 +107,7 @@ for the plugin contracts and a walkthrough.
 
 ## Docs site
 
-[aburi.kage1020.com](https://aburi.kage1020.com) is the VitePress site under
+[aburi.dev](https://aburi.dev) is the VitePress site under
 [`docs/`](docs/), served by a Cloudflare Worker configured in
 [`docs/wrangler.jsonc`](docs/wrangler.jsonc). Production is deployed from
 [`.github/workflows/docs.yml`](.github/workflows/docs.yml); previews still come

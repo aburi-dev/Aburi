@@ -1,16 +1,17 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute } from "node:path"
-import type {
-  Component,
-  Config,
-  EffectPlugin,
-  FrameworkPlugin,
-  IR,
-  LanguagePlugin,
-  Logger,
-  UnresolvedCallDiagnostic,
-  VocabRegistry,
-  WorkspaceManager,
+import {
+  type Component,
+  type Config,
+  type EffectPlugin,
+  type FrameworkPlugin,
+  type IR,
+  IR_SCHEMA_URL,
+  type LanguagePlugin,
+  type Logger,
+  type UnresolvedCallDiagnostic,
+  type VocabRegistry,
+  type WorkspaceManager,
 } from "@aburi/types"
 import { resolveCallGraph } from "../callgraph"
 import { type SerializeOptions, serializeCanonical } from "../canonical"
@@ -176,7 +177,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   }
 
   const ir: IR = {
-    $schema: "https://aburi.kage1020.com/schema/aburi.ir.v1.json",
+    $schema: IR_SCHEMA_URL,
     generator: {
       name: input.generator?.name ?? "@aburi/core",
       version: input.generator?.version ?? "0.0.0",

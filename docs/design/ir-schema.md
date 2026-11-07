@@ -129,7 +129,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.ir.v1.json",  // required
+  "$schema": "https://aburi.dev/schema/aburi.ir.v1.json",  // required
   "generator": {                              // required
     "name": "aburi",
     "version": "1.0.0",
@@ -676,7 +676,8 @@ An invariant violation is a **fatal error**, not a warning.
 
 ### 15.1 `$schema` URL
 
-- Fixed to `https://aburi.kage1020.com/schema/aburi.ir.v1.json`
+- Aburi writes `https://aburi.dev/schema/aburi.ir.v1.json`, the schema's `$id`
+- `https://aburi.kage1020.com/schema/aburi.ir.v1.json` names the same v1. The schemas were served from that host before `aburi.dev`, and v1 being frozen, a Document written then stays valid: the schema accepts both values, `aburi diff` and `aburi explain` read both, and two Documents that differ only in which of the two they carry are one schema version to the mismatch check of [`diff-algorithm.md`](./diff-algorithm.md) §9.1. The config, diff and plugin manifest schemas accept their own `aburi.kage1020.com` URL beside the `aburi.dev` one in the same way
 - Backward-compatible field additions: allowed within v1
 - Field removal / type change / semantic change: goes to v2. Change `$schema` to `aburi.ir.v2.json`
 

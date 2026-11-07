@@ -1,20 +1,19 @@
-import type {
-  Config,
-  Decorator,
-  DropHint,
-  FrameworkHint,
-  FrameworkManifest,
-  FrameworkPlugin,
-  HintRule,
-  PluginManifest,
-  SymbolCandidate,
-  SymbolClassification,
+import {
+  type Config,
+  type Decorator,
+  type DropHint,
+  type FrameworkHint,
+  type FrameworkManifest,
+  type FrameworkPlugin,
+  type HintRule,
+  PLUGIN_SCHEMA_URL,
+  type PluginManifest,
+  type SymbolCandidate,
+  type SymbolClassification,
 } from "@aburi/types"
 import { ConfigError } from "./errors"
 
 const RESERVED_EXT_KIND_PREFIX = "framework:hint:"
-
-const PLUGIN_SCHEMA = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
 
 /** One rule as the hint plugin applies it, its `extKind` already moved under `framework:hint:`. */
 interface CompiledRule {
@@ -161,7 +160,7 @@ function synthesizeManifest(hintName: string, rules: readonly CompiledRule[]): F
   }
 
   return {
-    $schema: PLUGIN_SCHEMA,
+    $schema: PLUGIN_SCHEMA_URL,
     name: `hint-${hintName}`,
     version: "0.0.0",
     type: "framework",

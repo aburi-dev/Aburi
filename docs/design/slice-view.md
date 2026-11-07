@@ -61,7 +61,7 @@ Preconditions the pass MUST assume:
 
 1. Every `pairedSymbols[i]` has a fully populated `status`. `unchanged` entries have already been dropped per [`diff-algorithm.md`](./diff-algorithm.md) §4.
 2. Every `CallEdge.from` and `CallEdge.to` resolves to a Symbol in the corresponding IR's `symbols[]`. Dangling ids are a resolver bug, not something Slice View tolerates.
-3. Both `baseIR` and `headIR` share the same `$schema` value. [`diff-algorithm.md`](./diff-algorithm.md) §9.1 already rejects mismatches with a fatal error; the pass runs after that check.
+3. Both `baseIR` and `headIR` are of one IR schema version. Their `$schema` strings may still differ by host, since [`ir-schema.md`](./ir-schema.md) §15.1 names v1 by two URLs, so nothing in the pass compares them. [`diff-algorithm.md`](./diff-algorithm.md) §9.1 already rejects a version mismatch with a fatal error; the pass runs after that check.
 4. [`effect-propagation.md`](./effect-propagation.md) has already run on both IRs. Its outputs are read by the pass only to answer "is this `changed` status attributable to a propagated effect?" (§4.4).
 
 Cross-language edges do not exist yet ([`call-resolution.md`](./call-resolution.md) §7.3). Slice clustering therefore runs within one language's Symbol universe; the deferred design in `multi-language-id.md` will specify cross-language slice composition — see §14.13.

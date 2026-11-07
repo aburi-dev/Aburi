@@ -5,7 +5,7 @@ projects that generated file is the last you will think about it:
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-next", "framework-react"]
 }
@@ -272,7 +272,7 @@ setting in CI.
 | `minParsedFileRatio` | *(unset)* | Smallest share of discovered files a scan may parse and still pass. |
 | `lsp` | off | Opt-in enrichment from a language server you install: column ranges and `this.` / `super.` call resolution. Turn it on with `enabled` (or `aburi scan --lsp`); `servers` is keyed by language plugin id: `"lsp": { "enabled": true, "servers": { "ts": { "command": "typescript-language-server", "args": ["--stdio"] } } }` for `lang-typescript`. |
 
-The [JSON Schema](https://aburi.kage1020.com/schema/aburi.config.v1.json) is the
+The [JSON Schema](https://aburi.dev/schema/aburi.config.v1.json) is the
 authoritative definition — that URL is the one the `$schema` line points at, and it
 serves the same file the loader validates against. The
 [config design doc](../design/config.md) carries the reasoning behind each field.

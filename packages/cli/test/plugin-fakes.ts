@@ -1,15 +1,16 @@
 import { makeLanguageId } from "@aburi/core"
-import type {
-  EffectPlugin,
-  EffectsManifest,
-  FrameworkManifest,
-  LangManifest,
-  LanguagePlugin,
-  PluginManifest,
+import {
+  type EffectPlugin,
+  type EffectsManifest,
+  type FrameworkManifest,
+  type LangManifest,
+  type LanguagePlugin,
+  PLUGIN_SCHEMA_URL,
+  type PluginManifest,
 } from "@aburi/types"
 
 export const LANG_MANIFEST: LangManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "lang-fake",
   version: "0.0.0",
   type: "lang",

@@ -30,10 +30,10 @@ declaration to enforce namespace ownership and reject cross-plugin collisions at
 load time.
 
 ```ts
-import type { FrameworkManifest } from "@aburi/types"
+import { type FrameworkManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
 
 export const myFrameworkManifest: FrameworkManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL, // "https://aburi.dev/schema/aburi.plugin.v1.json"
   name: "framework-mytool",
   version: "0.1.0",
   type: "framework",
@@ -419,7 +419,7 @@ discovers them by package name from `aburi.json`:
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.config.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-mytool"],
   "effects": ["effects-mytool"]

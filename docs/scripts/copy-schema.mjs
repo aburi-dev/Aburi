@@ -7,7 +7,7 @@ const DOCS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const SCHEMA_DIR = dirname(createRequire(import.meta.url).resolve("@aburi/schema/aburi.ir.v1.json"))
 const PUBLIC_DIR = join(DOCS_ROOT, "public", "schema")
 
-const SITE_ORIGIN = "https://aburi.kage1020.com"
+const SITE_ORIGIN = "https://aburi.dev"
 
 const names = (await readdir(SCHEMA_DIR)).filter((name) => /^aburi\..+\.json$/.test(name)).sort()
 

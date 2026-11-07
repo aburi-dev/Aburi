@@ -9,7 +9,7 @@ disappeared.
 It parses both revisions with tree-sitter, matches functions and methods across
 them, and writes the answer as Markdown. Your CI can fail the build on any of it.
 
-Documentation: **[aburi.kage1020.com](https://aburi.kage1020.com)**
+Documentation: **[aburi.dev](https://aburi.dev)**
 
 ## What the report looks like
 
@@ -67,7 +67,7 @@ or `bun add -D …`, and run the CLI as `npx aburi …`, `yarn aburi …`, or
 `bunx aburi …`.
 
 Exit code `3` means a gate tripped. The full walkthrough is in
-[Getting started](https://aburi.kage1020.com/guide/getting-started).
+[Getting started](https://aburi.dev/guide/getting-started).
 
 ### In GitHub Actions
 
@@ -103,20 +103,20 @@ way: [`.github/workflows/aburi.yml`](.github/workflows/aburi.yml).
 
 | | |
 |---|---|
-| [What is Aburi?](https://aburi.kage1020.com/guide/what-is-aburi) | The idea, in five minutes. |
-| [Getting started](https://aburi.kage1020.com/guide/getting-started) | Install to first diff. |
-| [Reading the report](https://aburi.kage1020.com/guide/reading-the-report) | What each section means. |
-| [Supported stacks](https://aburi.kage1020.com/guide/supported-stacks) | Which plugins cover your framework. |
-| [Configuration](https://aburi.kage1020.com/guide/configuration) | Every field of `aburi.json`. |
-| [CI integration](https://aburi.kage1020.com/guide/ci-integration) | Gates and pull request comments. |
-| [CLI reference](https://aburi.kage1020.com/reference/cli) | Every flag and exit code. |
-| [Architecture](https://aburi.kage1020.com/extend/architecture) | How the pipeline fits together. |
-| [Plugin development](https://aburi.kage1020.com/extend/plugin-development) | Add a language, framework, or library. |
-| [Roadmap](https://aburi.kage1020.com/roadmap) | What works today, what is next. |
+| [What is Aburi?](https://aburi.dev/guide/what-is-aburi) | The idea, in five minutes. |
+| [Getting started](https://aburi.dev/guide/getting-started) | Install to first diff. |
+| [Reading the report](https://aburi.dev/guide/reading-the-report) | What each section means. |
+| [Supported stacks](https://aburi.dev/guide/supported-stacks) | Which plugins cover your framework. |
+| [Configuration](https://aburi.dev/guide/configuration) | Every field of `aburi.json`. |
+| [CI integration](https://aburi.dev/guide/ci-integration) | Gates and pull request comments. |
+| [CLI reference](https://aburi.dev/reference/cli) | Every flag and exit code. |
+| [Architecture](https://aburi.dev/extend/architecture) | How the pipeline fits together. |
+| [Plugin development](https://aburi.dev/extend/plugin-development) | Add a language, framework, or library. |
+| [Roadmap](https://aburi.dev/roadmap) | What works today, what is next. |
 
 Design documents live in [`docs/design/`](docs/design/), the JSON Schemas in
 [`schema/`](schema/). The site serves each schema at the `$id` it carries, so
-`https://aburi.kage1020.com/schema/aburi.config.v1.json` is the same file your
+`https://aburi.dev/schema/aburi.config.v1.json` is the same file your
 editor resolves from the `$schema` line of an `aburi.json`.
 
 ## Contributing

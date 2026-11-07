@@ -1006,7 +1006,7 @@ state per side (cli-spec.md §6.6) and the artifact does not invent it.
 
 ```jsonc
 {
-  "$schema": "https://aburi.kage1020.com/schema/aburi.diff.v1.json",
+  "$schema": "https://aburi.dev/schema/aburi.diff.v1.json",
   "generator": { "name": "aburi", "version": "1.0.0" },
   "base": {
     "ref": "main",                                   // git ref or "ir-base.json"
@@ -1114,7 +1114,7 @@ Including IR generation: <30 seconds (including a full Workspace scan).
 
 ### 9.1 Schema version mismatch
 
-base.$schema != head.$schema → fatal error.
+base.$schema != head.$schema → fatal error, unless both are URLs of IR v1: the two hosts of [`ir-schema.md`](./ir-schema.md) §15.1 name one version.
 When a future v2 ships, an upgrader will be provided.
 
 ### 9.2 Empty base / empty head

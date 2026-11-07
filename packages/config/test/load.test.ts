@@ -1,13 +1,13 @@
 import { join } from "node:path"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import { CONFIG_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ConfigError, configSourceFrom, loadConfig, loadConfigFrom } from "../src/index"
-import { CONFIG_SCHEMA } from "./fixtures/configs"
 
 const AUTODETECT = { found: false, source: null, config: {}, syntheticPlugins: [] }
 
 const WITH_HINT = JSON.stringify({
-  $schema: CONFIG_SCHEMA,
+  $schema: CONFIG_SCHEMA_URL,
   frameworkHints: [
     { name: "acme", decorators: { AcmeController: { extKind: "framework:acme:controller" } } },
   ],
@@ -34,7 +34,7 @@ describe("loadConfig", () => {
       "reserved-namespace",
       "aburi.jsonc",
       JSON.stringify({
-        $schema: CONFIG_SCHEMA,
+        $schema: CONFIG_SCHEMA_URL,
         frameworkHints: [
           { name: "acme", decorators: { X: { extKind: "framework:hint:acme:controller" } } },
         ],
