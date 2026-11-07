@@ -808,7 +808,9 @@ revision, ordered by name. The same source scanned with another plugin set is an
 effect plugin that only the base loaded leaves its `db.write` effects on the base side alone, and
 every Symbol that carried one reads as `changed` — so without the line a reviewer has no way to
 tell that wave from an edit. It is a warning, not a gate, and `diff.json` holds nothing of it. Ref
-mode never says it: both scans load the head's plugins (§6.4 step 3).
+mode never says it: both scans load the head's plugins (§6.4 step 3). A `frameworkHints` entry
+records its `hint-<name>` plugin at version `0.0.0` whatever its rules say, so the line names an
+entry added or removed but not one whose rules were edited.
 
 A planned `--quiet` would print the glyph line alone:
 ```
