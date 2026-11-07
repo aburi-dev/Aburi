@@ -10,6 +10,7 @@
 "@aburi/framework-nestjs": minor
 "@aburi/framework-next": minor
 "@aburi/framework-react": minor
+"@aburi/framework-trpc": minor
 "@aburi/effects-drizzle": minor
 "@aburi/effects-nest": minor
 "@aburi/effects-prisma": minor
@@ -25,4 +26,4 @@ Nothing written before has to change. Each schema's `$schema` now accepts the `a
 
 `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
 
-A plugin built against this release names `aburi.dev`, which an earlier `@aburi/cli` refuses, so upgrade the CLI with its plugins.
+An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.

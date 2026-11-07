@@ -36,10 +36,9 @@ describe("parsePluginManifest", () => {
   })
 
   it("accepts a manifest naming the host the schema was served from before aburi.dev", () => {
-    const text = VALID_MANIFEST.replace("https://aburi.dev/", "https://aburi.kage1020.com/")
-    expect(parsePluginManifest(text, "inline").$schema).toBe(
-      "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
-    )
+    const earlier = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
+    const manifest = { ...langManifest(), $schema: earlier }
+    expect(parsePluginManifest(JSON.stringify(manifest), "inline").$schema).toBe(earlier)
   })
 
   it.each([

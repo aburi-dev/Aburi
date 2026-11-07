@@ -17,9 +17,9 @@ describe("the $schema a written document carries", () => {
     ["a diff", DIFF_SCHEMA_URL, diffSchema],
     ["a config", CONFIG_SCHEMA_URL, configSchema],
     ["a plugin manifest", PLUGIN_SCHEMA_URL, pluginSchema],
-  ])("for %s is the $id of the schema it names, which that schema accepts", (_, url, schema) => {
+  ])("for %s is the $id of the schema it names, and the first value its $schema lists", (_, url, schema) => {
     expect(url).toBe(schema.$id)
-    expect(schema.properties.$schema.enum).toContain(url)
+    expect(schema.properties.$schema.enum[0]).toBe(url)
   })
 })
 
@@ -32,6 +32,11 @@ describe("isIRSchemaURL", () => {
     ["a later IR version", "https://aburi.dev/schema/aburi.ir.v2.json"],
     ["another schema of the same host", DIFF_SCHEMA_URL],
     ["the IR file name alone", "aburi.ir.v1.json"],
+    [
+      "the v1 path on a host Aburi never served from",
+      "https://example.com/schema/aburi.ir.v1.json",
+    ],
+    ["the v1 URL over http", "http://aburi.dev/schema/aburi.ir.v1.json"],
     ["a value that is not a string", 1],
     ["an absent value", undefined],
   ])("refuses %s", (_, value) => {

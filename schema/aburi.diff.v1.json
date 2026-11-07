@@ -70,7 +70,7 @@
         "irSchema": {
           "type": "string",
           "minLength": 1,
-          "description": "Schema id of the input IR. Must match between base and head."
+          "description": "The input IR's $schema, as that IR names it. Base and head are of one IR schema version, but may name it by different hosts: the IR schema accepts two URLs for v1."
         }
       }
     },

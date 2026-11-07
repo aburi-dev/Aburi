@@ -1,4 +1,4 @@
-import type { FrameworkManifest } from "@aburi/types"
+import { type FrameworkManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
 import { TRPC_DERIVED_BY_PREFIX, type TrpcExtKind } from "./ext-kinds"
 
 /** `id` is typed as `TrpcExtKind`, so an entry names only an extKind the classifier assigns. */
@@ -42,7 +42,7 @@ const EXT_KIND_ENTRIES: TrpcExtKindEntry[] = [
 ]
 
 export const frameworkTrpcManifest: FrameworkManifest = {
-  $schema: "https://aburi.kage1020.com/schema/aburi.plugin.v1.json",
+  $schema: PLUGIN_SCHEMA_URL,
   name: "framework-trpc",
   version: "0.0.0",
   type: "framework",
