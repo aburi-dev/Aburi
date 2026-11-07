@@ -1,11 +1,6 @@
 import type { Symbol as IRSymbol, SymbolId, ThisBinding } from "@aburi/types"
-import {
-  makeCallSiteKey,
-  NO_THIS_BINDINGS,
-  type ThisBindingSites,
-  thisBindingOfSite,
-} from "../call-site"
-import { symbolIdParts, trySymbolId } from "../id"
+import { makeCallSiteKey, type ThisBindingSites, thisBindingOfSite } from "../call-site"
+import { type MemberKind, memberSeparator, symbolIdParts, trySymbolId } from "../id"
 import { compareCodeUnit } from "../order"
 import type { LspClient, LspFailure } from "./client"
 import type { ReceiverHint } from "./enrich"
@@ -29,7 +24,7 @@ export type Hover = { text: string } | null
 export function buildHoverJobs(
   fileSymbols: readonly IRSymbol[],
   content: string,
-  thisBindings: ThisBindingSites = NO_THIS_BINDINGS,
+  thisBindings: ThisBindingSites,
 ): HoverJob[] {
   const jobs: HoverJob[] = []
   const lines = content.split(/\r?\n/)
@@ -96,7 +91,7 @@ export function applyHover(
   const lookup: MemberLookup = {
     caller,
     method: job.method,
-    separators: memberSeparators(caller, job.thisBinding),
+    kinds: memberKinds(caller, job.thisBinding),
   }
   const ownerClass =
     ownerClassName === null ? null : findOwnerClass(lookup, ownerClassName, workingById)
@@ -124,8 +119,7 @@ export function applyHover(
 interface MemberLookup {
   readonly caller: IRSymbol
   readonly method: string
-  /** `.` for the instance side, `::` for the static side. */
-  readonly separators: readonly string[]
+  readonly kinds: readonly MemberKind[]
 }
 
 // A hover names the class without its file, so a name several files declare is declined, not
@@ -166,10 +160,10 @@ function findMemberSymbolId(
 ): SymbolId | null {
   const owner = symbolIdParts(ownerClass.id)
   if (owner === null) return null
-  const found = lookup.separators.flatMap((separator) => {
+  const found = lookup.kinds.flatMap((kind) => {
     const id = trySymbolId({
       ...owner,
-      qualifiedName: `${owner.qualifiedName}${separator}${lookup.method}`,
+      qualifiedName: `${owner.qualifiedName}${memberSeparator(kind)}${lookup.method}`,
     })
     return id !== null && workingById.has(id) ? [id] : []
   })
@@ -178,9 +172,12 @@ function findMemberSymbolId(
 
 // Without the language plugin's word, a member's `this` is its own side, and a class's own calls
 // may come from a static block or field initializer of either kind.
-function memberSeparators(caller: IRSymbol, binding: ThisBinding | null): readonly string[] {
-  if (binding !== null) return [binding === "class" ? "::" : "."]
-  if (caller.kind === "class") return [".", "::"]
+function memberKinds(caller: IRSymbol, binding: ThisBinding | null): readonly MemberKind[] {
+  if (binding !== null) return [binding === "class" ? "static" : "instance"]
+  if (caller.kind === "class") return ["instance", "static"]
   const qualifiedName = symbolIdParts(caller.id)?.qualifiedName ?? ""
-  return qualifiedName.lastIndexOf("::") > qualifiedName.lastIndexOf(".") ? ["::"] : ["."]
+  const lastStatic = qualifiedName.lastIndexOf(memberSeparator("static"))
+  return [
+    lastStatic > qualifiedName.lastIndexOf(memberSeparator("instance")) ? "static" : "instance",
+  ]
 }

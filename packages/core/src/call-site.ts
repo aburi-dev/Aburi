@@ -18,7 +18,10 @@ export function receiverHead(target: string): string | undefined {
   return target.split(".").find((segment) => segment.length > 0)
 }
 
-/** Call-site keys by what `this` is where the call is written. */
+/**
+ * Call-site keys by what `this` is where the call is written. A key in both sets stands for calls
+ * on both sides and gets no side.
+ */
 export type ThisBindingSites = Readonly<Record<ThisBinding, ReadonlySet<string>>>
 
 export type CallSiteBinding = readonly [key: string, binding: ThisBinding]

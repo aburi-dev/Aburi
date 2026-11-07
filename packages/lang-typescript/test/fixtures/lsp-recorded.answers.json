@@ -188,6 +188,137 @@
     ],
     "src/contexts.ts": [
       {
+        "name": "Both",
+        "detail": "",
+        "kind": 5,
+        "range": {
+          "start": {
+            "line": 17,
+            "character": 0
+          },
+          "end": {
+            "line": 21,
+            "character": 1
+          }
+        },
+        "selectionRange": {
+          "start": {
+            "line": 17,
+            "character": 13
+          },
+          "end": {
+            "line": 17,
+            "character": 17
+          }
+        },
+        "children": [
+          {
+            "name": "first",
+            "detail": "",
+            "kind": 7,
+            "range": {
+              "start": {
+                "line": 20,
+                "character": 2
+              },
+              "end": {
+                "line": 20,
+                "character": 29
+              }
+            },
+            "selectionRange": {
+              "start": {
+                "line": 20,
+                "character": 9
+              },
+              "end": {
+                "line": 20,
+                "character": 14
+              }
+            },
+            "children": []
+          },
+          {
+            "name": "make",
+            "detail": "",
+            "kind": 6,
+            "range": {
+              "start": {
+                "line": 18,
+                "character": 2
+              },
+              "end": {
+                "line": 18,
+                "character": 43
+              }
+            },
+            "selectionRange": {
+              "start": {
+                "line": 18,
+                "character": 9
+              },
+              "end": {
+                "line": 18,
+                "character": 13
+              }
+            },
+            "children": []
+          },
+          {
+            "name": "make",
+            "detail": "",
+            "kind": 6,
+            "range": {
+              "start": {
+                "line": 19,
+                "character": 2
+              },
+              "end": {
+                "line": 19,
+                "character": 30
+              }
+            },
+            "selectionRange": {
+              "start": {
+                "line": 19,
+                "character": 2
+              },
+              "end": {
+                "line": 19,
+                "character": 6
+              }
+            },
+            "children": []
+          },
+          {
+            "name": "second",
+            "detail": "",
+            "kind": 7,
+            "range": {
+              "start": {
+                "line": 20,
+                "character": 30
+              },
+              "end": {
+                "line": 20,
+                "character": 50
+              }
+            },
+            "selectionRange": {
+              "start": {
+                "line": 20,
+                "character": 30
+              },
+              "end": {
+                "line": 20,
+                "character": 36
+              }
+            },
+            "children": []
+          }
+        ]
+      },
+      {
         "name": "Finder",
         "detail": "",
         "kind": 5,
@@ -1229,6 +1360,22 @@
         "end": {
           "line": 15,
           "character": 19
+        }
+      }
+    },
+    "src/contexts.ts:20:22": {
+      "contents": {
+        "kind": "markdown",
+        "value": "\n```typescript\n(method) Both.make(): Both\n```\n"
+      },
+      "range": {
+        "start": {
+          "line": 20,
+          "character": 22
+        },
+        "end": {
+          "line": 20,
+          "character": 26
         }
       }
     },

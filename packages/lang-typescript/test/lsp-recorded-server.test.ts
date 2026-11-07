@@ -140,6 +140,11 @@ const PROJECT: Record<string, string> = {
     "  find: (q: string) => string = pick()",
     '  found = this.find("x")',
     "}",
+    "export class Both {",
+    "  static make(): Both { return new Both() }",
+    "  make(): Both { return this }",
+    "  static first = this.make(); second = this.make()",
+    "}",
     "",
   ].join("\n"),
 }
@@ -241,6 +246,7 @@ describe("the LSP pass against recorded typescript-language-server answers", () 
       "Search.onInput": resolved("ts:src/kinds.ts#Search.onInput"),
       Maker: resolved("ts:src/contexts.ts#Maker"),
       Finder: resolved("ts:src/contexts.ts#Finder"),
+      Both: resolved("ts:src/contexts.ts#Both"),
     }).toEqual({
       "Store.run": ["ts:src/repo.ts#Store.count", "ts:src/repo.ts#Store.count"],
       "Factory::build": ["ts:src/repo.ts#Factory::create"],
@@ -255,12 +261,13 @@ describe("the LSP pass against recorded typescript-language-server answers", () 
         "ts:src/contexts.ts#Maker::make",
       ],
       Finder: ["ts:src/contexts.ts#pick", null],
+      Both: [null, null],
     })
     expect(result.ir.stats.lspEnrichment?.hintsProduced).toBe(13)
     expect(result.ir.stats.lspEnrichment?.hintsRejected).toEqual({
       unparseableHover: 0,
       ownerClassNotFound: 0,
-      memberNotFound: 3,
+      memberNotFound: 5,
       kindMismatch: 0,
       targetDropped: 1,
     })
