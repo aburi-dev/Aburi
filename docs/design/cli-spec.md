@@ -1339,7 +1339,7 @@ a command's option, not a global one (§3).
 | CL25 | `aburi init --output config/aburi.jsonc` where `config/` does not exist | Creates the directory, writes the file, exit 0 |
 | CL26 | `aburi explain <id> --output docs/alpha.md` where `docs/` does not exist | Creates the directory, writes the Markdown, exit 0 |
 | CL27 | `aburi init` or `aburi explain` with an `--output` that names a directory, or whose parent path is an existing file | exit 2, the path and the remedy on stderr |
-| CL28 | `aburi scan --output-dir notadir` or `aburi diff … --output-dir notadir` where `notadir` is a file | exit 2; stderr names the command, the output directory, the path and `--output-dir` |
+| CL28 | `aburi scan --output-dir notadir` or `aburi diff … --output-dir notadir` where `notadir` is a file, or `--output-dir notadir/out` below it | exit 2; stderr names the command, the output directory, the path, that a file stands where the directory would go, `--output-dir` and the errno (`EEXIST`, or `ENOTDIR` below the file) |
 | CL29 | `aburi scan` into a directory the process may not write to, or under a name the filesystem refuses | exit 1; stderr names the command, the artefact that did not land and the errno — never the bare errno alone, and no flag to point elsewhere, since none would help |
 | CL30 | `aburi diff main..HEAD` outside any git repository | exit 2, "is not inside a git repository", git's own report appended, no `git fetch` advice. Inside a repository git refuses to open, exit 1 with that report instead |
 | CL31 | `aburi diff HEAD~1..HEAD` in a repository with no commits | exit 2, "has no commits yet", no `git fetch` advice |
