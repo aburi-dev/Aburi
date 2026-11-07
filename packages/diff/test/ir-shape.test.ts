@@ -102,14 +102,17 @@ describe("two Documents of different schemas", () => {
       "https://example.com/schema/aburi.ir.v1.json",
       IR_SCHEMA_URL,
     ],
-  ])("are refused as schema-mismatch, naming the base schema, for %s", async (_, baseSchema, headSchema) => {
-    const base = makeIR({ $schema: baseSchema as IR["$schema"] })
-    const head = makeIR({ $schema: headSchema as IR["$schema"] })
-    expect(await refusalOf(base, head)).toMatchObject({
-      code: "schema-mismatch",
-      value: baseSchema,
-    })
-  })
+  ])(
+    "are refused as schema-mismatch, naming the base schema, for %s",
+    async (_, baseSchema, headSchema) => {
+      const base = makeIR({ $schema: baseSchema as IR["$schema"] })
+      const head = makeIR({ $schema: headSchema as IR["$schema"] })
+      expect(await refusalOf(base, head)).toMatchObject({
+        code: "schema-mismatch",
+        value: baseSchema,
+      })
+    },
+  )
 
   it.each<[string, IR["$schema"], IR["$schema"]]>([
     ["a former-host base and an aburi.dev head", FORMER_HOST_V1, IR_SCHEMA_URL],

@@ -17,10 +17,13 @@ describe("the $schema a written document carries", () => {
     ["a diff", DIFF_SCHEMA_URL, diffSchema],
     ["a config", CONFIG_SCHEMA_URL, configSchema],
     ["a plugin manifest", PLUGIN_SCHEMA_URL, pluginSchema],
-  ])("for %s is the $id of the schema it names, and the first value its $schema lists", (_, url, schema) => {
-    expect(url).toBe(schema.$id)
-    expect(schema.properties.$schema.enum[0]).toBe(url)
-  })
+  ])(
+    "for %s is the $id of the schema it names, and the first value its $schema lists",
+    (_, url, schema) => {
+      expect(url).toBe(schema.$id)
+      expect(schema.properties.$schema.enum[0]).toBe(url)
+    },
+  )
 })
 
 describe("isIRSchemaURL", () => {
