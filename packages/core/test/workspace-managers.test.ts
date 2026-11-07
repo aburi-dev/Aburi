@@ -136,7 +136,7 @@ describe("detectManagers", () => {
     ])
   })
 
-  it("lists a directory once per tool when two manifests of that tool declare it", async () => {
+  it("lists a tool and a directory once when two manifests of that tool declare it", async () => {
     await tree.writePnpmWorkspace("apps/*")
     await tree.writeJson("package.json", { name: "root", workspaces: ["apps/*"] })
     await tree.writeSource("pnpm-lock.yaml", "")
@@ -144,9 +144,22 @@ describe("detectManagers", () => {
 
     const result = await detectManagers(tree.root)
 
+    expect(result.managers).toEqual([{ tool: "pnpm", roots: ["apps/billing"] }])
     expect(result.workspaces.map((w) => `${w.relativeRoot} ${w.managerTool}`)).toEqual([
       "apps/billing pnpm",
     ])
+  })
+
+  it("gives a tool two manifests declare every root either names", async () => {
+    await tree.writePnpmWorkspace("apps/*")
+    await tree.writeJson("package.json", { name: "root", workspaces: ["libs/*", "apps/*"] })
+    await tree.writeSource("pnpm-lock.yaml", "")
+    await tree.writePackage("apps/billing", { name: "billing" })
+    await tree.writePackage("libs/shared", { name: "shared" })
+
+    const result = await detectManagers(tree.root)
+
+    expect(result.managers).toEqual([{ tool: "pnpm", roots: ["apps/billing", "libs/shared"] }])
   })
 
   it.each([["pkg"], ...(process.platform === "win32" ? [] : [["x\\pkg"]])])(
