@@ -197,8 +197,7 @@ const IGNORED_PUBLIC_API_BECAUSE: Record<IgnoredPublicApiReason, string> = {
   "package-directory": "the package directory rather than a file",
   directory: "a directory rather than a file",
   "absolute-path": "an absolute path",
-  "parent-segment":
-    'a path with a ".." segment, and an entry is the path as written, never one resolved from it',
+  "parent-segment": 'a path with a ".." segment',
   "drive-shaped-name": "a path whose first segment reads as a Windows drive",
   "unspellable-name": "a path holding a backslash, which no Document path can spell",
 }

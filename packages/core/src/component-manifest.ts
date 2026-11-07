@@ -148,7 +148,7 @@ export type IgnoredPublicApiReason =
   | "drive-shaped-name"
   | "unspellable-name"
 
-/** A string `package.json` value that names no file inside the package, so it gives no entry. */
+/** A string `package.json` value that gives no `publicApi` entry. */
 export interface IgnoredPublicApiValue {
   /** `main`, `module`, `types`, `typings`, or the place in `exports`: `exports["./lib/"]`. */
   field: string
@@ -162,7 +162,7 @@ export interface PublicApi {
   ignored: IgnoredPublicApiValue[]
 }
 
-const TOP_LEVEL_PATH_FIELDS = ["main", "module", "types", "typings"] as const
+const TOP_LEVEL_PATH_FIELDS: ReadonlySet<string> = new Set(["main", "module", "types", "typings"])
 
 export function collectPublicApi(manifest: NpmManifest | null, root: string): PublicApi {
   const found = new Set<string>()
@@ -173,9 +173,10 @@ export function collectPublicApi(manifest: NpmManifest | null, root: string): Pu
     if (typeof outcome === "string") found.add(root === "." ? outcome : `${root}/${outcome}`)
     else ignored.push({ field, value: raw, reason: outcome.reason })
   }
-  if (manifest !== null) {
-    collectFromExports(manifest.exports, "exports", take)
-    for (const field of TOP_LEVEL_PATH_FIELDS) take(field, manifest[field])
+  // The manifest's own key order, so what is ignored is said in the order the file reads.
+  for (const [field, raw] of Object.entries(manifest ?? {})) {
+    if (field === "exports") collectFromExports(raw, field, take)
+    else if (TOP_LEVEL_PATH_FIELDS.has(field)) take(field, raw)
   }
   return { entries: [...found].sort(compareCodeUnit), ignored }
 }

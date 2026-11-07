@@ -67,31 +67,37 @@ describe("detectComponents", () => {
     expect(components.map((c) => `${c.roots[0]}=${c.id}`)).toEqual(["apps/billing=billing"])
   })
 
-  it("reports a value that gave no publicApi entry under the id its component ends with", async () => {
-    await tree.writePnpmWorkspace("apps/*", "libs/*")
+  it("reports a value that gave no publicApi entry under its component's final id, by id", async () => {
+    await tree.writePnpmWorkspace("aaa/*", "apps/*", "libs/*")
+    await tree.writePackage("aaa/zed", { name: "zed", main: "./" })
     await tree.writePackage("apps/web", { name: "web", main: "./lib/" })
     await tree.writePackage("libs/web", { name: "web", exports: { ".": "./", "./a": "./a.js" } })
 
-    const { components, ignoredPublicApi } = await detectComponents({ workspaceRoot: tree.root })
+    const { ignoredPublicApi } = await detectComponents({ workspaceRoot: tree.root })
 
-    const idAt = (root: string) => components.find((c) => c.roots[0] === root)?.id
     expect(ignoredPublicApi).toEqual([
       {
-        component: idAt("apps/web"),
+        component: "web-apps",
         manifestPath: "apps/web/package.json",
         field: "main",
         value: "./lib/",
         reason: "directory",
       },
       {
-        component: idAt("libs/web"),
+        component: "web-libs",
         manifestPath: "libs/web/package.json",
         field: 'exports["."]',
         value: "./",
         reason: "package-directory",
       },
+      {
+        component: "zed",
+        manifestPath: "aaa/zed/package.json",
+        field: "main",
+        value: "./",
+        reason: "package-directory",
+      },
     ])
-    expect(new Set(ignoredPublicApi.map((value) => value.component)).size).toBe(2)
   })
 
   it("names the root package.json for a single project", async () => {
@@ -163,11 +169,6 @@ describe("the public API from package.json", () => {
       ["dist/index.cjs", "dist/index.d.ts", "dist/index.mjs", "dist/legacy.d.ts"],
     ],
     [
-      "the files of an exports map and not the folders it maps",
-      { exports: { ".": "./src/ok.js", "./": "./", "./lib/": "./lib/" } },
-      ["src/ok.js"],
-    ],
-    [
       "a first segment of two letters before a colon, which is no drive",
       { main: "ab:index.js" },
       ["ab:index.js"],
@@ -181,7 +182,36 @@ describe("the public API from package.json", () => {
       [`src/${composed}.ts`],
     ],
   ])("collects %s", (_case, manifest, entries) => {
-    expect(collect(manifest).entries).toEqual(entries)
+    expect(collect(manifest)).toEqual({ entries, ignored: [] })
+  })
+
+  it("collects the files of an exports map and reports the folders it maps", () => {
+    expect(collect({ exports: { ".": "./src/ok.js", "./": "./", "./lib/": "./lib/" } })).toEqual({
+      entries: ["src/ok.js"],
+      ignored: [
+        { field: 'exports["./"]', value: "./", reason: "package-directory" },
+        { field: 'exports["./lib/"]', value: "./lib/", reason: "directory" },
+      ],
+    })
+  })
+
+  it("reports what it ignores in the order the manifest holds it", () => {
+    const manifest = {
+      typings: "t/",
+      types: "./",
+      module: "/m.js",
+      main: "lib/",
+      exports: { "./b": "./b/", "./a": "./" },
+    }
+
+    expect(collect(manifest).ignored.map(({ field }) => field)).toEqual([
+      "typings",
+      "types",
+      "module",
+      "main",
+      'exports["./b"]',
+      'exports["./a"]',
+    ])
   })
 
   it("writes each entry from the workspace root, through the package's directory", () => {
@@ -193,76 +223,98 @@ describe("the public API from package.json", () => {
     ])
   })
 
-  it.each<[string, Record<string, unknown>, [string, string, IgnoredPublicApiReason][]]>([
-    [
-      "the package directory",
-      { main: "./", module: ".", types: "./.", typings: "" },
+  // From a package below the root too, so each case is decided before the root is joined.
+  describe.each([".", "packages/a"])("from the package at %s", (root) => {
+    it.each<[string, Record<string, unknown>, [string, string, IgnoredPublicApiReason][]]>([
       [
-        ["main", "./", "package-directory"],
-        ["module", ".", "package-directory"],
-        ["types", "./.", "package-directory"],
-        ["typings", "", "package-directory"],
+        "the package directory",
+        { main: "./", module: ".", types: "./.", typings: "", exports: "././" },
+        [
+          ["main", "./", "package-directory"],
+          ["module", ".", "package-directory"],
+          ["types", "./.", "package-directory"],
+          ["typings", "", "package-directory"],
+          ["exports", "././", "package-directory"],
+        ],
       ],
-    ],
-    [
-      "a directory inside it",
-      { main: "./lib/", module: "./lib/.", types: "lib/", typings: "lib/." },
       [
-        ["main", "./lib/", "directory"],
-        ["module", "./lib/.", "directory"],
-        ["types", "lib/", "directory"],
-        ["typings", "lib/.", "directory"],
+        "a directory inside it",
+        { main: "./lib/", module: "./lib/.", types: "lib/", typings: "lib/." },
+        [
+          ["main", "./lib/", "directory"],
+          ["module", "./lib/.", "directory"],
+          ["types", "lib/", "directory"],
+          ["typings", "lib/.", "directory"],
+        ],
       ],
-    ],
-    [
-      "the folders an exports map maps, named by where they sit in it",
-      { exports: { "./": "./", "./lib/": { import: ["./lib/"] } } },
       [
-        ['exports["./"]', "./", "package-directory"],
-        ['exports["./lib/"]["import"][0]', "./lib/", "directory"],
+        "the folders an exports map maps, named by where they sit in it",
+        { exports: { "./": "./", "./lib/": "./lib/", "./esm/": { import: ["./esm/"] } } },
+        [
+          ['exports["./"]', "./", "package-directory"],
+          ['exports["./lib/"]', "./lib/", "directory"],
+          ['exports["./esm/"]["import"][0]', "./esm/", "directory"],
+        ],
       ],
-    ],
-    [
-      "a path that is absolute or leaves the package",
-      {
-        main: "/",
-        module: "/dist/index.mjs",
-        types: "C:/dist/index.d.ts",
-        typings: "../shared/index.d.ts",
-      },
       [
-        ["main", "/", "absolute-path"],
-        ["module", "/dist/index.mjs", "absolute-path"],
-        ["types", "C:/dist/index.d.ts", "drive-shaped-name"],
-        ["typings", "../shared/index.d.ts", "parent-segment"],
+        "a path that is absolute or leaves the package",
+        {
+          main: "/",
+          module: "/dist/index.mjs",
+          types: "C:/dist/index.d.ts",
+          typings: "../shared/index.d.ts",
+        },
+        [
+          ["main", "/", "absolute-path"],
+          ["module", "/dist/index.mjs", "absolute-path"],
+          ["types", "C:/dist/index.d.ts", "drive-shaped-name"],
+          ["typings", "../shared/index.d.ts", "parent-segment"],
+        ],
       ],
-    ],
-    [
-      "a first segment read as a drive",
-      { main: "a:index.js" },
-      [["main", "a:index.js", "drive-shaped-name"]],
-    ],
-    [
-      "a `..` segment that stays inside the package",
-      { exports: "dist/../index.js" },
-      [["exports", "dist/../index.js", "parent-segment"]],
-    ],
-    [
-      "a backslash",
-      { exports: { ".": "dist\\index.js" } },
-      [['exports["."]', "dist\\index.js", "unspellable-name"]],
-    ],
-    [
-      "a value that is not a string, which is not a path written wrong",
-      { exports: { "./internal/*": null }, main: 42, module: true, types: {}, typings: null },
-      [],
-    ],
-  ])("gives no entry for %s, and says which value and why", (_case, manifest, ignored) => {
-    const publicApi = collect(manifest)
-
-    expect(publicApi.entries).toEqual([])
-    expect(publicApi.ignored).toEqual(
-      ignored.map(([field, value, reason]) => ({ field, value, reason })),
-    )
+      [
+        "a first segment read as a drive",
+        { main: "a:index.js" },
+        [["main", "a:index.js", "drive-shaped-name"]],
+      ],
+      [
+        "a `..` segment that stays inside the package",
+        { exports: "./src/../index.js" },
+        [["exports", "./src/../index.js", "parent-segment"]],
+      ],
+      [
+        "a backslash",
+        { exports: { ".": "dist\\index.js" } },
+        [['exports["."]', "dist\\index.js", "unspellable-name"]],
+      ],
+      [
+        "a value that fits more than one case, under the first that applies",
+        {
+          exports: {
+            "./a": "/lib/",
+            "./b": "../",
+            "./c": "C:/",
+            "./d": "C:\\x",
+            "./e": "C:/..\\x",
+          },
+        },
+        [
+          ['exports["./a"]', "/lib/", "absolute-path"],
+          ['exports["./b"]', "../", "directory"],
+          ['exports["./c"]', "C:/", "directory"],
+          ['exports["./d"]', "C:\\x", "unspellable-name"],
+          ['exports["./e"]', "C:/..\\x", "drive-shaped-name"],
+        ],
+      ],
+      [
+        "a value that is not a string, which is not a path written wrong",
+        { exports: { "./internal/*": null }, main: 42, module: true, types: {}, typings: null },
+        [],
+      ],
+    ])("gives no entry for %s, and says which value and why", (_case, manifest, ignored) => {
+      expect(collect(manifest, root)).toEqual({
+        entries: [],
+        ignored: ignored.map(([field, value, reason]) => ({ field, value, reason })),
+      })
+    })
   })
 })

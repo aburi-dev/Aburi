@@ -268,8 +268,8 @@ reproduce it: a first-party plugin that is not loaded is absent from `plugins[]`
 the IR says `framework-next` was a plugin's name ([config.md](./config.md) §6).
 
 The `publicApi` lines follow it, one per string value in a detected component's `package.json`
-that component detection gives no entry ([component-detect.md](./component-detect.md) §4.6),
-which the manifest field and the value name. The IR holds the entries alone, so a value that
+that component detection gives no entry for ([component-detect.md](./component-detect.md) §4.6),
+naming the component, its manifest, the field and the value. The IR holds the entries alone, so a value that
 gives none leaves it looking like that of a package that declared nothing; a component
 `aburi.json` declares is not detected, and has none of these lines. Like the `frameworks` line
 they keep their scan's label, since each describes the IR that scan wrote.
@@ -1381,7 +1381,7 @@ a command's option, not a global one (§3).
 | CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
-| CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over the same with `components` declared in `aburi.json` | exit 0, with one `⚠ Component "<id>": package.json#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
+| CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
 
 ## 18. Design Decisions
 

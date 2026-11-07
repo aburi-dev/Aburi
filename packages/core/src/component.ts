@@ -30,7 +30,7 @@ export interface DetectComponentsOptions extends DetectManagersOptions {
   ignore?: readonly string[]
 }
 
-/** A `package.json` value of a detected Component that gave its `publicApi` no entry. */
+/** A string `package.json` value of a detected Component that gave its `publicApi` no entry. */
 export interface IgnoredPublicApi extends IgnoredPublicApiValue {
   component: ComponentId
   /** Workspace-relative. */
@@ -39,7 +39,7 @@ export interface IgnoredPublicApi extends IgnoredPublicApiValue {
 
 export interface DetectComponentsResult {
   components: Component[]
-  /** By component id, then in the order the manifest holds them. */
+  /** By component id, then in the order its manifest holds them. */
   ignoredPublicApi: IgnoredPublicApi[]
 }
 
