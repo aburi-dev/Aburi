@@ -1,6 +1,6 @@
 import type { Symbol as IRSymbol, SymbolId, ThisBinding } from "@aburi/types"
 import { makeCallSiteKey, type ThisBindingSites, thisBindingOfSite } from "../call-site"
-import { type MemberKind, memberSeparator, symbolIdParts, trySymbolId } from "../id"
+import { type MemberSeparator, memberSeparator, symbolIdParts, trySymbolId } from "../id"
 import { compareCodeUnit } from "../order"
 import type { LspClient, LspFailure } from "./client"
 import type { ReceiverHint } from "./enrich"
@@ -91,7 +91,7 @@ export function applyHover(
   const lookup: MemberLookup = {
     caller,
     method: job.method,
-    kinds: memberKinds(caller, job.thisBinding),
+    separators: memberSeparators(caller, job.thisBinding),
   }
   const ownerClass =
     ownerClassName === null ? null : findOwnerClass(lookup, ownerClassName, workingById)
@@ -119,7 +119,7 @@ export function applyHover(
 interface MemberLookup {
   readonly caller: IRSymbol
   readonly method: string
-  readonly kinds: readonly MemberKind[]
+  readonly separators: readonly MemberSeparator[]
 }
 
 // A hover names the class without its file, so a name several files declare is declined, not
@@ -160,10 +160,10 @@ function findMemberSymbolId(
 ): SymbolId | null {
   const owner = symbolIdParts(ownerClass.id)
   if (owner === null) return null
-  const found = lookup.kinds.flatMap((kind) => {
+  const found = lookup.separators.flatMap((separator) => {
     const id = trySymbolId({
       ...owner,
-      qualifiedName: `${owner.qualifiedName}${memberSeparator(kind)}${lookup.method}`,
+      qualifiedName: `${owner.qualifiedName}${separator}${lookup.method}`,
     })
     return id !== null && workingById.has(id) ? [id] : []
   })
@@ -172,12 +172,15 @@ function findMemberSymbolId(
 
 // Without the language plugin's word, a member's `this` is its own side, and a class's own calls
 // may come from a static block or field initializer of either kind.
-function memberKinds(caller: IRSymbol, binding: ThisBinding | null): readonly MemberKind[] {
-  if (binding !== null) return [binding === "class" ? "static" : "instance"]
-  if (caller.kind === "class") return ["instance", "static"]
+function memberSeparators(
+  caller: IRSymbol,
+  binding: ThisBinding | null,
+): readonly MemberSeparator[] {
+  const [instance, onClass] = [memberSeparator("instance"), memberSeparator("static")]
+  if (binding !== null) return [binding === "class" ? onClass : instance]
+  if (caller.kind === "class") return [instance, onClass]
   const qualifiedName = symbolIdParts(caller.id)?.qualifiedName ?? ""
-  const lastStatic = qualifiedName.lastIndexOf(memberSeparator("static"))
   return [
-    lastStatic > qualifiedName.lastIndexOf(memberSeparator("instance")) ? "static" : "instance",
+    qualifiedName.lastIndexOf(onClass) > qualifiedName.lastIndexOf(instance) ? onClass : instance,
   ]
 }

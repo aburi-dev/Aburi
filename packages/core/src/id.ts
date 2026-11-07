@@ -103,7 +103,9 @@ export function isComponentId(value: string): value is ComponentId {
 
 export type MemberKind = "instance" | "static"
 
-export function memberSeparator(kind: MemberKind): "." | "::" {
+export type MemberSeparator = "." | "::"
+
+export function memberSeparator(kind: MemberKind): MemberSeparator {
   return kind === "instance" ? "." : "::"
 }
 
