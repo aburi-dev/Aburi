@@ -802,6 +802,17 @@ someone else's incident, on documents the caller pinned deliberately. `DiffRepor
 is `null` in this mode rather than empty, because "ran no scan" is not the same answer as "ran
 two clean scans".
 
+File mode also compares the `generator.plugins[]` the two documents record, by plugin name, and
+when they differ says so on one stderr line: each plugin only one side loaded,
+with its version and type, and each that both loaded under another type, version or grammar
+revision, ordered by name. The same source scanned with another plugin set is another IR — an
+effect plugin that only the base loaded leaves its `db.write` effects on the base side alone, and
+every Symbol that carried one reads as `changed` — so without the line a reviewer has no way to
+tell that wave from an edit. It is a warning, not a gate, and `diff.json` holds nothing of it. Ref
+mode never says it: both scans load the head's plugins (§6.4 step 3). A `frameworkHints` entry
+records its `hint-<name>` plugin at version `0.0.0` whatever its rules say, so the line names an
+entry added or removed but not one whose rules were edited.
+
 A planned `--quiet` would print the glyph line alone:
 ```
 +5 -3 ~12 ↔2 ⤴1
@@ -1374,6 +1385,7 @@ a command's option, not a global one (§3).
 | CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
+| CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
 | CL74 | `aburi scan`, `aburi diff --base <ir> --head <ir>` and `aburi explain <name>` rescanning, with neither `--output-dir` nor `config.output.dir`, where `.aburi/` does not exist; `aburi scan` with `--output-dir .aburi`, its absolute path, or `output.dir: "./.aburi/"`; with `--output-dir artifacts`, `output.dir: "artifacts"` or `--output-dir nested/.aburi`; where `.aburi/` exists; and after the caller rewrote the `.gitignore` a first run wrote | The first six create `.aburi/` holding a `.gitignore` of a comment line and `*`, and in a repository whose files are all committed, `git status --porcelain --untracked-files=all` after `aburi scan` prints nothing. The rest write no `.gitignore`, and the caller's stays as they wrote it |
 
 ## 18. Design Decisions
