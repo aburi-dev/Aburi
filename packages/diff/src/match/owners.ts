@@ -1,6 +1,6 @@
 import { compareCodeUnit } from "@aburi/core"
 import type { Symbol as IRSymbol } from "@aburi/types"
-import { ownerOf, ownersCorrespond } from "../similarity"
+import { ownerPart, ownersCorrespond } from "../similarity"
 import type { SymbolPair } from "./pairing"
 
 export type OwnerRefusal =
@@ -88,7 +88,7 @@ function enclosingIn(symbols: readonly IRSymbol[]): (symbol: IRSymbol) => IRSymb
   const byId = new Map<string, IRSymbol>(symbols.map((symbol) => [symbol.id, symbol]))
   return (symbol) => {
     const { prefix, qualifiedName } = splitId(symbol)
-    for (let owner = ownerOf(qualifiedName); owner !== ""; owner = ownerOf(owner)) {
+    for (let owner = ownerPart(qualifiedName); owner !== ""; owner = ownerPart(owner)) {
       const found = byId.get(`${prefix}${owner}`)
       if (found !== undefined) return found
     }
@@ -111,7 +111,7 @@ function deepestFirst(symbols: readonly IRSymbol[]): IRSymbol[] {
 
 function depthOf(qualifiedName: string): number {
   let depth = 0
-  for (let name = qualifiedName; name !== ""; name = ownerOf(name)) depth++
+  for (let name = qualifiedName; name !== ""; name = ownerPart(name)) depth++
   return depth
 }
 

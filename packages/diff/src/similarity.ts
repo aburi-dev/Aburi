@@ -106,7 +106,7 @@ export function jaccardTokens(a: string, b: string): number {
   return jaccard(tokenizeName(a), tokenizeName(b))
 }
 
-export function ownerOf(qname: string): string {
+export function ownerPart(qname: string): string {
   return qname.slice(0, Math.max(0, qname.lastIndexOf("::"), qname.lastIndexOf(".")))
 }
 
@@ -123,7 +123,7 @@ export function memberSimilarity(baseName: string, headName: string): number {
 }
 
 export function ownersAreCompatible(baseName: string, headName: string): boolean {
-  return ownersCorrespond(ownerOf(baseName), ownerOf(headName))
+  return ownersCorrespond(ownerPart(baseName), ownerPart(headName))
 }
 
 export function ownersCorrespond(baseOwner: string, headOwner: string): boolean {
@@ -246,10 +246,10 @@ export function createNameScorer(): NameScorer {
     return built
   }
   const owners = new Map<string, string>()
-  const cachedOwnerOf = (qname: string): string => {
+  const ownerOf = (qname: string): string => {
     const cached = owners.get(qname)
     if (cached !== undefined) return cached
-    const built = ownerOf(qname)
+    const built = ownerPart(qname)
     owners.set(qname, built)
     return built
   }
@@ -257,6 +257,6 @@ export function createNameScorer(): NameScorer {
     name: (baseName, headName) => nameJaccard(tokenSets, baseName, headName),
     member: (baseName, headName) => memberJaccardRatio(tokenSets, baseName, headName),
     ownersCompatible: (baseName, headName) =>
-      ownersCompatible(cachedOwnerOf(baseName), cachedOwnerOf(headName), tokenSets),
+      ownersCompatible(ownerOf(baseName), ownerOf(headName), tokenSets),
   }
 }
