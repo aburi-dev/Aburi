@@ -225,6 +225,7 @@ describe("isSymbolId, symbolIdFile and symbolIdParts", () => {
     ["ts:src/nested/dir/a.ts#Cls.method", "src/nested/dir/a.ts"],
     ["ts:src/a.ts#Cls::fromJson", "src/a.ts"],
     ["ts:src/index.ts#<default>", "src/index.ts"],
+    ["ts:src/a.ts#<module>", "src/a.ts"],
     ["ts:src/a.ts#C.#v", "src/a.ts"],
     ["ts:src/a.ts#C::#v", "src/a.ts"],
   ])("accept %j, whose file is %j", (id, file) => {

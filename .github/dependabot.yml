@@ -1,0 +1,70 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    # `auto` widens the ranges of the published packages and raises those of the private ones, which
+    # would leave one dependency with a different range in each package of the workspace.
+    versioning-strategy: increase
+    # A week for a hijacked or broken release to be pulled. One period for every semver level, so a
+    # group's members released together clear it together; security updates do not wait.
+    cooldown:
+      default-days: 7
+    # The groups alone can hold six open pull requests; majors arrive one per pull request.
+    open-pull-requests-limit: 10
+    groups:
+      # Each vscode-languageserver-protocol release pins the exact vscode-jsonrpc it was built on.
+      language-server:
+        patterns:
+          - vscode-jsonrpc
+          - vscode-languageserver-protocol
+      # web-tree-sitter loads the grammars vendored from @vscode/tree-sitter-wasm only at an ABI
+      # version it supports.
+      tree-sitter:
+        patterns:
+          - web-tree-sitter
+          - "@vscode/tree-sitter-wasm"
+      # The site's vue has to be the copy vitepress renders with.
+      docs-site:
+        patterns:
+          - vitepress
+          - vue
+      # Its formatter output moves even in patch releases, so its pull request waits for
+      # `pnpm format` without holding the others back.
+      biome:
+        patterns:
+          - "@biomejs/*"
+      runtime:
+        dependency-type: production
+        # A production dependency only of test-support, which hands it to the suites.
+        exclude-patterns:
+          - vitest
+        update-types:
+          - minor
+          - patch
+      tooling:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      # The composite action pins the same actions as the workflows; one pull request moves both.
+      - /packages/github-action
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -1,6 +1,6 @@
 {
   "name": "@aburi/framework-next",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Aburi Next.js framework plugin: recognizes the App Router special files (page / layout / route / template / loading / error / not-found) and the \"use client\" / \"use server\" module directives, emitting framework:next:* extKinds and boundary flags",
   "license": "Apache-2.0",
   "author": "kage1020",
@@ -44,9 +44,9 @@
     "@aburi/lang-typescript": "workspace:*",
     "@aburi/test-harness": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
-    "tsdown": "^0.22.3",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

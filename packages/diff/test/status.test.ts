@@ -1,4 +1,14 @@
-import { component, fp, guardedBody, makeIR, makeSymbol, rule, zeroFp } from "@aburi/test-support"
+import {
+  changeLines,
+  component,
+  fp,
+  guardedBody,
+  makeIR,
+  makeSymbol,
+  rule,
+  soleChange,
+  zeroFp,
+} from "@aburi/test-support"
 import {
   DIFF_SCHEMA_URL,
   type Fingerprint,
@@ -7,7 +17,7 @@ import {
 } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { buildDiff, classifyStatus, dropDirection } from "../src"
-import { changeLines, diffOf, diffSymbols, dropped, soleChange } from "./helpers"
+import { diffOf, diffSymbols, dropped } from "./helpers"
 
 describe("a Symbol only one side holds", () => {
   const foo = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo" })

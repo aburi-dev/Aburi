@@ -1,7 +1,7 @@
-import { dependency, fp, makeIR, makeSymbol } from "@aburi/test-support"
+import { changeLines, dependency, fp, makeIR, makeSymbol } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { writeCanonicalDiff } from "../src"
-import { changeLines, diffOf, withSkipped } from "./helpers"
+import { diffOf, withSkipped } from "./helpers"
 
 describe("symbols[]", () => {
   it("is ordered by status, then by the id of the Symbol each change is reported under", () => {

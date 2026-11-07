@@ -22,6 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # Two tasks at a time: Windows runners now and then fail to start a process (0xC0000142), which is
+      # usually blamed on many starting at once. All logs, streamed, so a dying run shows what was running.
+      TURBO_ARGS: ${{ startsWith(matrix.os, 'windows') && '--concurrency=2 --output-logs=full --log-order=stream' || '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -44,10 +48,20 @@ jobs:
         run: pnpm hygiene
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: pnpm typecheck ${{ env.TURBO_ARGS }}
 
       - name: Build
-        run: pnpm build
+        run: pnpm build ${{ env.TURBO_ARGS }}
 
       - name: Test
-        run: pnpm test
+        run: pnpm test ${{ env.TURBO_ARGS }}
+
+      # A process that fails to initialise (0xC0000142) prints nothing, and from then on no new process on
+      # the runner starts. If this step can still start, its memory figures and System log show what ran out.
+      - name: Windows resources after a failure
+        if: failure() && runner.os == 'Windows'
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Format-List TotalVisibleMemorySize, FreePhysicalMemory, TotalVirtualMemorySize, FreeVirtualMemory
+          Get-CimInstance Win32_PageFileUsage | Format-List Name, AllocatedBaseSize, CurrentUsage, PeakUsage
+          Get-WinEvent -MaxEvents 50 -ErrorAction SilentlyContinue -FilterHashtable @{ LogName = 'System'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-1) } | Format-List TimeCreated, ProviderName, Id, Message
+          Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 15 Count, Name | Format-Table -AutoSize

@@ -1,6 +1,6 @@
 {
   "name": "@aburi/cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Aburi CLI: `aburi init | scan | diff | explain | vocab`. Wires @aburi/config + @aburi/core + @aburi/diff + @aburi/markdown-projection into those commands, with commander-driven subcommands, git-worktree-backed ref diff, stable exit codes (0/1/2/3), and a --fail-on gate parser for CI enforcement.",
   "license": "Apache-2.0",
   "author": "kage1020",
@@ -18,6 +18,9 @@
   "types": "./dist/index.d.mts",
   "bin": {
     "aburi": "./dist/bin/aburi.mjs"
+  },
+  "imports": {
+    "#scan-worker": "./dist/scan-worker.mjs"
   },
   "exports": {
     ".": {
@@ -57,15 +60,16 @@
     "@aburi/framework-nestjs": "workspace:*",
     "@aburi/framework-next": "workspace:*",
     "@aburi/framework-react": "workspace:*",
+    "@aburi/framework-trpc": "workspace:*",
     "@aburi/lang-typescript": "workspace:*",
     "@aburi/schema": "workspace:*",
     "@aburi/test-harness": "workspace:*",
     "@aburi/test-support": "workspace:*",
-    "@types/node": "^26.0.1",
-    "ajv": "^8.20.0",
-    "tsdown": "^0.22.3",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "@types/node": "catalog:",
+    "ajv": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

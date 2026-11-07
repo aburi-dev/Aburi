@@ -10,12 +10,14 @@ import type {
   SymbolCandidate,
   SymbolClassification,
 } from "@aburi/types"
+import { normalizeFingerprintString } from "../fingerprint/string"
 import { decideSymbolDrop } from "./drop-b"
 
 export interface FrameworkMergeResult {
   candidate: SymbolCandidate<OpaqueAstNode>
   confidence: Confidence
   extKindBy: string | null
+  middleware: string[]
 }
 
 function decoratorBoundaryKey(decorator: Decorator): string {
@@ -49,9 +51,12 @@ export function mergeFrameworkClassification(
         result.extKind === undefined || result.extKind === null
           ? extractedBy
           : framework.manifest.name,
+      middleware: (result.middleware ?? [])
+        .map(normalizeFingerprintString)
+        .filter((name) => name.length > 0),
     }
   }
-  return { candidate, confidence: "high", extKindBy: extractedBy }
+  return { candidate, confidence: "high", extKindBy: extractedBy, middleware: [] }
 }
 
 function mergeDerivedBy(current: readonly string[], addition: string): string[] {

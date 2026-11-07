@@ -46,7 +46,7 @@ function safeString(value: unknown): string {
 
 export function describeJsonType(value: unknown): string {
   if (Array.isArray(value)) return "a list"
-  if (value === null) return "null"
+  if (value === null || value === undefined) return String(value)
   const type = typeof value
   return `${type === "object" ? "an" : "a"} ${type}`
 }

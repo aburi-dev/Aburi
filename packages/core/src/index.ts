@@ -1,3 +1,4 @@
+export { AsyncMemo } from "./async-memo"
 export { makeCallSiteKey, receiverHead } from "./call-site"
 export {
   type CallEdge,
@@ -45,6 +46,7 @@ export {
   isQnameSegment,
   isQualifiedName,
   isSymbolId,
+  MODULE_SCOPE_QNAME,
   makeComponentId,
   makeLanguageId,
   makeMemberQname,
@@ -64,7 +66,13 @@ export {
   type UnnameableSite,
   unnameableSite,
 } from "./id"
-export { DEFAULT_EXPORT_NAME, type ImportBinding, splitAliasedImportName } from "./import-edge"
+export {
+  DEFAULT_EXPORT_NAME,
+  type DecoratorReference,
+  decoratorReference,
+  type ImportBinding,
+  splitAliasedImportName,
+} from "./import-edge"
 export { assertIRIntegrity, checkIRIntegrity, isCoreEffectId } from "./integrity"
 export { checkDocumentShape, DOCUMENT_SUBJECT } from "./integrity-shape"
 export {
@@ -111,7 +119,7 @@ export {
   DropCFilter,
   type DropCFilterInput,
 } from "./scan/drop-c"
-export { describeThrown, isPluginSetFault } from "./scan/faults"
+export { describeJsonType, describeThrown, errorCode, isPluginSetFault } from "./scan/faults"
 export {
   type ExtractedFile,
   type FilePipelineInput,
@@ -149,6 +157,13 @@ export {
 } from "./scan/timeout"
 export { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./scan/vocab"
 export {
+  type DecodedLiteral,
+  decodeEscapeSequence,
+  decodeStringLiteral,
+  decodeStringLiteralOrRaw,
+  readStaticString,
+} from "./string-literal"
+export {
   anyCallCalleeMatches,
   asSyntaxNode,
   type CalleeName,
@@ -158,8 +173,11 @@ export {
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
+  type ReceiverChain,
+  receiverChain,
   type SyntaxNode,
   unwrapValue,
+  writtenChildren,
 } from "./syntax-node"
 export { computeWeaklyConnectedComponents } from "./wcc"
 export {

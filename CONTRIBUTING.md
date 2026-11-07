@@ -68,6 +68,13 @@ The job has no bypass switch: a tripped gate stays red for that commit. Say in t
 request why the removal is deliberate — merging past a red Aburi check is then a
 maintainer's call, and the design docs are what the argument is made against.
 
+The repository's own `aburi.json` loads no effects plugin, so the self-run's report never shows an
+effect. The test suite pins them instead:
+[`effects-coverage.test.ts`](packages/cli/test/e2e/effects-coverage.test.ts) scans a fixture that
+calls the libraries the effects plugins model, diffs one edit per plugin, and compares what each
+plugin attributes with a recorded list, so a change in what a plugin attributes fails until that
+list is updated.
+
 Two things about this repository's own dogfooding are worth knowing before they surprise
 you:
 
@@ -150,12 +157,40 @@ triggers a preview build. **Build → Build watch paths** can narrow that to
 - ESM only, TypeScript strict mode, no `any` escapes.
 - Never hardcode dependency versions in `package.json` — install via
   `pnpm add` so the latest compatible version is recorded.
+- A dependency that two or more workspace packages declare is a `catalog:`
+  entry, so its range is kept once, in `pnpm-workspace.yaml`. `pnpm add` writes
+  `catalog:` for a name the catalog already lists; `pnpm add <dep> --save-catalog`,
+  run for every package that declares it, moves a newly shared one there.
 - No linter-suppression comments; fix the root cause instead.
 - Generated files are never edited by hand:
   `packages/types/src/generated/` is regenerated from `schema/`, and
   `packages/lang-typescript/wasm/` is vendored from the
   `@vscode/tree-sitter-wasm` devDependency by that package's `build`. Both are
   gitignored; `wasm/` is also published, so it must exist before `pnpm pack`.
+
+## Dependency updates
+
+Dependabot proposes updates on Monday mornings, Japan time, grouped by
+[`.github/dependabot.yml`](.github/dependabot.yml) so that what has to move
+together arrives in one pull request and a major arrives on its own. A release
+waits a week before it is proposed; security updates do not wait.
+CI and the Aburi self-run treat these pull requests like any other, and some
+need a hand before they merge:
+
+- Biome changes its formatter output even in patch releases. Run `pnpm format`
+  on the branch, and `pnpm exec biome migrate --write` to move the schema URL in
+  `biome.json`.
+- The workflow examples in the READMEs and under `docs/` use the same action
+  versions as `.github/workflows/`; move them in the same pull request. A bump
+  that reaches [`packages/github-action/action.yml`](packages/github-action/action.yml)
+  changes what the action's users run and needs a changeset for
+  `@aburi/github-action`.
+- A change to a published package's `dependencies`, or to
+  `@vscode/tree-sitter-wasm`, whose grammars `@aburi/lang-typescript` ships,
+  needs a changeset like any other change to a published package; `minor` when
+  the new grammars move a stored fingerprint. A catalog entry that a published
+  package lists in `dependencies` counts, though its pull request touches only
+  `pnpm-workspace.yaml` and the lockfile.
 
 ## Releases
 
@@ -167,3 +202,19 @@ Publishing uses npm Trusted Publishing (OIDC), so no npm token exists anywhere. 
 `@aburi/*` package needs a trusted publisher entry for repository `kage1020/Aburi` and workflow
 `.github/workflows/release.yml`, with no environment restriction. Renaming that workflow, or adding
 an `environment:` to its job, breaks publishing until every entry is updated to match.
+
+npm accepts a trusted publisher only for a package that already exists, so a new package is
+published once by hand before the release PR that first versions it is merged:
+
+1. From an account that can publish to the `@aburi` scope, publish a `0.0.0` that holds no code —
+   a `package.json` with the package's name, license and `repository`, its `LICENSE`, and a README
+   saying the version only reserves the name — with `npm publish <directory> --access public`.
+   That leaves the first real version to the release workflow, which publishes it with provenance.
+2. On the package's access page (`https://www.npmjs.com/package/@aburi/<name>/access`), add the
+   trusted publisher above and allow **npm publish**. A new entry allows only `npm stage publish`,
+   which `changeset publish` never runs.
+3. Merge the release PR the same day: an entry that no publish uses within two days expires.
+4. Once the release is out, deprecate `0.0.0` and the `0.0.0-stage` npm creates beside it.
+
+Skip a step and the release run publishes every other package, fails on the new one, and skips
+the docs deploy and the action tag.

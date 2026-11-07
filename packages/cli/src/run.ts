@@ -246,6 +246,11 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
       "cap diff.md at n UTF-8 bytes, shortening sections to names and then dropping them least-important-first (GitHub rejects a comment body over 65536)",
       parseMaxBytes,
     )
+    .option("--parallel-scans", "scan the base and the head at once, even on a single CPU")
+    .option(
+      "--no-parallel-scans",
+      "scan the base and then the head, which uses less memory (default: at once, unless on a single CPU)",
+    )
     .option("--config <path>", "config file path", parsePath)
     .action(
       (
@@ -259,6 +264,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
           failOnScope?: FailOnScope
           compact?: boolean
           maxBytes?: number
+          parallelScans?: boolean
           config?: string
         },
       ) =>
@@ -278,6 +284,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               failOnScope: cmdOptions.failOnScope,
               compact: cmdOptions.compact,
               maxBytes: cmdOptions.maxBytes,
+              parallelScans: cmdOptions.parallelScans,
               logLevel: logLevel(),
               configPath: resolveConfigPath(cmdOptions.config, env),
             }),

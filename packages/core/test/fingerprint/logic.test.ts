@@ -170,6 +170,22 @@ describe("logicFingerprint moves with", () => {
       caller(propagatedEffect("db.write", "prisma.invoice.create")),
       caller(),
     ],
+    ["an added middleware", body({ middleware: ["requireAdmin"] }), body()],
+    [
+      "the order of middleware",
+      body({ middleware: ["audit", "requireAdmin"] }),
+      body({ middleware: ["requireAdmin", "audit"] }),
+    ],
+    [
+      "a middleware's name",
+      body({ middleware: ['requireRole("user")'] }),
+      body({ middleware: ['requireRole("admin")'] }),
+    ],
+    [
+      "the whitespace in a middleware name as the IR holds it",
+      body({ middleware: ['requireRole("a  b")'] }),
+      body({ middleware: ['requireRole("a b")'] }),
+    ],
   ])("%s", (_what, a, b) => {
     expect(logicFingerprint(a)).not.toBe(logicFingerprint(b))
   })
@@ -187,6 +203,7 @@ describe("logicNamesNothing", () => {
       withRules(rule({ type: "guard" }), rule({ type: "throw" })),
     ],
     ["a try at any line", withRules(rule({ type: "try", line: 40 }))],
+    ["a middleware alone", makeSymbol("ts:src/a.ts#foo", { middleware: ["requireAdmin"] })],
   ])("holds for %s", (_what, symbol) => {
     expect(logicNamesNothing(symbol)).toBe(true)
   })
