@@ -40,6 +40,19 @@ describe("ruleRow", () => {
     expect(ruleRow(input)).toEqual([row])
   })
 
+  it.each([
+    { type: "guard", condition: "" },
+    { type: "switch", condition: "" },
+    { type: "match", condition: "" },
+    { type: "throw", what: "" },
+    { type: "return", expr: "" },
+  ] as const)(
+    "names an empty $type payload instead of rendering a row that trails off",
+    (payload) => {
+      expect(ruleRow(rule({ ...payload, line: 5 }))).toEqual([`- ${payload.type}: (empty) (L5)`])
+    },
+  )
+
   it.each<[Rule["type"], string]>([
     ["guard", "condition"],
     ["switch", "condition"],
