@@ -8,10 +8,12 @@ import type { IR } from "@aburi/types"
 import type { PinnedConfig } from "../config-load"
 import type { LogLevel } from "../env"
 import { CliError, errorMessage, internalFault } from "../errors"
+import { listIndex } from "../git/index-listing"
 import { assertNotShallow, assertNotSparse, assertRefResolvable } from "../git/preflight"
 import { collectRenames } from "../git/renames"
 import { defaultGitRunner, type GitRunner, gitChildEnv } from "../git/runner"
 import { submoduleIgnorePatterns } from "../git/submodules"
+import { describeLinksReadAsSource, linksReadAsSource, plainFileLinks } from "../git/symlinks"
 import { readIR } from "../ir-io"
 import { writeToStderr } from "../logger"
 import { cleanUpOnFatalSignal } from "../signal-cleanup"
@@ -62,7 +64,12 @@ export async function scanRevisions(
 
   const pinnedConfig = await context.pinConfigOnce()
   const headWorkspaceRoot = await resolveWorkspaceRoot(cwd)
-  const submoduleIgnore = await submoduleIgnorePatterns(git, headWorkspaceRoot, warn)
+  const headIndex = await listIndex(git, headWorkspaceRoot)
+  const submoduleIgnore = submoduleIgnorePatterns(headIndex, warn)
+  const plainLinks: Record<DiffSide, string[]> = {
+    base: [],
+    head: await plainFileLinks(headIndex, headWorkspaceRoot),
+  }
   const gitRenames = await collectRenames(git, cwd, spec, warn)
   const tempParent = await mkdtemp(resolve(tmpdir(), "aburi-worktree-"))
   const worktreeParent = resolve(tempParent, "base")
@@ -83,6 +90,13 @@ export async function scanRevisions(
     ...(context.concurrency === undefined ? {} : { concurrency: context.concurrency }),
     scansAtOnce: together ? 2 : 1,
   })
+  const sayPlainFileLinks = (target: ScanTarget, ir: IR): IR => {
+    const read = linksReadAsSource(plainLinks[target.side], ir)
+    if (read.length > 0) {
+      warn(`⚠ ${labelFor(target)}: ${describeLinksReadAsSource(target.side, read)}`)
+    }
+    return ir
+  }
   const readBase = async (report: ScanReport): Promise<IR> => {
     reportScanIncidents(report, warn, labelFor({ side: "base", ref: spec.base }), said)
     if (report.workspaceRoot !== worktreeDir) {
@@ -95,14 +109,14 @@ export async function scanRevisions(
     if (report.irPath === null) {
       throw new CliError(`scan for base ref "${spec.base}" produced no IR file.`, "runtime-error")
     }
-    return readIR(report.irPath)
+    return sayPlainFileLinks({ side: "base", ref: spec.base }, await readIR(report.irPath))
   }
   const readHead = async (report: ScanReport): Promise<IR> => {
     reportScanIncidents(report, warn, labelFor({ side: "head" }), said)
     if (report.irPath === null) {
       throw new CliError("scan for head ref produced no IR file.", "runtime-error")
     }
-    return readIR(report.irPath)
+    return sayPlainFileLinks({ side: "head" }, await readIR(report.irPath))
   }
 
   let worktreeAdded = false
@@ -113,6 +127,7 @@ export async function scanRevisions(
     await mkdir(worktreeParent, { recursive: true })
     await git.run(["worktree", "add", "--detach", worktreeDir, spec.base], { cwd })
     worktreeAdded = true
+    plainLinks.base = await plainFileLinks(await listIndex(git, worktreeDir), worktreeDir)
     const baseOptions = optionsFor(worktreeDir, resolve(tempParent, "base-out"))
     const headOptions = optionsFor(cwd, resolve(tempParent, "head-out"))
     const scanned = together
