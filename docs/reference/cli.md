@@ -36,7 +36,7 @@ working directory.
 | Code | Meaning |
 |---|---|
 | `0` | Success, no gate tripped. |
-| `1` | Runtime failure: an I/O error (a write the disk refused to an output file says which command and which output; one refused on stdout or stderr ends the process there, with Node's own report and no cleanup; a file or directory the scan may not read is named), an unexpected exception, or `explain` found no match. |
+| `1` | Runtime failure: an I/O error (a write the disk refused to an output file says which command and which output; one refused on stdout or stderr lets the run finish and clean up, then names the stream on the other: `aburi: could not write to stdout: EBADF: bad file descriptor, write`; a file or directory the scan may not read is named), an unexpected exception, or `explain` found no match. |
 | `2` | Bad invocation: an unknown flag, an option that takes one value given twice, an empty path, a missing input file, a malformed `--fail-on`, an ambiguous `explain` target, a ref `diff` cannot resolve, an output path a file already stands on, a config that loads no language plugin. |
 | `3` | **Gate.** A `--fail-on` clause tripped, a plugin failed, or the scan read too little of the workspace to be trusted. |
 
@@ -209,7 +209,12 @@ absolute one (`/opt/plugins/x.mjs`) names the same file for both scans,
 whichever workspace root each has.
 
 **File mode** compares two `aburi.ir.json` files you already have. No git, no
-scanning.
+scanning. Each file records the plugins that made it, and when the two lists
+differ, `aburi diff` names each difference in one warning on stderr: a plugin
+only one side loaded, or one loaded at another version. An effect plugin only
+the base loaded leaves its effects on the base side alone, so every Symbol that
+carried one reads as changed. Rescan both with one plugin set, or diff the refs,
+whose two scans load the head's plugins.
 
 | Flag | Effect |
 |---|---|
@@ -385,11 +390,14 @@ const code = await runCli({ argv, stdout, stderr, env, cwd })
 decision to you. A CLI entry point should assign `process.exitCode`, as the
 `aburi` bin does: `process.exit()` can truncate output still being written to a
 pipe (`aburi scan … | head`). Like the bin, it should also listen for `error`
-on its output streams, ignore `EPIPE` and rethrow the rest: Node reports a
-reader that closed early as that event, and with no listener the process exits
-1 whatever `runCli` returned. The streams to listen on are the `stdout` and
-`stderr` it passes, when they are pipes or sockets, and `process.stderr` in any
-case, since the scan's log goes there whichever streams were passed.
+on its output streams, ignore `EPIPE`, and keep any other error rather than
+throw it, setting a non-zero `process.exitCode` once the event loop drains
+(`beforeExit`). Node reports both a reader that closed early and a write the
+descriptor refused as that event; with no listener, or one that rethrows, the
+process ends at that write, before `aburi diff` removes its base worktree. The
+streams to listen on are the `stdout` and `stderr` it passes, unless they are
+in-memory captures, and `process.stderr` in any case, since the scan's log goes
+there whichever streams were passed.
 
 ---
 
