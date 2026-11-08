@@ -44,7 +44,7 @@ import { makeLanguageId } from "../../src/id"
 function manifest<T extends PluginManifest["type"]>(
   type: T,
   name: string,
-): PluginManifest & { type: T } {
+): Omit<PluginManifest, "languageId"> & { type: T } {
   return {
     $schema: PLUGIN_SCHEMA_URL,
     name,

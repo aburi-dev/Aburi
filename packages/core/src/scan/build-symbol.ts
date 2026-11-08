@@ -15,7 +15,7 @@ import { computeSymbolFingerprint, ZERO_FINGERPRINT } from "../fingerprint"
 import { makeLanguageId } from "../id"
 import { normalizeRuleStrings } from "../rule-text"
 
-export function extractLanguageFromId(id: string, minter: LangManifest): LanguageId {
+export function assertIdLanguage(id: string, minter: LangManifest): void {
   const colon = id.indexOf(":")
   if (colon <= 0) {
     throw new CoreError(
@@ -23,6 +23,7 @@ export function extractLanguageFromId(id: string, minter: LangManifest): Languag
       { code: "scan-plugin-misconfigured", value: id },
     )
   }
+  // Parsed before it is compared, so an ill-formed prefix keeps its own `invalid-language-id`.
   const language = makeLanguageId(id.slice(0, colon))
   if (language !== minter.languageId) {
     throw new CoreError(
@@ -30,7 +31,6 @@ export function extractLanguageFromId(id: string, minter: LangManifest): Languag
       { code: "scan-plugin-misconfigured", value: id },
     )
   }
-  return language
 }
 
 export function buildDroppedSymbol(

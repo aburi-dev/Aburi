@@ -243,8 +243,8 @@ export interface LanguageCapabilities {
 }
 
 export type LangManifest = PluginManifest & { type: "lang"; languageId: LanguageId }
-export type EffectsManifest = PluginManifest & { type: "effects" }
-export type FrameworkManifest = PluginManifest & { type: "framework" }
+export type EffectsManifest = PluginManifest & { type: "effects"; languageId?: never }
+export type FrameworkManifest = PluginManifest & { type: "framework"; languageId?: never }
 
 export interface LanguagePlugin<TTree = ParsedTree, TNode = OpaqueAstNode> {
   manifest: LangManifest

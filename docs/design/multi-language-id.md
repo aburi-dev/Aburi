@@ -215,10 +215,11 @@ Rule L-10 (config surface locality): no per-language section of the config contr
 | --- | --- | --- |
 | ML1 | Two plugins both declare `languageId: "py"` in their manifests | Startup aborts: the registry refuses the second with `duplicate-id`, naming both plugins |
 | ML2 | A manifest declares `languageId: "TS"` (uppercase) | Manifest rejected with "a language token must match `[a-z][a-z0-9]*`" (`manifest-invalid`); the schema refuses it too |
-| ML2a | A `type: "lang"` manifest declares no `languageId` | Refused at registration (`manifest-invalid`). The schema accepts it, so a manifest written before the field remains a valid v1 document |
+| ML2a | A `type: "lang"` manifest declares no `languageId`, or one that is not a string | Refused at registration (`manifest-invalid`); for none, the message says that a `languageId` set on the plugin object belongs in the manifest. The schema accepts a manifest without one, so a manifest written before the field remains a valid v1 document |
 | ML2b | A `type: "effects"` or `type: "framework"` manifest declares a `languageId` | Refused by the schema, and at registration with `namespace-type-mismatch` |
 | ML2c | A manifest declares `languageId: "slice"` | Refused at registration with `reserved-namespace` (Rule L-11) |
 | ML2d | A language plugin whose manifest declares `ts` mints `py:src/a.py#f` | The run ends with `scan-plugin-misconfigured`, naming the id and the token the manifest declares |
+| ML2e | `scan` is handed, without the registry, a language plugin whose manifest carries no string `languageId` | The run ends with `scan-plugin-misconfigured` naming the plugin, before any file is parsed, whether or not the workspace holds a file of that language |
 | ML3 | Files `foo/bar.ts` and `foo/bar.py` both define a symbol `Baz` | Two Symbols emitted: `ts:foo/bar.ts#Baz` and `py:foo/bar.py#Baz`, both present in `symbols[]` |
 | ML4 | Component with `languages: ["ts", "py"]`, roots contain both languages | Component record emitted with `languages: ["ts", "py"]`; both language plugins participate in extraction |
 | ML5 | TS `fetch("/orders")` and Python `@app.post("/orders")` in the same scan | Dependency edge emitted `{from: <ts-caller-id>, to: <py-handler-id>, via: "http", direction: "outbound"}` |

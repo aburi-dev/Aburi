@@ -132,16 +132,24 @@ describe("runFilePipeline — the Symbol record", () => {
   })
 
   it.each([
-    ["carries no language prefix", "no-colon-here", "does not carry a language prefix"],
+    [
+      "carries no language prefix",
+      stubCandidate("Fn", { id: symbolId("no-colon-here") }),
+      "does not carry a language prefix",
+    ],
     [
       "opens with a language other than the plugin's",
-      "py:src/a.stub#Fn",
+      stubCandidate("Fn", { id: symbolId("py:src/a.stub#Fn") }),
       'Symbol id "py:src/a.stub#Fn" opens with the language "py", but plugin "lang-stub" declares languageId "stub"',
     ],
-  ])("refuses a Symbol id that %s, ending the run", async (_, id, message) => {
-    const candidate = { ...stubCandidate("Fn"), id: symbolId(id) }
+    [
+      "opens with a language other than the plugin's, on a Symbol the pipeline drops",
+      stubCandidate("Shape", { kind: "interface", id: symbolId("py:src/a.stub#Shape") }),
+      'Symbol id "py:src/a.stub#Shape" opens with the language "py", but plugin "lang-stub" declares languageId "stub"',
+    ],
+  ])("refuses a Symbol id that %s, ending the run", async (_, candidate, message) => {
     const thrown = await errorFrom(CoreError, () => extractOneSymbol({ candidate }))
-    expect(thrown).toMatchObject({ code: "scan-plugin-misconfigured", value: id })
+    expect(thrown).toMatchObject({ code: "scan-plugin-misconfigured", value: candidate.id })
     expect(thrown.message).toContain(message)
   })
 

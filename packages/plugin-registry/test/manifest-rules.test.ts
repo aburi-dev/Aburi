@@ -125,15 +125,15 @@ describe("a lang manifest's languageId", () => {
       "manifest-invalid",
       undefined,
       'Plugin "lang-foo" (type lang) declares no languageId: a lang manifest names the ' +
-        '<language> token its Symbol ids open with, e.g. "ts".',
+        '<language> token its Symbol ids open with, e.g. "ts". If the plugin object sets ' +
+        "languageId, move it into the manifest.",
     ],
     [
       "a languageId that is not a string",
       { ...langManifest(), languageId: 7 as never },
       "manifest-invalid",
-      undefined,
-      'Plugin "lang-foo" (type lang) declares no languageId: a lang manifest names the ' +
-        '<language> token its Symbol ids open with, e.g. "ts".',
+      "7",
+      'Plugin "lang-foo" (type lang) declares languageId 7, which is not a string.',
     ],
     [
       "an uppercase token",
@@ -178,12 +178,6 @@ describe("a lang manifest's languageId", () => {
     const err = await errorFrom(RegistryError, () => new VocabRegistry().register(manifest))
     expect(err).toMatchObject({ code, plugins: [manifest.name], value })
     expect(err.message).toBe(message)
-  })
-
-  it("reads a languageId inherited from a prototype as none", async () => {
-    const inherited = Object.assign(Object.create({ languageId: "ts" }), without(langManifest()))
-    const err = await errorFrom(RegistryError, () => new VocabRegistry().register(inherited))
-    expect(err.code).toBe("manifest-invalid")
   })
 
   it.each(["ts", "py", "slicer", "f90"])("accepts %s", (languageId) => {

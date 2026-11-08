@@ -1,4 +1,9 @@
-import { LANGUAGE_ID_PATTERN, type PluginManifest, RESERVED_LANGUAGE_IDS } from "@aburi/types"
+import {
+  LANGUAGE_ID_GRAMMAR,
+  LANGUAGE_ID_PATTERN,
+  type PluginManifest,
+  RESERVED_LANGUAGE_IDS,
+} from "@aburi/types"
 import {
   deriveXPrefix,
   isReserved,
@@ -120,30 +125,39 @@ function validateXPrefix(m: PluginManifest): void {
 }
 
 function validateLanguageId(m: PluginManifest): void {
-  // Own key only, like `type`: an inherited `languageId` is not one the manifest declares.
-  const declared: unknown = Object.hasOwn(m, "languageId") ? m.languageId : undefined
+  const declared: unknown = m.languageId
+  const shown = JSON.stringify(declared)
   if (m.type !== "lang") {
     if (declared === undefined) return
     raise(
-      `Plugin "${m.name}" (type ${m.type}) declares languageId "${String(declared)}" but only ` +
-        `lang-type plugins own a language token.`,
+      `Plugin "${m.name}" (type ${m.type}) declares languageId ${shown} but only lang-type ` +
+        `plugins own a language token.`,
       "namespace-type-mismatch",
       [m.name],
-      String(declared),
+      typeof declared === "string" ? declared : shown,
+    )
+  }
+  if (declared === undefined) {
+    raise(
+      `Plugin "${m.name}" (type lang) declares no languageId: a lang manifest names the ` +
+        `<language> token its Symbol ids open with, e.g. "ts". If the plugin object sets ` +
+        `languageId, move it into the manifest.`,
+      "manifest-invalid",
+      [m.name],
     )
   }
   if (typeof declared !== "string") {
     raise(
-      `Plugin "${m.name}" (type lang) declares no languageId: a lang manifest names the ` +
-        `<language> token its Symbol ids open with, e.g. "ts".`,
+      `Plugin "${m.name}" (type lang) declares languageId ${shown}, which is not a string.`,
       "manifest-invalid",
       [m.name],
+      shown,
     )
   }
   if (!LANGUAGE_ID_PATTERN.test(declared)) {
     raise(
       `Plugin "${m.name}" declares languageId "${declared}", but a language token must match ` +
-        `[a-z][a-z0-9]*.`,
+        `${LANGUAGE_ID_GRAMMAR}.`,
       "manifest-invalid",
       [m.name],
       declared,

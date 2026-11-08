@@ -17,7 +17,7 @@ import type {
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import { buildDroppedSymbol, buildKeptSymbol, extractLanguageFromId } from "./build-symbol"
+import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
@@ -148,12 +148,18 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           symbol: candidate.id,
         })
       }
-      const symbolLanguage = extractLanguageFromId(candidate.id, language.manifest)
+      assertIdLanguage(candidate.id, language.manifest)
       const dropReason = decideDropReason(candidate, language, frameworks, frameworkCtx)
 
       if (dropReason !== null) {
         symbols.push(
-          buildDroppedSymbol(candidate, dropReason, symbolLanguage, component, confidence),
+          buildDroppedSymbol(
+            candidate,
+            dropReason,
+            language.manifest.languageId,
+            component,
+            confidence,
+          ),
         )
         continue
       }
@@ -169,7 +175,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         component,
         candidate,
         file,
-        language: symbolLanguage,
+        language: language.manifest.languageId,
         imports,
         dropCFilter,
         timeoutEvents,
@@ -188,7 +194,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       symbols.push(
         buildKeptSymbol({
           candidate,
-          language: symbolLanguage,
+          language: language.manifest.languageId,
           component,
           rules: body.rules,
           effects: classifiedEffects,
