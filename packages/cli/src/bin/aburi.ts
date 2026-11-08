@@ -1,14 +1,11 @@
 #!/usr/bin/env node
-import { errorCode } from "../errors"
+import { errorMessage } from "../errors"
+import { holdRefusedWrites } from "../output-faults"
 import { runCli } from "../run"
 
-// EPIPE is a reader that stopped early (`aburi diff … | head -1`), not a failure of the run. Anything
-// else is rethrown to stay the unhandled error Node ends the process on.
-for (const stream of [process.stdout, process.stderr]) {
-  stream.on("error", (error: unknown) => {
-    if (errorCode(error) !== "EPIPE") throw error
-  })
-}
+// Thrown from a stream's `error` event, a refused write would end the process at the write, before
+// `aburi diff` removes its base worktree.
+holdRefusedWrites({ stdout: process.stdout, stderr: process.stderr }, process)
 
 // `process.exitCode`, never `process.exit()`: exiting at once can cut off output still being
 // flushed to a pipe (`aburi scan … | head`).
@@ -17,6 +14,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+  process.stderr.write(`${errorMessage(error)}\n`)
   process.exitCode = 1
 })
