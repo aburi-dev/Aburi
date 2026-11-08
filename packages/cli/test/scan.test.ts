@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import { resolve } from "node:path"
 import { errorFrom, irSchemaViolations, useScratchWorkspace } from "@aburi/test-support"
 import type { IR } from "@aburi/types"
 import { beforeEach, describe, expect, it } from "vitest"
@@ -202,7 +203,7 @@ describe("aburi scan — the public API a package.json declares", () => {
       expect(code).toBe(EXIT.SUCCESS)
       expect(stderr).toBe(`⚠ Component "scan-fixture": ${line}, so it gives no publicApi entry.\n`)
       const ir = JSON.parse(
-        await readFile(resolve(workspace.root, "out", IR_JSON_FILENAME), "utf8"),
+        await readFile(defaultOutput(workspace.root, IR_JSON_FILENAME), "utf8"),
       ) as IR
       expect(ir.components.map((component) => component.publicApi)).toEqual([publicApi])
       expect(irSchemaViolations(ir)).toEqual([])
