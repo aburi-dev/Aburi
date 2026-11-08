@@ -1,10 +1,10 @@
-import { copyFile, readFile } from "node:fs/promises"
+import { copyFile, mkdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { git, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EXIT, runDiff } from "../src"
 import { gitChildEnv } from "../src/git/runner"
-import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
+import { writeDiffWorkspace, writeFileAt } from "./workspace"
 
 const workspace = useScratchWorkspace("diff-hook-env")
 
@@ -14,10 +14,9 @@ afterEach(() => {
 
 /** Two commits, the second adding `two()`, made through `run` so the caller picks the repository. */
 async function commitTwice(directory: string, run: (args: string[]) => Promise<string>) {
-  await writePackageJson(directory, { name: "demo", private: true })
-  await writeConfig(directory, TYPESCRIPT)
-  await writeFileAt(directory, ".gitignore", "out/\n")
-  await writeFileAt(directory, "src/one.ts", "export function one(): number { return 1 }\n")
+  await writeDiffWorkspace(directory, {
+    "src/one.ts": "export function one(): number { return 1 }\n",
+  })
   await run(["add", "-A"])
   await run(["commit", "-q", "-m", "c1"])
   await writeFileAt(directory, "src/two.ts", "export function two(): number { return 2 }\n")
@@ -118,10 +117,11 @@ describe("aburi diff inside a commit hook", () => {
 })
 
 describe("aburi diff on a repository only the environment names", () => {
+  let gitDir = ""
   let workTree = ""
 
   beforeEach(async () => {
-    const gitDir = resolve(workspace.root, "dotfiles.git")
+    gitDir = resolve(workspace.root, "dotfiles.git")
     workTree = resolve(workspace.root, "home")
     await git(["init", "-q", "--bare", "-b", "main", gitDir], workspace.root)
     const env = { GIT_DIR: gitDir, GIT_WORK_TREE: workTree }
@@ -135,6 +135,42 @@ describe("aburi diff on a repository only the environment names", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 /)
+  })
+
+  it.each<[string, Record<string, string>, boolean, string[]]>([
+    ["named by GIT_WORK_TREE", {}, true, []],
+    [
+      "named by core.worktree, run from below it",
+      { "core.bare": "false", "core.worktree": "../home" },
+      false,
+      ["src"],
+    ],
+    ["git takes under GIT_DIR alone, run from it", { "core.bare": "false" }, false, []],
+  ])(
+    "roots the head at the work tree %s, though a marker sits above it",
+    async (_, config, keepWorkTreeVariable, below) => {
+      await writeFileAt(workspace.root, "pnpm-workspace.yaml", "packages: []\n")
+      for (const [key, value] of Object.entries(config)) {
+        await git(["--git-dir", gitDir, "config", key, value], workspace.root)
+      }
+      if (!keepWorkTreeVariable) vi.stubEnv("GIT_WORK_TREE", undefined)
+
+      const result = await diffFrom(resolve(workTree, ...below))
+
+      expect(result.exitCode).toBe(EXIT.SUCCESS)
+      expect(result.summaryLine).toMatch(/^\+1 -0 ~0 ↔0 ⤴0/)
+    },
+  )
+
+  it("roots the base at its worktree under a TMPDIR inside the work tree, not at the work tree", async () => {
+    const tmp = resolve(workTree, "tmp")
+    await mkdir(tmp)
+    for (const name of ["TMPDIR", "TEMP", "TMP"]) vi.stubEnv(name, tmp)
+
+    const result = await diffFrom(workTree)
+
+    expect(result.exitCode).toBe(EXIT.SUCCESS)
+    expect(result.summaryLine).toMatch(/^\+1 -0 ~0 ↔0 ⤴0/)
   })
 
   it("diagnoses a mistyped ref as one, which takes GIT_WORK_TREE to see the work tree", async () => {
