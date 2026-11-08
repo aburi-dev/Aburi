@@ -36,6 +36,21 @@ export async function writePackageJson(
   await writeFileAt(directory, "package.json", JSON.stringify(manifest))
 }
 
+/**
+ * What a revision diff here starts from, uncommitted: a TypeScript workspace named `demo`, or
+ * after its directory without the manifest, that keeps `out/`, where the report goes, out of git.
+ */
+export async function writeDiffWorkspace(
+  directory: string,
+  sources: Readonly<Record<string, string>>,
+  { manifest = true }: { manifest?: boolean } = {},
+): Promise<void> {
+  if (manifest) await writePackageJson(directory, { name: "demo", private: true })
+  await writeConfig(directory, TYPESCRIPT)
+  await writeFileAt(directory, ".gitignore", "out/\n")
+  for (const [path, source] of Object.entries(sources)) await writeFileAt(directory, path, source)
+}
+
 /** A one-package TypeScript workspace whose only source declares nothing. */
 export async function writeTypeScriptWorkspace(directory: string, name: string): Promise<void> {
   await writePackageJson(directory, { name, private: true })
