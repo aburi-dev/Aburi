@@ -207,6 +207,14 @@ describe("checkIRIntegrity — every declined call stayed a call", () => {
       'client.user.byId.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
     ],
     [
+      "another call on the same line, as a chain writes one",
+      declined,
+      makeSymbol(OWNER, {
+        calls: [{ target: "client.user.list.query", line: 4, resolved: null }],
+      }),
+      'client.user.byId.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
+    ],
+    [
       "a call the owner records as an effect",
       declined,
       makeSymbol(OWNER, {

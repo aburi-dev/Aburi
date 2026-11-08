@@ -349,7 +349,8 @@ Contracts:
   classifies the call, it stays in `calls[]` and the scan records your reason in
   `stats.declinedCalls`, which `aburi explain` shows for the Symbol. A `null` is
   indistinguishable from a call you never recognised. An empty or non-string
-  reason fails the run. [`effect-plugin.md` §4.5](../design/effect-plugin.md)
+  reason fails the run, and so does an answer that carries both `effectId` and
+  `declined`. [`effect-plugin.md` §4.5](../design/effect-plugin.md)
   has the contract.
 - The classifier is timed against a per-call budget (`classifyTimeoutMs`). A
   call over it keeps its answer and is listed in `stats.effectClassifyTimeouts`.

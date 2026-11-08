@@ -152,8 +152,15 @@ describe("classifyDrizzleCall — calls that are not Drizzle's", () => {
       "another ORM",
       [{ source: "@prisma/client", symbols: ["PrismaClient"], line: 1, dynamic: false }],
     ],
+    [
+      "a query builder whose client runs statements too",
+      [{ source: "kysely", symbols: ["Kysely"], line: 1, dynamic: false }],
+    ],
   ])("returns null in a file that imports %s instead of drizzle-orm", (_label, imports) => {
-    expect(classifyDrizzleCall(makeCall({ target: "db.select" }), makeCtx({ imports }))).toBeNull()
+    for (const target of ["db.select", "db.execute"]) {
+      const call = makeCall({ target, argumentCount: 1 })
+      expect(classifyDrizzleCall(call, makeCtx({ imports }))).toBeNull()
+    }
   })
 
   it.each([
@@ -181,7 +188,7 @@ describe("classifyDrizzleCall — calls that are not Drizzle's", () => {
   it.each([
     ["command.execute", 1, "a receiver no Drizzle client is named"],
     ["db.execute", 0, "no statement"],
-    ["db.select.from.execute", 0, "a prepared chain, whose root the select already classified"],
+    ["db.select.from.execute", 1, "a prepared chain, whose root the select already classified"],
   ])("declines nothing for %s with %i argument(s) — %s", (target, argumentCount) => {
     expect(classify(target, { argumentCount })).toBeNull()
   })

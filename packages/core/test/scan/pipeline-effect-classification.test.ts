@@ -1,5 +1,11 @@
 import { errorFrom, makeCall, spend } from "@aburi/test-support"
-import type { CallCandidate, ClassifyContext, Decorator, EffectClassification } from "@aburi/types"
+import type {
+  CallCandidate,
+  ClassifyContext,
+  Decorator,
+  EffectClassification,
+  EffectDecline,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeCallSiteKey } from "../../src/call-site"
 import { CoreError } from "../../src/errors"
@@ -120,6 +126,11 @@ describe("runFilePipeline — effect classification", () => {
     const declining = stubEffectsPlugin("effects-wary", (call) =>
       call.target.endsWith(".query") ? { declined: "effects-wary:ambiguous-query" } : null,
     )
+    const CLASSIFIED: EffectClassification = {
+      effectId: "network.rpc",
+      confidence: "high",
+      derivedBy: "effects-sure:rpc",
+    }
 
     it("stays in calls[], recorded with the plugin's reason, and later plugins are still asked", async () => {
       const asked: string[] = []
@@ -155,19 +166,28 @@ describe("runFilePipeline — effect classification", () => {
 
     it("is not recorded once a later plugin classifies it", async () => {
       const result = await extractOneSymbol({
-        effects: [
-          declining,
-          stubEffectsPlugin("effects-sure", () => ({
-            effectId: "network.rpc",
-            confidence: "high",
-            derivedBy: "effects-sure:rpc",
-          })),
-        ],
+        effects: [declining, stubEffectsPlugin("effects-sure", () => CLASSIFIED)],
         body: bodyCalling(makeCall({ target: "client.user.query", line: 3 })),
       })
 
       expect(result.symbols[0]?.effects.map((effect) => effect.plugin)).toEqual(["effects-sure"])
       expect(result.declinedCalls).toEqual([])
+    })
+
+    it("keeps one entry per declining plugin, in config order, and the call once", async () => {
+      const result = await extractOneSymbol({
+        effects: [
+          declining,
+          stubEffectsPlugin("effects-also", () => ({ declined: "effects-also:raw" })),
+        ],
+        body: bodyCalling(makeCall({ target: "client.user.query", line: 3 })),
+      })
+
+      expect(result.symbols[0]?.calls.map((call) => call.target)).toEqual(["client.user.query"])
+      expect(result.declinedCalls.map((entry) => [entry.plugin, entry.reason])).toEqual([
+        ["effects-wary", "effects-wary:ambiguous-query"],
+        ["effects-also", "effects-also:raw"],
+      ])
     })
 
     it.each([
@@ -183,6 +203,36 @@ describe("runFilePipeline — effect classification", () => {
       )
       expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-mute" })
     })
+
+    it("ends the run for a reason it refuses, whatever a later plugin answers", async () => {
+      const error = await errorFrom(CoreError, () =>
+        extractOneSymbol({
+          effects: [
+            stubEffectsPlugin("effects-mute", () => ({ declined: "" })),
+            stubEffectsPlugin("effects-sure", () => CLASSIFIED),
+          ],
+          body: bodyCalling(makeCall({ target: "client.user.query" })),
+        }),
+      )
+      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-mute" })
+    })
+
+    it.each([
+      ["a reason", "effects-torn:raw"],
+      ["an undefined reason", undefined],
+    ])(
+      "ends the run for a classification that carries %s too, rather than reading it as either",
+      async (_label, declined) => {
+        const error = await errorFrom(CoreError, () =>
+          extractOneSymbol({
+            effects: [stubEffectsPlugin("effects-torn", () => ({ ...CLASSIFIED, declined }))],
+            body: bodyCalling(makeCall({ target: "client.user.query" })),
+          }),
+        )
+        expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-torn" })
+        expect(error.message).toContain("both `effectId` and `declined`")
+      },
+    )
   })
 
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {
@@ -252,7 +302,7 @@ const WRITE: EffectClassification = {
 
 function answering(
   name: string,
-  answer: EffectClassification | null,
+  answer: EffectClassification | EffectDecline | null,
   ms: number,
   asked: string[] = [],
 ) {
@@ -297,6 +347,29 @@ describe("runFilePipeline — a classification that ran past its budget", () => 
     // The next plugin is timed against the same 10 ms, so only the slow one's overrun is certain.
     expect(timeoutEvents.filter((e) => e.plugin === "effects-slow")).toHaveLength(1)
     expect(symbols[0]?.effects.map((e) => [e.id, e.plugin])).toEqual([["db.read", "effects-next"]])
+  })
+
+  it("keeps a decline, as a fast decline would", async () => {
+    const { symbols, timeoutEvents, declinedCalls } = await extractOneSymbol({
+      config: FLOOR,
+      effects: [
+        answering("effects-slow", { declined: "effects-slow:raw" }, SLOW_MS),
+        answering("effects-next", null, 0),
+      ],
+      body: bodyCalling(makeCall({ target: "db.query", line: 2 })),
+    })
+
+    expect(timeoutEvents.filter((e) => e.plugin === "effects-slow")).toHaveLength(1)
+    expect(symbols[0]?.calls.map((call) => call.target)).toEqual(["db.query"])
+    expect(declinedCalls).toEqual([
+      {
+        plugin: "effects-slow",
+        symbolId: "stub:test.stub#Fn",
+        target: "db.query",
+        line: 2,
+        reason: "effects-slow:raw",
+      },
+    ])
   })
 
   it("leaves the Symbol, fingerprint included, as a fast run leaves it", async () => {

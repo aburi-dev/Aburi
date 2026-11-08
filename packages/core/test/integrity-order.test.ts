@@ -152,6 +152,37 @@ describe("checkIRIntegrity — ordering", () => {
   })
 })
 
+describe("checkIRIntegrity — stats.declinedCalls[] order", () => {
+  const BAR = "ts:src/a.ts#bar"
+  const at = (symbolId: string, line: number): DeclinedCall => ({
+    symbolId,
+    target: "q",
+    line,
+    plugin: "p",
+    reason: "r",
+  })
+
+  function declining(entries: DeclinedCall[]): IR {
+    const calls = [9, 10].map((line) => ({ target: "q", line, resolved: null }))
+    const ir = makeIR({ symbols: [makeSymbol(BAR, { calls }), makeSymbol(FOO, { calls })] })
+    ir.stats.declinedCalls = entries
+    return ir
+  }
+
+  it.each([
+    ["line 9 before line 10, compared as numbers", [at(FOO, 9), at(FOO, 10)]],
+    ["a later symbolId on a smaller line", [at(BAR, 10), at(FOO, 9)]],
+  ])("accepts %s", (_what, entries) => {
+    expect(checkIRIntegrity(declining(entries))).toEqual([])
+  })
+
+  it("reports line 10 before line 9", () => {
+    expect(orderViolations(declining([at(FOO, 10), at(FOO, 9)])).map((v) => v.subject)).toEqual([
+      "stats.declinedCalls[]",
+    ])
+  })
+})
+
 describe("checkIRIntegrity — effect segmentation", () => {
   const missingLine = localEffect("y", 1)
   delete missingLine.line

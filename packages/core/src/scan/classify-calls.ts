@@ -6,6 +6,7 @@ import type {
   DeclinedCall,
   Decorator,
   Effect,
+  EffectClassification,
   EffectDecline,
   EffectPlugin,
   ImportEdge,
@@ -97,7 +98,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
         timeoutOptions,
       )
       if (result === null) continue
-      if (isDecline(result)) {
+      if (isDecline(result, effect)) {
         declines.push({
           plugin: effect.manifest.name,
           symbolId: input.candidate.id,
@@ -139,8 +140,17 @@ export function classifyCalls(input: ClassifyCallsInput): {
   return { effects: classifiedEffects, calls: survivingCalls, dynamicCallSites, declinedCalls }
 }
 
-function isDecline(result: object): result is EffectDecline {
-  return Object.hasOwn(result, "declined")
+function isDecline(
+  result: EffectClassification | EffectDecline,
+  effect: EffectPlugin,
+): result is EffectDecline {
+  if (!Object.hasOwn(result, "declined")) return false
+  if (!Object.hasOwn(result, "effectId")) return true
+  // TypeScript accepts an object carrying both keys as either member of the union.
+  throw new CoreError(
+    `Effect plugin "${effect.manifest.name}" answered one call with both \`effectId\` and \`declined\`: classify() must return an EffectClassification, an EffectDecline or null, not both.`,
+    { code: "scan-plugin-misconfigured", value: effect.manifest.name },
+  )
 }
 
 function declineReason(decline: EffectDecline, effect: EffectPlugin): string {

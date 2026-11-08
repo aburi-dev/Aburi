@@ -24,6 +24,7 @@ The language plugin only provides "what was called" at the string level. The eff
 - Declare effect ids (individual / prefix) in the manifest
 - Receive a `CallCandidate` and determine whether it is an effect this plugin recognizes
 - If recognized, return an `EffectClassification` (effectId / confidence / derivedBy)
+- If recognized but not classifiable from the call site, return an `EffectDecline` naming the reason (§4.5)
 - If not recognized, return `null`
 - Optionally, add calls this plugin recognizes to drop-list category C (logger-oriented effect plugins only)
 
@@ -141,12 +142,16 @@ interface EffectDecline {
 | Plugin | Call | `declined` | Why it cannot classify |
 |---|---|---|---|
 | `effects-trpc` | a procedure call ending in `.query()`, in a file that imports `@trpc/server` as well as a tRPC client | `effects-plugin:trpc:server-file-query` | the router's builder (`publicProcedure.input(schema).query(resolver)`) is spelled like a client call (`client.user.byId.query()`), and nothing in the callee tells them apart |
-| `effects-prisma` | `$queryRaw`, `$queryRawUnsafe`, `$queryRawTyped`, `$executeRaw`, `$executeRawUnsafe` or `$runCommandRaw` called on a receiver, in a file that imports Prisma | `effects-plugin:prisma:raw-query` | raw SQL can read or write, and the statement is not in the callee |
-| `effects-drizzle` | `.execute(statement)` with an argument, on a receiver whose name is a Drizzle client's (`db`, `tx`, `this.database`), in a file that imports Drizzle | `effects-plugin:drizzle:raw-sql` | as for Prisma |
+| `effects-prisma` | `$queryRaw`, `$queryRawUnsafe`, `$queryRawTyped`, `$executeRaw`, `$executeRawUnsafe` or `$runCommandRaw` called on a receiver, in a file that imports Prisma | `effects-plugin:prisma:raw-query` | a raw query — SQL, or a MongoDB command for `$runCommandRaw` — can read or write, and the query is not in the callee |
+| `effects-drizzle` | `.execute(statement)` with an argument, on a receiver whose name mentions a Drizzle client word (`db`, `tx`, `database`, `conn`, …), matched word-wise as for the confidence tier (§5.4), in a file that imports Drizzle | `effects-plugin:drizzle:raw-sql` | raw SQL can read or write, and the statement is not in the callee |
+
+The tRPC decline is keyed on the file, not on the call. In a file that imports both sides, every `.query` of three or more segments is declined: the router's own builders (`t.procedure.query(resolver)`) and a `.query` that is not tRPC's at all (`db.pool.query(sql)`) included, so `aburi explain` lists them under the Symbol that makes them. The reason states the file's situation — a `query` in a file that also serves tRPC — not that the call is a tRPC call. Narrowing it to calls on a client would take the binding a `createTRPCClient(...)` result is assigned to, which `ClassifyContext` does not carry.
 
 The core records the decline in `stats.declinedCalls[]` (ir-schema.md §2): the plugin, the owner Symbol, the call's `target` and `line`, and `declined` as the entry's `reason`. Without it, a call the plugin chose to leave unclassified and a call no plugin recognized look the same in the IR. `aburi explain` lists a Symbol's entries under `## Declined effects` (markdown-projection.md §7).
 
-`declined` is the plugin's reason, in the plugin's words. Spell it as `derivedBy` is spelled, `effects-plugin:<plugin>:<reason>`, so that a reader can tell which plugin wrote it and two runs over the same code write the same string. It must be a string that is not empty and not only whitespace; any other value fails the run with `scan-plugin-misconfigured`, naming the plugin (EP14b). The Document holds it in Unicode NFC, like every string it contains (ir-schema.md §1.2).
+`declined` is the plugin's reason, in the plugin's words. Spell it as `derivedBy` is spelled, `effects-plugin:<plugin>:<reason>`, so that a reader can tell which plugin wrote it and two runs over the same code write the same string. It must be a string that is not empty and not only whitespace; any other value fails the run with `scan-plugin-misconfigured`, naming the plugin, when the plugin returns it and whatever a later plugin answers for the call (EP14b). The Document holds it in Unicode NFC, like every string it contains (ir-schema.md §1.2), and quotes it: invariant #19 does not check its spelling.
+
+An answer is a classification or a decline, never both. TypeScript accepts an object carrying `effectId` and `declined` as either member of the union, so the core refuses it at run time: an answer with both keys fails the run with `scan-plugin-misconfigured`, whatever their values (EP14c). Reading it as one of the two would drop the other in silence.
 
 ## 5. Classification Algorithm
 
@@ -157,6 +162,8 @@ for each call in symbol.calls:
   declines = []
   for each effect_plugin in config-order:
     result = effect_plugin.classify(call, ctx)
+    if result carries both effectId and declined:
+      fail the run    # scan-plugin-misconfigured (EP14c)
     if result is an EffectClassification:
       assign call to effects[] with result
       break    # subsequent plugins are not invoked
@@ -183,7 +190,7 @@ The core times each plugin's `classify(call, ctx)` invocation against a **per-ca
   - An overrun changes this record and nothing else in the Document: `effects[]`, `calls[]` and every fingerprint are what they would have been had the call been fast. The parse budget is different in kind: a file over `parseTimeoutMs` is left out of the Document altogether (lang-plugin.md §7.1.2)
   - CI can compare `effectClassifyTimeouts` across runs to spot plugin performance regressions
 - Plugin implementations must be synchronous: a `classify()` that returns a Promise fails the run (`scan-plugin-misconfigured`)
-- A decline costs no more than a `null`: the plugin returns a value, and the core writes nothing until the call is known to stay in `calls[]`. A plugin can decline every call in a large workspace without a log line per call
+- A decline costs one small record per declining plugin, kept only if the call stays in `calls[]`; its reason is checked when it is returned, whatever a later plugin answers (EP14b). A plugin can decline every call in a large workspace without a log line per call
 
 The budget does not stop a slow plugin — nothing can interrupt a synchronous call — it names one. A plugin that overruns on every call shows up in the stats, call by call, and the remedy is the plugin's.
 
@@ -297,6 +304,8 @@ import {
 const READ_METHODS = /^(findUnique|findFirst|findMany|count|aggregate|groupBy)$/
 const WRITE_METHODS = /^(create|createMany|update|updateMany|upsert|delete|deleteMany)$/
 const TX_METHOD = '$transaction'
+const RAW_QUERY_METHODS =
+  /^\$(queryRaw|queryRawUnsafe|queryRawTyped|executeRaw|executeRawUnsafe|runCommandRaw)$/
 
 // Words a Prisma client binding is spelled with. `client` is deliberately absent: it
 // matches `apiClient` / `httpClient`, whose `<client>.<resource>.<verb>` shape is a
@@ -321,14 +330,12 @@ export const plugin: EffectPlugin = {
       return null
     }
 
-    // No Prisma method takes a bare literal, so that shape is not a Prisma call at all.
-    if (hasLiteralFirstArgument(call)) return null
-
     // `<client>.$transaction(...)` is 2 segments, and its callback form takes a second
     // options argument — so it is dispatched before the 3-segment delegate shape and
     // carries its own arity.
     if (method === TX_METHOD) {
       if (parts.length < 2) return null
+      if (hasLiteralFirstArgument(call)) return null
       return {
         effectId: 'db.transaction',
         confidence: tier(parts[parts.length - 2], call, 2),
@@ -336,9 +343,20 @@ export const plugin: EffectPlugin = {
       }
     }
 
+    // Whether a raw query reads or writes is in the query, which the call site does not
+    // spell: the call is Prisma's, and the plugin declines to name its effect (§4.5).
+    // Ahead of the literal check, since `$executeRawUnsafe("…")` takes its SQL as one.
+    if (RAW_QUERY_METHODS.test(method) && parts.length >= 2) {
+      return { declined: 'effects-plugin:prisma:raw-query' }
+    }
+
     // A delegate call is `<client>.<model>.<verb>`; the client segment is what stops a
     // two-segment `router.create(...)` from matching.
     if (parts.length < 3) return null
+
+    // No delegate takes a bare literal, so `map.delete("id")` is another API.
+    if (hasLiteralFirstArgument(call)) return null
+
     const confidence = tier(parts[parts.length - 3], call, 1)
 
     if (READ_METHODS.test(method)) {
@@ -434,7 +452,8 @@ export const plugin: EffectPlugin = {
 | EP13 | classify returns after running past `classifyTimeoutMs` (§5.1.1) | its answer is used as if it had been fast — EP6 for a classification, EP5 for `null`, EP14 for a decline, and EP4 still decides the order — and the overrun is one `stats.effectClassifyTimeouts` entry. `effects[]`, `calls[]` and the fingerprints do not depend on whether this classification overran its budget |
 | EP14 | classify returns `{ declined: reason }` (§4.5) and no later plugin classifies the call | the call stays in `Symbol.calls[]` (EP5), and `stats.declinedCalls[]` gains one entry: `plugin`, `symbolId`, `target`, `line`, and the reason. Neither `effects[]`, `calls[]` nor any fingerprint differs from a `null` |
 | EP14a | a plugin declines a call and a later plugin classifies it | the later plugin's classification is used (EP6), and no `stats.declinedCalls[]` entry is written for that call |
-| EP14b | `declined` is empty, only whitespace, or not a string | the run fails with `scan-plugin-misconfigured`, naming the plugin |
+| EP14b | `declined` is empty, only whitespace, or not a string | the run fails with `scan-plugin-misconfigured`, naming the plugin, whether or not a later plugin classifies the call |
+| EP14c | classify returns an object carrying both `effectId` and `declined` | the run fails with `scan-plugin-misconfigured`, naming the plugin, whatever the two values are |
 
 ## 11. Design Decisions
 
@@ -448,7 +467,7 @@ The `classify(call, ctx) → result` shape:
 
 To preserve the responsibility split of the whole extraction pipeline, effects stick strictly to "classification".
 
-A decline (§4.5) is a return value, not a log line. A plugin could also report why it skipped a call through a `Logger` on `ClassifyContext`, but three things count against it. Logging is a side effect that EP2 would have to allow. The line goes to a terminal, not to the IR that a reviewer, `aburi diff` and a CI job read. And the logger would be called inside the scan's innermost loop, once per call, within a 50ms budget. A returned reason keeps `classify()` pure, is stored in the IR next to the call it is about, and costs one object.
+A decline (§4.5) is a return value, not a log line. A plugin could also report why it skipped a call through a `Logger` added to `ClassifyContext`, but three things count against it. Logging is a side effect that EP2 would have to allow. The line goes to a terminal, not to the IR that a reviewer, `aburi diff` and a CI job read. And the logger would be called inside the scan's innermost loop, once per call, within a 50ms budget. A returned reason keeps `classify()` pure, is stored in the IR next to the call it is about, and costs one small record, kept only when the call stays in `calls[]`.
 
 ### 11.2 Choosing first-match-wins
 

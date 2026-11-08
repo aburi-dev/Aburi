@@ -46,7 +46,7 @@ export function classifyPrismaCall(
     }
   }
 
-  // Whether raw SQL reads or writes is in the SQL, which no call site spells.
+  // Whether a raw query reads or writes is in the query, which no call site spells.
   if (isPrismaRawQueryMethod(method) && segments.length >= 2) {
     return { declined: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:raw-query` }
   }

@@ -234,9 +234,7 @@ function checkUnicodeNormalization(ir: IR, out: IntegrityViolation[]): void {
     reportUnnormalized(file.path, `stats.skippedFiles[path=${file.path}]`, "path", out)
   }
   for (const [index, declined] of (ir.stats.declinedCalls ?? []).entries()) {
-    const subject = `stats.declinedCalls[${index}]`
-    reportUnnormalized(declined.target, subject, "target", out)
-    reportUnnormalized(declined.reason, subject, "reason", out)
+    reportUnnormalized(declined.target, `stats.declinedCalls[${index}]`, "target", out)
   }
 }
 

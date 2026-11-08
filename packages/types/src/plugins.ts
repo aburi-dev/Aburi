@@ -214,7 +214,8 @@ export interface EffectClassification {
 
 /**
  * `classify`'s answer for a call whose shape the plugin recognises and leaves unclassified on
- * purpose, so the IR can say why the call stayed in `calls[]`.
+ * purpose, so the IR can say why the call stayed in `calls[]` when no later plugin classifies it.
+ * It carries no `effectId`: an answer holding both keys fails the run.
  */
 export interface EffectDecline {
   /** Plugin-defined reason, e.g. `"effects-plugin:trpc:server-file-query"`. */
