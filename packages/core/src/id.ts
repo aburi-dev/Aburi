@@ -139,12 +139,18 @@ export function isDefaultExportQname(qname: string): boolean {
 }
 
 export function toDocumentPath(rawPath: string, subject: string = PATH_SUBJECT): RelativePath {
+  const path = documentPathOrViolation(rawPath, subject)
+  if (typeof path === "string") return path
+  throw new CoreError(path.message, { code: path.code, value: path.value })
+}
+
+/** `toDocumentPath` for a caller that answers a refusal its own way rather than with the throw. */
+export function documentPathOrViolation(
+  rawPath: string,
+  subject: string = PATH_SUBJECT,
+): RelativePath | GrammarViolation {
   const normalized = toNfc(rawPath)
-  const violation = posixWorkspaceRelativeViolation(normalized, subject)
-  if (violation !== null) {
-    throw new CoreError(violation.message, { code: violation.code, value: violation.value })
-  }
-  return normalized as RelativePath
+  return posixWorkspaceRelativeViolation(normalized, subject) ?? (normalized as RelativePath)
 }
 
 const SYMBOL_ID_SEPARATORS = [":", "#"] as const

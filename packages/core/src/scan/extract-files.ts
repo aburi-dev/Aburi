@@ -21,7 +21,7 @@ import type { DiscoveredFile, SkippedFile } from "./discover"
 import { buildDropCFilter } from "./drop-c"
 import { describeThrown, errorCode, isPluginSetFault, isVanishedFile } from "./faults"
 import { ImportOrigins } from "./import-origins"
-import { runFilePipeline, type TreeReleaseFailure } from "./pipeline"
+import { type FileFault, runFilePipeline, type TreeReleaseFailure } from "./pipeline"
 import type { LanguageRouter } from "./route"
 import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
 import { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./vocab"
@@ -195,19 +195,19 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
         break
       }
       case "extracted": {
-        const collision = describeIdFault(result.symbols, discoveredFile.path)
-        if (collision !== null) {
+        const fault = result.fault ?? describeIdFault(result.symbols, discoveredFile.path)
+        if (fault !== null) {
           out.skipped.push({
             path: discoveredFile.path,
             reason: "extraction-failed",
-            detail: collision,
+            detail: fault.message,
           })
           out.extractionFailures.push({
             file: discoveredFile.path,
-            message: collision,
-            code: "duplicate-symbol-id",
+            message: fault.message,
+            code: fault.code,
           })
-          logger.warn(`Skipped ${discoveredFile.path}: ${collision}`)
+          logger.warn(`Skipped ${discoveredFile.path}: ${fault.message}`)
           out.timeoutEvents.push(...result.timeoutEvents)
           out.importsByFile.set(discoveredFile.path, result.imports)
           break
@@ -253,24 +253,28 @@ function quote(error: ParseError): string {
   return `${error.line}:${error.column} — ${error.message}`
 }
 
-function describeIdFault(symbols: readonly IRSymbol[], path: string): string | null {
+function describeIdFault(symbols: readonly IRSymbol[], path: string): FileFault | null {
   const here = new Map<string, IRSymbol>()
   for (const symbol of symbols) {
     const claimed = symbolIdFile(symbol.id)
     if (claimed !== null && claimed !== path) {
-      return (
-        `Symbol id "${symbol.id}" names ${claimed}, which is not this file. An id carries the ` +
-        `file its Symbol was declared in, so the language plugin wrote a path that is not ` +
-        `this file's`
-      )
+      return {
+        code: "duplicate-symbol-id",
+        message:
+          `Symbol id "${symbol.id}" names ${claimed}, which is not this file. An id carries the ` +
+          `file its Symbol was declared in, so the language plugin wrote a path that is not ` +
+          `this file's`,
+      }
     }
     const twin = here.get(symbol.id)
     if (twin !== undefined) {
-      return (
-        `two Symbols share the id "${symbol.id}" (lines ${twin.source.startLine} and ` +
-        `${symbol.source.startLine}); the language plugin gave two declarations one qualified ` +
-        `name, and nothing it reported separates them`
-      )
+      return {
+        code: "duplicate-symbol-id",
+        message:
+          `two Symbols share the id "${symbol.id}" (lines ${twin.source.startLine} and ` +
+          `${symbol.source.startLine}); the language plugin gave two declarations one qualified ` +
+          `name, and nothing it reported separates them`,
+      }
     }
     here.set(symbol.id, symbol)
   }

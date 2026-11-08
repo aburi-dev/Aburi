@@ -1,9 +1,10 @@
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { makeCall, recordingLogger } from "@aburi/test-support"
-import type { LanguagePlugin, SourceFile } from "@aburi/types"
+import type { LanguagePlugin, ParseResult, SourceFile } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CoreError, type ScanInput } from "../../src"
+import { WORKSPACE_PATH_CASES } from "../fixtures/paths"
 import {
   fileCandidate,
   scanStubs,
@@ -258,30 +259,75 @@ describe("a fault in the plugin set is not a per-file fault", () => {
   })
 })
 
-describe("a candidate whose source.file no Document path spells withdraws its file", () => {
-  it.each([
-    ["a backslash", "src\\bad.stub"],
-    ["a parent segment", "../bad.stub"],
-    ["an absolute path", "/workspace/bad.stub"],
-  ])("with %s, coded as the path fault it is", async (_label, file) => {
-    const language = stubLanguagePlugin({
-      extractSymbols: (_tree, ctx) => [
-        ctx.file.path === "bad.stub"
-          ? fileCandidate(ctx.file.path, {
-              source: { file, startLine: 1, endLine: 2, startColumn: null, endColumn: null },
-            })
-          : fileCandidate(ctx.file.path),
-      ],
-    })
-    const { result } = await run({ languages: [language] })
+/** `bad.stub` gives its one candidate `file` as `source.file`, and `id` when there is one. */
+function misattributing(
+  file: string,
+  bad: { id?: string; parseErrors?: ParseResult["errors"] } = {},
+): LanguagePlugin {
+  return stubLanguagePlugin({
+    parseFile: async (sourceFile) => ({
+      tree: {},
+      errors: sourceFile.path === "bad.stub" ? [...(bad.parseErrors ?? [])] : [],
+      imports: [],
+    }),
+    extractSymbols: (_tree, ctx) => [
+      ctx.file.path === "bad.stub"
+        ? fileCandidate(ctx.file.path, {
+            ...(bad.id === undefined ? {} : { id: bad.id }),
+            source: { file, startLine: 1, endLine: 2, startColumn: null, endColumn: null },
+          })
+        : fileCandidate(ctx.file.path),
+    ],
+  })
+}
 
-    expect(result.ir.symbols.map((s) => s.source.file)).toEqual(["a.stub", "c.stub"])
-    expect(result.extractionFailures).toEqual([
-      {
-        file: "bad.stub",
-        message: expect.stringContaining(`SymbolCandidate.source.file "${file}"`),
-        code: "non-posix-path",
-      },
+const REFUSED_ROOTS = WORKSPACE_PATH_CASES.flatMap((c) =>
+  c.root.ok ? [] : [{ path: c.path, reason: c.root.reason, why: c.why }],
+)
+
+describe("a candidate whose source.file no Document path spells withdraws its file", () => {
+  it.each(REFUSED_ROOTS)(
+    "for $path ($why), coded as the path fault it is and naming the plugin",
+    async ({ path, reason }) => {
+      const { result, warnings } = await run({ languages: [misattributing(path)] })
+
+      expect(result.ir.symbols.map((s) => s.source.file)).toEqual(["a.stub", "c.stub"])
+      expect(result.extractionFailures).toEqual([
+        {
+          file: "bad.stub",
+          message: expect.stringMatching(/^lang-stub's SymbolCandidate\.source\.file /),
+          code: "non-posix-path",
+        },
+      ])
+      expect(result.extractionFailures[0]?.message).toContain(reason)
+      expect(result.skipped).toEqual([
+        {
+          path: "bad.stub",
+          reason: "extraction-failed",
+          detail: result.extractionFailures[0]?.message,
+        },
+      ])
+      expect(warnings).toEqual([`Skipped bad.stub: ${result.extractionFailures[0]?.message}`])
+    },
+  )
+
+  it("reports the path fault over an id that names another file", async () => {
+    const { result } = await run({
+      languages: [misattributing("src\\bad.stub", { id: "stub:a.stub#x" })],
+    })
+    expect(result.extractionFailures.map((f) => [f.file, f.code])).toEqual([
+      ["bad.stub", "non-posix-path"],
+    ])
+  })
+
+  it("keeps the file's recoverable parse errors beside the withdrawal", async () => {
+    const error = { message: "unexpected token", line: 3, column: 7, recoverable: true }
+    const { result } = await run({
+      languages: [misattributing("../bad.stub", { parseErrors: [error] })],
+    })
+    expect(result.parseErrors).toEqual([{ file: "bad.stub", errors: [error] }])
+    expect(result.extractionFailures.map((f) => [f.file, f.code])).toEqual([
+      ["bad.stub", "non-posix-path"],
     ])
   })
 })

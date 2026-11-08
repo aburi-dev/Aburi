@@ -44,8 +44,10 @@ export function relativePath(raw: string): RelativePath {
   return raw as RelativePath
 }
 
-/** A `SourceRange` whose `file` is a literal; the builder that takes it brands it. */
-export type SourceRangeOverride = Omit<SourceRange, "file"> & { file: string }
+/** A range whose `file` is a literal; the builder that takes it brands it. */
+export type WithLiteralFile<R extends { file: RelativePath }> = Omit<R, "file"> & { file: string }
+
+export type SourceRangeOverride = WithLiteralFile<SourceRange>
 
 /** Dependency endpoints hold either id kind and are told apart by shape. */
 export function endpoint(raw: string): DependencyEndpoint {

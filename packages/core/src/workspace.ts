@@ -4,12 +4,7 @@ import type { RelativePath, WorkspaceManager } from "@aburi/types"
 import { parse as parseYaml } from "yaml"
 import { toNfc } from "./codepoints"
 import { CoreError } from "./errors"
-import {
-  posixWorkspaceRelativeViolation,
-  toDocumentPath,
-  type UnnameableSite,
-  unnameableSite,
-} from "./id"
+import { documentPathOrViolation, type UnnameableSite, unnameableSite } from "./id"
 import { compareBy, compareCodeUnit } from "./order"
 import { describeJsonType } from "./scan/faults"
 import { type GitignoreTree, openGitignoreTree } from "./scan/gitignore"
@@ -180,13 +175,10 @@ function unnameableCandidate(
 }
 
 function workspaceRelativeRoot(candidate: FoundPackage, tool: string): RelativePath {
-  const violation = posixWorkspaceRelativeViolation(
-    candidate.relativeRoot,
-    `${tool} workspace root`,
-  )
-  if (violation === null) return toDocumentPath(candidate.relativeRoot)
+  const root = documentPathOrViolation(candidate.relativeRoot, `${tool} workspace root`)
+  if (typeof root === "string") return root
   throw new CoreError(
-    `${violation.message}. A package outside the workspace root cannot be described by this IR, and the file walk never reaches it — declare it from the workspace that contains it, or move the workspace root.`,
+    `${root.message}. A package outside the workspace root cannot be described by this IR, and the file walk never reaches it — declare it from the workspace that contains it, or move the workspace root.`,
     { code: "workspace-root-outside", value: candidate.relativeRoot },
   )
 }

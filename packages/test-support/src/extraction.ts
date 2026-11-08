@@ -5,7 +5,7 @@ import type {
   Visibility,
   WrittenSourceRange,
 } from "@aburi/types"
-import { relativePath, symbolId } from "./ir"
+import { relativePath, symbolId, type WithLiteralFile } from "./ir"
 import { noopRegistry } from "./registry"
 
 /** An `ExtractionContext` over one in-memory file, backed by `noopRegistry`. */
@@ -17,7 +17,7 @@ export function makeExtractionCtx(path = "src/a.ts", content = ""): ExtractionCo
 export type CandidateOverrides = Omit<Partial<SymbolCandidate<unknown>>, "id" | "source"> & {
   kind: SymbolKind
   id?: string
-  source?: Omit<WrittenSourceRange, "file"> & { file: string }
+  source?: WithLiteralFile<WrittenSourceRange>
 }
 
 /** Per-suite defaults for the fields the framework fixtures disagreed on. */
