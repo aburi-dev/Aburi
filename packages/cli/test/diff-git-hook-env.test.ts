@@ -4,7 +4,7 @@ import { git, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EXIT, runDiff } from "../src"
 import { gitChildEnv } from "../src/git/runner"
-import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
+import { writeDiffWorkspace, writeFileAt } from "./workspace"
 
 const workspace = useScratchWorkspace("diff-hook-env")
 
@@ -14,10 +14,9 @@ afterEach(() => {
 
 /** Two commits, the second adding `two()`, made through `run` so the caller picks the repository. */
 async function commitTwice(directory: string, run: (args: string[]) => Promise<string>) {
-  await writePackageJson(directory, { name: "demo", private: true })
-  await writeConfig(directory, TYPESCRIPT)
-  await writeFileAt(directory, ".gitignore", "out/\n")
-  await writeFileAt(directory, "src/one.ts", "export function one(): number { return 1 }\n")
+  await writeDiffWorkspace(directory, {
+    "src/one.ts": "export function one(): number { return 1 }\n",
+  })
   await run(["add", "-A"])
   await run(["commit", "-q", "-m", "c1"])
   await writeFileAt(directory, "src/two.ts", "export function two(): number { return 2 }\n")
