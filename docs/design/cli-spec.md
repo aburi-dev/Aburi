@@ -245,6 +245,7 @@ A planned `--quiet` would print the census lines alone.
 
 ```
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
+⚠ Component "sdk": packages/sdk/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.
 ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
@@ -267,7 +268,14 @@ The `frameworks` line comes ahead of the parse lines because the artifact cannot
 reproduce it: a first-party plugin that is not loaded is absent from `plugins[]`, so nothing in
 the IR says `framework-next` was a plugin's name ([config.md](./config.md) §6).
 
-The `pluginOptions` line follows it, one per key that names no loaded plugin or the plugin of a
+The `publicApi` lines follow it, one per string value in a detected component's `package.json`
+that component detection gives no entry for ([component-detect.md](./component-detect.md) §4.6),
+naming the component, its manifest, the field and the value. The IR holds the entries alone, so a value that
+gives none leaves it looking like that of a package that declared nothing; a component
+`aburi.json` declares is not detected, and has none of these lines. Like the `frameworks` line
+they keep their scan's label, since each describes the IR that scan wrote.
+
+The `pluginOptions` line follows them, one per key that names no loaded plugin or the plugin of a
 `frameworkHints` entry ([config.md](./config.md) §5.4), for the same reason: the IR records the
 plugins that loaded but not the options the config gave. Of the `⚠` lines a scan reports it is
 the only one that never carries a scan's label, and a command says it once however many scans it
@@ -1395,6 +1403,7 @@ a command's option, not a global one (§3).
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
 | CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
+| CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
 | CL74 | `aburi scan`, `aburi diff --base <ir> --head <ir>` and `aburi explain <name>` rescanning, with neither `--output-dir` nor `config.output.dir`, where `.aburi/` does not exist; `aburi scan` with `--output-dir .aburi`, its absolute path, or `output.dir: "./.aburi/"`; with `--output-dir artifacts`, `output.dir: "artifacts"` or `--output-dir nested/.aburi`; where `.aburi/` exists; and after the caller rewrote the `.gitignore` a first run wrote | The first six create `.aburi/` holding a `.gitignore` of a comment line and `*`, and in a repository whose files are all committed, `git status --porcelain --untracked-files=all` after `aburi scan` prints nothing. The rest write no `.gitignore`, and the caller's stays as they wrote it |
 
 ## 18. Design Decisions
