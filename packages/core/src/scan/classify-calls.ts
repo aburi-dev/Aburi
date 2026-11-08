@@ -135,8 +135,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
     }
   }
 
-  classifiedEffects.sort(byTargetThenLine)
-  survivingCalls.sort(byTargetThenLine)
+  // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
+  // so two effects on one line keep the order they are written in, which `logic` reads.
   return { effects: classifiedEffects, calls: survivingCalls, dynamicCallSites, declinedCalls }
 }
 
@@ -160,13 +160,4 @@ function declineReason(decline: EffectDecline, effect: EffectPlugin): string {
     `Effect plugin "${effect.manifest.name}" declined a call with no reason: \`declined\` must be a non-empty string.`,
     { code: "scan-plugin-misconfigured", value: effect.manifest.name },
   )
-}
-
-function byTargetThenLine(
-  a: { target: string; line?: number },
-  b: { target: string; line?: number },
-): number {
-  if (a.target < b.target) return -1
-  if (a.target > b.target) return 1
-  return (a.line ?? 0) - (b.line ?? 0)
 }

@@ -244,6 +244,7 @@ A planned `--quiet` would print the census lines alone.
 
 ```
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
+⚠ Component "sdk": packages/sdk/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.
 ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
@@ -266,7 +267,14 @@ The `frameworks` line comes ahead of the parse lines because the artifact cannot
 reproduce it: a first-party plugin that is not loaded is absent from `plugins[]`, so nothing in
 the IR says `framework-next` was a plugin's name ([config.md](./config.md) §6).
 
-The `pluginOptions` line follows it, one per key that names no loaded plugin or the plugin of a
+The `publicApi` lines follow it, one per string value in a detected component's `package.json`
+that component detection gives no entry for ([component-detect.md](./component-detect.md) §4.6),
+naming the component, its manifest, the field and the value. The IR holds the entries alone, so a value that
+gives none leaves it looking like that of a package that declared nothing; a component
+`aburi.json` declares is not detected, and has none of these lines. Like the `frameworks` line
+they keep their scan's label, since each describes the IR that scan wrote.
+
+The `pluginOptions` line follows them, one per key that names no loaded plugin or the plugin of a
 `frameworkHints` entry ([config.md](./config.md) §5.4), for the same reason: the IR records the
 plugins that loaded but not the options the config gave. Of the `⚠` lines a scan reports it is
 the only one that never carries a scan's label, and a command says it once however many scans it
@@ -659,11 +667,12 @@ With refs (every git command these steps run gets the caller's environment as §
    - A future `--base-config <path>` may be provided to override this (planned — see the [roadmap](../roadmap.md)). The two scans would then no longer read one config, and the `pluginOptions` line (§5.6) would be said by each, labelled by side
 4. Run `aburi scan` on the head (the original cwd)
    - Steps 3 and 4 run at the same time unless `--no-parallel-scans` or a single CPU says otherwise (§14.1), and what the run says, writes and exits is what it would have been with the two one after the other, save for a failure of the base scan's thread itself
+   - Each scan is followed by a warning naming the symbolic links on its side that git wrote as plain files and the scan read as source (§6.4.4)
    - Both scans root at the repository: the workspace-root walk stops at the first `.git` ([`component-detect.md`](./component-detect.md) §2.1, CD32), the head checkout's own `.git` (a directory or a file) on one side and the temporary worktree's `.git` file on the other. Rooted anywhere else, the two sides scan different trees (`component-detect.md` §11.1 has the layouts that did), so a base scan that roots anywhere but its worktree ends the run as a bug in Aburi (exit `1`, §9)
 5. Compare the two IRs and compute the diff ([`diff-algorithm.md`](./diff-algorithm.md))
 6. Write `<output-dir>/diff.json` + `<output-dir>/diff.md`, and `<output-dir>/diff.full.md` (the uncapped `diff.md`, written before `diff.md` so the note never points at a file that failed to land) when `--max-bytes` changed the report. Any `diff.json`, `diff.md` or `diff.full.md` already there was removed when the output directory was created, ahead of step 1 and whatever the `--format`, since each would describe another diff: a `--format md` run leaves no `diff.json` of an earlier run's, and a `--format json` run no `diff.md`, so none naming a `diff.full.md` that is gone. So a run that stops before this step (a plugin that fails to load, a strict scan's undeclared value) leaves no report at all rather than an earlier one a caller would take for its own. A path there that cannot be removed is refused like one that cannot be written
 7. Print the glyph line, the head's call-resolution census and the path of `diff.md` to stdout (§6.6)
-8. Clean up the worktree. This holds for a run stopped by `SIGINT`, `SIGTERM` or `SIGHUP` too: from just after the temporary directory is created until this cleanup has finished, a listener for each removes the worktree and the temporary directory synchronously, then raises the same signal again, so on POSIX the exit status stays 128+N. On Windows a signal cannot be raised against the process again; the run exits with that same 128+N instead. A failed removal on this path is reported on stderr. The listener narrows the window rather than closing it: a signal sent to this process alone (not to its process group, as a terminal's Ctrl-C is) does not reach a `git worktree add` still running, and that child can finish registering the worktree after the cleanup has run, leaving it behind. `SIGKILL` cannot be caught, and leaves both behind, as does a write to stdout or stderr that fails for any reason but a reader that left (§9); `SIGQUIT` and `SIGBREAK` are not handled either
+8. Clean up the worktree. This holds for a run stopped by `SIGINT`, `SIGTERM` or `SIGHUP` too: from just after the temporary directory is created until this cleanup has finished, a listener for each removes the worktree and the temporary directory synchronously, then raises the same signal again, so on POSIX the exit status stays 128+N. On Windows a signal cannot be raised against the process again; the run exits with that same 128+N instead. A failed removal on this path is reported on stderr. The listener narrows the window rather than closing it: a signal sent to this process alone (not to its process group, as a terminal's Ctrl-C is) does not reach a `git worktree add` still running, and that child can finish registering the worktree after the cleanup has run, leaving it behind. `SIGKILL` cannot be caught, and leaves both behind; `SIGQUIT` and `SIGBREAK` are not handled either
 
 With file inputs: skip steps 1-3 and start at step 5.
 
@@ -682,7 +691,6 @@ Before creating the worktree, the following checks run in order; on failure, a c
 | Repository is not shallow (`git rev-parse --is-shallow-repository` is `false`) | `Repository is shallow. aburi diff requires base ref history. Run: git fetch --unshallow` | 1 |
 | Sparse-checkout is disabled (`git config --bool --default false core.sparseCheckout` is `false`; `--bool` reads `1`, `yes` and `on` as `true` too) | `Sparse-checkout detected. aburi diff requires full file tree. Disable with: git sparse-checkout disable` | 1 |
 | The index holds no submodules: no gitlink (mode `160000`) in `git ls-files -z --stage`, run at the head workspace root. This is the list `git submodule status` prints. `-z` is what keeps each path whole: without it git renders a path outside printable ASCII the way `core.quotePath` asks — double-quoted and octal-escaped — and under it each record is NUL-terminated and git's path quoting is bypassed entirely. `git worktree add` does not populate submodules, so the base side would see each one empty while the head holds its checkout. Neither **file** scan reads one: the head's walk stops at the submodule's `.git` ([`drop-list.md`](./drop-list.md) §3), and the paths are passed to both scans as `ignore` patterns matching each path literally as well. The warning names them. The resolution of declared package patterns still walks them, as pnpm does and without `ignore`, so a submodule that is itself a workspace package can still appear in the Component delta | `Submodules detected: <list>. Submodule-aware diff is not yet supported, so their files are left out of both file scans. Component detection still walks them, so a workspace package inside one can still be reported as a Component added or removed.` (warning; continue) | — |
-| On Windows, trial-check whether the base ref contains symbolic links | `Symbolic links in working tree may fail to materialize in worktree on Windows.` (warning; continue) | — |
 
 The two diagnosing questions are asked only once a ref has failed, so a run whose refs resolve pays for no extra git calls. Only an answer becomes a diagnosis: a question git refuses ends the run with git's own words rather than with a guess, because whatever refused the ref is still refusing, and a guess would replace the one precise sentence there is with a wrong one at the wrong exit code.
 
@@ -713,7 +721,18 @@ Nothing less: the pre-validation above refuses a shallow repository outright, so
 
 Every git command `aburi diff` runs, from the §6.4.1 pre-validation through the rename collection to the worktree steps, gets the caller's environment without `GIT_INDEX_FILE` and `GIT_PREFIX`. A commit hook exports both. `GIT_INDEX_FILE` names the index of the commit being made, and `git worktree add` checks the base out through whatever index it names: inherited as an absolute path, which `commit -a` and `commit <paths>` export in the main worktree and every commit exports in a linked worktree, it would overwrite that index and the commit would record the base revision's tree; inherited as the relative `.git/index` a plain `commit` exports in the main worktree, the worktree step would fail on the new worktree's `.git` file. `GIT_PREFIX` is the hook's directory inside the caller's tree.
 
-Everything else is passed on. `GIT_DIR` names the repository both scans are about, and for a bare repository driven with `GIT_WORK_TREE` it is the only thing that does. `GIT_WORK_TREE` is passed on for that same caller, because `git rev-parse --is-inside-work-tree` in §6.4.1 asks about the caller's working tree, and without it a mistyped ref would be diagnosed as a run from inside a git directory. The caller's `-c` settings (`GIT_CONFIG_PARAMETERS`) stay theirs.
+Everything else is passed on. `GIT_DIR` names the repository both scans are about, and for a bare repository driven with `GIT_WORK_TREE` it is the only thing that does. `GIT_WORK_TREE` is passed on for that same caller, because `git rev-parse --is-inside-work-tree` in §6.4.1 asks about the caller's working tree, and without it a mistyped ref would be diagnosed as a run from inside a git directory. The caller's `-c` settings (`GIT_CONFIG_PARAMETERS`) stay theirs. While `GIT_DIR` or `GIT_WORK_TREE` is set, the workspace-root walk asks git for the top of the working tree under the same environment ([`component-detect.md`](./component-detect.md) §2.1), so the head scan does not climb past the working tree these git commands see to a marker above it.
+
+#### 6.4.4 Symbolic Links Checked Out as Plain Files
+
+Discovery passes over a symbolic link ([`drop-list.md`](./drop-list.md) §3), but git does not always write one. Under `core.symlinks=false` it writes each link (mode `120000`) as a plain file holding the link's target, and that is the setting a Windows checkout usually has: Git for Windows' installer writes it into the system config, and `git init` and `git clone` can write it into the repository's even where links could be created. Turning the setting on afterwards leaves the files already checked out as they are. Such a file is not a link to discovery, so a scan reads it as source when a language claims its extension: a link `src/alias.ts -> main.ts` becomes a module whose text is `main.ts`, on the side that holds it.
+
+So each side lists its tracked links with `git ls-files -z --stage` — at the head workspace root, the same call as the submodule check (§6.4.1), and in the base worktree once it is checked out — and keeps those whose path in that checkout is a regular file. The listing looks at what git wrote rather than at `core.symlinks`: a fresh base worktree holds links the way the setting says, but the head's working tree holds them the way the setting said when each was checked out, and a link the head adds is in no base ref. After a side's scan, one warning, labelled with the side as its scan's own are (§5.6), names those of its links a Symbol in its IR came from: ten of them, then how many more. A link no Symbol came from puts nothing into the diff, so one whose extension no language claims (`AGENTS.md -> CLAUDE.md`) or that points at a directory is never named. The paths are written from the repository root, since both scans root there (§6.4 step 4), wherever the command ran. The files are still read: the warning says why the IR holds them, and the remedy it gives depends on the side:
+
+```
+⚠ base ref "<base>": <n> symbolic link(s) checked out as plain files holding their targets were read as source, where a scan passes over a link: <paths>. git writes a link that way while core.symlinks is false; set it to true where links can be created (on Windows, with Developer Mode).
+⚠ head (working tree): <n> symbolic link(s) checked out as plain files holding their targets were read as source, where a scan passes over a link: <paths>. Set core.symlinks to true where links can be created (on Windows, with Developer Mode), then check them out again with `git checkout -- <path>`, since a change to the setting leaves the files already checked out as they are.
+```
 
 ### 6.5 Exit Codes
 
@@ -800,6 +819,17 @@ the fault already had its exit code in the run that hit it, and failing here wou
 someone else's incident, on documents the caller pinned deliberately. `DiffReport.faultedScans`
 is `null` in this mode rather than empty, because "ran no scan" is not the same answer as "ran
 two clean scans".
+
+File mode also compares the `generator.plugins[]` the two documents record, by plugin name, and
+when they differ says so on one stderr line: each plugin only one side loaded,
+with its version and type, and each that both loaded under another type, version or grammar
+revision, ordered by name. The same source scanned with another plugin set is another IR — an
+effect plugin that only the base loaded leaves its `db.write` effects on the base side alone, and
+every Symbol that carried one reads as `changed` — so without the line a reviewer has no way to
+tell that wave from an edit. It is a warning, not a gate, and `diff.json` holds nothing of it. Ref
+mode never says it: both scans load the head's plugins (§6.4 step 3). A `frameworkHints` entry
+records its `hint-<name>` plugin at version `0.0.0` whatever its rules say, so the line names an
+entry added or removed but not one whose rules were edited.
 
 A planned `--quiet` would print the glyph line alone:
 ```
@@ -1109,10 +1139,16 @@ base scan's first warning, and the command still runs to its end — the head sc
 the base worktree's removal. What it writes after the reader left is lost, on stdout and on
 stderr alike. A pipeline under `set -o pipefail`, which GitHub Actions uses for `shell: bash`,
 reads the command's own answer, and `aburi explain` listing candidates into a closed pipe exits
-`2` rather than the `1` that means "not found". Any other failure to write either stream — a disk
-that refuses stdout or stderr redirected to a file — ends the process where the write failed,
-with `1` and Node's own report of the error. No cleanup runs: an `aburi diff` whose stderr is
-refused during the base scan leaves the base worktree and its temporary directory behind.
+`2` rather than the `1` that means "not found". Any other failure to write either stream — a
+descriptor opened only for reading, a disk that refuses stdout or stderr redirected to a file —
+is held until the run has finished, so the run goes on as it would for a reader that left: the
+artefacts, and the removal of the base worktree and its temporary directory. The command then
+exits `1` whatever code it reached, short of a fatal signal (§6.4 step 8), since the output it
+was asked for is incomplete, and writes one line naming the stream and the error on the other:
+`aburi: could not write to stderr: EBADF: bad file descriptor, write`. When stderr is the one
+that refused, that line goes to stdout, after everything the command wrote there: the exit code
+alone would not say which stream failed or why, so a stdout redirected to a file ends in it. When
+both streams refuse, that line is lost too, and the code still says `1`.
 
 The line between `1` and `2` is who has to act, not which subsystem failed. `2` covers the whole
 of what the reader wrote: a config that does not parse, does not conform, or names the same
@@ -1146,6 +1182,8 @@ Example: `aburi diff main..HEAD > result.txt 2> log.txt`
 Either stream may lose its reader part way through (`| head -1`). That costs the reader the rest of
 that stream and nothing else: the other stream, the artefacts and the exit code are what they
 would have been (§9).
+A stream that refuses a write for another reason costs the rest of that stream and the exit code,
+which is `1`; the other stream carries one more line, naming the refused stream and its error (§9).
 
 The `--json` flag of the planned `aburi vocab` would dedicate stdout to machine-readable JSON.
 
@@ -1365,7 +1403,8 @@ a command's option, not a global one (§3).
 | CL51 | `aburi scan` in a workspace holding a directory the process may not list, whether the census, a manifest search or discovery meets it, or `aburi init` there | exit 1, with `Directory "<path>" could not be listed` and the errno on stderr, after `Failed to resolve components: ` (scan) or `Failed to detect components: ` (init) when a component search meets it. With `.gitignore` excluding that directory and no declared package pattern reaching it, `aburi scan` exits 0 and the IR holds the rest of the workspace, and with `--no-respect-gitignore` it exits 1 |
 | CL52 | `aburi diff --base <ir> --head <ir>` or `aburi explain --ir <ir>` where the file opens with one byte order mark (U+FEFF) | Read as without it. Two of them, or one after the first character, is exit 2, `IR file "<path>" is not valid JSON` |
 | CL53 | `aburi scan` where `package.json` and `aburi.json` both open with one byte order mark | exit 0, the Component named after the `package.json` |
-| CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind. stdout on a descriptor that refuses writes (one opened read-only) still exits 1, with the errno on stderr |
+| CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind |
+| CL54a | `aburi scan`, or `aburi diff HEAD~1..HEAD` with and without a `--fail-on` that trips, whose stdout or stderr is a descriptor that refuses writes (one opened read-only), or `aburi explain` listing the candidates for an ambiguous target to a stdout that is one | exit 1 once the run has finished, over `0`, `3` or `2`: the other stream as the run writes it plus `aburi: could not write to <stream>: EBADF: bad file descriptor, write`, the same artefacts, and no base worktree or temporary directory left behind; with both streams faulted, one refusing and the other refusing or unread, exit 1 all the same |
 | CL55 | `aburi diff main..HEAD` with a `pluginOptions` key that names no loaded plugin (`config.md` C10) | The warning once, with no side label, while the base scan's own lines keep theirs; the exit code is the one the run has without the key |
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
 | CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |
@@ -1373,6 +1412,9 @@ a command's option, not a global one (§3).
 | CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
+| CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
+| CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
+| CL64 | `aburi diff HEAD~1..HEAD`, run from the repository root and from a subdirectory, where both refs hold symbolic links that git wrote as plain files, two with a source extension (one named outside ASCII), one without and one to a directory; where only the head adds them, with `core.symlinks` `false` and with it turned `true` after they were checked out; and, where links can be created, with both refs holding them as links | The first: one warning for each side naming the two links with a source extension, as written from the repository root, and the exit code the run has without them. The second: the head's warning alone. The third: no warning |
 
 ## 18. Design Decisions
 

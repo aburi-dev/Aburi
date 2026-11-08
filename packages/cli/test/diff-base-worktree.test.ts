@@ -12,7 +12,13 @@ import type { DiffResult } from "@aburi/types"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CliError, EXIT, runDiff } from "../src"
 import { fakeGit, refusedBy } from "./git"
-import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
+import {
+  TYPESCRIPT,
+  writeConfig,
+  writeDiffWorkspace,
+  writeFileAt,
+  writePackageJson,
+} from "./workspace"
 
 const workspace = useScratchWorkspace("diff-base-worktree")
 
@@ -27,10 +33,11 @@ function tempDirectoryAt(directory: string): void {
 /** A TypeScript repository whose one commit declares `one()`. */
 async function repository(directory: string, manifest = true): Promise<void> {
   await initRepository(directory)
-  if (manifest) await writePackageJson(directory, { name: "demo", private: true })
-  await writeConfig(directory, TYPESCRIPT)
-  await writeFileAt(directory, ".gitignore", "out/\n")
-  await writeFileAt(directory, "src/one.ts", "export function one(): number { return 1 }\n")
+  await writeDiffWorkspace(
+    directory,
+    { "src/one.ts": "export function one(): number { return 1 }\n" },
+    { manifest },
+  )
   await commitAll(directory, "c1")
 }
 

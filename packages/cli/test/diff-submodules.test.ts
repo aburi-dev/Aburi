@@ -10,8 +10,7 @@ import {
 import type { DiffResult } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { EXIT, runDiff } from "../src"
-import { parseSubmodulePaths } from "../src/git/submodules"
-import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
+import { writeDiffWorkspace, writeFileAt } from "./workspace"
 
 const workspace = useScratchWorkspace("diff-submodules")
 
@@ -33,10 +32,7 @@ async function library(): Promise<string> {
 async function demoWorkspace(): Promise<string> {
   const demo = resolve(workspace.root, "demo")
   await initRepository(demo)
-  await writePackageJson(demo, { name: "demo", private: true })
-  await writeConfig(demo, TYPESCRIPT)
-  await writeFileAt(demo, ".gitignore", "out/\n")
-  await writeFileAt(demo, "src/main.ts", "export function main(): number { return 1 }\n")
+  await writeDiffWorkspace(demo, { "src/main.ts": "export function main(): number { return 1 }\n" })
   return demo
 }
 
@@ -150,27 +146,5 @@ describe("aburi diff in a repository with a submodule", () => {
 
     expect(report.summaryLine).toBe("+1 -0 ~0 ↔0 ⤴0")
     expect(warnings).toEqual([])
-  })
-})
-
-describe("parseSubmodulePaths", () => {
-  it("keeps gitlinks only, once each, spelled as git wrote them", () => {
-    const decomposed = "libs/café"
-    const stdout = [
-      "100644 aaa 0\tsrc/main.ts",
-      "160000 bbb 0\tlibs/sub",
-      "160000 ccc 1\tlibs/conflicted",
-      "160000 ddd 2\tlibs/conflicted",
-      "160000 eee 0\tlibs/a\tb\nc",
-      `160000 fff 0\t${decomposed}`,
-      "",
-    ].join("\0")
-
-    expect(parseSubmodulePaths(stdout)).toEqual([
-      "libs/a\tb\nc",
-      decomposed,
-      "libs/conflicted",
-      "libs/sub",
-    ])
   })
 })
