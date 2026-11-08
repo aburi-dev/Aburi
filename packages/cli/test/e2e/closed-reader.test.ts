@@ -1,16 +1,14 @@
-import { spawnSync } from "node:child_process"
-import { open, readdir, rm } from "node:fs/promises"
-import { join } from "node:path"
+import { readdir, rm } from "node:fs/promises"
 import { commitAll, gitTestEnv, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DEFAULT_OUTPUT_DIRNAME, EXIT, type ExitCode } from "../../src"
 import { defaultOutput } from "../workspace"
 import {
-  CLI_BIN,
   linkedWorktrees,
   type OutputStream,
   removeWorktreeTempDirs,
   runBin,
+  type StreamFaults,
   useBuiltBin,
   worktreeTempDirs,
 } from "./bin"
@@ -38,10 +36,10 @@ afterEach(async () => {
   await removeWorktreeTempDirs(workspace.root)
 })
 
-async function runFromScratch(argv: readonly string[], unread: OutputStream | null = null) {
+async function runFromScratch(argv: readonly string[], faults: StreamFaults = {}) {
   // `explain` answers from the IR an earlier run left, and then has no scan to report on.
   await rm(defaultOutput(workspace.root), { recursive: true, force: true })
-  const run = await runBin(workspace.root, argv, gitTestEnv(workspace.root), unread)
+  const run = await runBin(workspace.root, argv, gitTestEnv(workspace.root), faults)
   const written = await readdir(defaultOutput(workspace.root), { recursive: true })
   return { ...run, written: written.sort() }
 }
@@ -64,7 +62,7 @@ describe("aburi, when the reader of stdout or stderr has gone", () => {
       expect(read.code).toBe(code)
       expect(read[unread], `the command writes to ${unread}`).not.toBe("")
 
-      const unreadRun = await runFromScratch(argv, unread)
+      const unreadRun = await runFromScratch(argv, { [unread]: "unread" })
       expect(unreadRun.code, unreadRun[other]).toBe(code)
       expect(unreadRun[other]).toBe(read[other])
       expect(unreadRun.written).toEqual(read.written)
@@ -72,21 +70,53 @@ describe("aburi, when the reader of stdout or stderr has gone", () => {
       expect(await worktreeTempDirs(workspace.root)).toEqual([])
     },
   )
+})
 
-  it("still exits 1, with Node's report of the error, when stdout refuses a write for another reason", async () => {
-    // A descriptor opened only for reading refuses every write, with EBADF on every OS.
-    const readOnly = await open(join(workspace.root, "package.json"), "r")
-    try {
-      const run = spawnSync(process.execPath, [CLI_BIN, "scan"], {
-        cwd: workspace.root,
-        env: gitTestEnv(workspace.root),
-        stdio: ["ignore", readOnly.fd, "pipe"],
-        encoding: "utf8",
-      })
-      expect(run.status).toBe(EXIT.RUNTIME)
-      expect(run.stderr).toContain("EBADF")
-    } finally {
-      await readOnly.close()
-    }
+const REFUSED = "EBADF: bad file descriptor, write"
+
+describe("aburi, when stdout or stderr refuses a write", () => {
+  it.each<[string, OutputStream, ExitCode]>([
+    ["scan", "stdout", EXIT.SUCCESS],
+    ["scan", "stderr", EXIT.SUCCESS],
+    ["diff HEAD~1..HEAD", "stdout", EXIT.SUCCESS],
+    ["diff HEAD~1..HEAD", "stderr", EXIT.SUCCESS],
+    ["diff HEAD~1..HEAD --fail-on added", "stdout", EXIT.GATE],
+    ["diff HEAD~1..HEAD --fail-on added", "stderr", EXIT.GATE],
+    ["explain o", "stdout", EXIT.INPUT_ERROR],
+  ])(
+    "`aburi %s` whose %s refuses writes runs to its end, exits 1 over %i and names the stream on the other",
+    async (command, refused, code) => {
+      const argv = command.split(" ")
+      const other: OutputStream = refused === "stdout" ? "stderr" : "stdout"
+
+      const read = await runFromScratch(argv)
+      expect(read.code).toBe(code)
+      expect(read[refused], `the command writes to ${refused}`).not.toBe("")
+
+      const refusedRun = await runFromScratch(argv, { [refused]: "refused" })
+      expect(refusedRun.code, refusedRun[other]).toBe(EXIT.RUNTIME)
+      expect(refusedRun[other]).toBe(
+        `${read[other]}aburi: could not write to ${refused}: ${REFUSED}\n`,
+      )
+      expect(refusedRun.written).toEqual(read.written)
+      expect(linkedWorktrees(workspace.root)).toEqual([])
+      expect(await worktreeTempDirs(workspace.root)).toEqual([])
+    },
+  )
+
+  it.each<[string, StreamFaults]>([
+    ["both refuse", { stdout: "refused", stderr: "refused" }],
+    ["stdout has no reader and stderr refuses", { stdout: "unread", stderr: "refused" }],
+    ["stdout refuses and stderr has no reader", { stdout: "refused", stderr: "unread" }],
+  ])("`aburi diff HEAD~1..HEAD` exits 1 over 0 when %s, and still cleans up", async (_, faults) => {
+    const argv = ["diff", "HEAD~1..HEAD"]
+    const read = await runFromScratch(argv)
+    expect(read.code).toBe(EXIT.SUCCESS)
+
+    const faulted = await runFromScratch(argv, faults)
+    expect(faulted.code).toBe(EXIT.RUNTIME)
+    expect(faulted.written).toEqual(read.written)
+    expect(linkedWorktrees(workspace.root)).toEqual([])
+    expect(await worktreeTempDirs(workspace.root)).toEqual([])
   })
 })
