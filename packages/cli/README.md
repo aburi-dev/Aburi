@@ -107,12 +107,15 @@ integration suite drive the CLI with captured streams and assert on the exit
 code without terminating the test process. A CLI entry point should assign
 `process.exitCode`, as the `aburi` bin does: `process.exit()` can truncate
 output still being written to a pipe (`aburi scan … | head`). Like the bin, it
-should also listen for `error` on its output streams, ignore `EPIPE` and
-rethrow the rest: Node reports a reader that closed early (`| head -1`) as that
-event, and with no listener the process exits 1 whatever `runCli` returned. The
-streams to listen on are the `stdout` and `stderr` it passes, when they are
-pipes or sockets, and `process.stderr` in any case, since the scan's log goes
-there whichever streams were passed.
+should also listen for `error` on its output streams, ignore `EPIPE`, and keep
+any other error rather than throw it, setting a non-zero `process.exitCode`
+once the event loop drains (`beforeExit`). Node reports both a reader that
+closed early (`| head -1`) and a write the descriptor refused as that event;
+with no listener, or one that rethrows, the process ends at that write, before
+`aburi diff` removes its base worktree. The streams to listen on are the
+`stdout` and `stderr` it passes, unless they are in-memory captures, and
+`process.stderr` in any case, since the scan's log goes there whichever streams
+were passed.
 
 ## See also
 

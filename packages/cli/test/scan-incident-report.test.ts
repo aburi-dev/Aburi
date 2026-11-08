@@ -1,5 +1,10 @@
-import type { SkippedFile, UnnameableRoot, UnrepresentableFile } from "@aburi/core"
-import { makeLanguageId } from "@aburi/core"
+import type {
+  IgnoredPublicApiReason,
+  SkippedFile,
+  UnnameableRoot,
+  UnrepresentableFile,
+} from "@aburi/core"
+import { makeComponentId, makeLanguageId } from "@aburi/core"
 import type { LspEnrichmentStats } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import type { ScanReport } from "../src"
@@ -361,6 +366,44 @@ describe("reportScanIncidents — LSP enrichment", () => {
   })
 })
 
+describe("reportScanIncidents — a package.json value that gave no publicApi entry", () => {
+  it.each<[IgnoredPublicApiReason, string, string]>([
+    ["package-directory", "./", '"./", the package directory rather than a file'],
+    ["directory", "./lib/", '"./lib/", a directory rather than a file'],
+    ["absolute-path", "/dist/index.js", '"/dist/index.js", an absolute path'],
+    ["parent-segment", "./src/../index.js", '"./src/../index.js", a path with a ".." segment'],
+    [
+      "drive-shaped-name",
+      "C:/dist/index.js",
+      '"C:/dist/index.js", a path whose first segment reads as a Windows drive',
+    ],
+    [
+      "unspellable-name",
+      "dist\\index.js",
+      '"dist\\\\index.js", a path holding a backslash, which no Document path can spell',
+    ],
+  ])("names the component, the manifest field and the value for %s", (reason, value, said) => {
+    const lines = incidentLinesFrom({ ignoredPublicApi: [ignoredMain(value, reason)] }, "base")
+
+    expect(lines).toEqual([
+      `⚠ base: Component "demo": pkgs/demo/package.json#main is ${said}, so it gives no publicApi entry.`,
+    ])
+  })
+})
+
+function ignoredMain(
+  value: string,
+  reason: IgnoredPublicApiReason,
+): ScanReport["ignoredPublicApi"][number] {
+  return {
+    component: makeComponentId("demo"),
+    manifestPath: "pkgs/demo/package.json",
+    field: "main",
+    value,
+    reason,
+  }
+}
+
 describe("reportScanIncidents — the other incidents", () => {
   it("groups unreleased parse trees by plugin, and states what the leak costs", () => {
     const lines = incidentLinesFrom({
@@ -395,21 +438,26 @@ describe("reportScanIncidents — the other incidents", () => {
     expect(lines[2]).toContain("parse tree(s) were not released")
   })
 
-  it("says a pluginOptions key that names no loaded plugin, unlabelled, between the frameworks line and the unrepresentable files", () => {
+  it("says the publicApi values, then a pluginOptions key that names no loaded plugin, unlabelled, between the frameworks line and the unrepresentable files", () => {
     const lines = incidentLinesFrom(
       {
         unrepresentableFiles: [unspellable("odd\\name.ts", "odd\\name.ts")],
         pluginNamedFrameworks: [{ component: "web", value: "lang-typescript", frameworkIds: [] }],
+        ignoredPublicApi: [ignoredMain("./lib/", "directory"), ignoredMain("/", "absolute-path")],
         loadedPlugins: ["lang-typescript", "effects-prisma"],
         strayPluginOptions: [{ key: "effects-prsima", hintEntry: null }],
       },
       "head",
     )
     expect(lines[0]).toContain('⚠ head: Component "web" lists "lang-typescript"')
-    expect(lines[1]).toBe(
+    expect(lines.slice(1, 3)).toEqual([
+      '⚠ head: Component "demo": pkgs/demo/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.',
+      '⚠ head: Component "demo": pkgs/demo/package.json#main is "/", an absolute path, so it gives no publicApi entry.',
+    ])
+    expect(lines[3]).toBe(
       '⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, effects-prisma).',
     )
-    expect(lines[2]).toContain("⚠ head: 1 file(s) were left out of the IR and out of its counts")
+    expect(lines[4]).toContain("⚠ head: 1 file(s) were left out of the IR and out of its counts")
   })
 
   it("names every file behind the recoverable-error count, uncapped and unlabelled", () => {
