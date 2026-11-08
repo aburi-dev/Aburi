@@ -140,7 +140,12 @@ describe("PluginInputError", () => {
   it.each([
     ["an empty callee", () => assertNonEmptySegments("", ORIGIN), "unnormalized-callee"],
     [
-      "a callee with an empty segment",
+      "a callee with an empty first segment",
+      () => assertNonEmptySegments(".create", ORIGIN),
+      "unnormalized-callee",
+    ],
+    [
+      "a callee with an empty later segment",
       () => assertNonEmptySegments("prisma..create", ORIGIN),
       "unnormalized-callee",
     ],
