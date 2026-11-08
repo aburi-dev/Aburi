@@ -100,6 +100,7 @@ describe("what a member beside a field makes of the class", () => {
     ["a declared field", "declare total: number"],
     ["an auto-accessor", "accessor total = 0"],
     ["a field whose initializer calls", "seed = compute()"],
+    ["a field a validation decorator marks", "@IsString() name: string = ''"],
     ["a comment", "// the rest is data"],
   ])("still hints a class of a field and %s as a pure DTO", async (_label, member) => {
     const source = classOf(FIELD, `  ${member}`)

@@ -160,7 +160,9 @@ function mergeManager(
     seen.add(key)
     workspaces.push({ ...found, relativeRoot })
   }
-  managers.push({ tool: scan.tool, roots: [...roots] })
+  const sameTool = managers.find((manager) => manager.tool === scan.tool)
+  if (sameTool === undefined) managers.push({ tool: scan.tool, roots: [...roots] })
+  else sameTool.roots = [...new Set([...sameTool.roots, ...roots])]
   return leftOut
 }
 
