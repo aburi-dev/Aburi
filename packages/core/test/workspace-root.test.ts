@@ -1,8 +1,8 @@
-import { chmod } from "node:fs/promises"
-import { join, relative } from "node:path"
-import { errorFrom } from "@aburi/test-support"
+import { chmod, symlink } from "node:fs/promises"
+import { dirname, join, relative } from "node:path"
+import { errorFrom, linkDirectory } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
-import { CoreError, detectWorkspaceRoot } from "../src/index"
+import { CoreError, detectWorkspaceRoot, type GitWorkTree } from "../src/index"
 import { useWorkspaceTree } from "./fixtures/workspace"
 
 const tree = useWorkspaceTree("core-workspace-root")
@@ -104,6 +104,93 @@ describe("the walk upward", () => {
     await tree.writeSource("vendor/lib/.git", "")
 
     expect(await rootFrom("vendor", "lib", "src")).toBe(tree.root)
+  })
+})
+
+describe("a working tree git reports for a repository kept outside it", () => {
+  const rootFor = (workTree: GitWorkTree, ...segments: string[]) =>
+    detectWorkspaceRoot({ cwd: join(tree.root, ...segments), workTree })
+  const named = (...segments: string[]): GitWorkTree => ({ top: join(tree.root, ...segments) })
+
+  /** A work tree holding no marker of its own, below one the plain walk would climb to. */
+  async function workTreeBelowMarker(): Promise<string> {
+    await tree.writeSource("pnpm-workspace.yaml", "packages: []")
+    await tree.mkdir("outer/wt/src")
+    await tree.mkdir("outer/other")
+    return join(tree.root, "outer", "wt")
+  }
+
+  it.each<[string, () => GitWorkTree, string[]]>([
+    ["from the top", () => named("outer", "wt"), ["outer", "wt"]],
+    ["from below it", () => named("outer", "wt"), ["outer", "wt", "src"]],
+    ["named relative to the start", () => ({ top: ".." }), ["outer", "wt", "src"]],
+  ])(
+    "roots at the top git names, though a marker sits above it, %s",
+    async (_, workTree, start) => {
+      const top = await workTreeBelowMarker()
+
+      expect(await rootFor(workTree(), ...start)).toBe(top)
+    },
+  )
+
+  it.each<[string, string[], string, string]>([
+    ["named as is, from below a link pointing shallower", ["outer", "wt"], "x/y/link", "q"],
+    ["named through a link, from below a link pointing deeper", ["alias"], "link", "a/b/c"],
+  ])(
+    "meets the top as the ancestor that is the same directory, %s than it sits",
+    async (_, top, link, target) => {
+      const workTree = await workTreeBelowMarker()
+      await linkDirectory(workTree, join(tree.root, "alias"))
+      await tree.mkdir(join("outer", "wt", target, "sub"))
+      await tree.mkdir(join("outer", "wt", dirname(link)))
+      await linkDirectory(join(workTree, target), join(workTree, link))
+
+      const start = join(workTree, link, "sub")
+      expect(await detectWorkspaceRoot({ cwd: start, workTree: named(...top) })).toBe(workTree)
+    },
+  )
+
+  it("still stops at a repository between the start and the top", async () => {
+    const workTree = await workTreeBelowMarker()
+    await tree.mkdir("outer/wt/vendor/lib/.git")
+    await tree.mkdir("outer/wt/vendor/lib/src")
+
+    expect(await rootFor(named("outer", "wt"), "outer", "wt", "vendor", "lib", "src")).toBe(
+      join(workTree, "vendor", "lib"),
+    )
+  })
+
+  it.each<[string, string, string[]]>([
+    ["a sibling of the top", "wt", ["outer", "other"]],
+    ["the top's parent", "wt", ["outer"]],
+    ["below a top that is gone", "gone", ["outer", "wt", "src"]],
+  ])("walks as if git had not answered from a start at %s", async (_, top, start) => {
+    await workTreeBelowMarker()
+
+    expect(await rootFor(named("outer", top), ...start)).toBe(tree.root)
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "raises a top it cannot resolve for any reason but its absence",
+    async () => {
+      await workTreeBelowMarker()
+      await symlink("loop", join(tree.root, "outer", "loop"))
+
+      await expect(rootFor(named("outer", "loop"), "outer", "wt", "src")).rejects.toThrow("ELOOP")
+    },
+  )
+
+  it("roots at a start git takes as the top for want of a name, though a marker sits above it", async () => {
+    await workTreeBelowMarker()
+
+    expect(await rootFor("start", "outer", "wt", "src")).toBe(join(tree.root, "outer", "wt", "src"))
+  })
+
+  it("roots at the `.git` above a start git takes as the top, as a hook run from a package does", async () => {
+    await tree.mkdir(".git")
+    await tree.mkdir("packages/app")
+
+    expect(await rootFor("start", "packages", "app")).toBe(tree.root)
   })
 })
 

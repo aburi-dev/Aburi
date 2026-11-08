@@ -195,4 +195,8 @@ export {
   type UnresolvedDeclaration,
   type WorkspaceCandidate,
 } from "./workspace"
-export { type DetectWorkspaceRootOptions, detectWorkspaceRoot } from "./workspace-root"
+export {
+  type DetectWorkspaceRootOptions,
+  detectWorkspaceRoot,
+  type GitWorkTree,
+} from "./workspace-root"
