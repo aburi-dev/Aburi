@@ -1,4 +1,5 @@
-import type { ImportEdge, Symbol as IRSymbol, Logger, ParseError } from "@aburi/types"
+import type { ImportEdge, Symbol as IRSymbol, Logger, ParseError, ThisBinding } from "@aburi/types"
+import type { ThisBindingSites } from "../call-site"
 import { countBy } from "../collections"
 import { CoreError } from "../errors"
 import { symbolIdFile } from "../id"
@@ -33,6 +34,7 @@ export interface ExtractedFiles {
   importsByFile: Map<string, readonly ImportEdge[]>
   fileContents: Map<string, ReadFile>
   dynamicCallSites: Set<string>
+  thisBindings: ThisBindingSites
 }
 
 type Ran = Extract<FileOutcome, { kind: "ran" }>
@@ -44,6 +46,10 @@ type Ran = Extract<FileOutcome, { kind: "ran" }>
 export class ExtractionCollator {
   readonly #files: readonly DiscoveredFile[]
   readonly #logger: Logger
+  readonly #thisBindings: Record<ThisBinding, Set<string>> = {
+    class: new Set(),
+    instance: new Set(),
+  }
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -56,6 +62,7 @@ export class ExtractionCollator {
     importsByFile: new Map(),
     fileContents: new Map(),
     dynamicCallSites: new Set(),
+    thisBindings: this.#thisBindings,
   }
   readonly #onceSeen = new Set<string>()
   readonly #resolverLinesSaid = new Set<string>()
@@ -249,6 +256,7 @@ export class ExtractionCollator {
         out.symbols.push(...result.symbols)
         out.importsByFile.set(result.path, result.imports)
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
+        for (const [key, binding] of result.thisBindings) this.#thisBindings[binding].add(key)
         return
       }
       default:

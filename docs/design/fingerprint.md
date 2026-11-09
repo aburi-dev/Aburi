@@ -186,7 +186,7 @@ The rule strings are the ones the IR holds, already in the ir-schema.md §8.2 fo
 
 `effects` is built in two segments, split on `Effect.propagated`, the one field besides `target` the input reads ([`effect-propagation.md`](./effect-propagation.md) §5.1):
 
-1. **Locally detected effects** (`propagated` absent or `false`), in input order (= call order = ascending `line`), one entry per effect: a target called twice is two entries.
+1. **Locally detected effects** (`propagated` absent or `false`), in input order (= call order: ascending `line`, and on one line the order the language plugin wrote the calls in), one entry per effect: a target called twice is two entries.
 2. **Propagated effects** (`propagated: true`), after every locally detected one, by `canonical(target)` alone: sorted ascending by UTF-16 code unit, each target once, and leaving out any target segment 1 already holds.
 
 Segment 2 is not read as the IR stores it. The IR orders that segment by `(id, target)` and merges it on that pair ([`effect-propagation.md`](./effect-propagation.md) §5.1, §8), and `id` is not part of the input (below), so reading it as stored would let an id change reorder a caller's targets, repeat one, or leave in place a target the caller's own effects already name. Each moves the `logic` of every transitive caller while the callee's own stays put (§4.5). Propagated entries have no call-site position, and propagation already merges their repeats, so this loses nothing §4.7 protects.
@@ -243,6 +243,8 @@ These are explicitly declared as "not yet guaranteed". A field rename appearing 
 By design, the order of effects can carry meaning (transaction boundaries, idempotency, retry safety). Discarding order would give "DB write before event publish" and "event publish before DB write" the same fingerprint, making refactoring-induced bugs undetectable in the diff.
 
 As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise.
+
+The order kept is source order (§4.1), which is the order effects run in only for calls written one after another. A language plugin writes a call before the calls inside it ([lang-plugin.md](./lang-plugin.md) §5.1), so `x.save(y.publish())` hashes as `[x.save, y.publish]` although `y.publish` runs first, and rewriting it as `x.save(); y.publish()` leaves `logic` where it was.
 
 This applies to locally detected effects, each of which sits at a call site in the body. Propagated effects have none: propagation appends them after the local ones in `(id, target)` order ([`effect-propagation.md`](./effect-propagation.md) §8), an order that never followed the sequence in which the callees' side effects run. The fingerprint therefore reads them by target alone (§4.1, §4.5), which loses no ordering this section protects.
 
@@ -424,7 +426,7 @@ The reference implementation and every language plugin must pass the following t
 | ID | Mutation | Expected |
 |---|---|---|
 | L6 | Reorder rules | logic changes |
-| L7 | Reorder locally detected effects | logic changes |
+| L7 | Reorder locally detected effects, including two written one after another on one line | logic changes |
 | L8 | Change a rule's condition | logic changes |
 | L9 | Change an effect's target | logic changes |
 | L10 | Add / remove an effect, locally detected or propagated (a propagated one on a target no other effect of the Symbol names) | logic changes |
