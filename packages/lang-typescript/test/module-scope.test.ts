@@ -119,6 +119,12 @@ describe("a function a const's initializer or a default export runs in place", (
   it.each([
     ["a const", "export const h = (() => { q() })()", "h", "export-keyword"],
     [
+      "a const that calls through an index on its result",
+      'export const h = (() => { q() })()["run"]()',
+      "h",
+      "export-keyword",
+    ],
+    [
       "a const that awaits it",
       "export const h = await (async () => { q() })()",
       "h",
@@ -135,8 +141,10 @@ describe("a function a const's initializer or a default export runs in place", (
     expect(await idsOf(source)).toEqual([id])
   })
 
-  it("leads the functions the rest of the chain is handed", async () => {
-    const source = "export const h = (async () => { q() })().then(() => { r() })"
+  it.each([
+    ["a member access", "export const h = (async () => { q() })().then(() => { r() })"],
+    ["an index", 'export const h = (async () => { q() })()["then"](() => { r() })'],
+  ])("leads the functions the rest of the chain is handed, through %s", async (_label, source) => {
     const symbol = await symbolOf(source, "ts:src/a.ts#h")
 
     expect(symbol.derivedBy).toEqual([
