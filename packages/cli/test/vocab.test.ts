@@ -41,7 +41,15 @@ const FRAMEWORK: PluginManifest = {
 
 const LANG: PluginManifest = { ...LANG_MANIFEST, name: "lang-acme", version: "0.1.0" }
 
+const EFFECTS_ZETA: PluginManifest = {
+  ...EFFECTS_MANIFEST,
+  name: "effects-zeta",
+  provides: { ...EFFECTS_MANIFEST.provides, derivedByPrefixes: [] },
+}
+
 const BETA_HINT = { name: "beta", decorators: { BetaJob: { extKind: "framework:beta:job" } } }
+
+const ALPHA_HINT = { name: "alpha", decorators: { AlphaJob: { extKind: "framework:alpha:job" } } }
 
 async function writePlugin(rel: string, manifest: PluginManifest): Promise<void> {
   // A manifest is all `aburi vocab` reads, so an `init` that ran would end the run.
@@ -203,7 +211,42 @@ describe("aburi vocab — the tables", () => {
     expect(lines).toHaveLength(CORE_EFFECTS.length + 3)
   })
 
-  it("writes list as titled sections, an empty one as (none), no line ending in a space", async () => {
+  it("writes list as titled sections, the Effects one the effects table", async () => {
+    await writeAcmeWorkspace()
+
+    const { code, stdout } = await vocab("list")
+    const effects = (await vocab("effects")).stdout.trimEnd().split("\n")
+
+    expect(code).toBe(EXIT.SUCCESS)
+    expect(stdout).toBe(
+      [
+        "Plugins",
+        `  lang-acme       0.1.0  lang       languages "./plugins/lang.mjs"`,
+        `  framework-acme  2.0.0  framework  frameworks "./plugins/framework.mjs"`,
+        `  effects-acme    1.2.3  effects    effects "./plugins/effects.mjs"`,
+        `  hint-beta       0.0.0  framework  frameworkHints "beta"`,
+        "",
+        "Effects",
+        ...effects.map((line) => `  ${line}`),
+        "",
+        "extKinds",
+        "  framework-acme  framework:acme:job  class  Acme job",
+        "  framework-acme  (prefix framework:acme)",
+        "  hint-beta       (prefix framework:hint:beta)",
+        "",
+        "Frameworks",
+        "  framework-acme  acme",
+        "  hint-beta       beta",
+        "",
+        "derivedBy prefixes",
+        "  framework-acme  framework:acme",
+        "  effects-acme    effects-plugin:acme",
+        "",
+      ].join("\n"),
+    )
+  })
+
+  it("writes an empty section as (none), no line ending in a space", async () => {
     await writePlugin("plugins/lang.mjs", LANG)
     await writeConfig(workspace.root, { languages: ["./plugins/lang.mjs"] })
 
@@ -343,17 +386,18 @@ describe("aburi vocab who-owns", () => {
     ])
   })
 
-  it("exits 1 for a value in no vocabulary, saying so on stderr, or with no owners under --json", async () => {
+  it("exits 1 for a value in no vocabulary, saying so on stderr, under --json beside no owners", async () => {
     await writeAcmeWorkspace()
+    const noOwner =
+      'No owner for "x-nobody:thing": it is no core effect id, and no loaded plugin declares it or a prefix over it.\n'
 
     expect(await vocab("who-owns", "x-nobody:thing")).toEqual({
       code: EXIT.RUNTIME,
       stdout: "",
-      stderr:
-        'No owner for "x-nobody:thing": it is no core effect id, and no loaded plugin declares it or a prefix over it.\n',
+      stderr: noOwner,
     })
     const json = await vocab("who-owns", "x-nobody:thing", "--json")
-    expect(json.code).toBe(EXIT.RUNTIME)
+    expect(json).toMatchObject({ code: EXIT.RUNTIME, stderr: noOwner })
     expect(JSON.parse(json.stdout)).toEqual({ value: "x-nobody:thing", owners: [] })
   })
 })
@@ -365,7 +409,7 @@ describe("aburi vocab — what it loads", () => {
     expect(run.code).toBe(EXIT.SUCCESS)
     expect(JSON.parse(run.stdout)).toEqual({ effects: coreRows, effectPrefixes: [] })
     expect(run.stderr).toBe(
-      "⚠ No aburi.json was found, so no plugin is loaded: only the core effect vocabulary is known.\n",
+      "⚠ No aburi.json or aburi.jsonc was found, so no plugin is loaded: only the core effect vocabulary is known.\n",
     )
   })
 
@@ -380,6 +424,25 @@ describe("aburi vocab — what it loads", () => {
     })
   })
 
+  it("keeps the config's order within a field", async () => {
+    await writePlugin("plugins/zeta.mjs", EFFECTS_ZETA)
+    await writeAcmeWorkspace({
+      effects: ["./plugins/zeta.mjs", "./plugins/effects.mjs"],
+      frameworkHints: [BETA_HINT, ALPHA_HINT],
+    })
+
+    const run = await vocab("plugins", "--json")
+
+    expect(JSON.parse(run.stdout).plugins.map(({ name }: { name: string }) => name)).toEqual([
+      "lang-acme",
+      "framework-acme",
+      "effects-zeta",
+      "effects-acme",
+      "hint-beta",
+      "hint-alpha",
+    ])
+  })
+
   it("lists a plugin listed twice once, under the entry that loaded it first", async () => {
     await writeAcmeWorkspace({
       effects: ["./plugins/effects.mjs", "./plugins/../plugins/effects.mjs"],
@@ -390,14 +453,26 @@ describe("aburi vocab — what it loads", () => {
     expect(JSON.parse(run.stdout).plugins).toEqual(PLUGINS)
   })
 
-  it("exits 3 naming the config entry for a plugin that fails to import", async () => {
-    await writeAcmeWorkspace({ effects: ["./plugins/missing.mjs"] })
+  it.each([
+    ["fails to import", "./plugins/missing.mjs", 'Failed to import plugin "./plugins/missing.mjs"'],
+    [
+      "has a manifest without a version",
+      "./plugins/unversioned.mjs",
+      'Plugin "./plugins/unversioned.mjs" cannot be registered: Plugin "effects-nov" manifest version must be a string (got undefined).',
+    ],
+  ])("exits 3 naming the config entry for a plugin that %s", async (_, ref, says) => {
+    await writeFileAt(
+      workspace.root,
+      "plugins/unversioned.mjs",
+      `${pluginModuleSource({ ...EFFECTS, name: "effects-nov" }, "")}delete plugin.manifest.version\n`,
+    )
+    await writeAcmeWorkspace({ effects: [ref] })
 
     const run = await vocab("list")
 
     expect(run.code).toBe(EXIT.GATE)
     expect(run.stdout).toBe("")
-    expect(run.stderr).toContain('Failed to import plugin "./plugins/missing.mjs"')
+    expect(run.stderr).toContain(says)
   })
 
   it("exits 2 naming the hint for a frameworkHints entry the registry refuses", async () => {
@@ -410,17 +485,33 @@ describe("aburi vocab — what it loads", () => {
   })
 
   it.each([
-    [[]],
-    [["nope"]],
-    [["who-owns"]],
-    [["who-owns", "a", "b"]],
-    [["list", "--config", "aburi.json", "--config", "aburi.json"]],
-  ])("exits 2 for vocab %j", async (argv) => {
-    await writeAcmeWorkspace()
+    [["--config", "custom.json", "plugins"], {}],
+    [["plugins", "--config", "custom.json"], {}],
+    [["plugins"], { ABURI_CONFIG: "custom.json" }],
+  ])("reads the config vocab %j names with env %j", async (argv, env) => {
+    await writePlugin("plugins/effects.mjs", EFFECTS)
+    await writeConfig(workspace.root, { effects: ["./plugins/effects.mjs"] }, "custom.json")
 
+    expect(await runCliIn(workspace.root, ["vocab", ...argv], env)).toEqual({
+      code: EXIT.SUCCESS,
+      stdout: `effects-acme  1.2.3  effects  effects "./plugins/effects.mjs"\n`,
+      stderr: "",
+    })
+  })
+
+  it.each([
+    [[], "Usage: aburi vocab [options] [command]"],
+    [["nope"], "error: unknown command 'nope'"],
+    [["who-owns"], "error: missing required argument 'value'"],
+    [
+      ["who-owns", "a", "b"],
+      "error: too many arguments for 'who-owns'. Expected 1 argument but got 2: a, b.",
+    ],
+  ])("exits 2 for vocab %j, saying why", async (argv, says) => {
     const run = await vocab(...argv)
 
     expect(run.code).toBe(EXIT.INPUT_ERROR)
     expect(run.stdout).toBe("")
+    expect(run.stderr.split("\n")[0]).toBe(says)
   })
 })

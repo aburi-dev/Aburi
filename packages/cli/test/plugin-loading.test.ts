@@ -284,6 +284,14 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
       },
       'Plugin "./framework-odd.mjs" cannot be registered: Plugin manifest contains a non-JSON value (undefined) at $.homepage',
     ],
+    [
+      "has a manifest without a version",
+      ["./framework-nov.mjs"],
+      {
+        "framework-nov.mjs": `${frameworkModule("framework-nov", {})}delete plugin.manifest.version\n`,
+      },
+      'Plugin "./framework-nov.mjs" cannot be registered: Plugin "framework-nov" manifest version must be a string (got undefined).',
+    ],
   ])(
     "exits 3 for a plugin that %s, naming its config entry, before writing anything",
     async (_, frameworks, files, says) => {

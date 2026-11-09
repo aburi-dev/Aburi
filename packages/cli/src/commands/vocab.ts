@@ -1,6 +1,6 @@
 import { CORE_EFFECTS } from "@aburi/core"
 import { isUnderPrefix, type VocabRegistry } from "@aburi/plugin-registry"
-import type { PluginManifest, SymbolKind } from "@aburi/types"
+import type { ExtKindVocab, PluginManifest, SymbolKind } from "@aburi/types"
 import { loadPinnedConfig, pinConfig } from "../config-load"
 import { internalFault } from "../errors"
 import { EXIT, type ExitCode } from "../exit-codes"
@@ -20,7 +20,7 @@ export interface VocabOptions {
 
 export interface VocabOutcome {
   stdout: string
-  /** Lines for stderr, in the order they are to be written, ahead of stdout. */
+  /** Lines for stderr, each without its line ending, in the order they are to be written, ahead of stdout. */
   stderr: readonly string[]
   exitCode: ExitCode
 }
@@ -56,6 +56,7 @@ export interface VocabFramework {
   owner: string
 }
 
+/** The document `vocab list --json` writes; the other list subcommands write some of its keys. */
 export interface Vocabulary {
   plugins: VocabPlugin[]
   effects: VocabEffect[]
@@ -66,22 +67,40 @@ export interface Vocabulary {
   derivedByPrefixes: VocabPrefix[]
 }
 
-export type VocabularyKind = "effect" | "extKind" | "framework" | "derivedBy"
-
-export interface VocabOwner {
-  vocabulary: VocabularyKind
-  declaration: "core" | "explicit" | "prefix"
-  prefix: string | null
-  description: string | null
-  /** extKind entries only: null when a prefix covers the value. */
-  baseKind?: SymbolKind | null
-  plugin: VocabPlugin | null
+interface Enumerated {
+  declaration: "explicit"
+  prefix: null
+  description: string
 }
+
+interface UnderPrefix {
+  declaration: "prefix"
+  prefix: string
+  description: null
+}
+
+interface Owned {
+  plugin: VocabPlugin
+}
+
+/** One of the `owners` that `vocab who-owns --json` writes. */
+export type VocabOwner =
+  | { vocabulary: "effect"; declaration: "core"; prefix: null; description: string; plugin: null }
+  | ({ vocabulary: "effect" } & (Enumerated | UnderPrefix) & Owned)
+  | ({ vocabulary: "extKind" } & (
+      | (Enumerated & { baseKind: SymbolKind })
+      | (UnderPrefix & { baseKind: null })
+    ) &
+      Owned)
+  | ({ vocabulary: "framework"; declaration: "explicit"; prefix: null; description: null } & Owned)
+  | ({ vocabulary: "derivedBy" } & UnderPrefix & Owned)
+
+export type VocabularyKind = VocabOwner["vocabulary"]
 
 const VOCAB_PHASE = " while listing the vocabulary"
 
 const NO_CONFIG =
-  "⚠ No aburi.json was found, so no plugin is loaded: only the core effect vocabulary is known."
+  "⚠ No aburi.json or aburi.jsonc was found, so no plugin is loaded: only the core effect vocabulary is known."
 
 export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
   const cwd = options.cwd ?? process.cwd()
@@ -97,14 +116,18 @@ export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
   const { query } = options
   if (query.kind === "who-owns") {
     const owners = whoOwns(query.value, plugins.registry, plugins.listedIn)
-    const exitCode = owners.length === 0 ? EXIT.RUNTIME : EXIT.SUCCESS
-    if (json) {
-      return { stdout: renderJson({ value: query.value, owners }), stderr: notes, exitCode }
-    }
     if (owners.length === 0) {
-      return { stdout: "", stderr: [...notes, noOwnerLine(query.value)], exitCode }
+      return {
+        stdout: json ? renderJson({ value: query.value, owners }) : "",
+        stderr: [...notes, noOwnerLine(query.value)],
+        exitCode: EXIT.RUNTIME,
+      }
     }
-    return { stdout: renderOwners(owners), stderr: notes, exitCode }
+    return {
+      stdout: json ? renderJson({ value: query.value, owners }) : renderOwners(owners),
+      stderr: notes,
+      exitCode: EXIT.SUCCESS,
+    }
   }
   const vocabulary = readVocabulary(plugins.registry, plugins.listedIn)
   const stdout = json
@@ -113,7 +136,7 @@ export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
   return { stdout, stderr: notes, exitCode: EXIT.SUCCESS }
 }
 
-/** Everything `registry` holds, plus the core effect ids, in the order of loading. */
+/** The core effect ids, then what each registered plugin declares, in load order. */
 function readVocabulary(
   registry: VocabRegistry,
   listedIn: ReadonlyMap<string, PluginListing>,
@@ -178,15 +201,6 @@ function whoOwns(
   listedIn: ReadonlyMap<string, PluginListing>,
 ): VocabOwner[] {
   const plugin = (manifest: PluginManifest) => pluginEntry(manifest, listedIn)
-  // The registry answers an enumerated id with its description and a covered one with null.
-  const declared = (
-    description: string | null,
-    prefixes: readonly string[],
-    owner: PluginManifest,
-  ): Pick<VocabOwner, "declaration" | "prefix" | "description"> =>
-    description === null
-      ? { declaration: "prefix", prefix: coveringPrefix(value, prefixes, owner), description }
-      : { declaration: "explicit", prefix: null, description }
   const owners: VocabOwner[] = []
 
   const core = CORE_EFFECTS.find((effect) => effect.id === value)
@@ -200,10 +214,13 @@ function whoOwns(
       plugin: null,
     })
   } else if (effect !== null) {
+    const { description, owner } = effect
     owners.push({
       vocabulary: "effect",
-      ...declared(effect.description, effect.owner.provides.effectPrefixes, effect.owner),
-      plugin: plugin(effect.owner),
+      ...(description === null
+        ? underPrefix(value, owner.provides.effectPrefixes, owner)
+        : enumerated(description)),
+      plugin: plugin(owner),
     })
   }
 
@@ -211,8 +228,7 @@ function whoOwns(
   if (extKind !== null) {
     owners.push({
       vocabulary: "extKind",
-      ...declared(extKind.description, extKind.owner.provides.extKindPrefixes, extKind.owner),
-      baseKind: extKind.baseKind,
+      ...extKindDeclaration(value, extKind),
       plugin: plugin(extKind.owner),
     })
   }
@@ -232,11 +248,36 @@ function whoOwns(
   if (derivedByOwner !== null) {
     owners.push({
       vocabulary: "derivedBy",
-      ...declared(null, derivedByOwner.provides.derivedByPrefixes, derivedByOwner),
+      ...underPrefix(value, derivedByOwner.provides.derivedByPrefixes, derivedByOwner),
       plugin: plugin(derivedByOwner),
     })
   }
   return owners
+}
+
+function enumerated(description: string): Enumerated {
+  return { declaration: "explicit", prefix: null, description }
+}
+
+function underPrefix(
+  value: string,
+  prefixes: readonly string[],
+  owner: PluginManifest,
+): UnderPrefix {
+  return {
+    declaration: "prefix",
+    prefix: coveringPrefix(value, prefixes, owner),
+    description: null,
+  }
+}
+
+// The registry answers an enumerated id with its description and base kind, a covered one with null.
+function extKindDeclaration(
+  value: string,
+  { description, baseKind, owner }: ExtKindVocab,
+): (Enumerated & { baseKind: SymbolKind }) | (UnderPrefix & { baseKind: null }) {
+  if (description !== null && baseKind !== null) return { ...enumerated(description), baseKind }
+  return { ...underPrefix(value, owner.provides.extKindPrefixes, owner), baseKind: null }
 }
 
 function coveringPrefix(value: string, prefixes: readonly string[], owner: PluginManifest): string {
@@ -314,7 +355,7 @@ function listingCell({ field, ref }: PluginListing): string {
   return `${field} "${ref}"`
 }
 
-/** One plugin's enumerated entries, then its prefixes, so that the owner column reads in runs. */
+/** So that the owner column reads in runs. */
 function byOwner<E extends { owner: string | null }>(
   vocabulary: Vocabulary,
   entries: readonly E[],
@@ -359,10 +400,7 @@ function lines(rendered: readonly string[]): string {
   return rendered.map((line) => `${line}\n`).join("")
 }
 
-/**
- * Pads each cell but a row's last to the widest cell another cell follows in its column, after
- * dropping empty trailing cells: a row that ends early does not push the next column out.
- */
+/** A row that ends early does not push the next column out. */
 function alignRows(rows: readonly Row[]): string[] {
   const trimmed = rows.map((row) => {
     let end = row.length
@@ -410,7 +448,7 @@ function ownerBlock(owner: VocabOwner): string[] {
       )
       break
   }
-  if (owner.baseKind !== undefined && owner.baseKind !== null) {
+  if (owner.vocabulary === "extKind" && owner.declaration === "explicit") {
     block.push(field("Base kind", owner.baseKind))
   }
   if (owner.description !== null) block.push(field("Description", owner.description))

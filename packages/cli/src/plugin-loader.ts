@@ -25,7 +25,7 @@ export interface LoadedPlugins {
   effects: EffectPlugin[]
   registry: VocabRegistry
   /** By manifest name. A plugin listed twice keeps its first entry, as the registry keeps it once. */
-  listedIn: Map<string, PluginListing>
+  listedIn: ReadonlyMap<string, PluginListing>
 }
 
 /** The config entry a plugin was loaded from: a plugin ref, or a `frameworkHints` entry's name. */
@@ -44,12 +44,10 @@ export interface LoadPluginsOptions {
 
 export async function loadPlugins(options: LoadPluginsOptions): Promise<LoadedPlugins> {
   const registry = new VocabRegistry()
-  const loaded: LoadedPlugins = {
-    languages: [],
-    frameworks: [],
-    effects: [],
-    registry,
-    listedIn: new Map(),
+  const listedIn = new Map<string, PluginListing>()
+  const loaded: LoadedPlugins = { languages: [], frameworks: [], effects: [], registry, listedIn }
+  const list = (name: string, listing: PluginListing) => {
+    if (!listedIn.has(name)) listedIn.set(name, listing)
   }
   const importFn = options.importModule ?? defaultImport
   const pluginRefRoot = options.pluginRefRoot ?? options.workspaceRoot
@@ -65,17 +63,12 @@ export async function loadPlugins(options: LoadPluginsOptions): Promise<LoadedPl
     const plugin = pickPlugin(module, ref)
     registerManifest(registry, plugin.manifest, ref)
     routePlugin(plugin, field, loaded, ref)
-    if (!loaded.listedIn.has(plugin.manifest.name)) {
-      loaded.listedIn.set(plugin.manifest.name, { field, ref })
-    }
+    list(plugin.manifest.name, { field, ref })
   }
   for (const plugin of options.syntheticPlugins ?? []) {
     registerHint(registry, plugin.manifest)
     loaded.frameworks.push(plugin)
-    loaded.listedIn.set(plugin.manifest.name, {
-      field: "frameworkHints",
-      ref: hintName(plugin.manifest),
-    })
+    list(plugin.manifest.name, { field: "frameworkHints", ref: hintName(plugin.manifest) })
   }
   return loaded
 }

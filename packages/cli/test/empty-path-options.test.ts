@@ -22,6 +22,8 @@ describe("an option that takes a path, given an empty value", () => {
     [["explain", "alpha", "--ir", ""], empty("--ir")],
     [["explain", "alpha", "--output", ""], empty("--output")],
     [["explain", "alpha", "--config", ""], empty("--config")],
+    [["vocab", "list", "--config", ""], empty("--config")],
+    [["vocab", "--config=", "list"], empty("--config")],
   ])("%j exits 2 naming the option, and writes or removes nothing", async (argv, message) => {
     const earlier = await writeEarlierReports(workspace.root, [".", "out"])
     const { code, stdout, stderr } = await runCliIn(workspace.root, argv)

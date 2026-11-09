@@ -4,7 +4,7 @@ export interface CoreEffect {
 }
 
 /** The core effect vocabulary, in the order the IR schema lists it. No plugin owns these. */
-export const CORE_EFFECTS: readonly CoreEffect[] = [
+export const CORE_EFFECTS = [
   { id: "db.read", description: "Database read" },
   { id: "db.write", description: "Database write" },
   { id: "db.transaction", description: "Database transaction" },
@@ -27,11 +27,13 @@ export const CORE_EFFECTS: readonly CoreEffect[] = [
   { id: "env.write", description: "Environment variable written" },
   { id: "process.exit", description: "Process exit" },
   { id: "process.signal", description: "Process signal sent or handled" },
-]
+] as const satisfies readonly CoreEffect[]
+
+export type CoreEffectId = (typeof CORE_EFFECTS)[number]["id"]
 
 const CORE_EFFECT_IDS: ReadonlySet<string> = new Set(CORE_EFFECTS.map((effect) => effect.id))
 
 /** Whether `id` is one of the core effect ids, which no plugin owns and any may emit. */
-export function isCoreEffectId(id: string): boolean {
+export function isCoreEffectId(id: string): id is CoreEffectId {
   return CORE_EFFECT_IDS.has(id)
 }

@@ -23,7 +23,7 @@ export {
   readWorkspacePackages,
   type WorkspacePackage,
 } from "./component-manifest"
-export { CORE_EFFECTS, type CoreEffect, isCoreEffectId } from "./core-effects"
+export { CORE_EFFECTS, type CoreEffect, type CoreEffectId, isCoreEffectId } from "./core-effects"
 export {
   CoreError,
   type CoreErrorCode,

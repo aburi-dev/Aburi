@@ -38,7 +38,7 @@ Available on every command, unless the row says otherwise:
 | Option | Short | Meaning |
 |---|---|---|
 | `--cwd <path>` | — | (planned) Change the working directory (origin for config resolution) |
-| `--config <path>` | — | Explicitly specify the config file location (§13). Taken by `scan`, `diff` and `explain`, after the command; `aburi init` has none |
+| `--config <path>` | — | Explicitly specify the config file location (§13). Taken by `scan`, `diff` and `explain` after the command, and by `vocab` before or after its subcommand; `aburi init` has none |
 | `--log-level <level>` | — | `debug` / `info` / `warn` / `error`: the lowest level of the run's `Logger` lines (§5.6) that reach stderr. Written before the command or after it, and listed in every command's `--help` among the global options |
 | `--no-color` | — | (planned) Disable colored output |
 | `--help` | `-h` | Show command-specific help |
@@ -211,7 +211,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
 A manifest violation is any refusal by the registry while the configured plugins are registered
 ([`extension-vocab.md`](./extension-vocab.md) §6.1–§6.2): an id, prefix or name another configured
 plugin already declared, a reserved namespace, a namespace the plugin's type may not own, a manifest
-value JSON cannot carry. The message names the config entry that loaded the plugin, ahead of the
+value JSON cannot carry, a `name`, `version` or `provides` entry of a type the registry cannot read. The message names the config entry that loaded the plugin, ahead of the
 registry's reason, because the registry knows plugins by manifest name and a manifest name need
 appear nowhere in `aburi.json`. A `frameworkHints` entry the registry refuses is not a plugin fault:
 it is a config error (exit `2`) naming the entry, since the fix is in `aburi.json`.
@@ -1091,7 +1091,7 @@ aburi vocab list                            # every vocabulary, and the plugins 
 aburi vocab effects                         # effect ids and effect prefixes
 aburi vocab extkinds                        # extKinds and extKind prefixes
 aburi vocab plugins                         # the loaded plugins
-aburi vocab who-owns <id>                   # what owns this value, in each vocabulary it is in
+aburi vocab who-owns <value>                # what owns this value, in each vocabulary it is in
 ```
 
 ### 8.2 Options
@@ -1165,13 +1165,14 @@ version `0.0.0` ([`config.md`](./config.md) §8.3).
 name) and `derivedBy prefixes` (owner, prefix) — each a title line and its rows indented by two
 spaces, a blank line between sections. A section with no row reads `  (none)`.
 
-`aburi vocab who-owns <id>` writes one block for each vocabulary the value is in — effect, extKind,
+`aburi vocab who-owns <value>` writes one block for each vocabulary the value is in — effect, extKind,
 framework name, derivedBy value — in that order, a blank line between blocks. One value can be in
 two: `framework:nestjs:controller` is an extKind and, under the plugin's `derivedByPrefixes`, a
 derivedBy value. Each block names the plugin and how its manifest covers the value, as the
 registry resolves it during a scan ([`extension-vocab.md`](./extension-vocab.md) §7): an id the
 manifest enumerates is `explicit` and carries its description, a value only a prefix covers names
-that prefix and has no description.
+that prefix and has no description, and a framework name is `explicit` with no description, since a
+manifest lists its frameworks as bare names.
 
 ```
 Vocabulary:  effect
@@ -1200,7 +1201,7 @@ Description: Database read
 
 An extKind the manifest enumerates adds `Base kind:   <kind>` after its declaration. A value in
 no vocabulary writes nothing to stdout and one line to stderr,
-`No owner for "<id>": it is no core effect id, and no loaded plugin declares it or a prefix over it.`
+`No owner for "<value>": it is no core effect id, and no loaded plugin declares it or a prefix over it.`
 
 ### 8.6 JSON Output
 
@@ -1221,7 +1222,7 @@ reads these too:
 {
   "plugins": [
     { "name": "effects-prisma", "version": "0.6.0", "type": "effects",
-      "listedIn": { "field": "effects", "ref": "effects-prisma" } }   // field: languages | frameworks | effects | frameworkHints
+      "listedIn": { "field": "effects", "ref": "./plugins/effects-prisma.mjs" } }   // field: languages | frameworks | effects | frameworkHints
   ],
   "effects": [
     { "id": "db.read", "description": "Database read", "owner": null },   // null: the core vocabulary
@@ -1237,18 +1238,19 @@ reads these too:
 }
 ```
 
-`who-owns` writes `{ "value": "<id>", "owners": [...] }`, one entry per block of §8.5 in the same
-order, and `"owners": []` with exit `1` for a value in no vocabulary:
+`who-owns` writes `{ "value": "<value>", "owners": [...] }`, one entry per block of §8.5 in the same
+order, and `"owners": []` with exit `1` for a value in no vocabulary, the `No owner` line of §8.5
+still on stderr:
 
 ```jsonc
 {
   "vocabulary": "effect",            // effect | extKind | framework | derivedBy
   "declaration": "prefix",           // core | explicit | prefix
   "prefix": "x-prisma",              // null unless declaration is prefix
-  "description": null,               // null for a value only a prefix covers
+  "description": null,               // null for a value only a prefix covers, and for a framework name
   "plugin": {                        // null for a core effect id; as a plugins[] entry otherwise
     "name": "effects-prisma", "version": "0.6.0", "type": "effects",
-    "listedIn": { "field": "effects", "ref": "effects-prisma" }
+    "listedIn": { "field": "effects", "ref": "./plugins/effects-prisma.mjs" }
   }
 }
 ```
@@ -1467,11 +1469,12 @@ Commands:
   scan [options]                     Generate IR from the current workspace
   diff [options] [refspec]           Compute the semantic diff between two IRs
   explain [options] <id-or-pattern>  Show a single Symbol's details
-  vocab [options]                    List the extension vocabulary and its owners
+  vocab [options]                    List the extension vocabulary and owners
   help [command]                     display help for command
 ```
 
-Each command's `--help` lists its usage, its options, and the global options (CL38). `--config` is
+Each command's `--help` lists its usage, its options, and the global options (CL38), as
+`aburi help <command>` and `aburi vocab help <subcommand>` do. `--config` is
 a command's option, not a global one (§3).
 
 ## 17. Verifiable Properties
@@ -1479,7 +1482,7 @@ a command's option, not a global one (§3).
 | ID | Input | Expectation |
 |---|---|---|
 | CL1 | `aburi --version` | One-line version string, exit 0 |
-| CL2 | `aburi --help` | Help for all commands, exit 0 |
+| CL2 | `aburi --help`; `aburi help scan`; `aburi vocab help list` | Help for all commands; for `scan`; for `vocab list`. Each on stdout, exit 0 |
 | CL3 | `aburi nope` | Unknown command, exit 2 |
 | CL4 | `aburi init` with existing aburi.json | exit 2, error message on stderr |
 | CL5 | `aburi init --force` | Overwrites existing file, exit 0, warning on stderr |
@@ -1492,7 +1495,7 @@ a command's option, not a global one (§3).
 | CL9 | `aburi diff main..HEAD --fail-on changed` with changes | exit 3 |
 | CL10 | `aburi diff` with missing arguments | exit 2 |
 | CL11 | `aburi explain <ambiguous>` | exit 2, candidate list on stdout |
-| CL12 | `aburi vocab who-owns <unknown>`, with and without `--json` | exit 1, the `No owner` line on stderr; under `--json`, `{ "value": "<unknown>", "owners": [] }` on stdout |
+| CL12 | `aburi vocab who-owns <unknown>`, with and without `--json` | exit 1, the `No owner` line on stderr in both; under `--json`, `{ "value": "<unknown>", "owners": [] }` on stdout |
 | CL13 | `aburi vocab list --json` | One JSON object on stdout holding the seven lists of §8.6, the core effect ids first with `owner: null`, exit 0 |
 | CL14 | (planned) Piping stdout (`aburi scan --quiet | wc -l`) | Readable without escape sequences |
 | CL15 | (planned) `NO_COLOR=1 aburi scan` | No coloring |
@@ -1524,8 +1527,8 @@ a command's option, not a global one (§3).
 | CL37 | `aburi init --log-level debug` | exit 0: `init` accepts the flag, which has no per-file log there to govern |
 | CL38 | `aburi init --help`, `aburi scan --help`, `aburi diff --help`, `aburi explain --help`, `aburi vocab --help` or the `--help` of a `vocab` subcommand | `--log-level` listed under "Global Options" |
 | CL39 | `aburi diff … --fail-on changed --fail-on removed` over one changed Symbol, in either order; over a changed and a removed one, in either order | exit 3 in both orders, as `--fail-on changed,removed` gives, and `--fail-on removed --fail-on added`, or no `--fail-on` at all, exits 0; over both, the tripped line names the clause written first. An invalid occurrence beside a valid one (`--fail-on bogus --fail-on changed`, `--fail-on '' --fail-on changed`) exits 2 quoting that occurrence alone, before either IR is read and with an earlier report in the output directory left as it was. `runDiff` refuses `failOn: []` as it refuses `failOn: ""` |
-| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--fail-on-scope`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
-| CL41 | An empty value for any option that takes a path — `init --output`; `scan --output-dir`, `--config`; `diff --base`, `--head`, `--output-dir`, `--config`; `explain --ir`, `--output`, `--config` — in either spelling (`--output-dir=`) | exit 2, `error: option '<option> <path>' argument '' is invalid. a path must not be empty` on stderr, nothing on stdout, nothing written, and an earlier report left as it was |
+| CL40 | Any option that takes a value, other than `--ignore` and `--fail-on`, given twice on any command — `init --output`; `scan --output-dir`, `--format`, `--config`; `diff --base`, `--head`, `--output-dir`, `--format`, `--fail-on-scope`, `--max-bytes`, `--config`; `explain --ir`, `--output`, `--config`; `vocab --config`, after the subcommand or once on each side of it; and `--log-level`, before the command, after it, or once on each side — in either spelling (`--config=a.json --config a.json`), the same value twice included, and a second value the option refuses on its own (`scan --format json --format bogus`, `diff … --max-bytes 1000 --max-bytes 0`) | exit 2, `<option> is given more than once ("<first>", then "<second>"): pass one` on stderr, nothing on stdout, nothing written, and an earlier report left as it was. With the invalid value first (`scan --format bogus --format json`), that value's own error instead, at exit 2. `aburi scan --compact --compact` and `--no-timestamp --no-timestamp` run and exit 0; `--ignore a/** --ignore b/**` leaves out the files under both and exits 0; `--respect-gitignore` and `--no-respect-gitignore` together, in either order, over a config that sets `respectGitignore: false`: the one written last applies |
+| CL41 | An empty value for any option that takes a path — `init --output`; `scan --output-dir`, `--config`; `diff --base`, `--head`, `--output-dir`, `--config`; `explain --ir`, `--output`, `--config`; `vocab --config` — in either spelling (`--output-dir=`) | exit 2, `error: option '<option> <path>' argument '' is invalid. a path must not be empty` on stderr, nothing on stdout, nothing written, and an earlier report left as it was |
 | CL42 | `aburi diff main..HEAD --base b.json`, or `aburi diff main..HEAD --head h.json` | exit 2, `<option> cannot be combined with a ref spec argument. Use one or the other.`, naming the option given |
 | CL43 | `aburi scan` after one Component was renamed and another removed | The page of each id the IR no longer holds is removed, with LF or CRLF line endings, and on a filesystem that returns a few bytes per read; nothing else in `components/` goes. A file beside them that is not such a page stays: another extension, a first line naming another id or none, the heading with more on its line, a name no Component id takes, the same page in a subdirectory, or a directory named like a page |
 | CL44 | `aburi scan --format json` or `--format md` after an `aburi scan` that wrote both | Only what the format writes is left of Aburi's files: no `workspace.md` or component page under `json`, no `aburi.ir.json` under `md`, and so `aburi explain --no-rescan` exits 2 rather than answering from the earlier IR. The caller's files in the output directory and in `components/` stay. At `--log-level info`, one `info:` line names each file removed, the discovered-vocabulary record a strict scan removes included; at the default level, none |
@@ -1533,7 +1536,7 @@ a command's option, not a global one (§3).
 | CL46 | A strict `aburi scan` stopping at an undeclared value (exit 3) after one that completed, or an `aburi scan --format md` stopping at a directory where `workspace.md` would go (exit 2) after an `aburi scan --format json` | The earlier run's IR, `workspace.md` and component pages are left as they were |
 | CL47 | `aburi explain <name>` with no IR on disk, after `aburi scan --format md`; `runScan` with `command: "explain"` or `"diff"` and `format: "md"`, after an `aburi scan` that wrote both beside a stale page | The scan it runs writes the IR beside the pages and removes none of them; the `runScan` call removes nothing, neither the IR nor the stale page |
 | CL48 | `aburi diff … --format json` or `--format md` after an `aburi diff --max-bytes` that wrote `diff.full.md` | Only the files that run writes are left of the report: no `diff.md` naming a `diff.full.md` that is gone, no earlier `diff.json`. The caller's own file in the output directory stays |
-| CL49 | `aburi scan` with a configured plugin that fails to import, or whose manifest the registry refuses (§5.4): a prefix another configured plugin declared, another configured plugin's name with a different manifest, a reserved namespace, a namespace its type may not own, a value JSON cannot carry | exit 3 before anything is written, stderr naming the config entry that loaded the plugin. A `frameworkHints` entry the registry refuses is exit 2, naming the entry |
+| CL49 | `aburi scan` with a configured plugin that fails to import, or whose manifest the registry refuses (§5.4): a prefix another configured plugin declared, another configured plugin's name with a different manifest, a reserved namespace, a namespace its type may not own, a value JSON cannot carry, a `version` that is not a string | exit 3 before anything is written, stderr naming the config entry that loaded the plugin. A `frameworkHints` entry the registry refuses is exit 2, naming the entry |
 | CL50 | `aburi scan` where an effect plugin's `classify` refuses a value through `ctx.registry.assertEffectDeclared`, or returns a Promise | exit 3 with that error's message, nothing on stdout and no IR written, though the first is the registry's error and the second the core's. The first exits 3 under `--discover` too, since the registry does not read `strict`. `aburi explain` and `aburi diff` exit 3 for both, since they run the same scan, and `aburi diff` writes no report |
 | CL51 | `aburi scan` in a workspace holding a directory the process may not list, whether the census, a manifest search or discovery meets it, or `aburi init` there | exit 1, with `Directory "<path>" could not be listed` and the errno on stderr, after `Failed to resolve components: ` (scan) or `Failed to detect components: ` (init) when a component search meets it. With `.gitignore` excluding that directory and no declared package pattern reaching it, `aburi scan` exits 0 and the IR holds the rest of the workspace, and with `--no-respect-gitignore` it exits 1 |
 | CL52 | `aburi diff --base <ir> --head <ir>` or `aburi explain --ir <ir>` where the file opens with one byte order mark (U+FEFF) | Read as without it. Two of them, or one after the first character, is exit 2, `IR file "<path>" is not valid JSON` |
@@ -1551,9 +1554,9 @@ a command's option, not a global one (§3).
 | CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
 | CL64 | `aburi diff HEAD~1..HEAD`, run from the repository root and from a subdirectory, where both refs hold symbolic links that git wrote as plain files, two with a source extension (one named outside ASCII), one without and one to a directory; where only the head adds them, with `core.symlinks` `false` and with it turned `true` after they were checked out; and, where links can be created, with both refs holding them as links | The first: one warning for each side naming the two links with a source extension, as written from the repository root, and the exit code the run has without them. The second: the head's warning alone. The third: no warning |
 | CL75 | `aburi vocab who-owns` for an id a manifest enumerates, an id only an `effectPrefixes` entry covers, a core effect id, and an extKind a framework plugin's `derivedByPrefixes` also covers | exit 0. One block each: the first with `explicit` and the manifest's description, the second naming the prefix with no description, the third naming no plugin; the last two blocks, the extKind before the derivedBy value (§8.5) |
-| CL76 | `aburi vocab list` with no config found; with a config that lists an effect plugin alone, whose `init` throws | exit 0 both. The first lists the core effect ids alone and says on stderr that no config was found; the second lists that plugin's vocabulary, since nothing calls `init` and no language plugin is needed (§8) |
-| CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value; `aburi vocab list` with a configured plugin that fails to import; with a `frameworkHints` entry the registry refuses | exit 2, 2, 2; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
-| CL78 | `aburi vocab plugins`, `effects` and `extkinds`, with and without `--json`, over plugins listed under `effects`, `languages` and `frameworkHints` in that order in the file | The plugins in the order `languages`, `effects`, `frameworkHints`, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space (§8.4–§8.5) |
+| CL76 | `aburi vocab effects --json` with no config found; `aburi vocab plugins` with a config that lists an effect plugin alone, whose `init` throws; `aburi vocab plugins` reading `custom.json` through `--config`, before the subcommand or after it, or through `ABURI_CONFIG` | exit 0 all. The first writes the core effect ids alone and no effect prefix, and says on stderr that no config was found; the second lists that plugin, since nothing calls `init` and no language plugin is needed (§8); the third lists the plugin `custom.json` names, with nothing on stderr |
+| CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value or with two; `aburi vocab list` with a configured plugin that fails to import, or whose manifest has no `version`; with a `frameworkHints` entry the registry refuses | exit 2, nothing on stdout, and stderr opening with the usage of `aburi vocab`, the unknown command, the missing argument or the extra one; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
+| CL78 | `aburi vocab list`, `plugins`, `effects` and `extkinds`, with and without `--json`, over a file listing `frameworkHints`, `effects`, `frameworks` and `languages` in that order; and over two `effects` entries and two `frameworkHints` entries, each pair out of alphabetical order | The plugins in the order `languages`, `frameworks`, `effects`, `frameworkHints`, and within a field in the file's order, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space; `list` as its five sections, the `Effects` one the `effects` table indented (§8.4–§8.5) |
 
 ## 18. Design Decisions
 

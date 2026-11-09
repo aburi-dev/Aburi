@@ -388,7 +388,7 @@ importing it, so it works in a workspace with no sources and with no language pl
 
 | Subcommand | Prints |
 |---|---|
-| `list` | Every section below, plus `Frameworks` and `derivedBy prefixes`. |
+| `list` | The `plugins`, `effects` and `extkinds` lists, plus `Frameworks` and `derivedBy prefixes`. |
 | `effects` | The core effect ids, then each plugin's effect ids and the prefixes it owns. |
 | `extkinds` | Each plugin's extension kinds, with their base kind, and the prefixes it owns. |
 | `plugins` | Each loaded plugin's name, version, type, and the config entry that loaded it. |
@@ -412,7 +412,8 @@ Declaration: prefix x-prisma (provides.effectPrefixes[])
 Rows follow your config: language plugins, then framework plugins, then effect plugins, then the
 `frameworkHints` entries, each list in the order you wrote it. A value can belong to more than one
 vocabulary, such as an extension kind under a framework plugin's `derivedBy` prefix, and
-`who-owns` prints a block for each. A value nothing owns exits `1`.
+`who-owns` prints a block for each. A value nothing owns exits `1` and says so on stderr, with
+`--json` too.
 
 | Flag | Effect |
 |---|---|
