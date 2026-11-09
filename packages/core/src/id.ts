@@ -101,10 +101,18 @@ export function isComponentId(value: string): value is ComponentId {
   return COMPONENT_ID_PATTERN.test(value)
 }
 
+export type MemberKind = "instance" | "static"
+
+export type MemberSeparator = "." | "::"
+
+export function memberSeparator(kind: MemberKind): MemberSeparator {
+  return kind === "instance" ? "." : "::"
+}
+
 export function makeMemberQname(
   ownerChain: readonly string[],
   member: string,
-  kind: "instance" | "static",
+  kind: MemberKind,
 ): string {
   if (ownerChain.length === 0) {
     throw new CoreError(
@@ -114,8 +122,7 @@ export function makeMemberQname(
   }
   for (const segment of ownerChain) assertQnameSegment(segment, segment)
   assertQnameSegment(member, member, { privateName: true })
-  const separator = kind === "instance" ? "." : "::"
-  return `${ownerChain.join(".")}${separator}${member}`
+  return `${ownerChain.join(".")}${memberSeparator(kind)}${member}`
 }
 
 export function makeTopLevelQname(name: string): string {
