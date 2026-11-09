@@ -115,6 +115,41 @@ describe("runFilePipeline — effect classification", () => {
     expect(result.dynamicCallSites).toEqual([makeCallSiteKey("test.stub", 3, "make().run")])
   })
 
+  it("keys each call's this binding by its call site, once for each side one key is written on", async () => {
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        makeCall({ target: "this.make", line: 3, thisBinding: "class" }),
+        makeCall({ target: "this.make", line: 3, thisBinding: "instance" }),
+        makeCall({ target: "this.find", line: 4, thisBinding: "instance" }),
+      ),
+    })
+
+    expect(result.thisBindings).toEqual([
+      [makeCallSiteKey("test.stub", 3, "this.make"), "class"],
+      [makeCallSiteKey("test.stub", 3, "this.make"), "instance"],
+      [makeCallSiteKey("test.stub", 4, "this.find"), "instance"],
+    ])
+  })
+
+  it("keys no binding for a classified call, a call with none, or a value it does not know", async () => {
+    const result = await extractOneSymbol({
+      effects: [
+        stubEffectsPlugin("effects-db", (call) =>
+          call.target === "this.save"
+            ? { effectId: "db.write", confidence: "high", derivedBy: "effects-db:hit" }
+            : null,
+        ),
+      ],
+      body: bodyCalling(
+        makeCall({ target: "this.save", line: 3, thisBinding: "instance" }),
+        makeCall({ target: "this.run", line: 4, thisBinding: "module" as never }),
+        makeCall({ target: "helper.run", line: 5 }),
+      ),
+    })
+
+    expect(result.thisBindings).toEqual([])
+  })
+
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {
     const seen: ClassifyContext["owner"]["decorators"][] = []
     const candidate = stubCandidate("Fn", {
