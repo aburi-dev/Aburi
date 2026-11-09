@@ -1,12 +1,18 @@
 import { COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import { DEFAULT_EXPORT_QNAME } from "./id"
 
-export interface SyntaxNode {
-  readonly type: string
+export interface SyntaxNode extends ChainNode<SyntaxNode> {
   readonly text: string
-  readonly namedChildren: readonly (SyntaxNode | null)[]
   readonly children: readonly (SyntaxNode | null)[]
-  childForFieldName(name: string): SyntaxNode | null
+}
+
+interface ValueNode<N> {
+  readonly type: string
+  readonly namedChildren: readonly (N | null)[]
+}
+
+interface ChainNode<N> extends ValueNode<N> {
+  childForFieldName(name: string): N | null
 }
 
 export function asSyntaxNode(value: unknown): SyntaxNode | null {
@@ -58,9 +64,7 @@ const VALUE_WRAPPER_TYPES: ReadonlySet<string> = new Set([
   "non_null_expression",
 ])
 
-export function unwrapValue<
-  N extends { readonly type: string; readonly namedChildren: readonly (N | null)[] },
->(node: N): N {
+export function unwrapValue<N extends ValueNode<N>>(node: N): N {
   let cursor = node
   while (VALUE_WRAPPER_TYPES.has(cursor.type)) {
     const inner = cursor.namedChildren.find((child) => child !== null && child.type !== "comment")
@@ -106,7 +110,7 @@ export function calleeName(callNode: SyntaxNode): CalleeName | null {
   const object = callee.childForFieldName("object")
   const leaf = callee.childForFieldName("property")?.text ?? ""
   if (object === null || leaf.length === 0) return null
-  return { name: `${chainRoot(object)}.${leaf}`, leaf }
+  return { name: `${rootName(walkReceiverChain(object).root)}.${leaf}`, leaf }
 }
 
 export interface ReceiverChain {
@@ -118,27 +122,44 @@ export interface ReceiverChain {
 
 /** The receiver `calleeName` names, read step for step as it reads it. */
 export function receiverChain(node: SyntaxNode): ReceiverChain {
-  const path: string[] = []
+  const { steps, root } = walkReceiverChain(node)
+  const path = steps.flatMap((step) => {
+    if (step.type !== "member_expression") return []
+    const property = step.childForFieldName("property")?.text ?? ""
+    return property.length > 0 ? [property] : []
+  })
+  return { path, root: rootName(root) }
+}
+
+export interface ReceiverChainWalk<N> {
+  /** Each call, member access and index passed on the way down to the root, outermost first. */
+  readonly steps: readonly N[]
+  /** The node the chain starts from. */
+  readonly root: N
+}
+
+/**
+ * The walk down a receiver chain, through `unwrapValue`'s wrappers. A registration's receiver and
+ * the calls it chains are read off this walk, so a framework's name for a registration and the
+ * `call-statement:` entry cannot drift.
+ */
+export function walkReceiverChain<N extends ChainNode<N>>(node: N): ReceiverChainWalk<N> {
+  const steps: N[] = []
   let cursor = unwrapValue(node)
   for (let next = chainStep(cursor); next !== null; next = chainStep(cursor)) {
-    if (cursor.type === "member_expression") {
-      const property = cursor.childForFieldName("property")?.text ?? ""
-      if (property.length > 0) path.push(property)
-    }
+    steps.push(cursor)
     cursor = unwrapValue(next)
   }
-  return { path, root: rootName(cursor) }
+  return { steps, root: cursor }
+}
+
+/** The calls a chain passes, outermost first, starting with the call itself. */
+export function chainCalls<N extends ChainNode<N>>(node: N): readonly N[] {
+  const { steps, root } = walkReceiverChain(node)
+  return [...steps, root].filter((step) => step.type === "call_expression")
 }
 
 const NAMED_ROOT_TYPES: ReadonlySet<string> = new Set(["identifier", "this"])
-
-function chainRoot(node: SyntaxNode): string {
-  let cursor = unwrapValue(node)
-  for (let next = chainStep(cursor); next !== null; next = chainStep(cursor)) {
-    cursor = unwrapValue(next)
-  }
-  return rootName(cursor)
-}
 
 // Any other root's text would carry its line breaks and comments into the name.
 function rootName(root: SyntaxNode): string {
@@ -147,7 +168,7 @@ function rootName(root: SyntaxNode): string {
     : COMPUTED_TARGET_SEGMENT
 }
 
-function chainStep(node: SyntaxNode): SyntaxNode | null {
+function chainStep<N extends ChainNode<N>>(node: N): N | null {
   if (node.type === "call_expression") return node.childForFieldName("function")
   if (node.type === "member_expression" || node.type === "subscript_expression") {
     return node.childForFieldName("object")

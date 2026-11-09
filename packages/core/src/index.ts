@@ -177,13 +177,16 @@ export {
   calleeLeaf,
   calleeName,
   calleeText,
+  chainCalls,
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
   type ReceiverChain,
+  type ReceiverChainWalk,
   receiverChain,
   type SyntaxNode,
   unwrapValue,
+  walkReceiverChain,
   writtenChildren,
 } from "./syntax-node"
 export { computeWeaklyConnectedComponents } from "./wcc"
@@ -195,4 +198,8 @@ export {
   type UnresolvedDeclaration,
   type WorkspaceCandidate,
 } from "./workspace"
-export { type DetectWorkspaceRootOptions, detectWorkspaceRoot } from "./workspace-root"
+export {
+  type DetectWorkspaceRootOptions,
+  detectWorkspaceRoot,
+  type GitWorkTree,
+} from "./workspace-root"
