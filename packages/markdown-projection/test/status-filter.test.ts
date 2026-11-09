@@ -11,7 +11,7 @@ import {
 } from "@aburi/test-support"
 import type { DiffResult, Symbol as IRSymbol, SymbolChange, SymbolChangeStatus } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { projectDiff } from "../src"
+import { ProjectionInvariantError, projectDiff } from "../src"
 import { bytes } from "./markdown"
 
 const added = (symbol: IRSymbol): SymbolChange => ({ status: "added", symbol })
@@ -67,14 +67,49 @@ describe("projectDiff — a status filter", () => {
   })
 
   it("keeps the Summary's counts and says how many changes it left out, under the Summary", () => {
-    const lines = filtered(["added", "removed"]).split("\n")
+    const report = filtered(["added"])
 
-    expect(lines.slice(2, 6)).toEqual([
+    expect(report.split("\n").slice(2, 6)).toEqual([
       "**Summary**: +2 added · -2 removed · ~1 changed · 0 moved · 0 moved+changed · 2 in test files",
       "",
-      "> ℹ **Only `added` and `removed` changes are listed.** 1 other Symbol change is left out of this report; the Summary counts it.",
+      "> ℹ **Only `added` changes are listed.** 3 other Symbol changes are left out of this report; the Summary counts them.",
       "",
     ])
+    expect(sectionOf(report, "## 🧪 Test files")).toContain(
+      "<summary>1 symbol in a test file</summary>",
+    )
+  })
+
+  it.each([
+    [
+      "one Symbol change",
+      mixedDiff(),
+      ["added", "removed"],
+      "1 other Symbol change is left out of this report; the Summary counts it.",
+    ],
+    [
+      "Symbol changes and a test caller's edge",
+      mixedDiff(),
+      ["removed"],
+      "3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.",
+    ],
+    [
+      "one Symbol change and its edge",
+      makeDiff({
+        summary: { ...emptySummary(), added: 1, removed: 1 },
+        symbols: [removed(legacy), added(withCallsTo(fixture, [total, 6]))],
+        dependencies: {
+          added: [dependency({ from: fixture.id, to: total.id, via: "call" })],
+          removed: [],
+        },
+      }),
+      ["removed"],
+      "1 other Symbol change and 1 dependency change from test code are left out of this report; the Summary counts the Symbol change.",
+    ],
+  ] as const)("counts %s left out in the note", (_, diff, statuses, leftOut) => {
+    expect(projectDiff(diff, { statuses }).split("\n")[4]).toBe(
+      `> ℹ **Only ${statuses.map((status) => `\`${status}\``).join(" and ")} changes are listed.** ${leftOut}`,
+    )
   })
 
   it("names the statuses in the order of the glyph line, a repeat once, whatever order they came in", () => {
@@ -92,8 +127,10 @@ describe("projectDiff — a status filter", () => {
   it("lists every dependency change, but a test caller's edge only with its caller", () => {
     const report = filtered(["removed"])
 
-    expect(sectionOf(report, "## 🔗 Dependency changes").join("\n")).toContain("`checkout`")
-    expect(sectionOf(report, "## 🔗 Dependency changes").join("\n")).toContain("`legacy`")
+    const dependencyChanges = sectionOf(report, "## 🔗 Dependency changes").join("\n")
+    expect(dependencyChanges).toContain("`checkout`")
+    expect(dependencyChanges).toContain("`legacy`")
+    expect(dependencyChanges).not.toContain("`fixture`")
     expect(sectionOf(report, "## 🧪 Test files").join("\n")).not.toContain("`fixture`")
     expect(sectionOf(report, "## 🧪 Test files")).toContain(
       "<summary>1 symbol in a test file</summary>",
@@ -109,6 +146,14 @@ describe("projectDiff — a status filter", () => {
     expect(bytes(capped)).toBeLessThanOrEqual(maxBytes)
     expect(capped).toContain("> ℹ **Only `added` changes are listed.**")
     expect(capped.indexOf("> ℹ")).toBeLessThan(capped.indexOf("> ⚠"))
+  })
+
+  it("refuses a Slice naming a member no change holds, as it does without a filter", () => {
+    const ghost = symbolAt("src/ghost.ts", "ghost", 1)
+    const diff = { ...mixedDiff(), slices: [sliceOf(legacy, ghost)] }
+
+    expect(() => projectDiff(diff)).toThrowError(ProjectionInvariantError)
+    expect(() => projectDiff(diff, { statuses: ["added"] })).toThrowError(ProjectionInvariantError)
   })
 
   it.each([

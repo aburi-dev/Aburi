@@ -943,16 +943,24 @@ and narrows nothing else:
   every change still, and a note under it says how many changes the filter left out. The Slice
   View keeps a Slice that holds a change the filter keeps and draws it whole. Component changes,
   Dependency changes and Not compared are not Symbol changes and are listed in full: the last is
-  what says the comparison was incomplete, which no filter should hide.
+  what says the comparison was incomplete, which no filter should hide. The one exception is an
+  edge from test code, which goes with its caller into Test files: it leaves the report with a
+  caller the filter leaves out, and the note counts it.
 - **`diff.json`** holds every change, as it does under `--max-bytes`: it is the document to query
   in full, and a consumer that wants a subset filters `symbols[]` by `status`.
 - **The glyph line** on stdout counts every change, as the Summary line does.
 - **`--fail-on`** counts every change, whatever the filter. A display option must not decide
   whether a gate trips: `--filter added --fail-on removed` still exits `3` on a removal. Since the
-  report would then not list what tripped it, a `--fail-on` clause that counts only statuses the
-  filter leaves out is warned about on stderr, once, before the diff is computed:
-  `⚠ --fail-on removed counts removed changes, which --filter leaves out of diff.md.` A delta axis
-  counts `changed` and `moved+changed`, and is warned about only when the filter keeps neither.
+  report would then not list what tripped it, a clause that trips on a change the filter leaves
+  out is warned about on stderr, ahead of the clause's own lines, with how many of its changes
+  `diff.md` leaves out, by status:
+  `⚠ --filter leaves out of diff.md every change that tripped --fail-on removed (1 removed).`
+  A clause on a delta axis counts `changed` and `moved+changed` alike, so one can trip on changes
+  the report lists and on changes it does not:
+  `⚠ --filter leaves out of diff.md 1 of the 3 changes that tripped --fail-on api-changed (1 moved+changed).`
+  The clause weighed is the one whose lines follow (§6.7). A clause that does not trip leaves
+  nothing for the report to miss and draws no warning, and neither does a run that writes no
+  `diff.md`.
 - **`--max-bytes`** caps the filtered report, note included, and `diff.full.md` is the filtered
   report without the cap.
 
@@ -963,7 +971,9 @@ before either IR is read, naming the statuses there are. `--filter` takes one va
 
 `removed:duplicate` and the direction tokens of `dropped-toggled` are `--fail-on`'s and not
 statuses: the filter selects whole sections' worth of entries, and a removed duplicate is listed
-with the other removals (`markdown-projection.md` §6.1).
+with the other removals ([`markdown-projection.md`](./markdown-projection.md) §6.2). A value that
+is a `--fail-on` clause on a status, such as `removed:duplicate` or `added:>3`, is refused naming
+the status whose changes it counts among.
 
 ## 7. `aburi explain`
 
@@ -1453,7 +1463,7 @@ a command's option, not a global one (§3).
 | CL64 | `aburi diff HEAD~1..HEAD`, run from the repository root and from a subdirectory, where both refs hold symbolic links that git wrote as plain files, two with a source extension (one named outside ASCII), one without and one to a directory; where only the head adds them, with `core.symlinks` `false` and with it turned `true` after they were checked out; and, where links can be created, with both refs holding them as links | The first: one warning for each side naming the two links with a source extension, as written from the repository root, and the exit code the run has without them. The second: the head's warning alone. The third: no warning |
 | CL66 | `aburi diff … --quiet` | stdout the glyph line alone, `· ?N unknown` included when the diff has one; the same artefacts, stderr and exit code as without it |
 | CL67 | `aburi diff … --filter added,removed` over a diff holding added, removed and changed Symbols, and a Slice joining an added Symbol to a changed one | `diff.md` lists the added and removed Symbols and no changed one, the Slice drawn whole, with the Summary line and the glyph line counting all three and a note naming how many changes it left out; `diff.json` byte for byte the one without `--filter` |
-| CL68 | `aburi diff … --filter added --fail-on removed` over a removal | exit 3, the clause's lines on stderr, and before them the warning that `--filter` leaves the `removed` changes out of `diff.md`. `--filter added,changed --fail-on api-changed` warns about nothing |
+| CL68 | `aburi diff … --filter added --fail-on removed` over a removal; `--filter changed --fail-on api-changed` over an API change in a `changed` Symbol and one in a `moved+changed` Symbol | exit 3 for both, the clause's lines on stderr, and before them the warning that `--filter` leaves out of `diff.md` every change that tripped the clause, or for the second 1 of the 2, by status. `--filter added --fail-on unknown` over no `unknown` change, and `--filter added,changed --fail-on logic-changed` over a logic change, warn about nothing |
 | CL69 | `aburi diff … --filter ""`, `--filter added,`, `--filter renamed`, `--filter removed:duplicate`; `--filter added --format json` | exit 2 for each of the first four, before either IR is read, naming the statuses; the last exits 0 with the warning that `--filter` has nothing to narrow |
 
 ## 18. Design Decisions

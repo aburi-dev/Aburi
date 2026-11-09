@@ -297,14 +297,16 @@ says how many the filter left out:
 
 A Slice that holds a change you kept is drawn whole, its other members included, so a call
 path is not cut in two. Component changes, dependency changes and Not compared are listed in
-full. `diff.json` keeps every change, and so does the glyph line on stdout.
+full, except a dependency change made by test code whose change the filter left out: it leaves
+the report with that change, and the note counts it. `diff.json` keeps every change, and so does
+the glyph line on stdout.
 
 `--fail-on` counts every change too, whatever the filter: a display option does not decide
 whether the build fails. So `--filter added --fail-on removed` still exits `3` on a removal, and
-because `diff.md` would not list the removal, it warns on stderr first:
+because `diff.md` does not list the removal, stderr says so ahead of the gate's lines:
 
 ```
-⚠ --fail-on removed counts removed changes, which --filter leaves out of diff.md.
+⚠ --filter leaves out of diff.md every change that tripped --fail-on removed (1 removed).
 ```
 
 An empty value, an empty segment (`added,`) and a word that is no status, `removed:duplicate`

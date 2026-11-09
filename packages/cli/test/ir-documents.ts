@@ -1,5 +1,11 @@
-import { makeIR, makeSymbol, recordingLogger } from "@aburi/test-support"
-import type { Dependency, IR, Symbol as IRSymbol, SkippedFile } from "@aburi/types"
+import { call, makeIR, makeSymbol, recordingLogger } from "@aburi/test-support"
+import type {
+  CallResolutionStats,
+  Dependency,
+  IR,
+  Symbol as IRSymbol,
+  SkippedFile,
+} from "@aburi/types"
 import { type DiffOptions, IR_JSON_FILENAME, runDiff } from "../src"
 import { writeFileAt, writeIRs, writePackageJson } from "./workspace"
 
@@ -39,6 +45,21 @@ export function documentWith(shape: DocumentShape): IR {
         : { skippedFiles: [...shape.skipped].sort(byKey((f) => f.path)) }),
     },
   }
+}
+
+/** `documentWith(shape)` carrying `callResolution`, its first Symbol making the calls left unresolved. */
+export function documentWithCensus(shape: DocumentShape, callResolution: CallResolutionStats): IR {
+  const [first, ...rest] = shape.symbols
+  if (first === undefined) throw new Error("documentWithCensus: a census needs a Symbol to call")
+  const unresolved = Array.from(
+    { length: callResolution.totalCalls - callResolution.resolvedCalls },
+    (_, i) => call({ target: `mystery${i}`, line: i + 2 }),
+  )
+  const document = documentWith({
+    ...shape,
+    symbols: [{ ...first, calls: [...first.calls, ...unresolved] }, ...rest],
+  })
+  return { ...document, stats: { ...document.stats, callResolution } }
 }
 
 /** A workspace root holding `document` where `aburi scan` would have written it. */

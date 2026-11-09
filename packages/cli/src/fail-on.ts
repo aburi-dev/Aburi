@@ -2,7 +2,6 @@ import {
   type DiffResult,
   representativeSymbol,
   type SymbolChange,
-  type SymbolChangeStatus,
   type SymbolId,
 } from "@aburi/types"
 import { assertNever } from "./errors"
@@ -90,6 +89,16 @@ export function parseFailOn(value: string): FailOnClause[] {
 }
 
 class ClauseError extends Error {}
+
+/** The clause `segment` reads as, or null where `parseFailOn` would refuse it. */
+export function parseClause(segment: string): FailOnClause | null {
+  try {
+    return parseSingle(segment)
+  } catch (err) {
+    if (err instanceof ClauseError) return null
+    throw err
+  }
+}
 
 function parseSingle(segment: string): FailOnClause {
   const colonIdx = findThresholdColon(segment)
@@ -204,32 +213,6 @@ function counts(token: FailOnToken, change: SymbolChange): boolean {
   }
 }
 
-/** The statuses a clause on `token` can count a change of. */
-export function statusesCounted(token: FailOnToken): readonly SymbolChangeStatus[] {
-  switch (token) {
-    case "added":
-    case "changed":
-    case "moved":
-    case "moved+changed":
-    case "dropped-toggled":
-    case "unknown":
-      return [token]
-    case "removed":
-    case "removed:duplicate":
-      return ["removed"]
-    case "dropped-toggled:to-dropped":
-    case "dropped-toggled:to-kept":
-      return ["dropped-toggled"]
-    case "api-changed":
-    case "logic-changed":
-    case "syntax-changed":
-    case "confidence-changed":
-      return ["changed", "moved+changed"]
-    default:
-      return assertNever(token, "FailOnToken")
-  }
-}
-
 function deltaMoved(
   change: SymbolChange,
   axis: "apiChanged" | "logicChanged" | "syntaxChanged" | "confidenceChanged",
@@ -251,9 +234,15 @@ export function uncountedDuplicates(
 }
 
 function countedIds(token: FailOnToken, diff: DiffResult, scope: FailOnScope): SymbolId[] {
-  return diff.symbols
-    .filter((change) => inScope(scope, change) && counts(token, change))
-    .map((change) => representativeSymbol(change).id)
+  return countedChanges(token, diff, scope).map((change) => representativeSymbol(change).id)
+}
+
+export function countedChanges(
+  token: FailOnToken,
+  diff: DiffResult,
+  scope: FailOnScope,
+): SymbolChange[] {
+  return diff.symbols.filter((change) => inScope(scope, change) && counts(token, change))
 }
 
 /** The head decides for a pair, as it does where the report lists the entry. */

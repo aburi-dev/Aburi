@@ -22,5 +22,11 @@ const STATUS_ORDER: Record<SymbolChangeStatus, null> = {
   unknown: null,
 }
 
-/** Every `SymbolChange` status, in the order the CLI's glyph line counts the first five. */
-export const SYMBOL_CHANGE_STATUSES = Object.keys(STATUS_ORDER) as readonly SymbolChangeStatus[]
+/** Every `SymbolChange` status, in the order reports name them. */
+export const SYMBOL_CHANGE_STATUSES: readonly SymbolChangeStatus[] = Object.freeze(
+  Object.keys(STATUS_ORDER) as SymbolChangeStatus[],
+)
+
+export function isSymbolChangeStatus(value: unknown): value is SymbolChangeStatus {
+  return typeof value === "string" && Object.hasOwn(STATUS_ORDER, value)
+}

@@ -29,26 +29,28 @@ export interface TestDependencies {
 
 /**
  * An edge carries no mark, but a call edge that comes or goes moves its caller's calls, so the
- * caller is one of the changes the fold lists, and the edge goes with it: into the fold when the
- * caller is among `listedTestChanges`, and out of the report when a status filter left it out.
+ * caller is one of the changes the fold lists, and the edge goes with it.
  */
 export function splitDependencies(
   dependencies: DiffResult["dependencies"],
   testChanges: readonly SymbolChange[],
-  listedTestChanges: readonly SymbolChange[] = testChanges,
-): { kept: DiffResult["dependencies"]; inTests: TestDependencies } {
+  listedTestChanges: readonly SymbolChange[],
+): { kept: DiffResult["dependencies"]; inTests: TestDependencies; leftOut: number } {
   const fromTest = calledFrom(testChanges)
   const fromListed = calledFrom(listedTestChanges)
+  const inTests = {
+    added: dependencies.added.filter(fromListed),
+    removed: dependencies.removed.filter(fromListed),
+  }
+  const fromTestCount = [...dependencies.added, ...dependencies.removed].filter(fromTest).length
   return {
     kept: {
       ...dependencies,
       added: dependencies.added.filter((d) => !fromTest(d)),
       removed: dependencies.removed.filter((d) => !fromTest(d)),
     },
-    inTests: {
-      added: dependencies.added.filter(fromListed),
-      removed: dependencies.removed.filter(fromListed),
-    },
+    inTests,
+    leftOut: fromTestCount - inTests.added.length - inTests.removed.length,
   }
 }
 

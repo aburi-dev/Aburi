@@ -1,3 +1,4 @@
+import { SYMBOL_CHANGE_STATUSES } from "@aburi/types"
 import { Command } from "commander"
 import {
   collect,
@@ -246,7 +247,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
     )
     .option(
       "--filter <statuses>",
-      "list only these statuses' changes in diff.md, comma-separated: added, removed, changed, moved, moved+changed, dropped-toggled, unknown (diff.json and --fail-on still read every change)",
+      `list only these statuses' changes in diff.md, comma-separated: ${SYMBOL_CHANGE_STATUSES.join(", ")} (diff.json and --fail-on still read every change)`,
     )
     .option("--compact", "compact JSON output")
     .option("--quiet", "print the glyph line alone")

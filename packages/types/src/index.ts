@@ -127,6 +127,7 @@ export {
   PLUGIN_SCHEMA_URL,
 } from "./schema-urls"
 export {
+  isSymbolChangeStatus,
   representativeSymbol,
   SYMBOL_CHANGE_STATUSES,
   type SymbolChangeStatus,

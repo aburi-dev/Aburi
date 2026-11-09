@@ -1,12 +1,20 @@
-import { SYMBOL_CHANGE_STATUSES, type SymbolChangeStatus } from "@aburi/types"
+import {
+  type DiffResult,
+  isSymbolChangeStatus,
+  SYMBOL_CHANGE_STATUSES,
+  type SymbolChangeStatus,
+} from "@aburi/types"
+import { DIFF_MD_FILENAME } from "./artifact-paths"
 import { CliError } from "./errors"
-import { type FailOnClause, formatClause, statusesCounted } from "./fail-on"
+import { countedChanges, formatClause, parseClause, type TrippedClause } from "./fail-on"
 
-export function parseFilter(value: string): SymbolChangeStatus[] {
-  const segments = value.split(",").map((segment) => segment.trim())
+/** A comma-separated `--filter` value, or the statuses a caller of `runDiff` holds as a list. */
+export function parseFilter(value: string | readonly string[]): SymbolChangeStatus[] {
+  const written = typeof value === "string"
+  const segments = written ? value.split(",").map((segment) => segment.trim()) : value
   const refuse = (reason: string): never => {
     throw new CliError(
-      `--filter value "${value}" is invalid: ${reason} The statuses are ${SYMBOL_CHANGE_STATUSES.join(", ")}.`,
+      `--filter value "${written ? value : value.join(",")}" is invalid: ${reason} The statuses are ${SYMBOL_CHANGE_STATUSES.join(", ")}.`,
       "input-error",
     )
   }
@@ -17,39 +25,51 @@ export function parseFilter(value: string): SymbolChangeStatus[] {
   }
   const statuses = new Set<SymbolChangeStatus>()
   for (const [index, segment] of segments.entries()) {
-    if (segment.length === 0) {
+    if (written && segment.length === 0) {
       refuse(`segment ${index + 1} of ${segments.length} is empty; remove the extra comma.`)
     }
-    if (isStatus(segment)) {
+    if (isSymbolChangeStatus(segment)) {
       statuses.add(segment)
       continue
     }
-    const head = segment.slice(0, segment.indexOf(":"))
+    const status = clauseStatus(segment)
     refuse(
-      segment.includes(":") && isStatus(head)
-        ? `"${segment}" is a --fail-on token, not a status; the report lists those changes under "${head}".`
-        : `"${segment}" is no status.`,
+      status === null
+        ? `"${segment}" is no status.`
+        : `"${segment}" is a --fail-on clause, not a status; the report lists those changes under "${status}".`,
     )
   }
   return [...statuses]
 }
 
-function isStatus(value: string): value is SymbolChangeStatus {
-  return (SYMBOL_CHANGE_STATUSES as readonly string[]).includes(value)
+/** The status whose changes a `--fail-on` clause such as `removed:duplicate` counts among. */
+function clauseStatus(segment: string): SymbolChangeStatus | null {
+  if (!segment.includes(":")) return null
+  const head = parseClause(segment)?.token.split(":")[0]
+  return isSymbolChangeStatus(head) ? head : null
 }
 
-/** One warning per clause that counts only changes `statuses` keeps out of `diff.md`. */
-export function filteredOutClauses(
-  clauses: readonly FailOnClause[],
+/**
+ * The gate's lines name the Symbols the tripped clause counted, so a reader looking for them in
+ * the report is told which ones `statuses` left out of it.
+ */
+export function unlistedTripped(
+  tripped: TrippedClause,
+  diff: DiffResult,
   statuses: readonly SymbolChangeStatus[],
-): string[] {
+): string | null {
   const kept = new Set(statuses)
-  const warnings = clauses.flatMap((clause) => {
-    const counted = statusesCounted(clause.token)
-    if (counted.some((status) => kept.has(status))) return []
-    return [
-      `⚠ --fail-on ${formatClause(clause)} counts ${counted.join(" and ")} changes, which --filter leaves out of diff.md.`,
-    ]
+  const unlisted = countedChanges(tripped.clause.token, diff, tripped.scope).filter(
+    (change) => !kept.has(change.status),
+  )
+  if (unlisted.length === 0) return null
+  const byStatus = SYMBOL_CHANGE_STATUSES.flatMap((status) => {
+    const count = unlisted.filter((change) => change.status === status).length
+    return count === 0 ? [] : [`${count} ${status}`]
   })
-  return [...new Set(warnings)]
+  const which =
+    unlisted.length === tripped.observed
+      ? "every change"
+      : `${unlisted.length} of the ${tripped.observed} changes`
+  return `⚠ --filter leaves out of ${DIFF_MD_FILENAME} ${which} that tripped --fail-on ${formatClause(tripped.clause)} (${byStatus.join(", ")}).`
 }

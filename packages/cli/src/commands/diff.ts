@@ -2,6 +2,7 @@ import { resolve } from "node:path"
 import { buildDiff, DiffError, type GitRenameMap, writeCanonicalDiff } from "@aburi/diff"
 import {
   formatCallResolutionLine,
+  type ProjectDiffOptions,
   projectDiff,
   projectDiffSummaryLine,
 } from "@aburi/markdown-projection"
@@ -29,7 +30,7 @@ import type { GitRunner } from "../git/runner"
 import { readIR } from "../ir-io"
 import { createLogger } from "../logger"
 import { createOutputDir, removeOutputFile, writeOutputFile } from "../output-file"
-import { filteredOutClauses, parseFilter } from "../status-filter"
+import { parseFilter, unlistedTripped } from "../status-filter"
 import type { WarnFn } from "../warn"
 import { chooseInputs, type DiffInputs } from "./diff-inputs"
 import {
@@ -66,8 +67,8 @@ export interface DiffOptions {
   configPath?: string
   compact?: boolean
   maxBytes?: number
-  /** The `--filter` value: the statuses whose changes `diff.md` lists, comma-separated. */
-  filter?: string
+  /** The statuses whose changes `diff.md` lists: the `--filter` value, or a list of them. */
+  filter?: string | readonly SymbolChangeStatus[]
   parallelScans?: boolean
   logLevel?: LogLevel
   git?: GitRunner
@@ -89,7 +90,8 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
   const cwd = options.cwd ?? process.cwd()
   const warn = options.warn ?? ((m: string) => process.stderr.write(`${m}\n`))
   const failOn = options.failOn === undefined ? [] : parseFailOnValues(options.failOn)
-  const statuses = options.filter === undefined ? undefined : parseFilter(options.filter)
+  const filter: Pick<ProjectDiffOptions, "statuses"> =
+    options.filter === undefined ? {} : { statuses: parseFilter(options.filter) }
   if (
     options.maxBytes !== undefined &&
     (!Number.isInteger(options.maxBytes) || options.maxBytes <= 0)
@@ -98,9 +100,6 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
       `--max-bytes must be a positive integer (got ${String(options.maxBytes)}).`,
       "input-error",
     )
-  }
-  if (statuses !== undefined && options.format !== "json") {
-    for (const line of filteredOutClauses(failOn, statuses)) warn(line)
   }
   let pinned: PinnedConfig | null = null
   const pinConfigOnce = async (): Promise<PinnedConfig> => {
@@ -144,7 +143,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     throw error
   }
 
-  const written = await writeReport(diff, outputDir, { ...options, statuses }, warn)
+  const written = await writeReport(diff, outputDir, options, filter, warn)
   const { firstTriggered } = evaluateFailOn(failOn, diff, options.failOnScope)
   const faultedScans = faultedSides(compared.scans)
   const exitCode: ExitCode =
@@ -154,6 +153,10 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
 
   warnAboutComparison({ ...compared, notCompared: diff.notCompared }, warn)
   warnOnUncountedDuplicates(uncountedDuplicates(failOn, diff, options.failOnScope), warn)
+  if (firstTriggered !== null && filter.statuses !== undefined && written.diffMdPath !== null) {
+    const unlisted = unlistedTripped(firstTriggered, diff, filter.statuses)
+    if (unlisted !== null) warn(unlisted)
+  }
   const callResolution = compared.headIR.stats.callResolution
   return {
     ...written,
@@ -213,9 +216,8 @@ type WrittenReport = Pick<DiffReport, "diffJsonPath" | "diffMdPath" | "diffFullM
 async function writeReport(
   diff: BuiltDiff,
   outputDir: string,
-  options: Pick<DiffOptions, "format" | "compact" | "maxBytes"> & {
-    statuses: readonly SymbolChangeStatus[] | undefined
-  },
+  options: Pick<DiffOptions, "format" | "compact" | "maxBytes">,
+  filter: Pick<ProjectDiffOptions, "statuses">,
   warn: WarnFn,
 ): Promise<WrittenReport> {
   const format = options.format ?? "both"
@@ -244,7 +246,7 @@ async function writeReport(
         `⚠ --max-bytes has no effect under --format json: the cap applies to ${DIFF_MD_FILENAME}, which this run does not write.`,
       )
     }
-    if (options.statuses !== undefined) {
+    if (filter.statuses !== undefined) {
       warn(
         `⚠ --filter has no effect under --format json: it narrows ${DIFF_MD_FILENAME}, which this run does not write, and ${DIFF_JSON_FILENAME} holds every change.`,
       )
@@ -252,7 +254,6 @@ async function writeReport(
     return written
   }
   const diffMdPath = resolve(outputDir, DIFF_MD_FILENAME)
-  const filter = options.statuses === undefined ? {} : { statuses: options.statuses }
   const uncapped = projectDiff(diff, filter)
   let markdown = uncapped
   if (options.maxBytes !== undefined && Buffer.byteLength(uncapped, "utf8") > options.maxBytes) {
@@ -270,7 +271,7 @@ async function writeReport(
     const bytes = Buffer.byteLength(markdown, "utf8")
     if (bytes > options.maxBytes) {
       warn(
-        `⚠ ${DIFF_MD_FILENAME} is ${bytes} bytes, over the ${options.maxBytes} requested: every section was dropped and the title and summary alone exceed it. Raise --max-bytes.`,
+        `⚠ ${DIFF_MD_FILENAME} is ${bytes} bytes, over the ${options.maxBytes} requested: every section was dropped and ${filter.statuses === undefined ? "the title and summary" : "the title, the summary and the filter's note"} alone exceed it. Raise --max-bytes.`,
       )
     }
   }
