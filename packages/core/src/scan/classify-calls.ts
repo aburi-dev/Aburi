@@ -18,7 +18,7 @@ import type {
   SymbolCandidate,
   VocabRegistry,
 } from "@aburi/types"
-import { makeCallSiteKey } from "../call-site"
+import { type CallSiteBinding, isThisBinding, makeCallSiteKey } from "../call-site"
 import { CoreError } from "../errors"
 import type { DropCFilter } from "./drop-c"
 import { normalizeCallStrings } from "./normalize"
@@ -55,11 +55,13 @@ export function classifyCalls(input: ClassifyCallsInput): {
   calls: Call[]
   dynamicCallSites: string[]
   declinedCalls: DeclinedCall[]
+  thisBindings: CallSiteBinding[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
   const dynamicCallSites: string[] = []
   const declinedCalls: DeclinedCall[] = []
+  const thisBindings: CallSiteBinding[] = []
   const owner: OwnerSummary = {
     id: input.candidate.id,
     kind: input.candidate.kind,
@@ -129,15 +131,21 @@ export function classifyCalls(input: ClassifyCallsInput): {
     if (!classified) {
       declinedCalls.push(...declines)
       survivingCalls.push({ target: call.target, line: call.line, resolved: null })
-      if (call.dynamicReceiver === true) {
-        dynamicCallSites.push(makeCallSiteKey(input.file.path, call.line, call.target))
-      }
+      const key = makeCallSiteKey(input.file.path, call.line, call.target)
+      if (call.dynamicReceiver === true) dynamicCallSites.push(key)
+      if (isThisBinding(call.thisBinding)) thisBindings.push([key, call.thisBinding])
     }
   }
 
   // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
   // so two effects on one line keep the order they are written in, which `logic` reads.
-  return { effects: classifiedEffects, calls: survivingCalls, dynamicCallSites, declinedCalls }
+  return {
+    effects: classifiedEffects,
+    calls: survivingCalls,
+    dynamicCallSites,
+    thisBindings,
+    declinedCalls,
+  }
 }
 
 function isDecline(
