@@ -2,6 +2,7 @@ import type {
   BodyExtraction,
   ComponentId,
   Config,
+  DeclinedCall,
   EffectPlugin,
   ExtractionContext,
   FrameworkClassifyContext,
@@ -39,6 +40,7 @@ export interface ExtractedFile extends FileOutcomeCommon {
   imports: readonly ImportEdge[]
   timeoutEvents: readonly ClassifyTimeoutEvent[]
   dynamicCallSites: readonly string[]
+  declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
   fault: FileFault | null
@@ -135,6 +137,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         imports: writtenImports,
         timeoutEvents,
         dynamicCallSites: [],
+        declinedCalls: [],
         thisBindings: [],
         fault: {
           code: candidates.code,
@@ -153,6 +156,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
+    const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
@@ -213,9 +217,11 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         effects: classifiedEffects,
         calls: keptCalls,
         dynamicCallSites: fileDynamicCallSites,
+        declinedCalls: fileDeclinedCalls,
         thisBindings: fileThisBindings,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
+      declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
 
       const normalized = language.normalizeAst(candidate)
@@ -244,6 +250,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       imports,
       timeoutEvents,
       dynamicCallSites,
+      declinedCalls,
       thisBindings,
       fault: null,
     }
