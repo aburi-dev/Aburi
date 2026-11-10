@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import type {
   Component,
   Config,
+  DeclinedCall,
   EffectPlugin,
   FrameworkPlugin,
   ImportEdge,
@@ -63,6 +64,7 @@ export interface ExtractedFiles {
   importsByFile: Map<string, readonly ImportEdge[]>
   fileContents: Map<string, ReadFile>
   dynamicCallSites: Set<string>
+  declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
 }
 
@@ -90,6 +92,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     importsByFile: new Map(),
     fileContents: new Map(),
     dynamicCallSites: new Set(),
+    declinedCalls: [],
     thisBindings,
   }
   const strictVocab = isStrict(input.config)
@@ -229,6 +232,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
         out.symbols.push(...result.symbols)
         out.importsByFile.set(result.path, result.imports)
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
+        out.declinedCalls.push(...result.declinedCalls)
         for (const [key, binding] of result.thisBindings) thisBindings[binding].add(key)
         break
       }

@@ -317,17 +317,19 @@ Classifies a `CallCandidate` into a core effect vocabulary
 `fs.read` / `fs.write` / …).
 
 ```ts
-import type { EffectPlugin, EffectClassification } from "@aburi/types"
+import type { EffectClassification, EffectDecline, EffectPlugin } from "@aburi/types"
 
 class MyEffectsPlugin implements EffectPlugin {
   readonly manifest = myEffectsManifest
 
   async init() {}
 
-  classify(call, ctx): EffectClassification | null {
+  classify(call, ctx): EffectClassification | EffectDecline | null {
     // Keep it pure: no I/O, no state, no async. The per-call budget is 50ms
     // by default and stateful classifiers are the reason it exists.
     if (!looksLikeMyEffect(call, ctx)) return null
+    // Recognised, but which effect is not in the call site: say so instead of guessing.
+    if (call.target.endsWith(".raw")) return { declined: "effects-plugin:mytool:raw" }
     return {
       effectId: "network.http",
       confidence: "high",
@@ -342,7 +344,18 @@ class MyEffectsPlugin implements EffectPlugin {
 
 Contracts:
 
-- First non-null classification wins across the effects plugin list.
+- First classification wins across the effects plugin list. `null` and a
+  decline both pass the call to the next plugin.
+- **Decline what you recognise but cannot classify.** Return
+  `{ declined: "effects-plugin:<plugin>:<reason>" }` instead of `null` when the
+  call is your library's but the effect is not in the call site: raw SQL that
+  may read or write, or a verb your library spells two ways. If no later plugin
+  classifies the call, it stays in `calls[]` and the scan records your reason in
+  `stats.declinedCalls`, which `aburi explain` shows for the Symbol. A `null` is
+  indistinguishable from a call you never recognised. An empty or non-string
+  reason fails the run, and so does an answer that carries both `effectId` and
+  `declined`. [`effect-plugin.md` §4.5](../design/effect-plugin.md)
+  has the contract.
 - The classifier is timed against a per-call budget (`classifyTimeoutMs`). A
   call over it keeps its answer and is listed in `stats.effectClassifyTimeouts`.
   Keep the classifier pure and synchronous so a slow classification is a bug,
@@ -371,8 +384,10 @@ Contracts:
   `hasMatchingImport` (matches a module specifier after checking every
   `ImportEdge.source`). Both enforce the language plugin's normalized-output
   contract from the [language plugin spec](../design/lang-plugin.md), and both
-  take a `{ plugin, filePath }` record so the thrown message names your plugin
-  and the offending file. The same module carries the readers for the receiver
+  take a `{ plugin, filePath }` record so the `PluginInputError` they throw
+  names your plugin and the offending file. Its `code` says what was malformed
+  (`unnormalized-callee`, `unnormalized-import-source`, …), and the scan keeps it
+  on the withdrawn file's `extractionFailures` entry. The same module carries the readers for the receiver
   check — `identifierWords` / `identifierMentions` (a word split, so `feedback`
   does not read as `db`) and `hasLiteralFirstArgument`:
 

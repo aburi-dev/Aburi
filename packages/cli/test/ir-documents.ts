@@ -1,6 +1,7 @@
 import { call, makeIR, makeSymbol, recordingLogger } from "@aburi/test-support"
 import type {
   CallResolutionStats,
+  DeclinedCall,
   Dependency,
   IR,
   Symbol as IRSymbol,
@@ -26,6 +27,7 @@ export interface DocumentShape {
   skipped?: readonly SkippedFile[]
   /** Files a document predating `stats.skippedFiles` lost without naming them. */
   unnamedLosses?: number
+  declinedCalls?: readonly DeclinedCall[]
 }
 
 export function documentWith(shape: DocumentShape): IR {
@@ -43,6 +45,7 @@ export function documentWith(shape: DocumentShape): IR {
       ...(shape.skipped === undefined
         ? {}
         : { skippedFiles: [...shape.skipped].sort(byKey((f) => f.path)) }),
+      ...(shape.declinedCalls === undefined ? {} : { declinedCalls: [...shape.declinedCalls] }),
     },
   }
 }
