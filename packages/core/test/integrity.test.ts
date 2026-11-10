@@ -407,6 +407,17 @@ describe("checkIRIntegrity — Unicode normalization", () => {
         ir.dependencies = [dependency({ from: "a", to: decomposed, via: "import" })]
       },
     ],
+    [
+      "stats.declinedCalls[].target",
+      (ir) => {
+        ir.symbols = [
+          makeSymbol("ts:src/a.ts#foo", { calls: [{ target: "q", line: 1, resolved: null }] }),
+        ]
+        ir.stats.declinedCalls = [
+          { symbolId: "ts:src/a.ts#foo", target: decomposed, line: 1, plugin: "p", reason: "r" },
+        ]
+      },
+    ],
   ])("reports %s", (_what, build) => {
     expect(violationsOf(irWith(build), 19)).toHaveLength(1)
   })
@@ -421,10 +432,11 @@ describe("checkIRIntegrity — Unicode normalization", () => {
     expect(checkIRIntegrity(ir)).toEqual([])
   })
 
-  it("leaves the strings a Document only quotes alone: decorator source and signature types", () => {
+  it("leaves the strings a Document only quotes alone: decorator source, signature types, a decline's reason", () => {
     const ir = irWith((ir) => {
       ir.symbols = [
         makeSymbol("ts:src/a.ts#foo", {
+          calls: [{ target: "q", line: 1, resolved: null }],
           decorators: [
             { name: "D", raw: `D("${decomposed}")`, arguments: [], boundary: false, line: 1 },
           ],
@@ -437,6 +449,9 @@ describe("checkIRIntegrity — Unicode normalization", () => {
             typeParameters: [],
           },
         }),
+      ]
+      ir.stats.declinedCalls = [
+        { symbolId: "ts:src/a.ts#foo", target: "q", line: 1, plugin: "p", reason: decomposed },
       ]
     })
     expect(checkIRIntegrity(ir)).toEqual([])

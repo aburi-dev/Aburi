@@ -40,6 +40,7 @@ export type {
   Component,
   ComponentId,
   Confidence,
+  DeclinedCall,
   Decorator,
   Dependency,
   DependencyEndpoint,
@@ -84,6 +85,7 @@ export type {
   ClassifyContext,
   DropHint,
   EffectClassification,
+  EffectDecline,
   EffectPlugin,
   EffectsManifest,
   EffectVocab,
@@ -114,10 +116,12 @@ export type {
   SourceFile,
   SymbolCandidate,
   SymbolClassification,
+  ThisBinding,
   VocabRegistry,
   WalkContext,
   WrittenSourceRange,
 } from "./plugins"
+export { lastSegment } from "./qualified-name"
 export {
   CONFIG_SCHEMA_URL,
   DIFF_SCHEMA_URL,

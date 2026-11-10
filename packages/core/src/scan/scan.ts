@@ -123,6 +123,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     fileContents: extracted.fileContents,
     lspConfig: input.config.lsp,
     languageIds: input.languages.map((plugin) => plugin.languageId),
+    thisBindings: extracted.thisBindings,
     logger,
   }
   if (input.lspServerFactory !== undefined) enrichmentInput.serverFactory = input.lspServerFactory
@@ -173,6 +174,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     skipped,
     symbols: propagatedSymbols,
     timeoutEvents: extracted.timeoutEvents,
+    declinedCalls: extracted.declinedCalls,
     propagation: propagation.stats,
     lspEnrichment:
       enrichment.stats === undefined

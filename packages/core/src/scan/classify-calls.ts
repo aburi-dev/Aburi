@@ -3,8 +3,11 @@ import type {
   CallCandidate,
   ComponentId,
   Config,
+  DeclinedCall,
   Decorator,
   Effect,
+  EffectClassification,
+  EffectDecline,
   EffectPlugin,
   ImportEdge,
   LanguageId,
@@ -15,7 +18,8 @@ import type {
   SymbolCandidate,
   VocabRegistry,
 } from "@aburi/types"
-import { makeCallSiteKey } from "../call-site"
+import { type CallSiteBinding, isThisBinding, makeCallSiteKey } from "../call-site"
+import { CoreError } from "../errors"
 import type { DropCFilter } from "./drop-c"
 import { normalizeCallStrings } from "./normalize"
 import {
@@ -50,10 +54,14 @@ export function classifyCalls(input: ClassifyCallsInput): {
   effects: Effect[]
   calls: Call[]
   dynamicCallSites: string[]
+  declinedCalls: DeclinedCall[]
+  thisBindings: CallSiteBinding[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
   const dynamicCallSites: string[] = []
+  const declinedCalls: DeclinedCall[] = []
+  const thisBindings: CallSiteBinding[] = []
   const owner: OwnerSummary = {
     id: input.candidate.id,
     kind: input.candidate.kind,
@@ -76,6 +84,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     }
 
     let classified = false
+    const declines: DeclinedCall[] = []
     for (const effect of input.effects) {
       const timeoutOptions: ClassifyWithTimeoutOptions = {
         onTimeout: (event) => {
@@ -91,6 +100,16 @@ export function classifyCalls(input: ClassifyCallsInput): {
         timeoutOptions,
       )
       if (result === null) continue
+      if (isDecline(result, effect)) {
+        declines.push({
+          plugin: effect.manifest.name,
+          symbolId: input.candidate.id,
+          target: call.target,
+          line: call.line,
+          reason: declineReason(result, effect),
+        })
+        continue
+      }
       input.vocab.effect({
         value: result.effectId,
         plugin: effect.manifest.name,
@@ -110,23 +129,43 @@ export function classifyCalls(input: ClassifyCallsInput): {
       break
     }
     if (!classified) {
+      declinedCalls.push(...declines)
       survivingCalls.push({ target: call.target, line: call.line, resolved: null })
-      if (call.dynamicReceiver === true) {
-        dynamicCallSites.push(makeCallSiteKey(input.file.path, call.line, call.target))
-      }
+      const key = makeCallSiteKey(input.file.path, call.line, call.target)
+      if (call.dynamicReceiver === true) dynamicCallSites.push(key)
+      if (isThisBinding(call.thisBinding)) thisBindings.push([key, call.thisBinding])
     }
   }
 
-  classifiedEffects.sort(byTargetThenLine)
-  survivingCalls.sort(byTargetThenLine)
-  return { effects: classifiedEffects, calls: survivingCalls, dynamicCallSites }
+  // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
+  // so two effects on one line keep the order they are written in, which `logic` reads.
+  return {
+    effects: classifiedEffects,
+    calls: survivingCalls,
+    dynamicCallSites,
+    thisBindings,
+    declinedCalls,
+  }
 }
 
-function byTargetThenLine(
-  a: { target: string; line?: number },
-  b: { target: string; line?: number },
-): number {
-  if (a.target < b.target) return -1
-  if (a.target > b.target) return 1
-  return (a.line ?? 0) - (b.line ?? 0)
+function isDecline(
+  result: EffectClassification | EffectDecline,
+  effect: EffectPlugin,
+): result is EffectDecline {
+  if (!Object.hasOwn(result, "declined")) return false
+  if (!Object.hasOwn(result, "effectId")) return true
+  // TypeScript accepts an object carrying both keys as either member of the union.
+  throw new CoreError(
+    `Effect plugin "${effect.manifest.name}" answered one call with both \`effectId\` and \`declined\`: classify() must return an EffectClassification, an EffectDecline or null, not both.`,
+    { code: "scan-plugin-misconfigured", value: effect.manifest.name },
+  )
+}
+
+function declineReason(decline: EffectDecline, effect: EffectPlugin): string {
+  const reason: unknown = decline.declined
+  if (typeof reason === "string" && reason.trim().length > 0) return reason.normalize("NFC")
+  throw new CoreError(
+    `Effect plugin "${effect.manifest.name}" declined a call with no reason: \`declined\` must be a non-empty string.`,
+    { code: "scan-plugin-misconfigured", value: effect.manifest.name },
+  )
 }

@@ -1,5 +1,5 @@
 export { AsyncMemo } from "./async-memo"
-export { makeCallSiteKey, receiverHead } from "./call-site"
+export { makeCallSiteKey, receiverHead, type ThisBindingSites } from "./call-site"
 export {
   type CallEdge,
   type ResolveCallGraphInput,
@@ -13,9 +13,16 @@ export { countBy, groupBy } from "./collections"
 export {
   __testing as __testing_component,
   type DetectComponentsOptions,
+  type DetectComponentsResult,
   detectComponents,
+  type IgnoredPublicApi,
 } from "./component"
-export { NPM_MANIFEST, readWorkspacePackages, type WorkspacePackage } from "./component-manifest"
+export {
+  type IgnoredPublicApiReason,
+  NPM_MANIFEST,
+  readWorkspacePackages,
+  type WorkspacePackage,
+} from "./component-manifest"
 export {
   CoreError,
   type CoreErrorCode,
@@ -170,13 +177,16 @@ export {
   calleeLeaf,
   calleeName,
   calleeText,
+  chainCalls,
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
   type ReceiverChain,
+  type ReceiverChainWalk,
   receiverChain,
   type SyntaxNode,
   unwrapValue,
+  walkReceiverChain,
   writtenChildren,
 } from "./syntax-node"
 export { computeWeaklyConnectedComponents } from "./wcc"
@@ -188,4 +198,8 @@ export {
   type UnresolvedDeclaration,
   type WorkspaceCandidate,
 } from "./workspace"
-export { type DetectWorkspaceRootOptions, detectWorkspaceRoot } from "./workspace-root"
+export {
+  type DetectWorkspaceRootOptions,
+  detectWorkspaceRoot,
+  type GitWorkTree,
+} from "./workspace-root"

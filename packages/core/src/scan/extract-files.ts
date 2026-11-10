@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import type {
   Component,
   Config,
+  DeclinedCall,
   EffectPlugin,
   FrameworkPlugin,
   ImportEdge,
@@ -10,8 +11,10 @@ import type {
   Logger,
   ParseError,
   SourceFile,
+  ThisBinding,
   VocabRegistry,
 } from "@aburi/types"
+import type { ThisBindingSites } from "../call-site"
 import { countBy } from "../collections"
 import { CoreError } from "../errors"
 import { symbolIdFile } from "../id"
@@ -61,6 +64,8 @@ export interface ExtractedFiles {
   importsByFile: Map<string, readonly ImportEdge[]>
   fileContents: Map<string, ReadFile>
   dynamicCallSites: Set<string>
+  declinedCalls: DeclinedCall[]
+  thisBindings: ThisBindingSites
 }
 
 export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedFiles> {
@@ -74,6 +79,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
   if (input.config.keep !== undefined) dropCFilterInput.keep = input.config.keep
   const dropCFilter = buildDropCFilter(dropCFilterInput)
 
+  const thisBindings: Record<ThisBinding, Set<string>> = { class: new Set(), instance: new Set() }
   const out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -86,6 +92,8 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     importsByFile: new Map(),
     fileContents: new Map(),
     dynamicCallSites: new Set(),
+    declinedCalls: [],
+    thisBindings,
   }
   const strictVocab = isStrict(input.config)
   const warnedReleaseFailure = new Set<string>()
@@ -224,6 +232,8 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
         out.symbols.push(...result.symbols)
         out.importsByFile.set(result.path, result.imports)
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
+        out.declinedCalls.push(...result.declinedCalls)
+        for (const [key, binding] of result.thisBindings) thisBindings[binding].add(key)
         break
       }
       default:
