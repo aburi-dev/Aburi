@@ -354,14 +354,14 @@ incident report.
 
 That is not the same as silence. The run's `Logger` is a separate channel — per file, or per
 Symbol or pair from the matcher, rather than per run, governed by `--log-level` (§3) and
-`ABURI_LOG_LEVEL` (§11), and still writing to `process.stderr` whatever streams the caller
-injected. The level is the command's rather than one scan's: `diff` hands it to both of its
+`ABURI_LOG_LEVEL` (§11). Under the CLI it reaches the stderr `runCli` is given, as every other
+stderr line does. The level is the command's rather than one scan's: `diff` hands it to both of its
 scans, and to the matcher when it is `debug`, the only level at which the matcher traces what
 stage 4 refuses on a rule ([`diff-algorithm.md`](./diff-algorithm.md) §3.4.7); `explain` hands
 it to the one scan it rescans with. So nothing logs at a level the reader did not choose. An
 embedder passes it as `logLevel` to `runScan`, `runDiff` or `runExplain`, and gets `warn`
-without one. An embedded scan with no sink is quiet, not mute, and routing that channel to the
-caller is a known gap rather than something this contract covers.
+without one; it passes `log` to the same three to receive the lines, and gets `process.stderr`
+without one. An embedded scan with no sink is quiet, not mute.
 It is also why the files above are listed by the CLI itself rather than left to that channel:
 at `ABURI_LOG_LEVEL=error` the per-file lines are gone, and for `over-size`, `unroutable` and an
 `unreadable` raised during discovery there is no `Logger` line to lose — those three are decided
@@ -1193,13 +1193,15 @@ The `--json` flag of the planned `aburi vocab` would dedicate stdout to machine-
 Colour is decided once per run, by the first rule that applies:
 
 1. `--no-color` → off
-2. `FORCE_COLOR` set: `0` or `false` → off; any other value, the empty one included → on
-3. `NO_COLOR` set to a non-empty value → off
+2. `FORCE_COLOR` set: the empty value, `1`, `true`, `2` or `3` → on; any other value → off, as
+   Node reads it — exactly those strings, so `TRUE`, ` 1` and `yes` are off
+3. `NO_COLOR` set to a non-blank value → off
 4. CI mode (§12) → off
 5. stderr is a terminal and `TERM` is not `dumb` → on
 6. Otherwise → off
 
-`FORCE_COLOR` wins over `NO_COLOR` as it does for Node itself: it is the one a user sets for a
+`FORCE_COLOR` is read as Node reads it, so that aburi and the Node tools beside it in a pipeline
+agree, and it wins over `NO_COLOR` as it does for Node itself: it is the one a user sets for a
 single run against a `NO_COLOR` exported for every program. With colour on:
 
 | Line | Colour |
@@ -1227,14 +1229,20 @@ resolving calls…
 
 `aburi scan` and the rescan of `aburi explain` show their scan's phase. `aburi diff` in ref mode
 prefixes each scan's phase with its side, both sides on one line while the two scans run at once
-(`base: extracting 412/5002 files · head: extracting 380/5002 files`), and once the scans are
-done shows `comparing…`; in file mode it shows `comparing…` alone. `aburi init` shows none.
+(`base: extracting 412/5002 files · head: extracting 380/5002 files`), the side still running
+alone once the other is done, and once the scans are done shows `comparing…`; in file mode it
+shows `comparing…` alone. `aburi init` shows none.
 
 The line is redrawn in place, a carriage return and an erase-line sequence before each draw, at
-most every 100 ms, and at once when a phase changes or the last file is extracted; it is cut to the terminal's width so it
-never wraps. Every other line on stderr is written above it: the progress line is erased, the
-line written and the progress line drawn again. It is erased for good before the command writes
-its results on stdout and before an error that ends the run, so nothing of it is left on the
+most every 100 ms, and at once when a phase changes, a side's scan ends or the last file is
+extracted. A count that arrives within 100 ms of the last draw is drawn when the 100 ms are up,
+unless a newer one takes its place first, so the line never shows a count older than that. It is
+cut one column short of the terminal's width, counting code points: the line holds no wide
+characters, though a terminal that draws `…` and `·` two columns wide can still wrap it. Every
+other line on stderr is written above it: the progress line is erased, the line written and the
+progress line drawn again. It is erased for good before the command writes its results on
+stdout, before an error that ends the run, and on `SIGINT`, `SIGTERM` or `SIGHUP` before the
+process ends on the signal or another line is written for it, so nothing of it is left on the
 terminal afterwards.
 
 ### 10.3 Stack traces
@@ -1250,8 +1258,8 @@ is written. CI mode changes neither.
 |---|---|
 | `ABURI_CONFIG` | Config file path (equivalent to --config) |
 | `ABURI_LOG_LEVEL` | Equivalent to --log-level, which wins over it (§3), except that a value other than the four levels is ignored rather than refused |
-| `NO_COLOR` | Set to a non-empty value, no colour on stderr (§10.1) |
-| `FORCE_COLOR` | Set, colour on stderr even off a terminal and in CI mode; `0` or `false`, no colour (§10.1). `--no-color` wins over it |
+| `NO_COLOR` | Set to a non-blank value, no colour on stderr (§10.1) |
+| `FORCE_COLOR` | Empty, `1`, `true`, `2` or `3`: colour on stderr even off a terminal and in CI mode; any other value, no colour (§10.1). `--no-color` wins over it |
 | `CI` | If set, CI mode (§12) |
 
 Precedence: CLI flags > environment variables > config file.
@@ -1478,10 +1486,10 @@ a command's option, not a global one (§3).
 | CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
 | CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
 | CL64 | `aburi diff HEAD~1..HEAD`, run from the repository root and from a subdirectory, where both refs hold symbolic links that git wrote as plain files, two with a source extension (one named outside ASCII), one without and one to a directory; where only the head adds them, with `core.symlinks` `false` and with it turned `true` after they were checked out; and, where links can be created, with both refs holding them as links | The first: one warning for each side naming the two links with a source extension, as written from the repository root, and the exit code the run has without them. The second: the head's warning alone. The third: no warning |
-| CL70 | `aburi scan` with stderr on a terminal, over a workspace that draws a warning, with stdout piped | stderr draws `discovering files…`, `extracting N/M files` up to `M/M` and `resolving calls…`, the warning on a line of its own above the progress line, and ends with the progress line erased; stdout byte for byte that of the run with stderr piped |
-| CL71 | `aburi diff main..HEAD --parallel-scans` with stderr on a terminal; `aburi diff --base <ir> --head <ir>` | The progress line names each scan's side, both sides on one line while both run, then `comparing…`, and leaves on the terminal what the run with stderr piped writes, stdout byte for byte the same. File mode draws `comparing…` alone |
-| CL72 | Any command with stderr piped, `TERM=dumb`, or both streams piped under `FORCE_COLOR=1` | No progress line; under `FORCE_COLOR=1` the warnings, errors and log lines coloured, and stderr with the escape sequences stripped byte for byte that of the run without it |
-| CL73 | `aburi explain <id> --ir <missing>` at `--log-level debug`; a run that fails with exit 1 at `--log-level debug` and at `warn` | The first: the message alone, exit 2. The second: at debug the message, then the stack trace and each `caused by:` one; at warn the message alone |
+| CL70 | `aburi scan` with stderr on a terminal, over a workspace that draws a warning, with stdout piped, and with stdout and stderr the same terminal | stderr draws `discovering files…`, `extracting N/M files` up to `M/M` and `resolving calls…`, the warning on a line of its own above the progress line, and ends with the progress line erased; stdout byte for byte that of the run with stderr piped. On the one terminal, the screen holds the warning and the results and none of the progress text |
+| CL71 | `aburi diff main..HEAD` under `--parallel-scans` and under `--no-parallel-scans` with stderr on a terminal; `aburi diff --base <ir> --head <ir>` | The progress line names each scan's side, both sides on one line while both run and never under `--no-parallel-scans`, then `comparing…`, and leaves on the terminal what the run with stderr piped writes, stdout byte for byte the same. File mode draws `comparing…` alone |
+| CL72 | Any command with stderr piped, `TERM=dumb`, or both streams piped under `FORCE_COLOR=1`, `aburi diff main..HEAD --parallel-scans --log-level debug` among them | No progress line; under `FORCE_COLOR=1` the warnings yellow, errors red, `debug:` lines from either side's scan dim, and stderr with the escape sequences stripped byte for byte that of the run without it |
+| CL73 | `aburi explain <id> --ir <missing>` at `--log-level debug`; a run that fails with exit 1 or 3 at `--log-level debug` and at `warn`, its causes including a value that is not an `Error` and a cycle | The first: the message alone, exit 2. The second: at debug the message, then the stack trace and each `caused by:` one, dim under `FORCE_COLOR=1`, a cause that is not an `Error` as `caused by: <value>` and each cause of the cycle once; at warn the message alone |
 
 ## 18. Design Decisions
 

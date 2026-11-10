@@ -1,29 +1,25 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createTerminal,
   PROGRESS_INTERVAL_MS,
+  type Terminal,
   type TerminalMode,
   type TerminalSettings,
   terminalMode,
 } from "../src/terminal"
-import { MemStream, TerminalStream } from "./run-cli"
-
-const ERASE = "\r\u001b[2K"
-const YELLOW = (text: string) => `\u001b[33m${text}\u001b[39m`
-const RED = (text: string) => `\u001b[31m${text}\u001b[39m`
-const DIM = (text: string) => `\u001b[2m${text}\u001b[22m`
+import { DIM, ERASE, MemStream, RED, TerminalStream, YELLOW } from "./run-cli"
 
 const PLAIN_TERMINAL: TerminalSettings = {
   env: { noColor: false, forceColor: null, dumbTerminal: false },
   ci: false,
-  colourFlag: true,
+  colorOption: true,
   isTerminal: true,
 }
 
 function settings(overrides: {
   env?: Partial<TerminalSettings["env"]>
   ci?: boolean
-  colourFlag?: boolean
+  colorOption?: boolean
   isTerminal?: boolean
 }): TerminalSettings {
   return { ...PLAIN_TERMINAL, ...overrides, env: { ...PLAIN_TERMINAL.env, ...overrides.env } }
@@ -31,59 +27,73 @@ function settings(overrides: {
 
 describe("terminalMode", () => {
   it.each<[string, Parameters<typeof settings>[0], TerminalMode]>([
-    ["colours and draws progress on a terminal", {}, { colour: true, progress: true }],
-    ["does neither off one", { isTerminal: false }, { colour: false, progress: false }],
+    ["colours and draws progress on a terminal", {}, { color: true, progress: true }],
+    ["does neither off one", { isTerminal: false }, { color: false, progress: false }],
     [
       "does neither on TERM=dumb",
       { env: { dumbTerminal: true } },
-      { colour: false, progress: false },
+      { color: false, progress: false },
     ],
     [
       "drops colour alone under NO_COLOR",
       { env: { noColor: true } },
-      { colour: false, progress: true },
+      { color: false, progress: true },
     ],
-    ["does neither in CI mode", { ci: true }, { colour: false, progress: false }],
+    ["does neither in CI mode", { ci: true }, { color: false, progress: false }],
     [
       "colours off a terminal under FORCE_COLOR, with no progress line",
       { isTerminal: false, env: { forceColor: true } },
-      { colour: true, progress: false },
+      { color: true, progress: false },
     ],
     [
       "lets FORCE_COLOR win over NO_COLOR",
       { env: { forceColor: true, noColor: true } },
-      { colour: true, progress: true },
+      { color: true, progress: true },
     ],
     [
       "lets FORCE_COLOR win over CI mode, and still draws no progress line there",
       { ci: true, env: { forceColor: true } },
-      { colour: true, progress: false },
+      { color: true, progress: false },
+    ],
+    [
+      "lets FORCE_COLOR colour TERM=dumb, which still draws no progress line",
+      { env: { dumbTerminal: true, forceColor: true } },
+      { color: true, progress: false },
     ],
     [
       "lets FORCE_COLOR=0 turn colour off on a terminal",
       { env: { forceColor: false } },
-      { colour: false, progress: true },
+      { color: false, progress: true },
     ],
     [
       "lets --no-color win over FORCE_COLOR, and leaves the progress line",
-      { colourFlag: false, env: { forceColor: true } },
-      { colour: false, progress: true },
+      { colorOption: false, env: { forceColor: true } },
+      { color: false, progress: true },
     ],
   ])("%s", (_, overrides, expected) => {
     expect(terminalMode(settings(overrides))).toEqual(expected)
   })
 })
 
+const made: Terminal[] = []
+
+afterEach(() => {
+  // A line left drawn would keep its fatal-signal listeners on the test process.
+  for (const terminal of made.splice(0)) terminal.endProgress()
+  vi.useRealTimers()
+})
+
 /** A terminal on `stream` whose clock reads `clock.now`. */
 function terminalOn(stream: MemStream, mode: TerminalMode) {
   const clock = { now: 0 }
   const terminal = createTerminal(stream, { mode: () => mode, now: () => clock.now })
+  made.push(terminal)
   return { terminal, clock, written: () => stream.chunks }
 }
 
-const ON: TerminalMode = { colour: true, progress: true }
-const OFF: TerminalMode = { colour: false, progress: false }
-const OFF_COLOUR_ON_PROGRESS: TerminalMode = { colour: false, progress: true }
+const ON: TerminalMode = { color: true, progress: true }
+const OFF: TerminalMode = { color: false, progress: false }
+const PROGRESS_WITHOUT_COLOR: TerminalMode = { color: false, progress: true }
 
 describe("createTerminal — lines", () => {
   it("colours each line of a message in its tone, leaving an empty one bare", () => {
@@ -140,7 +150,7 @@ describe("createTerminal — the progress line", () => {
   })
 
   it("writes a line above it and draws it again, with the latest text it was given", () => {
-    const { terminal, written } = terminalOn(new TerminalStream(), OFF_COLOUR_ON_PROGRESS)
+    const { terminal, written } = terminalOn(new TerminalStream(), PROGRESS_WITHOUT_COLOR)
 
     terminal.progress("extracting 0/3 files", true)
     terminal.progress("extracting 1/3 files")
@@ -153,7 +163,7 @@ describe("createTerminal — the progress line", () => {
   })
 
   it("erases it once for good, and writes plain lines after that", () => {
-    const { terminal, written } = terminalOn(new TerminalStream(), OFF_COLOUR_ON_PROGRESS)
+    const { terminal, written } = terminalOn(new TerminalStream(), PROGRESS_WITHOUT_COLOR)
 
     terminal.progress("resolving calls…", true)
     terminal.endProgress()
@@ -163,13 +173,86 @@ describe("createTerminal — the progress line", () => {
     expect(written()).toEqual([`${ERASE}resolving calls…`, ERASE, "done\n"])
   })
 
-  it("cuts a line wider than the terminal so that it never wraps", () => {
-    const { terminal, written } = terminalOn(new TerminalStream(12), OFF_COLOUR_ON_PROGRESS)
+  it("draws a held count once the interval is up, with nothing newer to draw it", () => {
+    vi.useFakeTimers()
+    const { terminal, clock, written } = terminalOn(new TerminalStream(), PROGRESS_WITHOUT_COLOR)
+
+    terminal.progress("extracting 100/5002 files", true)
+    clock.now = 40
+    terminal.progress("extracting 150/5002 files")
+    vi.advanceTimersByTime(PROGRESS_INTERVAL_MS - 41)
+    const beforeTheInterval = [...written()]
+    clock.now = PROGRESS_INTERVAL_MS
+    vi.advanceTimersByTime(1)
+
+    expect(beforeTheInterval).toEqual([`${ERASE}extracting 100/5002 files`])
+    expect(written()).toEqual([
+      `${ERASE}extracting 100/5002 files`,
+      `${ERASE}extracting 150/5002 files`,
+    ])
+  })
+
+  it("draws nothing it held once the line is erased for good", () => {
+    vi.useFakeTimers()
+    const { terminal, written } = terminalOn(new TerminalStream(), PROGRESS_WITHOUT_COLOR)
+
+    terminal.progress("extracting 1/3 files", true)
+    terminal.progress("extracting 2/3 files")
+    terminal.endProgress()
+    vi.advanceTimersByTime(PROGRESS_INTERVAL_MS)
+
+    expect(written()).toEqual([`${ERASE}extracting 1/3 files`, ERASE])
+  })
+
+  it("cuts a line as wide as the terminal or wider one column short of it", () => {
+    const { terminal, written } = terminalOn(new TerminalStream(12), PROGRESS_WITHOUT_COLOR)
 
     terminal.progress("extracting 412/5002 files", true)
     terminal.progress("short", true)
     terminal.progress("elevenchars", true)
+    terminal.progress("twelve chars", true)
 
-    expect(written()).toEqual([`${ERASE}extracting…`, `${ERASE}short`, `${ERASE}elevenchars`])
+    expect(written()).toEqual([
+      `${ERASE}extracting…`,
+      `${ERASE}short`,
+      `${ERASE}elevenchars`,
+      `${ERASE}twelve cha…`,
+    ])
+  })
+})
+
+describe("createTerminal — a fatal signal", () => {
+  it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)(
+    "erases the line on %s before any other listener writes",
+    (signal) => {
+      const stream = new TerminalStream()
+      const { terminal } = terminalOn(stream, PROGRESS_WITHOUT_COLOR)
+      const seenByTheOther: string[] = []
+      // Another listener keeps the signal from being raised again, which would end the test run.
+      const other = () => seenByTheOther.push(stream.text())
+      process.on(signal, other)
+      try {
+        terminal.progress("extracting 1/3 files", true)
+
+        process.emit(signal)
+      } finally {
+        process.off(signal, other)
+      }
+
+      expect(seenByTheOther).toEqual([`${ERASE}extracting 1/3 files${ERASE}`])
+    },
+  )
+
+  it("listens only while a line is drawn", () => {
+    const before = process.listenerCount("SIGINT")
+    const { terminal } = terminalOn(new TerminalStream(), PROGRESS_WITHOUT_COLOR)
+
+    terminal.say("before any line")
+    const undrawn = process.listenerCount("SIGINT")
+    terminal.progress("resolving calls…", true)
+    const drawn = process.listenerCount("SIGINT")
+    terminal.endProgress()
+
+    expect([undrawn, drawn, process.listenerCount("SIGINT")]).toEqual([before, before + 1, before])
   })
 })

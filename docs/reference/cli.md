@@ -57,8 +57,8 @@ CI gates on `3`. A reader that stops early does not change the code:
 | `ABURI_CONFIG` | Config file path. The `--config` flag wins over it. |
 | `ABURI_LOG_LEVEL` | The same as `--log-level`, which wins over it. A value other than the four levels is ignored. |
 | `CI` | CI mode: no progress line, no colour unless `FORCE_COLOR` is set, and `aburi scan` behaves as under `--no-timestamp`. The same as `--ci`. |
-| `NO_COLOR` | Set to anything but the empty string, no colour. |
-| `FORCE_COLOR` | Colour even when stderr is not a terminal, and in CI mode; `0` or `false` turns it off. It wins over `NO_COLOR`, and `--no-color` wins over it. It never brings the progress line, which is drawn only on a terminal outside CI mode. |
+| `NO_COLOR` | Set to anything but blanks, no colour. |
+| `FORCE_COLOR` | Empty, `1`, `true`, `2` or `3`: colour even when stderr is not a terminal, and in CI mode. Any other value, `0` and `false` among them, turns it off; the value is read as Node reads it, case and blanks included. It wins over `NO_COLOR`, and `--no-color` wins over it. It never brings the progress line, which is drawn only on a terminal outside CI mode. |
 
 ## Config discovery
 

@@ -1,18 +1,27 @@
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
-import { EXIT, VOCAB_DISCOVERED_FILENAME } from "../src"
+import { EXIT, type ExitCode, runCli, VOCAB_DISCOVERED_FILENAME } from "../src"
 import { documentWith, symbolFor } from "./ir-documents"
-import { runCliIn, screenOf, TerminalStream, withoutColour } from "./run-cli"
+import {
+  DIM,
+  ERASE,
+  RED,
+  runCliIn,
+  screenOf,
+  TerminalStream,
+  withoutColor,
+  YELLOW,
+} from "./run-cli"
 import { writeStubRepository, writeStubWorkspace } from "./stub-language"
 import { writeConfig, writeFileAt, writeIRs, writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("terminal-output")
 
-const ERASE = "\r\u001b[2K"
 const WARNING = "⚠ 1 file(s) had recoverable parse errors."
-const YELLOW_WARNING = `\u001b[33m${WARNING}\u001b[39m`
+const YELLOW_WARNING = YELLOW(WARNING)
+const PROGRESS_TEXT = /discovering files…|extracting \d+\/\d+ files|resolving calls…|comparing…/
 
 /** The same run twice: once with stderr piped, once with stderr on a terminal. */
 async function pipedAndOnTerminal(argv: readonly string[], env: NodeJS.ProcessEnv = {}) {
@@ -39,7 +48,7 @@ describe("stderr on a terminal", () => {
     }
     expect(terminal.stderr).toContain(`${ERASE}${YELLOW_WARNING}\n`)
     expect(terminal.stderr.endsWith(ERASE)).toBe(true)
-    expect(screenOf(withoutColour(terminal.stderr))).toBe(piped.stderr)
+    expect(screenOf(withoutColor(terminal.stderr))).toBe(piped.stderr)
     expect(piped.stderr).toContain(WARNING)
   })
 
@@ -58,20 +67,58 @@ describe("stderr on a terminal", () => {
     expect(screenOf(terminal.stderr)).toBe(piped.stderr)
   })
 
-  it("names the side of each scan aburi diff runs, then the comparison", async () => {
-    await writeStubRepository(workspace.root, {
-      base: ["ok.stub"],
-      head: ["ok.stub", "added.stub"],
+  it.each(["--parallel-scans", "--no-parallel-scans"])(
+    "names the side of each scan aburi diff runs under %s, then the comparison",
+    async (flag) => {
+      await writeStubRepository(workspace.root, {
+        base: ["ok.stub"],
+        head: ["ok.stub", "added.stub"],
+      })
+
+      const { piped, terminal } = await pipedAndOnTerminal(["diff", "main..HEAD", flag])
+
+      expect(terminal.code).toBe(EXIT.SUCCESS)
+      expect(terminal.stdout).toBe(piped.stdout)
+      expect(terminal.stderr).toContain(`${ERASE}base: discovering files…`)
+      expect(terminal.stderr).toMatch(/head: extracting 2\/2 files/)
+      expect(terminal.stderr).toContain(`${ERASE}comparing…`)
+      // Whether two scans at once overlap on the line is the scheduler's to decide; in turn, never.
+      if (flag === "--no-parallel-scans") expect(terminal.stderr).not.toContain(" · ")
+      expect(screenOf(terminal.stderr)).toBe(piped.stderr)
+    },
+  )
+
+  it("leaves none of the line on a screen that stdout and stderr share", async () => {
+    await writeStubWorkspace(workspace.root, ["ok.stub", "warn.stub"])
+    const screen = new TerminalStream()
+
+    const code = await runCli({
+      argv: ["scan", "--format", "json"],
+      cwd: workspace.root,
+      stdout: screen,
+      stderr: screen,
+      env: {},
     })
 
-    const { piped, terminal } = await pipedAndOnTerminal(["diff", "main..HEAD", "--parallel-scans"])
+    expect(code).toBe(EXIT.SUCCESS)
+    expect(screen.text()).toMatch(PROGRESS_TEXT)
+    const left = screenOf(withoutColor(screen.text()))
+    expect(left).toContain(`${WARNING}\n`)
+    expect(left).toMatch(/^\d+ kept · /m)
+    expect(left).not.toMatch(PROGRESS_TEXT)
+  })
 
-    expect(terminal.code).toBe(EXIT.SUCCESS)
-    expect(terminal.stdout).toBe(piped.stdout)
-    expect(terminal.stderr).toContain(`${ERASE}base: discovering files…`)
-    expect(terminal.stderr).toMatch(/head: extracting 2\/2 files/)
-    expect(terminal.stderr).toContain(`${ERASE}comparing…`)
-    expect(screenOf(terminal.stderr)).toBe(piped.stderr)
+  it("erases the line before an error that ends the run, leaving what a pipe gets", async () => {
+    await writeStubWorkspace(workspace.root, ["ok.stub"])
+    await mkdir(resolve(workspace.root, "out", "aburi.ir.json"), { recursive: true })
+
+    const { piped, terminal } = await pipedAndOnTerminal(["scan", "--format", "json"])
+
+    expect(terminal.code).toBe(EXIT.INPUT_ERROR)
+    expect(piped.code).toBe(EXIT.INPUT_ERROR)
+    expect(terminal.stderr).toContain(`${ERASE}resolving calls…`)
+    expect(screenOf(withoutColor(terminal.stderr))).toBe(piped.stderr)
+    expect(terminal.stderr.trimEnd().endsWith(RED(piped.stderr.trimEnd()))).toBe(true)
   })
 
   it("shows the comparison alone when aburi diff reads two IRs", async () => {
@@ -112,12 +159,47 @@ describe("colour", () => {
     const plain = await runCliIn(workspace.root, ["scan"])
     const forced = await runCliIn(workspace.root, ["scan"], { FORCE_COLOR: "1" })
 
-    expect(withoutColour(plain.stderr)).toBe(plain.stderr)
+    expect(withoutColor(plain.stderr)).toBe(plain.stderr)
     expect(plain.stderr).not.toContain(ERASE)
     expect(forced.stderr).toContain(YELLOW_WARNING)
     expect(forced.stderr).not.toContain(ERASE)
-    expect(withoutColour(forced.stderr)).toBe(plain.stderr)
+    expect(withoutColor(forced.stderr)).toBe(plain.stderr)
     expect(forced.stdout).toBe(plain.stdout)
+  })
+
+  it("colours warnings yellow and the log of either side's scan dim, the text unchanged", async () => {
+    await writeStubRepository(workspace.root, {
+      base: ["ok.stub", "warn.stub"],
+      head: ["ok.stub", "warn.stub", "added.stub"],
+    })
+    const argv = ["diff", "main..HEAD", "--parallel-scans", "--log-level", "debug"]
+
+    const plain = await runCliIn(workspace.root, argv)
+    const forced = await runCliIn(workspace.root, argv, { FORCE_COLOR: "1" })
+
+    const lines = forced.stderr.trimEnd().split("\n")
+    const isDebug = (line: string) => withoutColor(line).startsWith("debug: ")
+    // The base scan, on its worker, is through before the head's held log is let out.
+    const baseEnds = lines.findIndex((line) => withoutColor(line).startsWith("⚠ base ref"))
+    expect(lines.slice(0, baseEnds).filter(isDebug)).not.toEqual([])
+    expect(lines.slice(baseEnds).filter(isDebug)).not.toEqual([])
+    for (const line of lines.filter(isDebug)) expect(line).toBe(DIM(withoutColor(line)))
+    for (const line of lines.filter((line) => withoutColor(line).startsWith("⚠ "))) {
+      expect(line).toBe(YELLOW(withoutColor(line)))
+    }
+    expect(withoutColor(forced.stderr)).toBe(plain.stderr)
+  })
+
+  it("leaves an argument error before --no-color plain", async () => {
+    const { stderr } = await runCliIn(
+      workspace.root,
+      ["--log-level", "bogus", "--no-color", "scan"],
+      {},
+      new TerminalStream(),
+    )
+
+    expect(stderr).toContain("error: option '--log-level <level>' argument 'bogus'")
+    expect(withoutColor(stderr)).toBe(stderr)
   })
 
   it("colours an error that ends the run red", async () => {
@@ -126,9 +208,9 @@ describe("colour", () => {
     })
 
     expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(stderr.startsWith("\u001b[31merror: option '--format <format>' argument 'bogus'")).toBe(
-      true,
-    )
+    const [message = ""] = stderr.split("\n")
+    expect(message).toBe(RED(withoutColor(message)))
+    expect(message).toContain("error: option '--format <format>' argument 'bogus'")
   })
 
   it("colours each line of a gate that trips red", async () => {
@@ -147,7 +229,7 @@ describe("colour", () => {
 
     expect(code).toBe(EXIT.GATE)
     expect(stderr).toContain(
-      "\u001b[31m--fail-on removed tripped (observed: 1 removed)\u001b[39m\n\u001b[31m  ts:src/gone.ts#gone\u001b[39m\n",
+      `${RED("--fail-on removed tripped (observed: 1 removed)")}\n${RED("  ts:src/gone.ts#gone")}\n`,
     )
   })
 })
@@ -197,10 +279,12 @@ describe("CI mode", () => {
 })
 
 describe("stack traces", () => {
-  async function writeExplodingPlugin(): Promise<void> {
+  async function writeExplodingPlugin(
+    module = 'throw new Error("module exploded")\n',
+  ): Promise<void> {
     await writePackageJson(workspace.root)
     await writeConfig(workspace.root, { languages: ["./exploding.mjs"] })
-    await writeFileAt(workspace.root, "exploding.mjs", 'throw new Error("module exploded")\n')
+    await writeFileAt(workspace.root, "exploding.mjs", module)
   }
 
   it("follows an error that ends the run at exit 3 with its stack and its cause's at debug", async () => {
@@ -217,14 +301,58 @@ describe("stack traces", () => {
     expect(lines[cause + 1]).toMatch(/^\s+at .*exploding\.mjs/)
   })
 
-  it.each<[string, readonly string[]]>([
-    ["at the default level", ["scan"]],
-    ["for an exit-2 error at debug", ["scan", "--format", "bogus", "--log-level", "debug"]],
-  ])("writes the message alone %s", async (_, argv) => {
+  it("dims the trace under FORCE_COLOR, and the message stays red", async () => {
     await writeExplodingPlugin()
 
-    const { stderr } = await runCliIn(workspace.root, argv)
+    const { stderr } = await runCliIn(workspace.root, ["scan", "--log-level", "debug"], {
+      FORCE_COLOR: "1",
+    })
 
+    const [message, ...trace] = stderr.trimEnd().split("\n")
+    expect(message).toBe(RED(withoutColor(message ?? "")))
+    expect(trace.length).toBeGreaterThan(1)
+    for (const line of trace) expect(line).toBe(DIM(withoutColor(line)))
+  })
+
+  it.each<[string, string, string[]]>([
+    [
+      "a cause that is not an Error, by its value",
+      'throw new Error("module exploded", { cause: "the grammar was never built" })\n',
+      ["caused by: Error: module exploded", "caused by: the grammar was never built"],
+    ],
+    [
+      "a cycle of causes, each once",
+      [
+        'const first = new Error("first")',
+        'const second = new Error("second", { cause: first })',
+        "first.cause = second",
+        "throw first",
+        "",
+      ].join("\n"),
+      ["caused by: Error: first", "caused by: Error: second"],
+    ],
+  ])("names %s", async (_, module, causes) => {
+    await writeExplodingPlugin(module)
+
+    const { code, stderr } = await runCliIn(workspace.root, ["scan", "--log-level", "debug"])
+
+    expect(code).toBe(EXIT.GATE)
+    expect(stderr.split("\n").filter((line) => line.startsWith("caused by: "))).toEqual(causes)
+  })
+
+  it.each<[string, readonly string[], ExitCode]>([
+    ["at the default level", ["scan"], EXIT.GATE],
+    [
+      "for an exit-2 error at debug",
+      ["explain", "anything", "--ir", "missing.json", "--log-level", "debug"],
+      EXIT.INPUT_ERROR,
+    ],
+  ])("writes the message alone %s", async (_, argv, exitCode) => {
+    await writeExplodingPlugin()
+
+    const { code, stderr } = await runCliIn(workspace.root, argv)
+
+    expect(code).toBe(exitCode)
     expect(stderr.trimEnd().split("\n")).toHaveLength(1)
     expect(stderr).not.toMatch(/^\s+at /m)
   })

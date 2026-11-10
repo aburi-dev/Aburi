@@ -1,15 +1,16 @@
 import type { ScanProgress } from "@aburi/core"
 import { describe, expect, it } from "vitest"
-import { type DiffProgress, showDiffProgress, showScanProgress } from "../src/progress"
+import type { DiffProgress } from "../src/commands/diff-revisions"
+import { showDiffProgress, showScanProgress } from "../src/progress"
 import type { Terminal } from "../src/terminal"
 
 /** A terminal that records each progress line it is asked for, and whether at once. */
 function recordingTerminal() {
-  const drawn: Array<[text: string, now: boolean]> = []
+  const drawn: Array<[text: string, urgent: boolean]> = []
   const terminal: Terminal = {
     say: () => {},
-    progress: (text, now = false) => {
-      drawn.push([text, now])
+    progress: (text, urgent = false) => {
+      drawn.push([text, urgent])
     },
     endProgress: () => {},
   }
@@ -48,7 +49,7 @@ describe("showScanProgress", () => {
 })
 
 describe("showDiffProgress", () => {
-  it("names the side of each scan, both while both run, then the comparison", () => {
+  it("names the side of each scan, both while both run and the one left at once, then the comparison", () => {
     const { terminal, drawn } = recordingTerminal()
     const show = showDiffProgress(terminal)
 
@@ -69,6 +70,7 @@ describe("showDiffProgress", () => {
       ["base: discovering files… · head: discovering files…", true],
       ["base: discovering files… · head: extracting 0/3 files", true],
       ["base: extracting 1/4 files · head: extracting 0/3 files", true],
+      ["base: extracting 1/4 files", true],
       ["base: resolving calls…", true],
       ["comparing…", true],
     ])

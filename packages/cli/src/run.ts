@@ -50,13 +50,15 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
 
   const { version } = await readGeneratorInfo()
   const program = new Command()
-  const globals = () => program.opts<{ logLevel?: LogLevel; color?: boolean; ci?: boolean }>()
+  const globals = () => program.opts<{ logLevel?: LogLevel; ci?: boolean }>()
   const ciMode = (): boolean => env.ci || globals().ci === true
+  // From argv, not Commander: an argument error before `--no-color` ends the parse before it is set.
+  const colorOption = !optionsBeforeOperands(options.argv).includes("--no-color")
   const mode = (): TerminalMode =>
     terminalMode({
       env,
       ci: ciMode(),
-      colourFlag: globals().color !== false,
+      colorOption,
       isTerminal: (stderr as { isTTY?: unknown }).isTTY === true,
     })
   const terminal = createTerminal(stderr, { mode })
@@ -445,6 +447,11 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
   return capturedExitCode
 }
 
+function optionsBeforeOperands(argv: readonly string[]): readonly string[] {
+  const end = argv.indexOf("--")
+  return end === -1 ? argv : argv.slice(0, end)
+}
+
 function withoutFinalNewline(text: string): string {
   return text.endsWith("\n") ? text.slice(0, -1) : text
 }
@@ -462,8 +469,9 @@ function isCommanderError(value: unknown): value is { code: string; message: str
 
 function handleError(error: unknown, terminal: Terminal, debug: boolean): ExitCode {
   terminal.endProgress()
-  const exitCode = exitCodeOf(error)
+  // Said before the exit code is worked out, so that a fault there cannot swallow the message.
   terminal.say(error instanceof Error ? error.message : String(error), "error")
+  const exitCode = exitCodeOf(error)
   // An exit-2 error is the invocation's: its message is the whole story.
   if (debug && exitCode !== EXIT.INPUT_ERROR) {
     const trace = stackTrace(error)

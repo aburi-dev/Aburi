@@ -1,12 +1,6 @@
 import type { ScanProgress } from "@aburi/core"
-import { type DiffSide, SIDES } from "./commands/diff-revisions"
+import { type DiffProgress, type DiffSide, SIDES } from "./commands/diff-revisions"
 import type { Terminal } from "./terminal"
-
-/** What `runDiff` is doing: a scan of one side, the end of that scan, or the comparison. */
-export type DiffProgress =
-  | { readonly kind: "scan"; readonly side: DiffSide; readonly progress: ScanProgress }
-  | { readonly kind: "scanned"; readonly side: DiffSide }
-  | { readonly kind: "comparing" }
 
 export function describeScanProgress(progress: ScanProgress): string {
   switch (progress.phase) {
@@ -37,20 +31,24 @@ export function showScanProgress(terminal: Terminal): (progress: ScanProgress) =
 /** A diff's progress on `terminal`'s progress line, each side's scan named while it runs. */
 export function showDiffProgress(terminal: Terminal): (progress: DiffProgress) => void {
   const running = new Map<DiffSide, ScanProgress>()
+  const draw = (urgent: boolean): void => {
+    const sides = SIDES.flatMap((side) => {
+      const progress = running.get(side)
+      return progress === undefined ? [] : [`${side}: ${describeScanProgress(progress)}`]
+    })
+    if (sides.length > 0) terminal.progress(sides.join(" · "), urgent)
+  }
   return (event) => {
     switch (event.kind) {
       case "scan": {
         const urgent = milestone(event.progress, running.get(event.side))
         running.set(event.side, event.progress)
-        const sides = SIDES.flatMap((side) => {
-          const progress = running.get(side)
-          return progress === undefined ? [] : [`${side}: ${describeScanProgress(progress)}`]
-        })
-        terminal.progress(sides.join(" · "), urgent)
+        draw(urgent)
         return
       }
       case "scanned":
         running.delete(event.side)
+        draw(true)
         return
       case "comparing":
         terminal.progress("comparing…", true)

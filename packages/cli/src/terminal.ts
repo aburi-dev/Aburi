@@ -1,9 +1,11 @@
+import { writeSync } from "node:fs"
 import type { AburiEnv, LogLevel } from "./env"
+import { cleanUpOnFatalSignal } from "./signal-cleanup"
 
 export type Tone = "warning" | "error" | "muted"
 
 export interface TerminalMode {
-  readonly colour: boolean
+  readonly color: boolean
   readonly progress: boolean
 }
 
@@ -11,19 +13,19 @@ export interface TerminalSettings {
   env: Pick<AburiEnv, "noColor" | "forceColor" | "dumbTerminal">
   /** CI mode, from the `CI` env or `--ci`. */
   ci: boolean
-  /** False under `--no-color`. */
-  colourFlag: boolean
+  /** The `color` option, false under `--no-color`. */
+  colorOption: boolean
   /** Whether the stream is a terminal (`isTTY`). */
   isTerminal: boolean
 }
 
 export function terminalMode(settings: TerminalSettings): TerminalMode {
   const terminal = settings.isTerminal && !settings.env.dumbTerminal
-  return { colour: colourOn(settings, terminal), progress: terminal && !settings.ci }
+  return { color: colorOn(settings, terminal), progress: terminal && !settings.ci }
 }
 
-function colourOn(settings: TerminalSettings, terminal: boolean): boolean {
-  if (!settings.colourFlag) return false
+function colorOn(settings: TerminalSettings, terminal: boolean): boolean {
+  if (!settings.colorOption) return false
   if (settings.env.forceColor !== null) return settings.env.forceColor
   if (settings.env.noColor || settings.ci) return false
   return terminal
@@ -56,10 +58,10 @@ export interface Terminal {
   /** `text`, one or more lines without the final newline, each in `tone`. */
   say(text: string, tone?: Tone): void
   /**
-   * Shows `text` as the progress line. Within the redraw interval of the last draw it is only kept
-   * for the next one, unless `now` is set.
+   * Shows `text` as the progress line. Within the redraw interval of the last draw it is held, and
+   * drawn when the interval is up unless newer text takes its place; `urgent` draws it at once.
    */
-  progress(text: string, now?: boolean): void
+  progress(text: string, urgent?: boolean): void
   /** Erases the progress line; the next `progress` draws a new one. */
   endProgress(): void
 }
@@ -75,6 +77,8 @@ export function createTerminal(stream: NodeJS.WritableStream, options: TerminalO
   let latest: string | null = null
   let drawn = false
   let drawnAt = Number.NEGATIVE_INFINITY
+  let held: NodeJS.Timeout | null = null
+  let releaseSignals: (() => void) | null = null
 
   const fitted = (text: string): string => {
     const columns = (stream as { columns?: unknown }).columns
@@ -84,8 +88,21 @@ export function createTerminal(stream: NodeJS.WritableStream, options: TerminalO
     if (characters.length < columns) return text
     return `${characters.slice(0, columns - 2).join("")}…`
   }
+  // Synchronous: the process ends on the signal before an asynchronous write would reach the screen.
+  const eraseAtOnce = (): void => {
+    const fd = (stream as { fd?: unknown }).fd
+    if (typeof fd === "number") writeSync(fd, ERASE_LINE)
+    else stream.write(ERASE_LINE)
+  }
+  const cancelHeld = (): void => {
+    if (held !== null) clearTimeout(held)
+    held = null
+  }
   const redraw = (): string => {
+    cancelHeld()
     if (latest === null) return ""
+    // First among the signal's listeners, so that whatever another one says starts a line of its own.
+    releaseSignals ??= cleanUpOnFatalSignal(eraseAtOnce, undefined, { first: true })
     drawn = true
     drawnAt = now()
     return `${ERASE_LINE}${fitted(latest)}`
@@ -93,20 +110,24 @@ export function createTerminal(stream: NodeJS.WritableStream, options: TerminalO
 
   return {
     say(text, tone) {
-      const colour = options.mode().colour
+      const color = options.mode().color
       const lines = text
         .split("\n")
-        .map((line) => (colour && tone !== undefined ? painted(line, tone) : line))
+        .map((line) => (color && tone !== undefined ? painted(line, tone) : line))
         .join("\n")
       stream.write(drawn ? `${ERASE_LINE}${lines}\n${redraw()}` : `${lines}\n`)
     },
     progress(text, urgent = false) {
       if (!options.mode().progress) return
       latest = text
-      if (!urgent && drawn && now() - drawnAt < PROGRESS_INTERVAL_MS) return
-      stream.write(redraw())
+      const wait = drawn && !urgent ? drawnAt + PROGRESS_INTERVAL_MS - now() : 0
+      if (wait <= 0) stream.write(redraw())
+      else held ??= setTimeout(() => stream.write(redraw()), wait).unref()
     },
     endProgress() {
+      cancelHeld()
+      releaseSignals?.()
+      releaseSignals = null
       if (drawn) stream.write(ERASE_LINE)
       drawn = false
       latest = null

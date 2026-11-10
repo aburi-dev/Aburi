@@ -38,20 +38,25 @@ export class TerminalStream extends MemStream {
   }
 }
 
-const ERASE_LINE = "\r\u001b[2K"
+/** The carriage return and erase-line sequence that wipes the progress line. */
+export const ERASE = "\r\u001b[2K"
 
-/** The colour sequences the CLI writes: yellow, red and dim, and the resets that close them. */
+/** `text` in each colour the CLI writes, opened and closed on the one line. */
+export const YELLOW = (text: string): string => `\u001b[33m${text}\u001b[39m`
+export const RED = (text: string): string => `\u001b[31m${text}\u001b[39m`
+export const DIM = (text: string): string => `\u001b[2m${text}\u001b[22m`
+
 const SGR = ["33", "31", "2", "39", "22"].map((code) => `\u001b[${code}m`)
 
-export function withoutColour(text: string): string {
+export function withoutColor(text: string): string {
   return SGR.reduce((stripped, sequence) => stripped.replaceAll(sequence, ""), text)
 }
 
 /** What `text`, written to a terminal, leaves on it: a carriage return and erase-line wipe the line. */
 export function screenOf(text: string): string {
   const lines = text.split("\n").map((line) => {
-    const erased = line.lastIndexOf(ERASE_LINE)
-    return erased === -1 ? line : line.slice(erased + ERASE_LINE.length)
+    const erased = line.lastIndexOf(ERASE)
+    return erased === -1 ? line : line.slice(erased + ERASE.length)
   })
   const last = lines.pop() ?? ""
   return [...lines, ...(last.length === 0 ? [] : [last])].map((kept) => `${kept}\n`).join("")

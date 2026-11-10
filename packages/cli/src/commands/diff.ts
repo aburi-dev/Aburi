@@ -29,10 +29,10 @@ import type { GitRunner } from "../git/runner"
 import { readIR } from "../ir-io"
 import { createLogger, type LogWrite, writeToStderr } from "../logger"
 import { createOutputDir, removeOutputFile, writeOutputFile } from "../output-file"
-import type { DiffProgress } from "../progress"
 import type { WarnFn } from "../warn"
 import { chooseInputs, type DiffInputs } from "./diff-inputs"
 import {
+  type DiffProgress,
   type DiffSide,
   type RevisionScanContext,
   type ScanPair,

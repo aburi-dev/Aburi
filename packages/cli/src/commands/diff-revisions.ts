@@ -17,7 +17,6 @@ import { submoduleIgnorePatterns } from "../git/submodules"
 import { describeLinksReadAsSource, linksReadAsSource, plainFileLinks } from "../git/symlinks"
 import { readIR } from "../ir-io"
 import type { LogWrite } from "../logger"
-import type { DiffProgress } from "../progress"
 import { cleanUpOnFatalSignal } from "../signal-cleanup"
 import type { WarnFn } from "../warn"
 import { resolveWorkspaceRoot } from "../workspace-root"
@@ -30,6 +29,12 @@ import { type PortableScanOptions, scanInThread, type ThreadedScan } from "./sca
 export type DiffSide = "base" | "head"
 
 export const SIDES: readonly DiffSide[] = ["base", "head"]
+
+/** What `runDiff` is doing: a scan of one side, the end of that scan, or the comparison. */
+export type DiffProgress =
+  | { readonly kind: "scan"; readonly side: DiffSide; readonly progress: ScanProgress }
+  | { readonly kind: "scanned"; readonly side: DiffSide }
+  | { readonly kind: "comparing" }
 
 export type ScanPair = Record<DiffSide, ScanReport>
 
@@ -131,19 +136,18 @@ export async function scanRevisions(
     const base: SideScan = {
       options: optionsFor(worktreeDir, resolve(tempParent, "base-out")),
       read: readBase,
-      ...progressOf("base", context.progress),
+      ...reportOf("base", context.progress),
     }
     const head: SideScan = {
       options: optionsFor(cwd, resolve(tempParent, "head-out")),
       read: readHead,
-      ...progressOf("head", context.progress),
+      ...reportOf("head", context.progress),
     }
     const scanned =
       (context.parallelScans ?? availableParallelism() >= 2)
         ? await scanTogether(base, head, context.log, {
             name: `base ref "${spec.base}"`,
             log: context.log,
-            ...(base.progress === undefined ? {} : { progress: base.progress }),
             warn,
           })
         : await scanInTurn(base, head, context.log)
@@ -173,21 +177,27 @@ export async function scanRevisions(
 interface SideScan {
   options: PortableScanOptions
   read: (report: ScanReport) => Promise<IR>
-  progress?: (progress: ScanProgress) => void
+  report?: SideReport
+}
+
+interface SideReport {
+  progress: (progress: ScanProgress) => void
   /** Called once the side's scan has returned, whatever it returned. */
-  scanned?: () => void
+  scanned: () => void
 }
 
 type ScannedSides = Omit<ScannedRevisions, "gitRenames">
 
-function progressOf(
+function reportOf(
   side: DiffSide,
   report: ((progress: DiffProgress) => void) | undefined,
-): Pick<SideScan, "progress" | "scanned"> {
+): Pick<SideScan, "report"> {
   if (report === undefined) return {}
   return {
-    progress: (progress) => report({ kind: "scan", side, progress }),
-    scanned: () => report({ kind: "scanned", side }),
+    report: {
+      progress: (progress) => report({ kind: "scan", side, progress }),
+      scanned: () => report({ kind: "scanned", side }),
+    },
   }
 }
 
@@ -197,10 +207,10 @@ async function scanHere(side: SideScan, log: LogWrite): Promise<ScanReport> {
     return await runScan({
       ...side.options,
       log,
-      ...(side.progress === undefined ? {} : { progress: side.progress }),
+      ...(side.report === undefined ? {} : { progress: side.report.progress }),
     })
   } finally {
-    side.scanned?.()
+    side.report?.scanned()
   }
 }
 
@@ -221,7 +231,7 @@ async function scanTogether(
   base: SideScan,
   head: SideScan,
   log: LogWrite,
-  baseThread: ThreadedScan,
+  baseThread: Omit<ThreadedScan, "progress">,
 ): Promise<ScannedSides> {
   const headLog = heldLog(log)
   const headScan = scanHere(head, headLog.write)
@@ -233,9 +243,12 @@ async function scanTogether(
   let baseIR: IR
   try {
     try {
-      baseScan = await scanInThread(base.options, baseThread)
+      baseScan = await scanInThread(base.options, {
+        ...baseThread,
+        ...(base.report === undefined ? {} : { progress: base.report.progress }),
+      })
     } finally {
-      base.scanned?.()
+      base.report?.scanned()
     }
     baseIR = await base.read(baseScan)
   } catch (error) {

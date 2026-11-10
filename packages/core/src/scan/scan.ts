@@ -42,12 +42,20 @@ import type { UndeclaredVocabOccurrence } from "./vocab"
 
 export type { ExtractionFailure, ParseErrorRecord } from "./extract-files"
 
-/** Where a scan is, for a caller that shows it: the phases come in this order, each once. */
+/**
+ * Where a scan is, for a caller that shows it. The phases are entered in this order, each once:
+ * `discovering`; `extracting`, sent before each file and once more when the last one is done;
+ * then `resolving`, everything after extraction.
+ */
 export type ScanProgress =
   | { readonly phase: "discovering" }
-  /** Sent before each file and once more when the last one is done, `done` counting up to `total`. */
-  | { readonly phase: "extracting"; readonly done: number; readonly total: number }
-  /** Language-server enrichment, call resolution, effect propagation and the Document. */
+  | {
+      readonly phase: "extracting"
+      /** Files extracted so far, counting up to `total`. */
+      readonly done: number
+      /** Files the scan will extract. */
+      readonly total: number
+    }
   | { readonly phase: "resolving" }
 
 export interface ScanInput {
