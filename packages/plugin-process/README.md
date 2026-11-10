@@ -19,7 +19,7 @@ import { createPluginProcess, type PluginProcess } from "@aburi/plugin-process"
 let parser: PluginProcess
 
 export const plugin = {
-  // manifest, languageId, fileExtensions, capabilities …
+  // manifest (with its languageId), fileExtensions, capabilities …
   async init(ctx) {
     parser = createPluginProcess({ command: "python3", args: ["-m", "my_parser"], cwd: ctx.workspaceRoot })
   },

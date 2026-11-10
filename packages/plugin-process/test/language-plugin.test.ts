@@ -37,6 +37,7 @@ function toyLanguage(): { plugin: LanguagePlugin<ToyTree, ToyFunction>; trees: T
       name: "lang-toy",
       version: "0.0.0",
       type: "lang",
+      languageId: makeLanguageId("toy"),
       engines: { aburi: "*" },
       provides: {
         effects: [],
@@ -47,7 +48,6 @@ function toyLanguage(): { plugin: LanguagePlugin<ToyTree, ToyFunction>; trees: T
         frameworks: [],
       },
     },
-    languageId: makeLanguageId("toy"),
     fileExtensions: [".toy"],
     capabilities: {
       hasDecorators: false,
