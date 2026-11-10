@@ -45,7 +45,7 @@ import { makeLanguageId } from "../../src/id"
 function manifest<T extends PluginManifest["type"]>(
   type: T,
   name: string,
-): PluginManifest & { type: T } {
+): Omit<PluginManifest, "languageId"> & { type: T } {
   return {
     $schema: PLUGIN_SCHEMA_URL,
     name,
@@ -63,8 +63,8 @@ function manifest<T extends PluginManifest["type"]>(
   }
 }
 
-export function langManifest(name = "lang-stub"): LangManifest {
-  return manifest("lang", name)
+export function langManifest(name = "lang-stub", languageId = "stub"): LangManifest {
+  return { ...manifest("lang", name), languageId: makeLanguageId(languageId) }
 }
 
 const NO_CAPABILITIES: LanguageCapabilities = {
@@ -89,7 +89,6 @@ const stubFile: SourceFile = { path: relativePath("test.stub"), content: "" }
 export function stubLanguagePlugin(overrides: Partial<LanguagePlugin> = {}): LanguagePlugin {
   return {
     manifest: langManifest(),
-    languageId: makeLanguageId("stub"),
     fileExtensions: [".stub"],
     capabilities: NO_CAPABILITIES,
     init: async () => {},
@@ -176,7 +175,6 @@ export interface Script {
 /** A `.stub` language that spends the time it is told to and logs every call it receives. */
 export class ScriptedLanguagePlugin implements LanguagePlugin {
   readonly manifest = langManifest()
-  readonly languageId = makeLanguageId("stub")
   readonly fileExtensions = [".stub"]
   readonly capabilities = NO_CAPABILITIES
   readonly released: ParsedTree[] = []
