@@ -25,7 +25,7 @@ import { decideDropReason, mergeFrameworkClassification } from "./classify-symbo
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
 import type { ImportOrigins } from "./import-origins"
-import { normalizeCandidateStrings, normalizeImportEdge } from "./normalize"
+import { normalizeCandidates, normalizeImportEdge } from "./normalize"
 import { type ClassifyTimeoutEvent, type ParseTimeoutEvent, startParseDeadline } from "./timeout"
 import type { VocabCheck } from "./vocab"
 
@@ -42,6 +42,13 @@ export interface ExtractedFile extends FileOutcomeCommon {
   dynamicCallSites: readonly string[]
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
+  /** What withdraws the file although nothing threw; its `symbols` are then empty. */
+  fault: FileFault | null
+}
+
+export interface FileFault {
+  code: string
+  message: string
 }
 
 export interface ParseFailedFile extends FileOutcomeCommon {
@@ -117,9 +124,27 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     if (deadline.expired()) return abandonedFile()
 
     const extractCtx: ExtractionContext = { file, registry, config }
-    const candidates = language
-      .extractSymbols(parseResult.tree, extractCtx)
-      .map(normalizeCandidateStrings)
+    const candidates = normalizeCandidates(
+      language.extractSymbols(parseResult.tree, extractCtx),
+      language.manifest.name,
+    )
+    if (!Array.isArray(candidates)) {
+      return {
+        kind: "extracted",
+        path: file.path,
+        parseErrors,
+        symbols: [],
+        imports: writtenImports,
+        timeoutEvents,
+        dynamicCallSites: [],
+        declinedCalls: [],
+        thisBindings: [],
+        fault: {
+          code: candidates.code,
+          message: `${candidates.message}. ctx.file.path holds this file's path already spelled for the Document, so this is a path the language plugin built`,
+        },
+      }
+    }
     if (deadline.expired()) return abandonedFile()
 
     const origins = input.origins
@@ -228,6 +253,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       dynamicCallSites,
       declinedCalls,
       thisBindings,
+      fault: null,
     }
   } finally {
     if (parseResult.tree !== null) {
