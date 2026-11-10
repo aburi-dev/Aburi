@@ -1,6 +1,8 @@
 import { rm, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
+import { makeLanguageId } from "@aburi/core"
 import { commitAll, initRepository } from "@aburi/test-support"
+import type { PluginManifest } from "@aburi/types"
 import { LANG_MANIFEST, pluginModuleSource } from "./plugin-fakes"
 import { writeConfig, writeFileAt, writePackageJson } from "./workspace"
 
@@ -9,10 +11,17 @@ import { writeConfig, writeFileAt, writePackageJson } from "./workspace"
  * parse, `notree` parses to nothing, `noisy` and `warn` parse with recoverable errors, `boom`
  * throws in extraction, `odd` emits an undeclared extKind and `twin` two Symbols with one id.
  */
-export const STUB_PLUGIN = pluginModuleSource(
-  { ...LANG_MANIFEST, name: "lang-stub" },
-  `  languageId: "stub",
-  fileExtensions: [".stub"],
+export const STUB_PLUGIN = stubPluginSource({
+  ...LANG_MANIFEST,
+  name: "lang-stub",
+  languageId: makeLanguageId("stub"),
+})
+
+/** The stub plugin's module source under another `manifest`, with `members` ahead of its own. */
+export function stubPluginSource(manifest: PluginManifest, members = ""): string {
+  return pluginModuleSource(
+    manifest,
+    `${members}  fileExtensions: [".stub"],
   capabilities: {
     hasDecorators: false,
     hasGenerics: false,
@@ -82,7 +91,8 @@ export const STUB_PLUGIN = pluginModuleSource(
   },
   walkBody: () => ({ rules: [], calls: [] }),
   normalizeAst: () => "stub-ast",`,
-)
+  )
+}
 
 /** A workspace configured with only the stub plugin, holding `files`, each containing its own name. */
 export async function writeStubWorkspace(

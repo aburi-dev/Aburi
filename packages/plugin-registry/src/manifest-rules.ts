@@ -1,4 +1,9 @@
-import type { PluginManifest } from "@aburi/types"
+import {
+  LANGUAGE_ID_GRAMMAR,
+  LANGUAGE_ID_PATTERN,
+  type PluginManifest,
+  RESERVED_LANGUAGE_IDS,
+} from "@aburi/types"
 import {
   deriveXPrefix,
   isReserved,
@@ -16,6 +21,7 @@ export function validateManifestRules(m: PluginManifest, granted: string | null)
   validateReserved(m, granted)
   validateTypeNamespaces(m)
   validateXPrefix(m)
+  validateLanguageId(m)
   validateOwnDuplicates(m)
 }
 
@@ -115,6 +121,56 @@ function validateXPrefix(m: PluginManifest): void {
         p,
       )
     }
+  }
+}
+
+function validateLanguageId(m: PluginManifest): void {
+  const declared: unknown = m.languageId
+  const shown = JSON.stringify(declared)
+  if (m.type !== "lang") {
+    if (declared === undefined) return
+    raise(
+      `Plugin "${m.name}" (type ${m.type}) declares languageId ${shown} but only lang-type ` +
+        `plugins own a language token.`,
+      "namespace-type-mismatch",
+      [m.name],
+      typeof declared === "string" ? declared : shown,
+    )
+  }
+  if (declared === undefined) {
+    raise(
+      `Plugin "${m.name}" (type lang) declares no languageId: a lang manifest names the ` +
+        `<language> token its Symbol ids open with, e.g. "ts". If the plugin object sets ` +
+        `languageId, move it into the manifest.`,
+      "manifest-invalid",
+      [m.name],
+    )
+  }
+  if (typeof declared !== "string") {
+    raise(
+      `Plugin "${m.name}" (type lang) declares languageId ${shown}, which is not a string.`,
+      "manifest-invalid",
+      [m.name],
+      shown,
+    )
+  }
+  if (!LANGUAGE_ID_PATTERN.test(declared)) {
+    raise(
+      `Plugin "${m.name}" declares languageId "${declared}", but a language token must match ` +
+        `${LANGUAGE_ID_GRAMMAR}.`,
+      "manifest-invalid",
+      [m.name],
+      declared,
+    )
+  }
+  if (RESERVED_LANGUAGE_IDS.has(declared)) {
+    raise(
+      `Plugin "${m.name}" declares languageId "${declared}", which is reserved: its Symbol ids ` +
+        `would read as ids of another kind.`,
+      "reserved-namespace",
+      [m.name],
+      declared,
+    )
   }
 }
 
