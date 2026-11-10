@@ -75,8 +75,21 @@ const { segments, last } = assertNonEmptySegments(call.target, origin)
 const usesMyTool = hasMatchingImport(ctx.file.imports, origin, (source) => source === "mytool")
 ```
 
-They live here rather than in each effect plugin so every plugin throws the same
-message, naming the plugin and the file that produced the bad value.
+Every guard throws a `PluginInputError`, the same class whether it is imported
+from this subpath or from the package root. Its `code` says which part of the
+contract broke, and `plugin` / `filePath` say whose guard refused the value and
+in which file:
+
+| Guard | Throws for | `code` |
+|---|---|---|
+| `assertNonEmptySegments` | an empty call target, or one with an empty segment | `unnormalized-callee` |
+| `assertImportEdgeSource`, and `hasMatchingImport` for every edge | an empty `ImportEdge.source` | `unnormalized-import-source` |
+| `assertImportBinding` | an `ImportEdge.symbols` entry with an empty half | `unnormalized-import-binding` |
+| `assertNamespaceBinding` | an empty `ImportEdge.namespaceBinding` | `unnormalized-namespace-binding` |
+
+A classifier lets the error propagate: the scan withdraws the file and keeps the
+code on its `extractionFailures` entry. The guards live here rather than in each
+effect plugin so every plugin raises the same codes and the same messages.
 
 The readers answer the two questions a classifier that matches on shared method
 vocabulary has to ask before it commits — is this receiver the client, and is
