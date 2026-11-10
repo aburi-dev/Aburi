@@ -219,6 +219,31 @@ describe("aburi scan --concurrency, with the language, framework and effects plu
     expect(alone.code).toBe(EXIT.SUCCESS)
     expect(await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])).toEqual(alone)
   })
+
+  it("records the calls an effects plugin declines in the files each worker extracts", async () => {
+    await cp(fixtureRoot("effects-coverage"), workspace.root, { recursive: true })
+    for (const [file, call] of [
+      ["src/reports/revenue.ts", "prisma.$queryRaw`SELECT sum(amount_cents) FROM orders`"],
+      ["src/reports/vacuum.ts", 'prisma.$executeRawUnsafe("VACUUM orders")'],
+    ] as const) {
+      await writeFileAt(
+        workspace.root,
+        file,
+        `import { PrismaClient } from "@prisma/client"\n\nexport async function run(prisma: PrismaClient) {\n  return await ${call}\n}\n`,
+      )
+    }
+    const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
+    const ir = JSON.parse(alone.written[IR_JSON_FILENAME] ?? "") as {
+      stats: { declinedCalls?: { symbolId: string }[] }
+    }
+
+    expect(alone.code).toBe(EXIT.SUCCESS)
+    expect(ir.stats.declinedCalls?.map((call) => call.symbolId)).toEqual([
+      "ts:src/reports/revenue.ts#run",
+      "ts:src/reports/vacuum.ts#run",
+    ])
+    expect(await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])).toEqual(alone)
+  })
 })
 
 describe("aburi diff --concurrency", () => {
