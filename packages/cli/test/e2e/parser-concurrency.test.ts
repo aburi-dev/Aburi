@@ -71,6 +71,12 @@ const UNCLONEABLE_PLUGIN = STUB_PLUGIN.replace(
 `,
 )
 
+/** The stub language, except that a file named `astray` files its Symbol above the workspace. */
+const ASTRAY_PLUGIN = STUB_PLUGIN.replace(
+  "        file: ctx.file.path,\n",
+  '        file: ctx.file.path.includes("astray") ? "../" + ctx.file.path : ctx.file.path,\n',
+)
+
 const FILES = [
   "a-ok.stub",
   "b-bad.stub",
@@ -149,6 +155,23 @@ describe("aburi scan --concurrency", () => {
       "d-ok.stub",
     ])
     expect(ir.stats.skippedFiles).toEqual([{ path: "b-crash.stub", reason: "extraction-failed" }])
+  })
+
+  it("withdraws a file whose Symbol a worker files under no Document path, as one thread does", async () => {
+    await writeStubWorkspace(workspace.root, [
+      "a-ok.stub",
+      "b-astray.stub",
+      "c-ok.stub",
+      "d-ok.stub",
+    ])
+    await writeFileAt(workspace.root, "lang-stub.mjs", ASTRAY_PLUGIN)
+    const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
+
+    expect(alone.code).toBe(EXIT.GATE)
+    expect(alone.stderr.join("")).toMatch(
+      /Skipped b-astray\.stub: lang-stub's SymbolCandidate\.source\.file /,
+    )
+    expect(await scanned(["scan", "--concurrency", "2"], [IR_JSON_FILENAME])).toEqual(alone)
   })
 
   it("ends the run once workers have ended under three files, naming them", async () => {
