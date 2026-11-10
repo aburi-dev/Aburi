@@ -1,5 +1,6 @@
+import { PluginInputError } from "@aburi/plugin-registry"
 import { classifyInputsAround } from "@aburi/test-harness"
-import { makeCall, makeCtx } from "@aburi/test-support"
+import { errorFrom, makeCall, makeCtx } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { classifyPrismaCall } from "../src/index"
 import { makePrismaImport } from "./fixtures/context"
@@ -182,23 +183,37 @@ describe("classifyPrismaCall — upstream contract violations", () => {
     ["prisma.user.", 'CallCandidate.target "prisma.user." has empty segment(s)'],
   ])(
     "throws on the malformed target %j, naming itself and the file, before the import gate",
-    (target, message) => {
+    async (target, message) => {
       for (const imports of [[makePrismaImport()], []]) {
-        expect(() => classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-          `effects-prisma (${path}): ${message}`,
+        const error = await errorFrom(PluginInputError, () =>
+          classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path })),
         )
+        expect(error).toMatchObject({
+          message: expect.stringContaining(`effects-prisma (${path}): ${message}`),
+          code: "unnormalized-callee",
+          plugin: "effects-prisma",
+          filePath: path,
+        })
       }
     },
   )
 
-  it("throws on an import edge with an empty source rather than skipping it", () => {
+  it("throws on an import edge with an empty source rather than skipping it", async () => {
     const brokenEdge = makeCtx({
       imports: [{ source: "", symbols: ["PrismaClient"], line: 4, dynamic: false }],
       path,
     })
-    expect(() =>
+    const error = await errorFrom(PluginInputError, () =>
       classifyPrismaCall(makeCall({ target: "prisma.user.create" }), brokenEdge),
-    ).toThrow(`effects-prisma (${path}, line 4): ImportEdge.source is empty`)
+    )
+    expect(error).toMatchObject({
+      message: expect.stringContaining(
+        `effects-prisma (${path}, line 4): ImportEdge.source is empty`,
+      ),
+      code: "unnormalized-import-source",
+      plugin: "effects-prisma",
+      filePath: path,
+    })
   })
 
   it("leaves the CallCandidate and the ClassifyContext as it found them", () => {
