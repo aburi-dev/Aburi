@@ -38,5 +38,6 @@ it("lets its host exit with a process it never closed sitting idle, which then e
   expect(code).toBe(0)
   expect(Number(stdout)).toBeGreaterThan(0)
   // An orphan is not always reaped, so the process says it exited rather than leaving it to its pid.
-  await expect.poll(() => readFile(exits, "utf8").catch(() => "")).toBe("x")
+  // On Windows it can take over a second to see its stdin close once the host is gone.
+  await expect.poll(() => readFile(exits, "utf8").catch(() => ""), { timeout: 10_000 }).toBe("x")
 })
