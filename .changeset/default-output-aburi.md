@@ -9,7 +9,7 @@ Write to `.aburi/` by default instead of `out/`
 
 With neither `--output-dir` nor `output.dir` in the config, `aburi scan`, `aburi diff` and `aburi explain` now write their artefacts to `.aburi/`, and that is where `aburi explain` looks for an IR. `out/` is where tsc, Next.js, Electron Forge and VS Code extensions put build output, so Aburi's files landed beside theirs and went with a `clean` step.
 
-When a run creates `.aburi/` under the working directory, it writes a `.gitignore` of `*` into it, so the first scan in a repository leaves `git status` clean with nothing added to your own `.gitignore`. What decides is the place, not the spelling: `--output-dir .aburi` and `output.dir: ".aburi"` get the same file. A `.aburi/` that was already there is left as it is, as is any other output directory, which may be one you commit.
+When a run creates `.aburi/` directly in the working directory, it writes a `.gitignore` into it that ignores everything there, so the run that creates it leaves `git status` clean with nothing added to your own `.gitignore`. What decides is the place, not the spelling: `--output-dir .aburi`, its absolute path, a path to it through a link and `output.dir: ".aburi"` get the same file. If that `.gitignore` cannot be written, the run fails and removes the directory it created, so the next run starts afresh. A `.aburi/` that was already there is left as it is, as is any other output directory, which may be one you commit.
 
 The GitHub Action's `output-dir` input now defaults to `.aburi` too, and the config schema's `output.dir` default reads `".aburi"`.
 

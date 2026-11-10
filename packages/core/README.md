@@ -53,9 +53,9 @@ Canonical write:
 // writeCanonicalIR(ir, outputPath, options?) creates the parent directory and
 // writes the canonical bytes for you; the returned string is the serialized
 // payload for callers that also want it in memory.
-await writeCanonicalIR(result.ir, "out/aburi.ir.json")
+await writeCanonicalIR(result.ir, ".aburi/aburi.ir.json")
 // or with the compact format used by `aburi scan --compact`:
-await writeCanonicalIR(result.ir, "out/aburi.ir.json", { format: "compact" })
+await writeCanonicalIR(result.ir, ".aburi/aburi.ir.json", { format: "compact" })
 ```
 
 ## See also

@@ -10,7 +10,6 @@ import {
   DIFF_FULL_MD_FILENAME,
   DIFF_JSON_FILENAME,
   DIFF_MD_FILENAME,
-  isDefaultOutputDir,
   resolveOutputDir,
 } from "../artifact-paths"
 import { configuredOutputDir, type PinnedConfig, pinConfig } from "../config-load"
@@ -107,7 +106,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     options.outputDir,
     options.outputDir === undefined ? await configuredOutputDir(await pinConfigOnce()) : undefined,
   )
-  await createOutputDir("diff", outputDir, isDefaultOutputDir(cwd, outputDir))
+  await createOutputDir("diff", outputDir, cwd)
   await removeEarlierReport(outputDir)
   const compared = await readSides(inputs, {
     cwd,

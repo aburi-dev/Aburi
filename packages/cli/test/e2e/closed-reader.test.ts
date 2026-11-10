@@ -1,7 +1,7 @@
 import { readdir, rm } from "node:fs/promises"
 import { commitAll, gitTestEnv, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { DEFAULT_OUTPUT_DIRNAME, EXIT, type ExitCode } from "../../src"
+import { EXIT, type ExitCode } from "../../src"
 import { defaultOutput } from "../workspace"
 import {
   linkedWorktrees,
@@ -22,7 +22,6 @@ useBuiltBin()
 beforeEach(async () => {
   await workspace.writeSource("package.json", '{"name":"demo","private":true}\n')
   await workspace.writeSource("aburi.json", '{"languages":["lang-typescript"]}\n')
-  await workspace.writeSource(".gitignore", `${DEFAULT_OUTPUT_DIRNAME}/\n`)
   await workspace.writeSource("src/one.ts", ONE)
   // A recoverable parse error puts lines on stderr for each command below, without moving its code.
   await workspace.writeSource("src/broken.ts", "export function broken(): number { return 1 + }\n")

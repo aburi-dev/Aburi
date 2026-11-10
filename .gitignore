@@ -6,6 +6,9 @@ dist/
 out/
 *.tsbuildinfo
 
+# A scan's output, wherever a test or a run left it
+.aburi/
+
 # tree-sitter grammars vendored from the @vscode/tree-sitter-wasm devDependency at build
 # time by packages/lang-typescript/scripts/copy-grammars.mjs
 packages/lang-typescript/wasm/

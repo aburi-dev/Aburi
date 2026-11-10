@@ -6,6 +6,7 @@ import {
   errorFrom,
   git,
   initRepository,
+  linkDirectory,
   recordingLogger,
   useScratchWorkspace,
 } from "@aburi/test-support"
@@ -339,7 +340,21 @@ describe("the default output directory — keeping itself out of git", () => {
 
     await runScan({ cwd: workspace.root })
 
+    expect(await pathExists(under(DEFAULT_OUTPUT_DIRNAME, IR_JSON_FILENAME))).toBe(true)
     expect(await git(["status", "--porcelain", "--untracked-files=all"], workspace.root)).toBe("")
+  })
+
+  it("gives a ref diff's directory the .gitignore, and leaves its per-side scans elsewhere", async () => {
+    await initRepository(workspace.root)
+    await configuredWith(undefined)
+    await writeAlpha()
+    await commitAll(workspace.root)
+
+    const report = await runDiff({ cwd: workspace.root, refSpec: "main..HEAD", warn: () => {} })
+
+    expect(report.diffJsonPath).toBe(under(DEFAULT_OUTPUT_DIRNAME, DIFF_JSON_FILENAME))
+    expect(await gitignoreIn(DEFAULT_OUTPUT_DIRNAME)).toBe(OUTPUT_DIR_GITIGNORE)
+    expect(await pathExists(under(DEFAULT_OUTPUT_DIRNAME, IR_JSON_FILENAME))).toBe(false)
   })
 
   it.each<[string, () => string | undefined, string | undefined]>([
@@ -353,6 +368,21 @@ describe("the default output directory — keeping itself out of git", () => {
     await scanInto(outputDir())
 
     expect(await gitignoreIn(DEFAULT_OUTPUT_DIRNAME)).toBe(OUTPUT_DIR_GITIGNORE)
+  })
+
+  it("gives the default directory the same .gitignore when --output-dir reaches it through a link", async () => {
+    const project = under("project")
+    await configuredWith(undefined, project)
+    await writeAlpha(project)
+    await linkDirectory(project, under("alias"))
+
+    await runScan({
+      cwd: project,
+      format: "json",
+      outputDir: under("alias", DEFAULT_OUTPUT_DIRNAME),
+    })
+
+    expect(await gitignoreIn("project", DEFAULT_OUTPUT_DIRNAME)).toBe(OUTPUT_DIR_GITIGNORE)
   })
 
   it.each<[string, string | undefined, string | undefined, string]>([

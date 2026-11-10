@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { commitAll, gitTestEnv, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { beforeEach, describe, expect, it } from "vitest"
-import { DEFAULT_OUTPUT_DIRNAME, EXIT } from "../../src"
+import { EXIT } from "../../src"
 import { defaultOutput } from "../workspace"
 import { removeWorktreeTempDirs, runBin, useBuiltBin } from "./bin"
 
@@ -26,7 +26,6 @@ beforeEach(async () => {
     "aburi.json",
     '{"languages":["lang-typescript"],"frameworks":["framework-express"]}\n',
   )
-  await workspace.writeSource(".gitignore", `${DEFAULT_OUTPUT_DIRNAME}/\n`)
   await workspace.writeSource("src/routes.ts", routes("requireAdmin"))
   await initRepository(workspace.root)
   await commitAll(workspace.root, "c1")

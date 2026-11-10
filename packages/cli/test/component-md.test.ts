@@ -6,7 +6,7 @@ import { defaultOutput, TYPESCRIPT, writeConfig, writePackageJson } from "./work
 
 const workspace = useScratchWorkspace("component-md")
 
-describe("out/components/<id>.md", () => {
+describe(".aburi/components/<id>.md", () => {
   it("lists the Symbols of the component whose root holds their file, and counts them", async () => {
     await writePackageJson(workspace.root)
     await workspace.writeSource(
@@ -43,7 +43,7 @@ describe("out/components/<id>.md", () => {
   })
 })
 
-describe("out/components/ after Components are renamed or removed", () => {
+describe(".aburi/components/ after Components are renamed or removed", () => {
   const inComponents = (name: string) => defaultOutput(workspace.root, COMPONENTS_DIRNAME, name)
   const pages = async () => (await readdir(inComponents("."))).sort()
 

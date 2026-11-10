@@ -283,6 +283,6 @@ describe("aburi diff with an --output-dir that cannot hold the outputs", () => {
     const { code } = await run("diff", "--base", under("base.json"))
 
     expect(code).toBe(EXIT.INPUT_ERROR)
-    expect(await pathExists(under("out"))).toBe(false)
+    expect(await pathExists(under(DEFAULT_OUTPUT_DIRNAME))).toBe(false)
   })
 })

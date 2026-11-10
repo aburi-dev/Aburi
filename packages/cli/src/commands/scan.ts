@@ -27,7 +27,6 @@ import type {
 import {
   COMPONENTS_DIRNAME,
   IR_JSON_FILENAME,
-  isDefaultOutputDir,
   resolveOutputDir,
   WORKSPACE_MD_FILENAME,
 } from "../artifact-paths"
@@ -120,7 +119,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
   const command = options.command ?? "scan"
   const outputDir = resolveOutputDir(cwd, options.outputDir, config.output?.dir)
-  await createOutputDir(command, outputDir, isDefaultOutputDir(cwd, outputDir))
+  await createOutputDir(command, outputDir, cwd)
   const logger = createLogger({
     ...(options.logLevel === undefined ? {} : { minimum: options.logLevel }),
     ...(options.log === undefined ? {} : { write: options.log }),

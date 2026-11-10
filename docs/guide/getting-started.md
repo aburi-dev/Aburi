@@ -112,11 +112,12 @@ calls 1043 · resolved 917 · unresolved 126 (external 108 · dynamic 14 · no-m
 → /home/you/shop/.aburi/workspace.md
 ```
 
-Three things land in `.aburi/`, which ignores itself: the first scan writes a `.gitignore`
-into it, so nothing needs adding to yours.
+Four things land in `.aburi/`, and the directory ignores itself, so nothing needs adding to
+your own `.gitignore`.
 
 | File | What it is |
 |---|---|
+| `.gitignore` | Written by the scan that creates `.aburi/`. It ignores everything in the directory, itself included. |
 | `aburi.ir.json` | The analysis itself, as JSON. Everything else derives from it. |
 | `workspace.md` | One page covering the whole repository: components, their languages and frameworks, the effect surface. |
 | `components/*.md` | Per-component detail. Every kept symbol with its boundaries, rules, and effects. |
