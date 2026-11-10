@@ -5,6 +5,7 @@ import {
   languageId,
   makeIR,
   makeSymbol,
+  relativePath,
   sectionOf,
 } from "@aburi/test-support"
 import type { IR } from "@aburi/types"
@@ -24,8 +25,8 @@ function withHeader(overrides: Partial<IR>): IR {
       root: ".",
       languages: [languageId("ts"), languageId("py")],
       managers: [
-        { tool: "uv", roots: ["services/api"] },
-        { tool: "pnpm", roots: [".", "tools"] },
+        { tool: "uv", roots: [relativePath("services/api")] },
+        { tool: "pnpm", roots: [relativePath("."), relativePath("tools")] },
       ],
     },
     generator: { name: "aburi", version: "1.2.3", plugins: [] },

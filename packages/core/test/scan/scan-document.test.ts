@@ -5,6 +5,7 @@ import {
   errorFrom,
   makeCall,
   recordingLogger,
+  relativePath,
   spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
@@ -14,7 +15,6 @@ import {
   CoreError,
   languageFileDropPatterns,
   logicFingerprint,
-  makeLanguageId,
   serializeCanonical,
   writeCanonicalIR,
 } from "../../src"
@@ -59,6 +59,42 @@ describe("scan — what it refuses", () => {
     const error = await errorFrom(CoreError, () => scanStubs("relative/root"))
     expect(error.code).toBe("scan-workspace-not-absolute")
   })
+
+  it.each<[string, readonly string[], unknown, string]>([
+    ["declares no languageId, with no file of its", [], undefined, "declares no languageId"],
+    ["declares no languageId, with a file of its", ["a.stub"], undefined, "declares no languageId"],
+    [
+      "declares a languageId that is not a string",
+      ["a.stub"],
+      7,
+      "declares languageId 7, which is not a string",
+    ],
+  ])(
+    "refuses a language plugin whose manifest %s, before parsing anything",
+    async (_, files, languageId, says) => {
+      for (const file of files) await workspace.writeSource(file, file)
+      const parsed: string[] = []
+      const language = stubLanguagePlugin({
+        parseFile: async (file) => {
+          parsed.push(file.path)
+          return { tree: {}, errors: [], imports: [] }
+        },
+      })
+      // The type system holds every manifest to a string; a plugin built without it does not.
+      if (languageId === undefined) Reflect.deleteProperty(language.manifest, "languageId")
+      else Reflect.set(language.manifest, "languageId", languageId)
+
+      const error = await errorFrom(CoreError, () =>
+        scanStubs(workspace.root, { languages: [language] }),
+      )
+
+      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "lang-stub" })
+      expect(error.message).toBe(
+        `Language plugin "lang-stub" ${says} in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.`,
+      )
+      expect(parsed).toEqual([])
+    },
+  )
 })
 
 describe("scan — the Document it assembles", () => {
@@ -89,11 +125,10 @@ describe("scan — the Document it assembles", () => {
 
   it("lists each language once, sorted, beside the workspace managers it was given", async () => {
     const other = stubLanguagePlugin({
-      manifest: langManifest("lang-other"),
-      languageId: makeLanguageId("other"),
+      manifest: langManifest("lang-other", "other"),
       fileExtensions: [".other"],
     })
-    const managers = [{ tool: "pnpm", roots: ["apps/a"] }]
+    const managers = [{ tool: "pnpm", roots: [relativePath("apps/a")] }]
     const { ir } = await scanStubs(workspace.root, {
       languages: [stubLanguagePlugin(), other],
       workspaceManagers: managers,
