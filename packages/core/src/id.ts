@@ -3,6 +3,7 @@ import {
   LANGUAGE_ID_PATTERN,
   type LanguageId,
   RESERVED_LANGUAGE_IDS,
+  type RelativePath,
   type SymbolId,
 } from "@aburi/types"
 import { describeCodePoints, toNfc } from "./codepoints"
@@ -147,13 +148,19 @@ export function isDefaultExportQname(qname: string): boolean {
   return qname === DEFAULT_EXPORT_QNAME
 }
 
-export function toDocumentPath(rawPath: string): string {
+export function toDocumentPath(rawPath: string, subject: string = PATH_SUBJECT): RelativePath {
+  const path = documentPathOrViolation(rawPath, subject)
+  if (typeof path === "string") return path
+  throw new CoreError(path.message, { code: path.code, value: path.value })
+}
+
+/** `toDocumentPath` for a caller that answers a refusal its own way rather than with the throw. */
+export function documentPathOrViolation(
+  rawPath: string,
+  subject: string = PATH_SUBJECT,
+): RelativePath | GrammarViolation {
   const normalized = toNfc(rawPath)
-  const violation = posixWorkspaceRelativeViolation(normalized)
-  if (violation !== null) {
-    throw new CoreError(violation.message, { code: violation.code, value: violation.value })
-  }
-  return normalized
+  return posixWorkspaceRelativeViolation(normalized, subject) ?? (normalized as RelativePath)
 }
 
 const SYMBOL_ID_SEPARATORS = [":", "#"] as const
@@ -193,13 +200,13 @@ export function symbolIdSeparatorSite(path: string): SymbolIdSeparatorSite | nul
   return null
 }
 
-export function toPosixRelative(rawPath: string): string {
+export function toPosixRelative(rawPath: string): RelativePath {
   const normalized = toNfc(rawPath)
   const violation = symbolIdPathViolation(normalized)
   if (violation !== null) {
     throw new CoreError(violation.message, { code: violation.code, value: violation.value })
   }
-  return normalized
+  return normalized as RelativePath
 }
 
 function normalizeParts(parts: SymbolIdParts): SymbolIdParts {

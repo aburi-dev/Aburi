@@ -1,5 +1,5 @@
 import irSchema from "@aburi/schema/aburi.ir.v1.json" with { type: "json" }
-import { component, dependency, effect, makeIR } from "@aburi/test-support"
+import { component, dependency, effect, makeIR, relativePath } from "@aburi/test-support"
 import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeLanguageId } from "../src/id"
@@ -151,7 +151,7 @@ describe("checkIRIntegrity", () => {
       const ir = irWith((ir) => {
         ir.components = [component({ id: "a", name: "a", roots: [path] })]
         ir.symbols = [makeSymbol("ts:src/a.ts#foo", { source: sourceAt(path) })]
-        ir.workspace.managers = [{ tool: "pnpm", roots: [path] }]
+        ir.workspace.managers = [{ tool: "pnpm", roots: [relativePath(path)] }]
       })
 
       const tenth = violationsOf(ir, 10)
@@ -381,7 +381,7 @@ describe("checkIRIntegrity — Unicode normalization", () => {
     [
       "workspace.managers[].roots",
       (ir) => {
-        ir.workspace.managers = [{ tool: "pnpm", roots: [`apps/${decomposed}`] }]
+        ir.workspace.managers = [{ tool: "pnpm", roots: [relativePath(`apps/${decomposed}`)] }]
       },
     ],
     [

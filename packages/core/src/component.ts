@@ -1,5 +1,5 @@
 import { basename } from "node:path"
-import type { Component, ComponentId, LanguageId } from "@aburi/types"
+import type { Component, ComponentId, LanguageId, RelativePath } from "@aburi/types"
 import {
   type CandidateRoot,
   decideId,
@@ -18,7 +18,7 @@ import {
   type NpmManifest,
   readCandidateManifests,
 } from "./component-manifest"
-import { makeLanguageId } from "./id"
+import { makeLanguageId, toDocumentPath } from "./id"
 import { compareBy } from "./order"
 import { type DetectManagersOptions, detectManagers, type WorkspaceCandidate } from "./workspace"
 
@@ -78,11 +78,12 @@ export async function detectComponents(
 }
 
 interface MergedCandidate extends CandidateRoot {
+  readonly relativeRoot: RelativePath
   manifests: Map<string, string>
 }
 
 function rootCandidate(workspaceRoot: string): MergedCandidate {
-  return { relativeRoot: ".", absoluteRoot: workspaceRoot, manifests: new Map() }
+  return { relativeRoot: toDocumentPath("."), absoluteRoot: workspaceRoot, manifests: new Map() }
 }
 
 function mergeCandidatesByPath(candidates: readonly WorkspaceCandidate[]): MergedCandidate[] {
