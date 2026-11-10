@@ -101,9 +101,9 @@ Normalization therefore happens **where a string enters the process**, not where
 | Entry point | What it normalizes |
 |---|---|
 | `makeSymbolId` / `trySymbolId` | the three id parts, before validating them, so the ids the guard accepts are the ids the constructors can mint |
-| `toDocumentPath` | every path the file walk produces — `symbols[].source.file`, and `stats.skippedFiles[].path` for one the walk gave up on |
-| `toRelativePosix` (workspace detection) | `components[].roots` and `workspace.managers[].roots` |
-| `resolveComponents` (CLI config load) | those same fields when they come from `aburi.json` rather than from detection |
+| `toDocumentPath` | every path the file walk produces — `symbols[].source.file`, and `stats.skippedFiles[].path` for one the walk gave up on — and every `RelativePath` that workspace detection, the CLI config load and the plugin boundary hand on (§3.5) |
+| `toRelativePosix` (workspace detection) | the separator conversion and NFC of a found package directory, before `toDocumentPath` mints it as a `components[].roots` / `workspace.managers[].roots` entry |
+| `resolveComponents` (CLI config load) | `components[].roots` when they come from `aburi.json` rather than from detection |
 | `normalizePackagePath` (component detection) | `components[].publicApi` |
 | the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target`, `effects[].target` or `stats.declinedCalls[].target`, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
 | `buildDropCFilter` | the `suppress` / `keep` / `dropCallees` prefixes those call targets are matched against |
@@ -251,15 +251,17 @@ Two rules keep the namespaces from overlapping:
 1. **`slice` is a reserved language token.** A language plugin claiming it would mint Symbol IDs shaped exactly like Slice IDs, and deriving a Slice ID from one of those would produce `slice:slice:…`. `makeSymbolId` rejects the token; see [multi-language-id.md](./multi-language-id.md) Rule L-11.
 2. **The three types are nominal, not structural.** On the wire all three are JSON strings, and JSON Schema has no way to say otherwise. `@aburi/types` layers a brand onto each generated alias so `SymbolId`, `ComponentId`, and `SliceId` are mutually non-assignable in TypeScript and a bare `string` satisfies none of them.
 
-A brand is minted only by the constructors above. Assertions (`x as SymbolId`) live in four documented places and nowhere else:
+A brand is minted only by the constructors above. Assertions (`x as SymbolId`) live in the places below and nowhere else:
 
 | Where | Why |
 |---|---|
-| `packages/core/src/id.ts` | The two id constructors. Both run the full grammar check first |
+| `packages/core/src/id.ts` | The two id constructors and the two path constructors. Each runs its full grammar check first |
 | `sliceIdFor` in `packages/diff/src/slice.ts` | The only `SliceId` constructor |
 | `sliceRecordViolation` in `packages/diff/src/slice.ts` | Takes `unknown` by contract — it inspects records that have not been type-checked |
 | `readIR` in `packages/cli/src/ir-io.ts` | Brands a whole parsed document at once (`as unknown as IR`), which is the only way to type a JSON parse. Invariant #17 in §14 is what checks the ids inside it |
 | per-package test fixtures | A case that feeds a *malformed* id to the code that rejects it has to be able to write one |
+
+**Paths are branded on the same terms.** `RelativePath`, the type of every path invariant #10 in §14 names — `symbols[].source.file`, `components[].roots[]` and `workspace.managers[].roots[]` — carries a brand too, so a string nothing checked is a compile error at the site that would write it, not a Document `assertIRIntegrity` refuses after every file was extracted. A bare alias left each producer to remember the check: the plugin boundary read `source.file` through NFC alone, so one bad path refused the whole Document at `assertIRIntegrity`. The two path constructors in `packages/core/src/id.ts` mint it, each after running its grammar: `documentPathOrViolation` the grammar of invariant #10, handing a refusal back, with `toDocumentPath` throwing it instead, and `toPosixRelative` the stricter grammar of a Symbol id's file segment. Discovery, workspace-package detection, component detection's fallback root `.`, the configured `components[].roots` and the language-plugin boundary each go through the first, and `SourceFile.path` carries the brand to the plugin that writes it back as `source.file`. A path the Document records without that type — `stats.skippedFiles[].path`, or a rename git reports — stays a `string`, and code that compares it with a branded one reads both as strings.
 
 The brands are erased at runtime and are absent from the JSON. They constrain what the codebase can build, not what a document may contain — shape checking on the wire remains the job of the schema and of §14.
 

@@ -14,7 +14,7 @@ import type { ReadFile } from "../lsp"
 import type { DiscoveredFile, SkippedFile } from "./discover"
 import type { FileExtraction, FileOutcome } from "./extract-file"
 import { type ExtractionEvent, edgesReadOnce } from "./extraction-events"
-import type { TreeReleaseFailure } from "./pipeline"
+import type { FileFault, TreeReleaseFailure } from "./pipeline"
 import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
 import type { UndeclaredVocabOccurrence } from "./vocab"
 
@@ -246,15 +246,11 @@ export class ExtractionCollator {
         return
       }
       case "extracted": {
-        const collision = describeIdFault(result.symbols, file.path)
-        if (collision !== null) {
-          out.skipped.push({ path: file.path, reason: "extraction-failed", detail: collision })
-          out.extractionFailures.push({
-            file: file.path,
-            message: collision,
-            code: "duplicate-symbol-id",
-          })
-          this.#logger.warn(`Skipped ${file.path}: ${collision}`)
+        const fault = result.fault ?? describeIdFault(result.symbols, file.path)
+        if (fault !== null) {
+          out.skipped.push({ path: file.path, reason: "extraction-failed", detail: fault.message })
+          out.extractionFailures.push({ file: file.path, message: fault.message, code: fault.code })
+          this.#logger.warn(`Skipped ${file.path}: ${fault.message}`)
           out.timeoutEvents.push(...result.timeoutEvents)
           out.importsByFile.set(file.path, result.imports)
           return
@@ -291,24 +287,28 @@ function quote(error: ParseError): string {
   return `${error.line}:${error.column} — ${error.message}`
 }
 
-function describeIdFault(symbols: readonly IRSymbol[], path: string): string | null {
+function describeIdFault(symbols: readonly IRSymbol[], path: string): FileFault | null {
   const here = new Map<string, IRSymbol>()
   for (const symbol of symbols) {
     const claimed = symbolIdFile(symbol.id)
     if (claimed !== null && claimed !== path) {
-      return (
-        `Symbol id "${symbol.id}" names ${claimed}, which is not this file. An id carries the ` +
-        `file its Symbol was declared in, so the language plugin wrote a path that is not ` +
-        `this file's`
-      )
+      return {
+        code: "duplicate-symbol-id",
+        message:
+          `Symbol id "${symbol.id}" names ${claimed}, which is not this file. An id carries the ` +
+          `file its Symbol was declared in, so the language plugin wrote a path that is not ` +
+          `this file's`,
+      }
     }
     const twin = here.get(symbol.id)
     if (twin !== undefined) {
-      return (
-        `two Symbols share the id "${symbol.id}" (lines ${twin.source.startLine} and ` +
-        `${symbol.source.startLine}); the language plugin gave two declarations one qualified ` +
-        `name, and nothing it reported separates them`
-      )
+      return {
+        code: "duplicate-symbol-id",
+        message:
+          `two Symbols share the id "${symbol.id}" (lines ${twin.source.startLine} and ` +
+          `${symbol.source.startLine}); the language plugin gave two declarations one qualified ` +
+          `name, and nothing it reported separates them`,
+      }
     }
     here.set(symbol.id, symbol)
   }
