@@ -100,6 +100,7 @@ async function locate(
   const explainContext: ProjectSymbolExplainContext = {
     dependencies: ir.dependencies,
     ...(resolved.unresolvedCalls === null ? {} : { unresolvedCalls: resolved.unresolvedCalls }),
+    ...(ir.stats.declinedCalls === undefined ? {} : { declinedCalls: ir.stats.declinedCalls }),
   }
 
   const arg = options.argument

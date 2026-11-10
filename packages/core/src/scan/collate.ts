@@ -1,4 +1,11 @@
-import type { ImportEdge, Symbol as IRSymbol, Logger, ParseError, ThisBinding } from "@aburi/types"
+import type {
+  DeclinedCall,
+  ImportEdge,
+  Symbol as IRSymbol,
+  Logger,
+  ParseError,
+  ThisBinding,
+} from "@aburi/types"
 import type { ThisBindingSites } from "../call-site"
 import { countBy } from "../collections"
 import { CoreError } from "../errors"
@@ -34,6 +41,7 @@ export interface ExtractedFiles {
   importsByFile: Map<string, readonly ImportEdge[]>
   fileContents: Map<string, ReadFile>
   dynamicCallSites: Set<string>
+  declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
 }
 
@@ -62,6 +70,7 @@ export class ExtractionCollator {
     importsByFile: new Map(),
     fileContents: new Map(),
     dynamicCallSites: new Set(),
+    declinedCalls: [],
     thisBindings: this.#thisBindings,
   }
   readonly #onceSeen = new Set<string>()
@@ -256,6 +265,7 @@ export class ExtractionCollator {
         out.symbols.push(...result.symbols)
         out.importsByFile.set(result.path, result.imports)
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
+        out.declinedCalls.push(...result.declinedCalls)
         for (const [key, binding] of result.thisBindings) this.#thisBindings[binding].add(key)
         return
       }
