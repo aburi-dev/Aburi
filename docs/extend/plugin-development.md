@@ -76,14 +76,39 @@ Parses a file, extracts Symbols, walks bodies to collect Rules + Calls, and
 computes a normalised AST string for fingerprinting.
 
 ```ts
-import type { LanguagePlugin, ParseResult, BodyExtraction } from "@aburi/types"
+import { makeLanguageId } from "@aburi/core"
+import {
+  type BodyExtraction,
+  type LangManifest,
+  type LanguagePlugin,
+  type ParseResult,
+  PLUGIN_SCHEMA_URL,
+} from "@aburi/types"
+
+export const myLangManifest: LangManifest = {
+  $schema: PLUGIN_SCHEMA_URL,
+  name: "lang-mylang",
+  version: "0.1.0",
+  type: "lang",
+  // The LanguageId you stamp on every Symbol id, and what lands in
+  // IR.workspace.languages. It must match `^[a-z][a-z0-9]*$`, no other loaded
+  // plugin may declare it, and an id opening with any other token ends the
+  // run. The manifest name ("lang-mylang") is a plugin ref and cannot be used
+  // here. `makeLanguageId` checks the grammar and brands the string.
+  languageId: makeLanguageId("my"),
+  engines: { aburi: "*" },
+  provides: {
+    effects: [],
+    effectPrefixes: [],
+    extKinds: [],
+    extKindPrefixes: [],
+    derivedByPrefixes: [],
+    frameworks: [],
+  },
+}
 
 class MyLangPlugin implements LanguagePlugin {
   readonly manifest = myLangManifest
-  // The LanguageId you stamp on every Symbol id, and what lands in
-  // IR.workspace.languages. Must match `^[a-z][a-z0-9]*$`. The manifest name
-  // ("lang-mylang") is a plugin ref and cannot be used here.
-  readonly languageId = "my"
   readonly fileExtensions = [".my"] as const
   readonly capabilities = { /* boolean matrix */ }
 
