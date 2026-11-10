@@ -1,5 +1,6 @@
+import { PluginInputError } from "@aburi/plugin-registry"
 import { classifyInputsAround } from "@aburi/test-harness"
-import { makeCall, makeCtx } from "@aburi/test-support"
+import { errorFrom, makeCall, makeCtx } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { classifyPrismaCall } from "../src/index"
 import { makePrismaImport } from "./fixtures/context"
@@ -63,7 +64,7 @@ describe("classifyPrismaCall — receiver identification", () => {
     "container.services.prisma.user.findMany",
     "tx.user.create",
   ])("keeps %s, a receiver Prisma is written with, at high", (target) => {
-    expect(classifyPrismaCall(makeCall({ target }), ctx)?.confidence).toBe("high")
+    expect(classifyPrismaCall(makeCall({ target }), ctx)).toMatchObject({ confidence: "high" })
   })
 
   it("still classifies an unrecognized receiver, at medium — recall is not the price", () => {
@@ -83,12 +84,12 @@ describe("classifyPrismaCall — receiver identification", () => {
   })
 
   it("applies the same tiering to $transaction", () => {
-    expect(classifyPrismaCall(makeCall({ target: "prisma.$transaction" }), ctx)?.confidence).toBe(
-      "high",
-    )
-    expect(classifyPrismaCall(makeCall({ target: "queue.$transaction" }), ctx)?.confidence).toBe(
-      "medium",
-    )
+    expect(classifyPrismaCall(makeCall({ target: "prisma.$transaction" }), ctx)).toMatchObject({
+      confidence: "high",
+    })
+    expect(classifyPrismaCall(makeCall({ target: "queue.$transaction" }), ctx)).toMatchObject({
+      confidence: "medium",
+    })
   })
 
   it("returns null for a delegate verb called with a literal — no delegate takes one", () => {
@@ -162,13 +163,30 @@ describe("classifyPrismaCall — calls that are not Prisma's", () => {
     ["queue.upsert", "a two-segment call reusing a delegate verb"],
     ["prisma.user.executeRaw", "a method outside the delegate surface"],
     ["prisma.user.someHelper", "a method outside the delegate surface"],
-    ["prisma.$queryRaw", "a raw SQL escape"],
-    ["prisma.$executeRaw", "a raw SQL escape"],
-    ["prisma.$queryRawUnsafe", "a raw SQL escape"],
     ["prisma.$transactional", "a near-miss of $transaction"],
     ["$transaction", "$transaction with no client"],
   ])("returns null for %s — %s", (target) => {
     expect(classifyPrismaCall(makeCall({ target }), ctx)).toBeNull()
+  })
+
+  it.each([
+    "prisma.$queryRaw",
+    "prisma.$queryRawUnsafe",
+    "prisma.$queryRawTyped",
+    "this.prisma.$executeRaw",
+    "tx.$executeRawUnsafe",
+    "prisma.$runCommandRaw",
+  ])("declines %s — whether it reads or writes is in the query it is handed", (target) => {
+    expect(classifyPrismaCall(makeCall({ target, argumentCount: 1 }), ctx)).toEqual({
+      declined: "effects-plugin:prisma:raw-query",
+    })
+  })
+
+  it("declines no raw query without a client, or in a file that imports no Prisma", () => {
+    expect(classifyPrismaCall(makeCall({ target: "$queryRaw" }), ctx)).toBeNull()
+    expect(
+      classifyPrismaCall(makeCall({ target: "prisma.$queryRaw" }), makeCtx({ imports: [] })),
+    ).toBeNull()
   })
 })
 
@@ -182,23 +200,37 @@ describe("classifyPrismaCall — upstream contract violations", () => {
     ["prisma.user.", 'CallCandidate.target "prisma.user." has empty segment(s)'],
   ])(
     "throws on the malformed target %j, naming itself and the file, before the import gate",
-    (target, message) => {
+    async (target, message) => {
       for (const imports of [[makePrismaImport()], []]) {
-        expect(() => classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
-          `effects-prisma (${path}): ${message}`,
+        const error = await errorFrom(PluginInputError, () =>
+          classifyPrismaCall(makeCall({ target }), makeCtx({ imports, path })),
         )
+        expect(error).toMatchObject({
+          message: expect.stringContaining(`effects-prisma (${path}): ${message}`),
+          code: "unnormalized-callee",
+          plugin: "effects-prisma",
+          filePath: path,
+        })
       }
     },
   )
 
-  it("throws on an import edge with an empty source rather than skipping it", () => {
+  it("throws on an import edge with an empty source rather than skipping it", async () => {
     const brokenEdge = makeCtx({
       imports: [{ source: "", symbols: ["PrismaClient"], line: 4, dynamic: false }],
       path,
     })
-    expect(() =>
+    const error = await errorFrom(PluginInputError, () =>
       classifyPrismaCall(makeCall({ target: "prisma.user.create" }), brokenEdge),
-    ).toThrow(`effects-prisma (${path}, line 4): ImportEdge.source is empty`)
+    )
+    expect(error).toMatchObject({
+      message: expect.stringContaining(
+        `effects-prisma (${path}, line 4): ImportEdge.source is empty`,
+      ),
+      code: "unnormalized-import-source",
+      plugin: "effects-prisma",
+      filePath: path,
+    })
   })
 
   it("leaves the CallCandidate and the ClassifyContext as it found them", () => {

@@ -2,6 +2,7 @@ import type {
   BodyExtraction,
   ComponentId,
   Config,
+  DeclinedCall,
   EffectPlugin,
   ExtractionContext,
   FrameworkClassifyContext,
@@ -18,7 +19,7 @@ import type {
   WalkContext,
 } from "@aburi/types"
 import type { CallSiteBinding } from "../call-site"
-import { buildDroppedSymbol, buildKeptSymbol, extractLanguageFromId } from "./build-symbol"
+import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
@@ -39,6 +40,7 @@ export interface ExtractedFile extends FileOutcomeCommon {
   imports: readonly ImportEdge[]
   timeoutEvents: readonly ClassifyTimeoutEvent[]
   dynamicCallSites: readonly string[]
+  declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
 }
 
@@ -129,6 +131,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
+    const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
@@ -151,6 +154,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           symbol: candidate.id,
         })
       }
+      assertIdLanguage(candidate.id, language.manifest)
       const dropReason = decideDropReason(candidate, language, frameworks, frameworkCtx)
 
       if (dropReason !== null) {
@@ -158,7 +162,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           buildDroppedSymbol(
             candidate,
             dropReason,
-            extractLanguageFromId(candidate.id),
+            language.manifest.languageId,
             component,
             confidence,
           ),
@@ -177,7 +181,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         component,
         candidate,
         file,
-        language: extractLanguageFromId(candidate.id),
+        language: language.manifest.languageId,
         imports,
         dropCFilter,
         timeoutEvents,
@@ -189,16 +193,18 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         effects: classifiedEffects,
         calls: keptCalls,
         dynamicCallSites: fileDynamicCallSites,
+        declinedCalls: fileDeclinedCalls,
         thisBindings: fileThisBindings,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
+      declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
         buildKeptSymbol({
           candidate,
-          language: extractLanguageFromId(candidate.id),
+          language: language.manifest.languageId,
           component,
           rules: body.rules,
           effects: classifiedEffects,
@@ -220,6 +226,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       imports,
       timeoutEvents,
       dynamicCallSites,
+      declinedCalls,
       thisBindings,
     }
   } finally {

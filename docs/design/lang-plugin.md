@@ -70,12 +70,7 @@ The actual types are defined in the `types` package of `@aburi/core`. This docum
 
 ```ts
 interface LanguagePlugin {
-  manifest: PluginManifest                     // type: "lang"
-
-  // the LanguageId this plugin owns — the prefix on every Symbol id it produces, and
-  // what core projects into IR.workspace.languages. Constrained to ^[a-z][a-z0-9]*$ by
-  // aburi.ir.v1, so it is NOT the manifest name ("lang-typescript" is a plugin ref).
-  languageId: LanguageId                       // e.g. "ts"
+  manifest: LangManifest                       // type: "lang"; languageId: e.g. "ts"
 
   // file matching (extensions only, not globs)
   fileExtensions: string[]                     // e.g. [".ts", ".tsx", ".mts", ".cts"]
@@ -103,6 +98,8 @@ interface LanguagePlugin {
   createImportResolver?(ctx: ImportResolverContext): ImportResolver
 }
 ```
+
+The `LanguageId` a plugin owns is its manifest's `languageId` ([`extension-vocab.md`](./extension-vocab.md) §3.1). It is the prefix on every Symbol id the plugin produces and what the core projects into `IR.workspace.languages`, and it matches `^[a-z][a-z0-9]*$`, so it is not the manifest name: `lang-typescript` is a plugin ref, `ts` is its language. It is a manifest field and not a field of the plugin object so that the registry checks it with the rest of the manifest, whatever language the plugin is written in. The registry refuses a lang manifest that declares none, one outside that grammar, the reserved `slice`, and a token another loaded plugin declared ([`multi-language-id.md`](./multi-language-id.md) Rules L-1, L-3, L-11). The core then refuses a Symbol id that opens with any other language (`scan-plugin-misconfigured`, §7.2), so the token a plugin declares and the token it writes are the same. `scan` checks the token's type itself as well, before it parses any file: a caller that hands plugins to `scan` without registering their manifests would otherwise get a message about `"undefined"` from the first Symbol id, or, with no file of that language, a Document that lists `undefined` among `workspace.languages`. A manifest with no string `languageId` ends the run with `scan-plugin-misconfigured`, naming the plugin (ML2e).
 
 ### 4.2 `SourceFile` / `ParseResult`
 
@@ -273,16 +270,34 @@ the source's arguments.
 trailing, or adjacent dot (`".create"`, `"prisma.user."`, `"prisma..create"`) is a
 contract violation, not an input an effect plugin has to tolerate: `"prisma..create"`
 splits into three segments and would match a delegate-call shape that never existed in
-the source. The same holds for the `ImportEdge` of §4.2 — `source` is a normalized,
-non-empty module specifier.
+the source. The same holds for the `ImportEdge` of §4.2:
 
-Whitespace is not part of the rule: a segment or specifier is rejected when it is empty,
-not when it is blank. `"prisma. .create"` satisfies the contract as written — plugins are
-free to be stricter, but the shared guards are not.
+- `source` is a normalized, non-empty module specifier.
+- Each `symbols` entry names something on both sides of its `as` — `"X as Y"` binds `Y` to
+  the export `X`, and a bare `"X"` is `X` on both sides. `" as Y"` binds `Y` to an export
+  with no name and `"X as "` imports `X` under no local name, so a consumer that resolves
+  a decorator or receiver through the entry attributes it to a binding the source never
+  wrote.
+- `namespaceBinding`, when present, is non-empty, for the same reason: it is the local name
+  a receiver is matched against.
 
-Consumers enforce this rather than work around it. `assertNonEmptySegments`,
-`assertImportEdgeSource`, `assertImportBinding` and `hasMatchingImport` in
-`@aburi/plugin-registry/plugin-input` are the shared guards. They throw, and a violation
+Whitespace is not part of the rule: a segment, specifier or binding is rejected when it is
+empty, not when it is blank. `"prisma. .create"` satisfies the contract as written — plugins
+are free to be stricter, but the shared guards are not.
+
+Consumers enforce this rather than work around it, through the shared guards in
+`@aburi/plugin-registry/plugin-input`. Each throws a `PluginInputError` naming the consuming
+plugin and the file, under the code of the clause it enforces:
+
+| Guard | Refuses | `code` |
+|---|---|---|
+| `assertNonEmptySegments` | an empty `target`, or one with an empty segment | `unnormalized-callee` |
+| `assertImportEdgeSource` | an empty `source` | `unnormalized-import-source` |
+| `assertImportBinding` | a `symbols` entry with an empty half | `unnormalized-import-binding` |
+| `assertNamespaceBinding` | an empty `namespaceBinding` | `unnormalized-namespace-binding` |
+
+`hasMatchingImport` runs `assertImportEdgeSource` over every edge before it matches any, so
+whether it throws does not depend on import order. A violation
 propagates rather than degrading to an unclassified call
 ([`effect-plugin.md`](./effect-plugin.md) §10, EP3a), so an unnormalized callee surfaces
 as a failed scan instead of a silently miscategorized effect.
@@ -667,9 +682,9 @@ A file being skipped on wall clock does mean the IR can differ between a fast ma
 
 - If any plugin call for a file throws — `parseFile`, `extractSymbols`, `symbolDropHint`, `walkBody`, `normalizeAst`, a framework `classifySymbol`, or an effect `classify` — the core withdraws **that file** and keeps going. One file's bug does not halt IR generation.
 - **A file whose Symbols cannot enter the Document is withdrawn on the same terms**, though nothing threw. Today that is ir-schema.md invariant #1, read off the file being extracted: two of its own Symbols under one id, or one whose id names a path that is not this file's (§4.3). Both are the fault of the file being scanned, so that is the file that goes. The check runs per file, before any of the file's output is accumulated, because that is the last point at which the file can still be withdrawn and named — `assertIRIntegrity` sees the assembled Document and can only refuse the whole of it, which is what used to happen. Which of two Symbols to keep is not the core's to decide — the plugin reported nothing that separates them — so the file goes whole, with `code: "duplicate-symbol-id"` on its `ScanResult.extractionFailures` entry and the collision named in `detail`. The document-wide check stays where it is, as the backstop.
-- The withdrawn file is named in `ScanResult.skipped` with `reason: "extraction-failed"`, and the thrown message is kept beside it in `ScanResult.extractionFailures`. The core logs a warning per file; `aburi scan` exits `3` when the list is non-empty, so a run that dropped a file is not green.
+- The withdrawn file is named in `ScanResult.skipped` with `reason: "extraction-failed"`, and the thrown message is kept beside it in `ScanResult.extractionFailures`, with the error's string `code` when it has one, whatever its class. That code is how a consumer tells a shared guard's refusal (§4.4) from the plugin's own bug without reading the message. The core logs a warning per file; `aburi scan` exits `3` when the list is non-empty, so a run that dropped a file is not green.
 - A file withdrawn because a plugin *threw* loses its recoverable parse errors, unlike one abandoned for its `parseTimeoutMs` budget: the pipeline result never materialized, so the thrown message is the diagnostic in their place. A file withdrawn for a duplicate id keeps them, on the same reasoning read the other way — its extraction ran to a result, so those errors are observations the parse really made about the file, and dropping them would hide a genuine parse fault behind an id fault that may well be its consequence.
-- **Some are not absorbed.** An error whose code names a fault in the plugin *set* rather than in the file propagates and ends the run, because it repeats for every file and withdrawing them one at a time would report the workspace as broken instead of the plugin. Today that is `scan-plugin-misconfigured` (an effect plugin returning a Promise from `classify`, a language plugin emitting Symbol ids with no language prefix, or a plugin refusing its own `pluginOptions` value), `invalid-language-id` (the prefix is present but is not a legal `LanguageId`, which comes from the plugin's own `languageId`), and `vocab-undeclared` (an id the emitting plugin's manifest does not claim — `effect-plugin.md` EP1 — or one a plugin refused through the registry's own `assertEffectDeclared` / `assertExtKindDeclared`, which raise the registry's error under that code). The code decides, not the class, and `aburi scan` exits `3` for each (`cli-spec.md` §5.4). Everything else describes the file — `anonymous-symbol-id-attempted` from a qualified name the grammar refuses, `non-posix-path` from where the file lives — and is absorbed.
+- **Some are not absorbed.** An error whose code names a fault in the plugin *set* rather than in the file propagates and ends the run, because it repeats for every file and withdrawing them one at a time would report the workspace as broken instead of the plugin. Today that is `scan-plugin-misconfigured` (an effect plugin returning a Promise from `classify`, a language plugin emitting Symbol ids with no language prefix or with a prefix other than its manifest's `languageId`, or a plugin refusing its own `pluginOptions` value), `invalid-language-id` (the prefix is present but is not a legal `LanguageId`), and `vocab-undeclared` (an id the emitting plugin's manifest does not claim — `effect-plugin.md` EP1 — or one a plugin refused through the registry's own `assertEffectDeclared` / `assertExtKindDeclared`, which raise the registry's error under that code). The code decides, not the class, and `aburi scan` exits `3` for each (`cli-spec.md` §5.4). Everything else describes the file — `anonymous-symbol-id-attempted` from a qualified name the grammar refuses, `non-posix-path` from where the file lives — and is absorbed. So are the shared guards' `unnormalized-*` codes (§4.4). An unnormalized value is a language-plugin bug, but one that a construct in the file triggers, so it repeats only in the files that contain that construct. Withdrawing those names exactly them (`effect-plugin.md` EP3a), where ending the run would hide every file the plugin extracted correctly.
 - A plugin-wide bug that carries none of those codes still presents as one failure per file rather than one crash. That is the intended shape — every file named, the messages identical, the count the whole workspace — but it is a weaker diagnostic than a code that says outright what is wrong.
 - The behaviour above is unconditional: there is no "stop at the first extraction exception" mode. (`config.strict` is about something else: whether the core's own vocabulary check ends the run, which it does through `vocab-undeclared` above. A refusal a plugin asks for through `ctx.registry` ends it either way.)
 

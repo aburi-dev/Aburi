@@ -1,4 +1,4 @@
-import type { IR } from "@aburi/types"
+import { type IR, RESERVED_LANGUAGE_IDS } from "@aburi/types"
 import { describeCodePoints, toNfc } from "./codepoints"
 import { isCoreEffectId } from "./core-effects"
 import { CoreError, type IntegrityViolation } from "./errors"
@@ -9,9 +9,12 @@ import {
   isSymbolId,
   posixSpellingViolation,
   posixWorkspaceRelativeViolation,
-  RESERVED_LANGUAGE_IDS,
 } from "./id"
-import { checkCallResolutionStatsCensus, checkSkippedFilesCensus } from "./integrity-census"
+import {
+  checkCallResolutionStatsCensus,
+  checkDeclinedCallsStayCalls,
+  checkSkippedFilesCensus,
+} from "./integrity-census"
 import {
   checkCallEdgeEndpoints,
   checkCallGraphProjectionAgrees,
@@ -70,6 +73,7 @@ export function checkIRIntegrity(document: unknown): IntegrityViolation[] {
   checkIdGrammar(ir, violations)
   checkWorkspaceLanguages(ir, violations)
   checkUnicodeNormalization(ir, violations)
+  checkDeclinedCallsStayCalls(ir, violations)
 
   return violations
 }
@@ -198,6 +202,9 @@ function checkUnicodeNormalization(ir: IR, out: IntegrityViolation[]): void {
   }
   for (const file of ir.stats.skippedFiles ?? []) {
     reportUnnormalized(file.path, `stats.skippedFiles[path=${file.path}]`, "path", out)
+  }
+  for (const [index, declined] of (ir.stats.declinedCalls ?? []).entries()) {
+    reportUnnormalized(declined.target, `stats.declinedCalls[${index}]`, "target", out)
   }
 }
 

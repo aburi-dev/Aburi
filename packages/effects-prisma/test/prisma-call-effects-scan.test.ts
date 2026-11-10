@@ -1,7 +1,7 @@
 import { DEFAULT_CLASSIFY_TIMEOUT_MS } from "@aburi/core"
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { scanWith } from "@aburi/test-harness"
-import { spend, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
+import { irSchemaViolations, spend, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
 import type { EffectPlugin } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { prismaEffectsPlugin } from "../src/index"
@@ -113,6 +113,44 @@ describe("scan — Prisma calls in a service file", () => {
     expect(symbolNamed(result, "removeUser").effects).toMatchObject([
       { id: "db.write", target: "prisma.user.delete", confidence: "high" },
     ])
+  })
+
+  it("names each raw query it declines and keeps the call, a tagged template included", async () => {
+    await workspace.writeSource(
+      "src/reports.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        "",
+        "export async function totals(prisma: PrismaClient, id: string) {",
+        `  return prisma.$queryRaw\`SELECT sum(amount) FROM invoice WHERE user_id = \${id}\``,
+        "}",
+        "",
+        "export async function purge(prisma: PrismaClient) {",
+        '  return prisma.$executeRawUnsafe("DELETE FROM session")',
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    const declined = (symbol: string, target: string, line: number) => ({
+      plugin: "effects-prisma",
+      symbolId: `ts:src/reports.ts#${symbol}`,
+      target,
+      line,
+      reason: "effects-plugin:prisma:raw-query",
+    })
+    expect(result.ir.stats.declinedCalls).toEqual([
+      declined("purge", "prisma.$executeRawUnsafe", 8),
+      declined("totals", "prisma.$queryRaw", 4),
+    ])
+    expect(symbolNamed(result, "totals").calls.map((c) => c.target)).toEqual(["prisma.$queryRaw"])
+    expect(symbolNamed(result, "purge").calls.map((c) => c.target)).toEqual([
+      "prisma.$executeRawUnsafe",
+    ])
+    expect(result.ir.symbols.flatMap((s) => s.effects)).toEqual([])
+    expect(irSchemaViolations(result.ir)).toEqual([])
   })
 
   it("records nothing in a file that does not import @prisma/client", async () => {

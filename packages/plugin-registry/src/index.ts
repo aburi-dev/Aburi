@@ -8,4 +8,6 @@ export {
 export type { RegistryErrorCode, RegistryErrorDetail } from "./errors"
 export { RegistryError } from "./errors"
 export { loadPluginManifest, parsePluginManifest } from "./manifest"
+export type { PluginInputErrorCode } from "./plugin-input"
+export { PluginInputError } from "./plugin-input"
 export { VocabRegistry } from "./registry"
