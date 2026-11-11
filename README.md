@@ -79,7 +79,7 @@ Exit code `3` means a gate tripped. The full walkthrough is in
 - uses: actions/setup-node@v7
   with: { node-version: 24, cache: pnpm }
 - run: pnpm install --frozen-lockfile
-- uses: kage1020/Aburi/packages/github-action@v0
+- uses: aburi-dev/Aburi/packages/github-action@v0
   with:
     cli: workspace
     fail-on: "removed,dropped-toggled:to-dropped:>10"

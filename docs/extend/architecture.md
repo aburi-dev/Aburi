@@ -58,7 +58,7 @@ status and delta for each from there.
 
 ## Schemas
 
-Four JSON Schemas under [`schema/`](https://github.com/kage1020/Aburi/blob/main/schema/)
+Four JSON Schemas under [`schema/`](https://github.com/aburi-dev/Aburi/blob/main/schema/)
 define the contracts: `aburi.ir.v1` for the analysis, `aburi.diff.v1` for the
 diff, `aburi.config.v1` for the config, and `aburi.plugin.v1` for plugin
 manifests. The `v1` schemas are frozen, so you can add to them but not break

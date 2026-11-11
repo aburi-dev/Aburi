@@ -4,13 +4,13 @@
   "description": "Aburi shared types: schema-generated IR / config / diff / plugin manifest, plus hand-written plugin interface signatures",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/types#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/types#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/types"
   },
   "type": "module",

@@ -101,11 +101,11 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/kage1020/Aburi" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/aburi-dev/Aburi" }],
     search: { provider: "local" },
     outline: { level: [2, 3] },
     editLink: {
-      pattern: "https://github.com/kage1020/Aburi/edit/main/docs/:path",
+      pattern: "https://github.com/aburi-dev/Aburi/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     footer: {

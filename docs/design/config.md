@@ -1,7 +1,7 @@
 # Config (`aburi.config.v1`)
 
 Complete specification of `aburi.json`, Aburi's per-project configuration file.
-The JSON Schema [`aburi.config.v1.json`](https://github.com/kage1020/Aburi/blob/main/schema/aburi.config.v1.json) is the single source of truth.
+The JSON Schema [`aburi.config.v1.json`](https://github.com/aburi-dev/Aburi/blob/main/schema/aburi.config.v1.json) is the single source of truth.
 
 References:
 - [`ir-schema.md`](./ir-schema.md) — Component structure

@@ -3,7 +3,7 @@
 While Aburi's core schema has a vocabulary fixed by strict enums, language/framework/effect plugins have an extensible "loose" vocabulary. This document defines the registration mechanism for that extension vocabulary.
 
 See: [`ir-schema.md`](./ir-schema.md) §5.2 / §9.2 / §16
-Plugin manifest: [`aburi.plugin.v1.json`](https://github.com/kage1020/Aburi/blob/main/schema/aburi.plugin.v1.json)
+Plugin manifest: [`aburi.plugin.v1.json`](https://github.com/aburi-dev/Aburi/blob/main/schema/aburi.plugin.v1.json)
 
 ---
 
@@ -16,7 +16,7 @@ Reasons for organizing the extension vocabulary:
 - **Documentation**: hold, in machine-readable form, what each extension value "means"
 - **Conflict detection**: stop with an error when two or more plugins declare the same identifier
 
-Schema-level validation ([`aburi.ir.v1.json`](https://github.com/kage1020/Aburi/blob/main/schema/aburi.ir.v1.json)) only guarantees pattern matching. Deciding semantically whether "this value may be used in this project" is the responsibility of this registry.
+Schema-level validation ([`aburi.ir.v1.json`](https://github.com/aburi-dev/Aburi/blob/main/schema/aburi.ir.v1.json)) only guarantees pattern matching. Deciding semantically whether "this value may be used in this project" is the responsibility of this registry.
 
 ## 2. Extension targets (4 kinds)
 
@@ -117,7 +117,7 @@ A prefix means "one or more namespace segments owned by this plugin". A plugin d
 | `provides.derivedByPrefixes[]` | `^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$` |
 | `provides.frameworks[]` | `^[a-z][a-z0-9-]*$` |
 
-These are machine-validated by [`aburi.plugin.v1.json`](https://github.com/kage1020/Aburi/blob/main/schema/aburi.plugin.v1.json).
+These are machine-validated by [`aburi.plugin.v1.json`](https://github.com/aburi-dev/Aburi/blob/main/schema/aburi.plugin.v1.json).
 
 `provides.extKinds[].baseKind` says what kind of Symbol the extKind describes; it does not constrain `Symbol.kind`. A plugin may give the extKind to a Symbol the language plugin read as another kind, as `framework:next:route` (`baseKind: "function"`) goes to a route handler that is a `const` because its value cannot be seen to be a function.
 

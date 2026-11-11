@@ -4,13 +4,13 @@
   "description": "Aburi Express framework plugin: recognizes Express Router instances, route handlers (get/post/put/patch/delete/all), middleware (arity-3), error middleware (arity-4), and mount points (app.use('/prefix', router)) — emitting framework:express:* extKinds",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/framework-express#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/framework-express#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/framework-express"
   },
   "type": "module",

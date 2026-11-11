@@ -168,7 +168,7 @@ export function normalizeLineTerminators(content: string): string {
 function unknownFile(fileId: number, count: number): CoreError {
   return new CoreError(
     `Internal error: asked to extract file ${fileId} of a scan that discovered ${count}\n` +
-      "This is a bug in Aburi — please report it at https://github.com/kage1020/Aburi/issues.",
+      "This is a bug in Aburi — please report it at https://github.com/aburi-dev/Aburi/issues.",
     { code: "scan-file-unknown" },
   )
 }

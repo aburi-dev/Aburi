@@ -24,7 +24,7 @@ export function internalFault(phase: string, detail: string, cause: unknown): Cl
   return new CliError(
     `Internal error${phase}: ${detail}\n` +
       "This is a bug in Aburi, not in your configuration — please report it at " +
-      "https://github.com/kage1020/Aburi/issues.",
+      "https://github.com/aburi-dev/Aburi/issues.",
     "runtime-error",
     { cause },
   )

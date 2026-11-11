@@ -21,7 +21,7 @@ hero:
       link: /guide/what-is-aburi
     - theme: alt
       text: GitHub
-      link: https://github.com/kage1020/Aburi
+      link: https://github.com/aburi-dev/Aburi
 
 features:
   - icon: 🔍
