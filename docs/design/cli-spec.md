@@ -1557,9 +1557,11 @@ sees of it is this:
 
 The pool changes nothing the run writes, prints or exits with: the IR, the pages, the
 discovered-vocabulary record and the report are byte for byte those of `--concurrency 1`, and so
-are stdout, the exit code and stderr, but for the debug line above. Each file's log is said in file
-order, and a scan that stops at a file stops there as one thread does, saying nothing of the files
-after it. The progress line (§10.2) counts a file once a worker has finished it, so a slow file
+are stdout, the exit code and stderr, but for the debug line above and the frames of a debug run's
+stack traces (§10.3), which name the calls of the thread an error was thrown on: an error and each
+of its causes keep their class names and messages across the thread. Each file's log is said in
+file order, and a scan that stops at a file stops there as one thread does, saying nothing of the
+files after it. The progress line (§10.2) counts a file once a worker has finished it, so a slow file
 does not hold the count back while the workers extract the files after it.
 
 What has no single-thread counterpart is a worker that ends — a plugin that calls `process.exit()`,
@@ -1709,7 +1711,7 @@ a command's option, not a global one (§3).
 | CL76 | `aburi vocab effects --json` with no config found; `aburi vocab plugins` with a config that lists an effect plugin alone, whose `init` throws; `aburi vocab plugins` reading `custom.json` through `--config`, before the subcommand or after it, or through `ABURI_CONFIG` | exit 0 all. The first writes the core effect ids alone and no effect prefix, and says on stderr that no config was found; the second lists that plugin, since nothing calls `init` and no language plugin is needed (§8); the third lists the plugin `custom.json` names, with nothing on stderr |
 | CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value or with two; `aburi vocab list` with a configured plugin that fails to import, or whose manifest has no `version`; with a `frameworkHints` entry the registry refuses | exit 2, nothing on stdout, and stderr opening with the usage of `aburi vocab`, the unknown command, the missing argument or the extra one; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
 | CL78 | `aburi vocab list`, `plugins`, `effects` and `extkinds`, with and without `--json`, over a file listing `frameworkHints`, `effects`, `frameworks` and `languages` in that order; and over two `effects` entries and two `frameworkHints` entries, each pair out of alphabetical order | The plugins in the order `languages`, `frameworks`, `effects`, `frameworkHints`, and within a field in the file's order, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space; `list` as its five sections, the `Effects` one the `effects` table indented (§8.4–§8.5) |
-| CL79 | `aburi scan --concurrency N` for N ∈ {2, 3, more than there are files}, over files that fail to parse, throw, collide on an id and emit an undeclared value, strict and not; `aburi diff main..HEAD --concurrency 2`, with its scans at once and in turn | The exit code, stdout, the artefacts and stderr of `--concurrency 1`, but for the `scan: extracting on` debug line (§14.2) |
+| CL79 | `aburi scan --concurrency N` for N ∈ {2, 3, more than there are files}, over files that fail to parse, throw, collide on an id and emit an undeclared value, strict and not; `aburi diff main..HEAD --concurrency 2`, with its scans at once and in turn | The exit code, stdout, the artefacts and stderr of `--concurrency 1`, but for the `scan: extracting on` debug line and the frames of the stack traces at debug, the strict run's `caused by:` lines naming the same classes (§14.2) |
 | CL80 | `aburi scan --concurrency 2` where a plugin on a worker calls `process.exit(7)`, or throws from a microtask, while extracting one file, or leaves a function in that file's Symbol | exit 3; that file in `stats.skippedFiles` as `extraction-failed`, `Skipped <file>: ` and what happened on stderr, and every other file's Symbols in the IR (§14.2) |
 | CL81 | `aburi scan --concurrency 2` where workers end under three files | exit 1, stderr naming the three files and `--concurrency 1` |
 | CL82 | `aburi scan --concurrency 2` where a plugin throws when loaded on a worker | exit 1, `A parser worker failed: ` with the plugin's error and `--concurrency 1` on stderr |

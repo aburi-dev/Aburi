@@ -6,7 +6,7 @@ export type ThreadThrown =
       message: string
       code: CliErrorCode
       stack: string | undefined
-      cause: unknown
+      cause: ThreadThrown | undefined
     }
   | {
       kind: "error"
@@ -14,32 +14,37 @@ export type ThreadThrown =
       message: string
       stack: string | undefined
       code: unknown
-      cause: unknown
+      cause: ThreadThrown | undefined
     }
   | { kind: "value"; text: string }
 
-/** What a thread sends of an error: a structured clone drops its class and the fields it adds, `code` among them. */
+/**
+ * What a thread sends of an error and its causes: a structured clone drops a class it does not
+ * know, and with it the name and the fields it adds, `code` among them.
+ */
 export function describedForThread(error: unknown): ThreadThrown {
+  return describedOnce(error, new Set())
+}
+
+function describedOnce(error: unknown, described: Set<unknown>): ThreadThrown {
+  described.add(error)
+  if (!(error instanceof Error)) return { kind: "value", text: String(error) }
+  // A cause already described closes a cycle, which the trace ends at anyway.
+  const cause =
+    error.cause === undefined || described.has(error.cause)
+      ? undefined
+      : describedOnce(error.cause, described)
   if (error instanceof CliError) {
-    return {
-      kind: "cli",
-      message: error.message,
-      code: error.code,
-      stack: error.stack,
-      cause: ifCloneable(error.cause),
-    }
+    return { kind: "cli", message: error.message, code: error.code, stack: error.stack, cause }
   }
-  if (error instanceof Error) {
-    return {
-      kind: "error",
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      code: ifCloneable((error as { code?: unknown }).code),
-      cause: ifCloneable(error.cause),
-    }
+  return {
+    kind: "error",
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    code: ifCloneable((error as { code?: unknown }).code),
+    cause,
   }
-  return { kind: "value", text: String(error) }
 }
 
 export function ifCloneable(value: unknown): unknown {
@@ -69,8 +74,8 @@ export function rebuiltFromThread(thrown: ThreadThrown): unknown {
   }
 }
 
-function causeOf(cause: unknown): { cause: unknown } | undefined {
-  return cause === undefined ? undefined : { cause }
+function causeOf(cause: ThreadThrown | undefined): { cause: unknown } | undefined {
+  return cause === undefined ? undefined : { cause: rebuiltFromThread(cause) }
 }
 
 function withStack<T extends Error>(error: T, stack: string | undefined): T {

@@ -22,8 +22,10 @@ afterEach(async () => {
   await removeWorktreeTempDirs(workspace.root)
 })
 
-/** What says how many workers a run used, and so the one line two such runs may differ by. */
+/** What says how many workers a run used, a line two such runs may differ by. */
 const SIZING = /^debug: scan: extracting on /
+/** A frame of the trace a debug run prints after its error, naming the calls of a thread. */
+const FRAME = /^\s+at /
 
 interface Outcome {
   code: number | null
@@ -45,7 +47,7 @@ async function scanned(argv: readonly string[], read: readonly string[] = []): P
   return {
     code: run.code,
     stdout: run.stdout,
-    stderr: run.stderr.split(/(?<=\n)/).filter((line) => !SIZING.test(line)),
+    stderr: run.stderr.split(/(?<=\n)/).filter((line) => !SIZING.test(line) && !FRAME.test(line)),
     written,
   }
 }
