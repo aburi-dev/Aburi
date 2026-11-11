@@ -1,11 +1,11 @@
 import { readdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
-import { call, errorFrom, makeSymbol, useScratchWorkspace } from "@aburi/test-support"
-import type { CallResolutionStats, IR } from "@aburi/types"
+import { errorFrom, makeSymbol, useScratchWorkspace } from "@aburi/test-support"
+import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { DIFF_JSON_FILENAME, DIFF_MD_FILENAME, EXIT, FailOnParseError, runDiff } from "../src"
 import { pathExists } from "../src/fs-probe"
-import { diffDocuments, documentWith } from "./ir-documents"
+import { diffDocuments, documentWith, documentWithCensus } from "./ir-documents"
 import { runCliIn } from "./run-cli"
 import { filesUnder, writeEarlierReports, writeIRs } from "./workspace"
 
@@ -14,15 +14,6 @@ const workspace = useScratchWorkspace("diff-files")
 const EMPTY = documentWith({ symbols: [] })
 const FOO = makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo" })
 const ADDED_FOO = documentWith({ symbols: [FOO] })
-
-function headWithCensus(callResolution: CallResolutionStats): IR {
-  const unresolved = callResolution.totalCalls - callResolution.resolvedCalls
-  const calls = Array.from({ length: unresolved }, (_, i) =>
-    call({ target: `mystery${i}`, line: i + 2 }),
-  )
-  const head = documentWith({ symbols: [{ ...FOO, calls }] })
-  return { ...head, stats: { ...head.stats, callResolution } }
-}
 
 describe("aburi diff --base/--head", () => {
   it("diffs two IR files and writes diff.json and diff.md", async () => {
@@ -133,16 +124,23 @@ describe("aburi diff — the head's call-resolution census", () => {
       "calls 0 · resolved 0 · unresolved 0",
     ],
   ])("renders %j", async (census, line) => {
-    const { report } = await diffDocuments(workspace.root, EMPTY, headWithCensus(census))
+    const { report } = await diffDocuments(
+      workspace.root,
+      EMPTY,
+      documentWithCensus({ symbols: [FOO] }, census),
+    )
     expect(report.callResolutionLine).toBe(line)
   })
 
   it("prints the line right after the summary", async () => {
-    const head = headWithCensus({
-      totalCalls: 1,
-      resolvedCalls: 0,
-      unresolved: { localScope: 0, external: 0, dynamic: 0, ambiguous: 1, noMatch: 0 },
-    })
+    const head = documentWithCensus(
+      { symbols: [FOO] },
+      {
+        totalCalls: 1,
+        resolvedCalls: 0,
+        unresolved: { localScope: 0, external: 0, dynamic: 0, ambiguous: 1, noMatch: 0 },
+      },
+    )
     const paths = await writeIRs(workspace.root, EMPTY, head)
 
     const { stdout } = await runCliIn(workspace.root, [

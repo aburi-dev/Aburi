@@ -1,8 +1,13 @@
-import { type ComponentOverrides, component, languageId, makeDiff } from "@aburi/test-support"
+import {
+  type ComponentOverrides,
+  component,
+  languageId,
+  makeDiff,
+  sectionOf,
+} from "@aburi/test-support"
 import type { Component } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { projectDiff } from "../src"
-import { sectionOf } from "./markdown"
 
 const HEADING = "## 🧱 Component changes"
 const NO_AXIS = { rootsChanged: false, publicApiChanged: false, frameworksChanged: false }

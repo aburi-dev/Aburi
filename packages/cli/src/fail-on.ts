@@ -90,6 +90,16 @@ export function parseFailOn(value: string): FailOnClause[] {
 
 class ClauseError extends Error {}
 
+/** The clause `segment` reads as, or null where `parseFailOn` would refuse it. */
+export function parseClause(segment: string): FailOnClause | null {
+  try {
+    return parseSingle(segment)
+  } catch (err) {
+    if (err instanceof ClauseError) return null
+    throw err
+  }
+}
+
 function parseSingle(segment: string): FailOnClause {
   const colonIdx = findThresholdColon(segment)
   if (colonIdx === -1) {
@@ -224,9 +234,15 @@ export function uncountedDuplicates(
 }
 
 function countedIds(token: FailOnToken, diff: DiffResult, scope: FailOnScope): SymbolId[] {
-  return diff.symbols
-    .filter((change) => inScope(scope, change) && counts(token, change))
-    .map((change) => representativeSymbol(change).id)
+  return countedChanges(token, diff, scope).map((change) => representativeSymbol(change).id)
+}
+
+export function countedChanges(
+  token: FailOnToken,
+  diff: DiffResult,
+  scope: FailOnScope,
+): SymbolChange[] {
+  return diff.symbols.filter((change) => inScope(scope, change) && counts(token, change))
 }
 
 /** The head decides for a pair, as it does where the report lists the entry. */
@@ -234,8 +250,12 @@ function inScope(scope: FailOnScope, change: SymbolChange): boolean {
   return scope === "all" || representativeSymbol(change).inTestFile !== true
 }
 
+export function formatClause(clause: FailOnClause): string {
+  return clause.threshold === null ? clause.token : `${clause.token}:>${clause.threshold}`
+}
+
 export function formatTriggered({ clause, observed, symbols, scope }: TrippedClause): string {
-  const rendered = clause.threshold === null ? clause.token : `${clause.token}:>${clause.threshold}`
+  const rendered = formatClause(clause)
   const named = symbols.slice(0, MAX_LISTED).map((id) => `  ${id}`)
   const unnamed = symbols.length - named.length
   const where = scope === "all" ? "" : " outside test files"
