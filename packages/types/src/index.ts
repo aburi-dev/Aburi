@@ -40,6 +40,7 @@ export type {
   Component,
   ComponentId,
   Confidence,
+  DeclinedCall,
   Decorator,
   Dependency,
   DependencyEndpoint,
@@ -78,12 +79,14 @@ export type {
   PluginManifest,
   Provides,
 } from "./generated/plugin"
+export { LANGUAGE_ID_GRAMMAR, LANGUAGE_ID_PATTERN, RESERVED_LANGUAGE_IDS } from "./language-id"
 export type {
   BodyExtraction,
   CallCandidate,
   ClassifyContext,
   DropHint,
   EffectClassification,
+  EffectDecline,
   EffectPlugin,
   EffectsManifest,
   EffectVocab,
@@ -114,10 +117,12 @@ export type {
   SourceFile,
   SymbolCandidate,
   SymbolClassification,
+  ThisBinding,
   VocabRegistry,
   WalkContext,
   WrittenSourceRange,
 } from "./plugins"
+export { lastSegment } from "./qualified-name"
 export {
   CONFIG_SCHEMA_URL,
   DIFF_SCHEMA_URL,
@@ -125,7 +130,12 @@ export {
   isIRSchemaURL,
   PLUGIN_SCHEMA_URL,
 } from "./schema-urls"
-export { representativeSymbol } from "./symbol-change"
+export {
+  isSymbolChangeStatus,
+  representativeSymbol,
+  SYMBOL_CHANGE_STATUSES,
+  type SymbolChangeStatus,
+} from "./symbol-change"
 export {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   COMPUTED_TARGET_SEGMENT,

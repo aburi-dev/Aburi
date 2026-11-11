@@ -1,3 +1,4 @@
+import { SYMBOL_CHANGE_STATUSES } from "@aburi/types"
 import { Command } from "commander"
 import {
   collect,
@@ -16,6 +17,7 @@ import { runDiff } from "./commands/diff"
 import { type CoverageDoubt, runExplain } from "./commands/explain"
 import { runInit } from "./commands/init"
 import { runScan } from "./commands/scan"
+import { runVocab, type VocabQuery } from "./commands/vocab"
 import { resolveConfigPath } from "./config-path"
 import { type LogLevel, readEnv } from "./env"
 import { assertNever, CliError, errorCode } from "./errors"
@@ -157,6 +159,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
     .option("--respect-gitignore", "honour .gitignore patterns (overrides config)")
     .option("--no-respect-gitignore", "ignore .gitignore patterns (overrides config)")
     .option("--compact", "compact JSON output")
+    .option("--quiet", "print the census lines alone, not the path of each artefact")
     .option(
       "--no-timestamp",
       "omit discoveredAt from aburi-vocab-discovered.json (default under CI)",
@@ -179,6 +182,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
         ignore?: string[]
         respectGitignore?: boolean
         compact?: boolean
+        quiet?: boolean
         timestamp?: boolean
         config?: string
         lsp?: boolean
@@ -211,8 +215,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               `${unnameable === 0 ? "" : ` · ${unnameable} unnameable`}\n`,
           )
           stdout.write(`${report.callResolutionLine}\n`)
-          if (report.irPath !== null) stdout.write(`→ ${report.irPath}\n`)
-          if (report.workspaceMdPath !== null) stdout.write(`→ ${report.workspaceMdPath}\n`)
+          if (cmdOptions.quiet !== true) {
+            if (report.irPath !== null) stdout.write(`→ ${report.irPath}\n`)
+            if (report.workspaceMdPath !== null) stdout.write(`→ ${report.workspaceMdPath}\n`)
+          }
           return report.exitCode
         })(),
     )
@@ -240,7 +246,12 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
       "all | non-test: whether --fail-on counts the Symbols of the files config testFiles names (default: all)",
       parseFailOnScope,
     )
+    .option(
+      "--filter <statuses>",
+      `list only these statuses' changes in diff.md, comma-separated: ${SYMBOL_CHANGE_STATUSES.join(", ")} (diff.json and --fail-on still read every change)`,
+    )
     .option("--compact", "compact JSON output")
+    .option("--quiet", "print the glyph line alone")
     .option(
       "--max-bytes <n>",
       "cap diff.md at n UTF-8 bytes, shortening sections to names and then dropping them least-important-first (GitHub rejects a comment body over 65536)",
@@ -263,7 +274,9 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
           failOn?: string[]
           failOnScope?: FailOnScope
           compact?: boolean
+          quiet?: boolean
           maxBytes?: number
+          filter?: string
           parallelScans?: boolean
           config?: string
         },
@@ -284,6 +297,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               failOnScope: cmdOptions.failOnScope,
               compact: cmdOptions.compact,
               maxBytes: cmdOptions.maxBytes,
+              filter: cmdOptions.filter,
               parallelScans: cmdOptions.parallelScans,
               logLevel: logLevel(),
               configPath: resolveConfigPath(cmdOptions.config, env),
@@ -291,10 +305,12 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
             warn,
           })
           stdout.write(`${report.summaryLine}\n`)
-          if (report.callResolutionLine !== null) {
-            stdout.write(`${report.callResolutionLine}\n`)
+          if (cmdOptions.quiet !== true) {
+            if (report.callResolutionLine !== null) {
+              stdout.write(`${report.callResolutionLine}\n`)
+            }
+            if (report.diffMdPath !== null) stdout.write(`→ ${report.diffMdPath}\n`)
           }
-          if (report.diffMdPath !== null) stdout.write(`→ ${report.diffMdPath}\n`)
           if (report.triggered !== null) {
             stderr.write(`${formatTriggered(report.triggered)}\n`)
           }
@@ -382,16 +398,52 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
         })(),
     )
 
+  const vocab = program
+    .command("vocab")
+    .description("List the extension vocabulary and owners")
+    .option("--json", "write JSON to stdout instead of a table")
+    .option("--config <path>", "config file path", parsePath)
+  const runVocabQuery = (query: VocabQuery) =>
+    runCommand(async () => {
+      const cmdOptions = vocab.opts<{ json?: boolean; config?: string }>()
+      const outcome = await runVocab({
+        cwd,
+        query,
+        ...definedOnly({
+          json: cmdOptions.json,
+          configPath: resolveConfigPath(cmdOptions.config, env),
+        }),
+      })
+      for (const line of outcome.stderr) stderr.write(`${line}\n`)
+      stdout.write(outcome.stdout)
+      return outcome.exitCode
+    })()
+  const lists = [
+    ["list", "the plugins, and every vocabulary they declare beside the core effect ids"],
+    ["effects", "the core effect ids, and the effect ids and prefixes plugins declare"],
+    ["extkinds", "the extKinds and extKind prefixes plugins declare"],
+    ["plugins", "the loaded plugins, and the config entry that loaded each"],
+  ] as const
+  for (const [kind, description] of lists) {
+    vocab
+      .command(kind)
+      .description(description)
+      .action(() => runVocabQuery({ kind }))
+  }
+  vocab
+    .command("who-owns")
+    .description("what owns a value, in each vocabulary it is in (exit 1 when nothing does)")
+    .argument("<value>", "an effect id, extKind, framework name or derivedBy value")
+    .action((value: string) => runVocabQuery({ kind: "who-owns", value }))
+
   for (const command of [program, ...program.commands]) refuseRepeatedValues(command)
 
   try {
     await program.parseAsync(options.argv, { from: "user" })
   } catch (error) {
     if (isCommanderError(error)) {
-      if (error.code === "commander.helpDisplayed" || error.code === "commander.version") {
-        return EXIT.SUCCESS
-      }
-      return EXIT.INPUT_ERROR
+      // Commander exits 0 only once it has printed help or the version, however it was asked for.
+      return error.exitCode === 0 ? EXIT.SUCCESS : EXIT.INPUT_ERROR
     }
     return handleError(error, stderr)
   }
@@ -405,8 +457,13 @@ function coverageLine(doubt: CoverageDoubt): string {
   return `⚠ This IR reports ${doubt.fileCount} file(s) it did not parse but predates stats.skippedFiles, so it cannot name them; a match may be in one of them. Re-run \`aburi scan\` to record the list.`
 }
 
-function isCommanderError(value: unknown): value is { code: string; message: string } {
-  return errorCode(value)?.startsWith("commander.") === true
+function isCommanderError(
+  value: unknown,
+): value is { code: string; message: string; exitCode: number } {
+  return (
+    errorCode(value)?.startsWith("commander.") === true &&
+    typeof (value as { exitCode?: unknown }).exitCode === "number"
+  )
 }
 
 function handleError(error: unknown, stderr: NodeJS.WritableStream): ExitCode {

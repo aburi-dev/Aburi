@@ -3,14 +3,34 @@ import type {
   ImportEdge,
   OpaqueAstNode,
   Reexport,
+  RelativePath,
   SymbolCandidate,
 } from "@aburi/types"
 import { toNfc } from "../codepoints"
+import { documentPathOrViolation, type GrammarViolation } from "../id"
 
-export function normalizeCandidateStrings(
+/**
+ * A refused `source.file` is a path the plugin built: `ctx.file.path` was minted at discovery. So
+ * the refusal names the plugin, and is handed back for the file's withdrawal rather than thrown.
+ */
+export function normalizeCandidates(
+  written: readonly SymbolCandidate<OpaqueAstNode>[],
+  plugin: string,
+): SymbolCandidate<OpaqueAstNode>[] | GrammarViolation {
+  const subject = `${plugin}'s SymbolCandidate.source.file`
+  const candidates: SymbolCandidate<OpaqueAstNode>[] = []
+  for (const candidate of written) {
+    const file = documentPathOrViolation(candidate.source.file, subject)
+    if (typeof file !== "string") return file
+    candidates.push(normalizeCandidateStrings(candidate, file))
+  }
+  return candidates
+}
+
+function normalizeCandidateStrings(
   candidate: SymbolCandidate<OpaqueAstNode>,
+  file: RelativePath,
 ): SymbolCandidate<OpaqueAstNode> {
-  const file = toNfc(candidate.source.file)
   const signature = normalizeSignatureStrings(candidate.signature)
   const decorators = normalizeDecoratorNames(candidate.decorators)
   if (

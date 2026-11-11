@@ -2,6 +2,7 @@ import {
   type CandidateOverrides,
   makeCandidate,
   noopRegistry,
+  relativePath,
   type ScratchWorkspace,
   silentLogger,
   spend,
@@ -44,7 +45,7 @@ import { makeLanguageId } from "../../src/id"
 function manifest<T extends PluginManifest["type"]>(
   type: T,
   name: string,
-): PluginManifest & { type: T } {
+): Omit<PluginManifest, "languageId"> & { type: T } {
   return {
     $schema: PLUGIN_SCHEMA_URL,
     name,
@@ -62,8 +63,8 @@ function manifest<T extends PluginManifest["type"]>(
   }
 }
 
-export function langManifest(name = "lang-stub"): LangManifest {
-  return manifest("lang", name)
+export function langManifest(name = "lang-stub", languageId = "stub"): LangManifest {
+  return { ...manifest("lang", name), languageId: makeLanguageId(languageId) }
 }
 
 const NO_CAPABILITIES: LanguageCapabilities = {
@@ -83,12 +84,11 @@ const NO_CAPABILITIES: LanguageCapabilities = {
 const EMPTY_BODY: BodyExtraction = { rules: [], calls: [] }
 
 /** The one file a `.stub` plugin is handed when the test is not about the file. */
-const stubFile: SourceFile = { path: "test.stub", content: "" }
+const stubFile: SourceFile = { path: relativePath("test.stub"), content: "" }
 
 export function stubLanguagePlugin(overrides: Partial<LanguagePlugin> = {}): LanguagePlugin {
   return {
     manifest: langManifest(),
-    languageId: makeLanguageId("stub"),
     fileExtensions: [".stub"],
     capabilities: NO_CAPABILITIES,
     init: async () => {},
@@ -133,15 +133,15 @@ export function stubCandidate(
   } = {},
 ): SymbolCandidate {
   const { id, file = "test.stub", ...rest } = overrides
-  const candidate = makeCandidate({
+  return makeCandidate({
     kind: "function",
     id: id ?? `stub:${file}#${name}`,
     name,
     source: { file, startLine: 1, endLine: 2, startColumn: null, endColumn: null },
     bodyNode: {},
     fullNode: {},
+    ...rest,
   })
-  return { ...candidate, ...rest }
 }
 
 /** A candidate named after `file`, which is all the workspace suites need to tell files apart. */
@@ -175,7 +175,6 @@ export interface Script {
 /** A `.stub` language that spends the time it is told to and logs every call it receives. */
 export class ScriptedLanguagePlugin implements LanguagePlugin {
   readonly manifest = langManifest()
-  readonly languageId = makeLanguageId("stub")
   readonly fileExtensions = [".stub"]
   readonly capabilities = NO_CAPABILITIES
   readonly released: ParsedTree[] = []

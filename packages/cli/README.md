@@ -4,7 +4,7 @@ The `aburi` command-line entry — wires
 [`@aburi/config`](../config) +
 [`@aburi/core`](../core) +
 [`@aburi/diff`](../diff) +
-[`@aburi/markdown-projection`](../markdown-projection) into the four subcommands
+[`@aburi/markdown-projection`](../markdown-projection) into the five subcommands
 defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
 
 ## Subcommands
@@ -18,8 +18,8 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
 - **`aburi scan`** — load config, resolve plugins, run `@aburi/core` scan,
   emit IR JSON + workspace / component Markdown. `--format json|md|both`,
   `--ignore <glob>` (repeatable),
-  `--respect-gitignore` / `--no-respect-gitignore`, `--compact`,
-  `--no-timestamp`, `--strict` / `--no-strict` / `--discover` (undeclared plugin
+  `--respect-gitignore` / `--no-respect-gitignore`, `--compact`, `--quiet` (the census
+  lines alone on stdout), `--no-timestamp`, `--strict` / `--no-strict` / `--discover` (undeclared plugin
   vocabulary: exit 3, or keep it and write `aburi-vocab-discovered.json`),
   `--lsp` / `--no-lsp` (override `lsp.enabled`). A config that loads no language
   plugin exits 2.
@@ -33,11 +33,17 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
     degrading `moved` to `removed + added`.
   - `--base <ir.json> --head <ir.json>` — file mode, skips git entirely.
   `--fail-on <spec>` supports the full grammar (see below) and returns
-  `EXIT.GATE = 3` when a clause trips.
+  `EXIT.GATE = 3` when a clause trips. `--filter <statuses>` lists only those statuses'
+  changes in `diff.md`, with a note saying how many it left out; `diff.json`, the glyph line
+  and `--fail-on` still read every change. `--quiet` prints the glyph line alone.
 - **`aburi explain`** — three-arm dispatch: full Symbol id (`ts:src/foo.ts#Foo.bar`),
   file path (all Symbols in the file, workspace-root-relative), or case-sensitive
   substring on `Symbol.name`. Ambiguous substring hits exit 2 with the candidate
   list. `--debug-resolution` rescans and appends the per-call resolution table.
+- **`aburi vocab`** — `list | effects | extkinds | plugins | who-owns <value>`: load the
+  configured plugins and `frameworkHints` without scanning, and list the core effect ids
+  beside what each manifest declares, or name what owns one value in each vocabulary it is
+  in (exit 1 when nothing does). `--json` writes one JSON object instead of the table.
 
 ## `--max-bytes`
 
@@ -88,7 +94,7 @@ pnpm exec aburi --version
 ```
 
 `@aburi/cli` also exports the same command handlers programmatically
-(`runInit`, `runScan`, `runDiff`, `runExplain`, `runCli`, `parseFailOn`,
+(`runInit`, `runScan`, `runDiff`, `runExplain`, `runVocab`, `runCli`, `parseFailOn`,
 `evaluateFailOn`, `DIFF_JSON_FILENAME`, `DIFF_MD_FILENAME`, …) so integration
 tests can drive the CLI without spawning a subprocess.
 
@@ -99,12 +105,15 @@ integration suite drive the CLI with captured streams and assert on the exit
 code without terminating the test process. A CLI entry point should assign
 `process.exitCode`, as the `aburi` bin does: `process.exit()` can truncate
 output still being written to a pipe (`aburi scan … | head`). Like the bin, it
-should also listen for `error` on its output streams, ignore `EPIPE` and
-rethrow the rest: Node reports a reader that closed early (`| head -1`) as that
-event, and with no listener the process exits 1 whatever `runCli` returned. The
-streams to listen on are the `stdout` and `stderr` it passes, when they are
-pipes or sockets, and `process.stderr` in any case, since the scan's log goes
-there whichever streams were passed.
+should also listen for `error` on its output streams, ignore `EPIPE`, and keep
+any other error rather than throw it, setting a non-zero `process.exitCode`
+once the event loop drains (`beforeExit`). Node reports both a reader that
+closed early (`| head -1`) and a write the descriptor refused as that event;
+with no listener, or one that rethrows, the process ends at that write, before
+`aburi diff` removes its base worktree. The streams to listen on are the
+`stdout` and `stderr` it passes, unless they are in-memory captures, and
+`process.stderr` in any case, since the scan's log goes there whichever streams
+were passed.
 
 ## See also
 

@@ -48,6 +48,14 @@ Walk from cwd toward parents. The workspace root is the first directory holding 
 
 If markers are found at multiple levels, the outer one wins: a sub-project's `package.json` inside a monorepo does not shrink the workspace to that sub-project. The walk does not go past a `.git`, so a repository nested under another marker is a workspace of its own (§11.1).
 
+A working tree whose repository is kept elsewhere, under `GIT_DIR` or with `GIT_WORK_TREE` naming a tree away from the `.git` git finds, has no `.git` at its top. While either variable is set, the CLI asks git for the top with `git rev-parse --show-toplevel`, run in the directory `aburi` runs in, and the walk follows the answer:
+
+- A top that `GIT_WORK_TREE` or `core.worktree` names is a root the walk stops at as it does at a `.git`. The walk meets it as the ancestor of the start whose real path is the top's, however links spell either. A `.git` between the start and the top still stops the walk first: it is a repository of its own, such as the base worktree `aburi diff` checks out under a `TMPDIR` inside the working tree. A start none of whose ancestors is the top, one outside the tree or one reached through a link from outside it, walks as if git had not answered.
+- With neither set, which git is asked through `git config --get core.worktree`, git takes the directory it runs in as the top, and so does the walk, unless it meets a `.git` above that directory: a hook exports `GIT_DIR`, and run from a package directory below its `.git`, git's answer is only that package.
+- A bare repository has no working tree, and git refuses there as it does outside a repository. The walk then goes on as it would without the variables, and so it does when git cannot be run.
+
+`detectWorkspaceRoot` takes git's answer as `workTree`, `{ top }` or `"start"`, and spawns nothing.
+
 ### 2.2 Component extraction
 
 Each detector receives the workspace root and determines whether a marker it can handle exists. If so, it returns zero or more "workspace candidates".
@@ -247,7 +255,7 @@ Detected frameworks are **only recorded in `Component.frameworks[]`**; the corre
 Read the paths `package.json` names:
 
 ```jsonc
-// package.json
+// packages/sdk/package.json
 {
   "exports": {
     ".": "./src/index.ts",
@@ -260,13 +268,14 @@ Read the paths `package.json` names:
 
 ```jsonc
 {
-  "publicApi": ["src/client.ts", "src/index.ts"]
+  "roots": ["packages/sdk"],
+  "publicApi": ["packages/sdk/src/client.ts", "packages/sdk/src/index.ts"]
 }
 ```
 
 Every string target of `exports`, through conditions and arrays, and `main`, `module`, `types` and `typings` are read, whether or not `exports` is present; the entries are their union, deduplicated and sorted.
 
-Each value is a path relative to the package directory, and its entry is written in one spelling: NFC, with no leading `./` however often it repeats, and no `.` or empty segment inside it, so `././src/index.ts`, `./src/./index.ts` and `src//index.ts` are all `src/index.ts`. These values contribute no entry:
+Each value is a path relative to the package directory, and its entry is that path written from the workspace root, as `roots[]` and every Symbol id are: the component's root, then the value in one spelling. That spelling is NFC, with no leading `./` however often it repeats, and no `.` or empty segment inside it, so `././src/index.ts`, `./src/./index.ts` and `src//index.ts` in `packages/sdk/package.json` are all `packages/sdk/src/index.ts`. A package at the workspace root (root `.`) adds no prefix: its entry is `src/index.ts`. These values contribute no entry:
 
 - the package directory itself: `""`, `"."`, `"./"`, `"./."`. `"main": "./"` is a legal npm value (it resolves to `./index.js`), and `"./": "./"` is the folder-mapping form of `exports` that Node accepted before subpath patterns
 - any other directory, which is a value whose last segment is empty or `.`: `"./lib/"`, `"./lib/."`, or the target of a folder mapping such as `"./lib/": "./lib/"`
@@ -275,6 +284,8 @@ Each value is a path relative to the package directory, and its entry is written
 - a value that is not a string, such as `"main": 42`
 
 An entry is the file the manifest names, not a file a resolver would find for it. `index.js` inside a directory is Node's lookup, and a folder mapping exports whatever the directory holds at the time; neither is a path the manifest wrote. An empty entry in particular would be no glob at all, and the schema refuses it.
+
+Detection reports every string value on that list beside the Components, by component id and then in the order its manifest holds them, naming the component, the manifest, where in it the value sits (`main`, or a place in `exports` such as `exports["./lib/"]` or `exports["."]["import"][0]`), the value and which of the cases above it is. A value that fits more than one case is reported under the first that applies, in this order: an absolute path, the package directory, another directory, a first segment that reads as a drive or a backslash, then a `..` segment. So `"/lib/"` is an absolute path, `"../"` and `"C:/"` are directories, and between a drive and a backslash the backslash wins only when it sits in the first segment itself: `"C:\\x"` is a backslash, `"C:/..\\x"` a drive. `aburi scan` writes one line on stderr for each ([`cli-spec.md`](./cli-spec.md) §5.6), since a value that gives no entry otherwise leaves the IR looking like that of a package that declared nothing. A value that is not a string is not reported: `null` is how `exports` keeps a subpath private, and a number names no path at all.
 
 If no value gives an entry, the `publicApi` key is **omitted** — it is Class B under [`ir-schema.md`](./ir-schema.md) §1.1, so "no public surface declared" is spelled as an absent key, never as `[]`. `frameworks` follows the same rule; `description` is Class A and is written as an explicit `null` when detection has nothing to put there.
 
@@ -346,6 +357,7 @@ When multiple detectors return the same path (e.g., both pnpm and turbo detect `
 
 - **Merge into one** workspace candidate (dedupe by path)
 - Record `manager` information from both (two entries in `workspace.managers[]`)
+- Two manifests that spell one tool — `pnpm-workspace.yaml` and a `package.json#workspaces` beside `pnpm-lock.yaml` — give that tool one entry in `workspace.managers[]`, holding every root either declares, and each directory one candidate
 - A single Component
 - Keep **every** manifest the detectors found for that directory, plus the `package.json` under its root whether or not one of them reported it, and read them in §4.1's order for `id` and `name`. A directory claimed by pnpm and nx at once has a `package.json` and a `project.json`, and they routinely name it differently: the first is the published npm name the rest of the Document is written against, the second an nx project name
 - A manifest that is present and cannot be read — bad JSON, or an IO failure that is not "no such file" — aborts detection with `workspace-manifest-malformed` naming the file. Absent is the ordinary case and says nothing; unreadable is an identity this run cannot see, and answering with the next manifest's name would hide it
@@ -390,7 +402,7 @@ Implementation guidance:
 | CD7 | `package.json#name = "@scope/billing"` | Component.id = "scope-billing", Component.name = "@scope/billing" |
 | CD8 | 2 workspaces generate the same id (both "shared") | Suffixes appended ("shared-apps" / "shared-packages"). Adding a third workspace elsewhere moves them only if it contends for one of those ids; where the path separates nothing, each id ends in a digest of its own `roots[0]` and adding a fourth leaves the first three byte-identical |
 | CD9 | `dependencies: {"@nestjs/core": "..."}` | frameworks = ["nestjs"] |
-| CD10 | `package.json#exports: {".": "./src/index.ts"}` | publicApi = ["src/index.ts"] |
+| CD10 | `packages/a/package.json#exports: {".": "./src/index.ts"}`, or the same at the workspace root | publicApi = ["packages/a/src/index.ts"], or ["src/index.ts"] |
 | CD11 | Autodetect finds nothing and there is no package.json | id = directory name (kebab-case), name = directory name |
 | CD12 | config.components overrides after autodetect | config wins ([`config.md`](./config.md) §6.1) |
 | CD13 | Both pnpm and nx detect the same workspace | Deduped into 1 Component |
@@ -434,6 +446,9 @@ Implementation guidance:
 | CD47 | `package.json#main: "./"`, or `exports: {".": "./src/ok.js", "./": "./"}` | No entry for the package directory: no `publicApi` key, or `publicApi = ["src/ok.js"]`. The IR satisfies its schema |
 | CD48 | `main`, `module`, `types` or `typings` set to `"."`, `"./."`, `"././"`, `"./lib/"`, `"./lib/."`, `"/"`, `"/dist/index.mjs"`, `"C:/dist/index.d.ts"`, `"a:index.js"`, `"../shared/index.d.ts"` or `"./src/../index.js"`, or to a value that is not a string; or an `exports` folder mapping `"./lib/": "./lib/"` | No entry for any of them |
 | CD49 | `main: "././dist/index.js"`, `module: "./dist/./index.js"` or `types: "dist//index.js"` | publicApi = ["dist/index.js"] for each |
+| CD50 | `pnpm-workspace.yaml: packages: ["apps/*"]` and `package.json#workspaces: ["libs/*", "apps/*"]` beside `pnpm-lock.yaml`, with `apps/billing` and `libs/shared` | One `managers[]` entry, `{tool: "pnpm", roots: ["apps/billing", "libs/shared"]}`, and one candidate per directory |
+| CD51 | A value of CD47 and one of CD48 in the `package.json` of two components whose id collision resolution renames (`apps/web`, `libs/web`), beside a component whose root sorts first and whose id sorts last (`aaa/zed`); and a manifest whose ignored values come in another order than `exports` then `main`, `module`, `types`, `typings` | Each value is reported with its component's final id, its manifest's path, its place in the manifest (`main`, `exports["."]`), the value and its case, ordered by component id and, within one manifest, as the manifest holds them. Every value CD47 and CD48 name is reported with its own place and case, `exports["./lib/"]` among them |
+| CD52 | `exports: {"./internal/*": null}`, or `main: 42` | No entry and nothing reported |
 
 ## 11. Design decisions
 
@@ -451,7 +466,7 @@ A monorepo whose root is the directory holding its `.git` is unaffected; a submo
 
 The file walks keep the same boundary from the other side: discovery, the language census and the nx search list nothing in a directory below the workspace root that holds a `.git` ([`drop-list.md` §10.8](./drop-list.md)). So the checkout around each of these layouts does not read it either: the main checkout's scan leaves a worktree at `.worktrees/feat` out, and the head scan leaves out the base worktree under an in-repository `TMPDIR`.
 
-The stop is a `.git` on disk, not git's own repository discovery. `GIT_DIR` and `GIT_WORK_TREE` are not consulted, so a working tree whose repository is kept elsewhere has no `.git` to stop at, and the walk climbs from it as it does outside a repository.
+The stop is a `.git` on disk, and git is asked only while `GIT_DIR` or `GIT_WORK_TREE` is set (§2.1). Asking always would cost a `git` process for every command, a scan outside any repository included, and without those variables git finds the repository through a `.git` on disk too. A working tree whose repository is kept elsewhere, such as `GIT_DIR=~/.dotfiles.git GIT_WORK_TREE=~` or a `GIT_DIR` whose config sets `core.worktree`, is the fourth layout. Walking for markers alone, the head scan climbed past it to any marker above, while the base worktree, which `git worktree add` gives a `.git` file, rooted at itself, and every Symbol read as moved under the work tree's name. The variables alone do not settle the top, because `core.worktree` and `core.bare` live in the repository's config, so git is asked rather than the variables read.
 
 The stop bounds the root walk only. Config discovery still climbs to the filesystem root ([`cli-spec.md`](./cli-spec.md) §13), so a worktree under `.worktrees/feat` roots at itself while still reading the main checkout's `aburi.json`, whose `ignore`, `components[].roots` and relative plugin refs then resolve against the worktree.
 

@@ -1,8 +1,15 @@
-import { component, dependency, effect, makeIR } from "@aburi/test-support"
+import irSchema from "@aburi/schema/aburi.ir.v1.json" with { type: "json" }
+import { component, dependency, effect, makeIR, relativePath } from "@aburi/test-support"
 import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeLanguageId } from "../src/id"
-import { assertIRIntegrity, CoreError, checkIRIntegrity, isCoreEffectId } from "../src/index"
+import {
+  assertIRIntegrity,
+  CORE_EFFECTS,
+  CoreError,
+  checkIRIntegrity,
+  isCoreEffectId,
+} from "../src/index"
 import { makeSymbol } from "./fixtures/ir"
 import { WORKSPACE_PATH_CASES } from "./fixtures/paths"
 
@@ -144,7 +151,7 @@ describe("checkIRIntegrity", () => {
       const ir = irWith((ir) => {
         ir.components = [component({ id: "a", name: "a", roots: [path] })]
         ir.symbols = [makeSymbol("ts:src/a.ts#foo", { source: sourceAt(path) })]
-        ir.workspace.managers = [{ tool: "pnpm", roots: [path] }]
+        ir.workspace.managers = [{ tool: "pnpm", roots: [relativePath(path)] }]
       })
 
       const tenth = violationsOf(ir, 10)
@@ -213,6 +220,15 @@ describe("isCoreEffectId", () => {
     ["db.upsert", false],
   ])("answers %j with %s: only the core vocabulary is ownerless", (id, core) => {
     expect(isCoreEffectId(id)).toBe(core)
+  })
+})
+
+describe("CORE_EFFECTS", () => {
+  it("is the schema's core EffectId enum, in its order, each id described", () => {
+    const [core] = irSchema.$defs.EffectId.oneOf
+
+    expect(CORE_EFFECTS.map((effect) => effect.id)).toEqual(core?.enum)
+    expect(CORE_EFFECTS.filter((effect) => effect.description.trim() === "")).toEqual([])
   })
 })
 
@@ -365,7 +381,7 @@ describe("checkIRIntegrity — Unicode normalization", () => {
     [
       "workspace.managers[].roots",
       (ir) => {
-        ir.workspace.managers = [{ tool: "pnpm", roots: [`apps/${decomposed}`] }]
+        ir.workspace.managers = [{ tool: "pnpm", roots: [relativePath(`apps/${decomposed}`)] }]
       },
     ],
     [
@@ -407,6 +423,17 @@ describe("checkIRIntegrity — Unicode normalization", () => {
         ir.dependencies = [dependency({ from: "a", to: decomposed, via: "import" })]
       },
     ],
+    [
+      "stats.declinedCalls[].target",
+      (ir) => {
+        ir.symbols = [
+          makeSymbol("ts:src/a.ts#foo", { calls: [{ target: "q", line: 1, resolved: null }] }),
+        ]
+        ir.stats.declinedCalls = [
+          { symbolId: "ts:src/a.ts#foo", target: decomposed, line: 1, plugin: "p", reason: "r" },
+        ]
+      },
+    ],
   ])("reports %s", (_what, build) => {
     expect(violationsOf(irWith(build), 19)).toHaveLength(1)
   })
@@ -421,10 +448,11 @@ describe("checkIRIntegrity — Unicode normalization", () => {
     expect(checkIRIntegrity(ir)).toEqual([])
   })
 
-  it("leaves the strings a Document only quotes alone: decorator source and signature types", () => {
+  it("leaves the strings a Document only quotes alone: decorator source, signature types, a decline's reason", () => {
     const ir = irWith((ir) => {
       ir.symbols = [
         makeSymbol("ts:src/a.ts#foo", {
+          calls: [{ target: "q", line: 1, resolved: null }],
           decorators: [
             { name: "D", raw: `D("${decomposed}")`, arguments: [], boundary: false, line: 1 },
           ],
@@ -437,6 +465,9 @@ describe("checkIRIntegrity — Unicode normalization", () => {
             typeParameters: [],
           },
         }),
+      ]
+      ir.stats.declinedCalls = [
+        { symbolId: "ts:src/a.ts#foo", target: "q", line: 1, plugin: "p", reason: decomposed },
       ]
     })
     expect(checkIRIntegrity(ir)).toEqual([])

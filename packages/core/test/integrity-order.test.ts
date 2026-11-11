@@ -1,5 +1,5 @@
 import { component, decorator, dependency, effect, makeIR, rule } from "@aburi/test-support"
-import type { Effect, IR } from "@aburi/types"
+import type { DeclinedCall, Effect, IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { checkIRIntegrity } from "../src/index"
 import { makeSymbol, type SymbolOverrides } from "./fixtures/ir"
@@ -20,6 +20,10 @@ function localEffect(target: string, line: number): Effect {
 
 function propagatedEffect(id: string, target: string): Effect {
   return effect({ id, target, plugin: "p", propagated: true, derivedFrom: ["ts:src/b.ts#callee"] })
+}
+
+function declinedAt(target: string, line: number, plugin = "p"): DeclinedCall {
+  return { symbolId: FOO, target, line, plugin, reason: "r" }
 }
 
 describe("checkIRIntegrity — ordering", () => {
@@ -83,6 +87,20 @@ describe("checkIRIntegrity — ordering", () => {
         }),
       `symbols[id=${FOO}].effects[]/propagated(id,target)`,
     ],
+    [
+      "stats.declinedCalls[] by (symbolId, line, target, plugin)",
+      () => {
+        const ir = withSymbol({
+          calls: [
+            { target: "b", line: 2, resolved: null },
+            { target: "a", line: 3, resolved: null },
+          ],
+        })
+        ir.stats.declinedCalls = [declinedAt("a", 3), declinedAt("b", 2)]
+        return ir
+      },
+      "stats.declinedCalls[]",
+    ],
   ])("reports %s out of order", (_what, build, subject) => {
     expect(orderViolations(build()).map((v) => v.subject)).toEqual([subject])
   })
@@ -124,7 +142,44 @@ describe("checkIRIntegrity — ordering", () => {
         propagatedEffect("db.write", "a"),
       ],
     })
+    ir.stats.declinedCalls = [
+      declinedAt("a", 3, "p"),
+      declinedAt("a", 3, "q"),
+      declinedAt("a", 3, "q"),
+      declinedAt("b", 3, "p"),
+    ]
     expect(checkIRIntegrity(ir)).toEqual([])
+  })
+})
+
+describe("checkIRIntegrity — stats.declinedCalls[] order", () => {
+  const BAR = "ts:src/a.ts#bar"
+  const at = (symbolId: string, line: number): DeclinedCall => ({
+    symbolId,
+    target: "q",
+    line,
+    plugin: "p",
+    reason: "r",
+  })
+
+  function declining(entries: DeclinedCall[]): IR {
+    const calls = [9, 10].map((line) => ({ target: "q", line, resolved: null }))
+    const ir = makeIR({ symbols: [makeSymbol(BAR, { calls }), makeSymbol(FOO, { calls })] })
+    ir.stats.declinedCalls = entries
+    return ir
+  }
+
+  it.each([
+    ["line 9 before line 10, compared as numbers", [at(FOO, 9), at(FOO, 10)]],
+    ["a later symbolId on a smaller line", [at(BAR, 10), at(FOO, 9)]],
+  ])("accepts %s", (_what, entries) => {
+    expect(checkIRIntegrity(declining(entries))).toEqual([])
+  })
+
+  it("reports line 10 before line 9", () => {
+    expect(orderViolations(declining([at(FOO, 10), at(FOO, 9)])).map((v) => v.subject)).toEqual([
+      "stats.declinedCalls[]",
+    ])
   })
 })
 

@@ -34,24 +34,33 @@ export interface TestDependencies {
 export function splitDependencies(
   dependencies: DiffResult["dependencies"],
   testChanges: readonly SymbolChange[],
-): { kept: DiffResult["dependencies"]; inTests: TestDependencies } {
-  const callers = new Set<DependencyEndpoint>()
-  for (const change of testChanges) {
-    callers.add(representativeSymbol(change).id)
-    if ("before" in change) callers.add(change.before.id)
+  listedTestChanges: readonly SymbolChange[],
+): { kept: DiffResult["dependencies"]; inTests: TestDependencies; leftOut: number } {
+  const fromTest = calledFrom(testChanges)
+  const fromListed = calledFrom(listedTestChanges)
+  const inTests = {
+    added: dependencies.added.filter(fromListed),
+    removed: dependencies.removed.filter(fromListed),
   }
-  const inTests = (d: Dependency) => callers.has(d.from)
+  const fromTestCount = [...dependencies.added, ...dependencies.removed].filter(fromTest).length
   return {
     kept: {
       ...dependencies,
-      added: dependencies.added.filter((d) => !inTests(d)),
-      removed: dependencies.removed.filter((d) => !inTests(d)),
+      added: dependencies.added.filter((d) => !fromTest(d)),
+      removed: dependencies.removed.filter((d) => !fromTest(d)),
     },
-    inTests: {
-      added: dependencies.added.filter(inTests),
-      removed: dependencies.removed.filter(inTests),
-    },
+    inTests,
+    leftOut: fromTestCount - inTests.added.length - inTests.removed.length,
   }
+}
+
+function calledFrom(changes: readonly SymbolChange[]): (dependency: Dependency) => boolean {
+  const callers = new Set<DependencyEndpoint>()
+  for (const change of changes) {
+    callers.add(representativeSymbol(change).id)
+    if ("before" in change) callers.add(change.before.id)
+  }
+  return (dependency) => callers.has(dependency.from)
 }
 
 export function renderTestFiles(
