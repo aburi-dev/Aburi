@@ -24,8 +24,8 @@ function expectPastSpreadLimit(lines: readonly string[]): void {
   }).toThrow(RangeError)
 }
 
-// Each case is sized to pass the spread limit, not timed: on a macOS runner that shares its cores with the
-// other packages' suites, a case that takes a second alone has run past 30 s.
+// Each case is sized to pass the spread limit, not timed: a macOS runner that shares its cores with the
+// other packages' suites runs them tens of times slower than they run alone.
 describe("projections of workspace-sized lists", { timeout: 120_000 }, () => {
   it("renders a component page of 40,000 Symbols", () => {
     const symbols = Array.from({ length: 40_000 }, (_, i) =>
