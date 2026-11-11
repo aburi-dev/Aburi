@@ -5,7 +5,7 @@ import { matchStageNameSignature } from "../src"
 import { changesBetween, method, stagePairNames } from "./helpers"
 
 function stage4(base: readonly IRSymbol[], head: readonly IRSymbol[]): string[] {
-  return stagePairNames(matchStageNameSignature(base, head).matched)
+  return stagePairNames(matchStageNameSignature(base, head, { paired: [] }).matched)
 }
 
 const withInput = (type: string, throws: string[] = []) =>

@@ -32,7 +32,9 @@ describe("every stage hands on what it did not claim, in the caller's order", ()
   })
 
   it("stage 4, around what it paired", () => {
-    const result = matchStageNameSignature(symbols, [method("src/n.ts", "Svc.alpha", "n")])
+    const result = matchStageNameSignature(symbols, [method("src/n.ts", "Svc.alpha", "n")], {
+      paired: [],
+    })
     expect(result.matched).toHaveLength(1)
     expect(ids(result.remainingBase)).toEqual(["ts:src/z.ts#Svc.zeta", "ts:src/m.ts#Svc.mu"])
   })
