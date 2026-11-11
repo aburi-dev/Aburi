@@ -1,5 +1,66 @@
 # @aburi/cli
 
+## 0.8.0
+
+### Minor Changes
+
+- 68b9a7a: `aburi vocab list | effects | extkinds | plugins | who-owns <value>` lists the vocabulary a scan holds the configured plugins to: the core effect ids, and every effect id, extKind, framework name and derivedBy prefix the plugins and `frameworkHints` entries declare, each with the plugin that owns it; `plugins` and `who-owns` also name the config entry that loaded each plugin. It loads and registers the plugins as `aburi scan` does, but scans nothing and calls no plugin's `init`, so it needs no language plugin. `who-owns` answers for each vocabulary a value is in, as the registry resolves it during a scan, and exits 1 when nothing owns it; `--json` writes one JSON object keyed as a manifest's `provides` is. `runVocab` drives it programmatically, and `loadPlugins` now reports the config entry each plugin came from as `listedIn`.
+  
+  `@aburi/core` exports the core effect vocabulary with a description for each id as `CORE_EFFECTS`, its ids as the `CoreEffectId` union, and `isCoreEffectId` now narrows to it. `@aburi/plugin-registry` exports `isUnderPrefix`, the test a prefix declaration covers a value by, and refuses a manifest whose `version` is not a string, which used to register and print as `undefined`; `aburi scan` and `aburi vocab` exit 3 for it, naming the config entry.
+- 7cc013b: Write to `.aburi/` by default instead of `out/`
+  
+  With neither `--output-dir` nor `output.dir` in the config, `aburi scan`, `aburi diff` and `aburi explain` now write their artefacts to `.aburi/`, and that is where `aburi explain` looks for an IR. `out/` is where tsc, Next.js, Electron Forge and VS Code extensions put build output, so Aburi's files landed beside theirs and went with a `clean` step.
+  
+  When a run creates `.aburi/` directly in the working directory, it writes a `.gitignore` into it that ignores everything there, so the run that creates it leaves `git status` clean with nothing added to your own `.gitignore`. What decides is the place, not the spelling: `--output-dir .aburi`, its absolute path, a path to it through a link and `output.dir: ".aburi"` get the same file. If that `.gitignore` cannot be written, the run fails and removes the directory it created, so the next run starts afresh. A `.aburi/` that was already there is left as it is, as is any other output directory, which may be one you commit.
+  
+  The GitHub Action's `output-dir` input now defaults to `.aburi` too, and the config schema's `output.dir` default reads `".aburi"`.
+  
+  To keep the old place, set `"output": { "dir": "out" }` in `aburi.json`, and `output-dir: out` on the action. A workflow that reads `out/diff.md` or uploads `out/` as an artifact has to read `.aburi/` instead, and `actions/upload-artifact` needs `include-hidden-files: true` to upload a dot-directory.
+- ed8231e: Add `--quiet` to `aburi scan` and `aburi diff`, and `--filter` to `aburi diff`
+  
+  `aburi scan --quiet` prints the two census lines alone, and `aburi diff --quiet` the glyph line alone; stderr, the files written and the exit code are unchanged.
+  
+  `aburi diff --filter <statuses>` lists only the changes of the statuses named in `diff.md`, with a note under the Summary saying how many it left out. A Slice holding a kept change is drawn whole, and component changes, dependency changes and Not compared are listed in full, except a dependency change from test code whose caller the filter left out, which the note counts. `diff.json`, the glyph line and `--fail-on` still read every change, and when a tripped `--fail-on` clause counted changes the filter leaves out, stderr says how many and of which statuses. An empty value, an empty segment or a word that is no status exits 2. `runDiff` takes the filter as that string or as a list of statuses.
+  
+  `projectDiff` takes the filter as its `statuses` option, and `@aburi/types` exports every `SymbolChange` status as the frozen `SYMBOL_CHANGE_STATUSES`, with its type `SymbolChangeStatus` and the guard `isSymbolChangeStatus`.
+- f74ae9d: An effect plugin can now decline a call it recognises but cannot classify: `classify()` may return `{ declined: reason }` (`EffectDecline`) instead of `null`. A declined call that no later plugin classifies stays in `calls[]`, and the IR names it in the new `stats.declinedCalls` — plugin, owning Symbol, target, line and reason — so a call left unclassified on purpose can be told from one no plugin recognised. An empty or non-string reason, or an answer carrying both `effectId` and `declined`, fails the run with `scan-plugin-misconfigured`, and the integrity check refuses a `stats.declinedCalls` entry whose call its Symbol does not carry.
+  
+  `@aburi/effects-trpc` declines the `query` terminal in a file that imports `@trpc/server` (`effects-plugin:trpc:server-file-query`), `@aburi/effects-prisma` declines `$queryRaw`, `$executeRaw` and the other raw-query methods (`effects-plugin:prisma:raw-query`), and `@aburi/effects-drizzle` declines `.execute(statement)` on a Drizzle client (`effects-plugin:drizzle:raw-sql`). `aburi explain` lists a Symbol's declines under `## Declined effects`.
+- eefcfb3: `aburi scan` exits 3 before extraction, naming the config entry that loaded the plugin, for a language plugin whose manifest declares no `languageId`, one outside `[a-z][a-z0-9]*`, the reserved `slice`, or a token another configured plugin declared. A language plugin that sets `languageId` on the plugin object, and not in its manifest, has to move it there.
+- 31efaf1: Extract files on a pool of parser worker threads, sized by `--concurrency`
+  
+  `aburi scan`, and the scans `aburi diff` and `aburi explain` run, now extract their files on worker threads: one fewer than the processors by default, fewer when the free memory cannot hold each worker's declared `wasmHeapPerWorkerMB`, none below 256 KiB of source for each worker, where starting one costs more than it saves, and never more than there are files. `--concurrency <n>` sets the count, and `--concurrency 1` keeps every file on the main thread. The two scans of `aburi diff` that run at once each have half the free memory, and by default half the processors. On four processors a scan of Aburi's own 878 files goes from 6.0 s to 3.9 s.
+  
+  The IR, the pages, the discovered-vocabulary record, the report, stdout, the exit code and stderr are byte for byte those of `--concurrency 1`, but for one `debug:` line naming the pool and the frames of a debug run's stack traces. A worker's stack is sized to the main thread's, and so now is that of the thread `aburi diff` scans its base on, which had four times the depth: only a file nested within 2% of the limit extracts on the main thread and not on another. An error from a worker, or from the base scan's thread in `aburi diff`, keeps the class name and code of each error it was caused by. Each file's log is said in file order, a scan that stops at a file stops there as one thread does, and the progress line counts each file as a worker finishes it.
+  
+  A worker that ends under a file — a plugin calling `process.exit()`, an error or any other value thrown from a timer, a worker out of memory, an answer the main thread cannot read — withdraws that file as a throw does (`extraction-failed`, code `extraction-thread-ended`) and the rest are extracted, whatever order the worker's error and its earlier answers arrive in; the third worker to end ends the run with exit 1, and so does a worker that cannot load the scan's plugins or cannot be started. Each names `--concurrency 1`, and so does a file whose extraction holds a value that cannot leave its worker, withdrawn as a throw is with the code `extraction-uncloneable`. Anything but a positive integer for `--concurrency`, or for `concurrency` passed to `runScan`, `runDiff` or `runExplain`, is refused at exit 2 before anything is read.
+  
+  An import resolver's log lines are now said once per scan: the same line twice, from one resolver or from the one each worker creates, is said once.
+  
+  `@aburi/core` exports what a pool is built from: `createFileExtractor`, which extracts any file of a scan by its index and answers with the file's outcome and what its extraction said, and `ScanInput.parsePool`, a `ParsePoolFactory` the scan hands its job to and folds the answers of in file order, extracting on its own thread when there is none or it answers `null`.
+- 996ee31: Colour and a progress line on a terminal, `--no-color` and `--ci`
+  
+  On a terminal, stderr colours warnings yellow, errors and tripped gates red and the log dim, and draws a progress line naming the phase of each scan (`discovering files…`, `extracting 412/5002 files`, `resolving calls…`; `base: … · head: …` and then `comparing…` under `aburi diff`). The line is redrawn in place, every other stderr line is written above it, and it is erased before the results are printed, so the terminal is left with what a pipe gets. stdout is never coloured.
+  
+  Colour follows `--no-color`, then `FORCE_COLOR` (read as Node reads it: on for the empty value, `1`, `true`, `2` and `3`, off for any other), then `NO_COLOR`, then CI mode, then whether stderr is a terminal and `TERM` is not `dumb`. CI mode — `CI` set, or the new global `--ci` — draws no progress line, writes no colour unless `FORCE_COLOR` asks for it, and implies `aburi scan --no-timestamp`.
+  
+  At `--log-level debug`, an error that ends the run with exit 1 or 3 is followed by its stack trace and those of its causes. The run's log now reaches the stderr `runCli` is given, as every other stderr line does.
+  
+  For embedders: `runScan`'s `log` callback now receives each line's level as its second argument, `runDiff` and `runExplain` take `log` too, and all three take a `progress` callback; `LogWrite` and `DiffProgress` name their types. In the exported `AburiEnv`, `forceColor` is now `boolean | null` (`null` when `FORCE_COLOR` is not set), and `dumbTerminal` is a new field.
+  
+  `scan` in `@aburi/core` takes an `onProgress` callback, called with each `ScanProgress`: `discovering`, `extracting` with the files done and in all, then `resolving`.
+
+### Patch Changes
+
+- bcafe89: Brand `RelativePath`, so a path nothing checked cannot be written into the IR
+  
+  `RelativePath` — the type of `symbols[].source.file`, `components[].roots[]` and `workspace.managers[].roots[]` — is now a branded string like `SymbolId` and `ComponentId`: it still reads as a `string`, but a bare `string` no longer satisfies it. `SourceFile.path`, the path a language plugin is handed, carries the brand, so a plugin that writes `ctx.file.path` back as `source.file` needs no change. `toDocumentPath` from `@aburi/core` is the only other way to mint one, and now takes an optional subject to name the value in its refusal.
+  
+  A language plugin whose candidate carries a `source.file` the path grammar refuses — a backslash, a `..` segment, an absolute path — now withdraws that file, recorded under `extractionFailures` with code `non-posix-path` and a message naming the plugin, instead of failing the whole scan at the integrity check once every file was extracted. The file keeps its recoverable parse errors, as a file withdrawn for a duplicate Symbol id does.
+  
+  In `@aburi/core`, `DiscoveredFile.path` and `WorkspaceCandidate.relativeRoot` are `RelativePath`. In `@aburi/diff`, the lost-file and rename maps are keyed by `string`, as `stats.skippedFiles[].path` and `GitRenameMap` are.
+- Updated dependencies: `@aburi/config@0.5.1`, `@aburi/core@0.8.0`, `@aburi/diff@0.8.0`, `@aburi/markdown-projection@0.6.0`, `@aburi/plugin-registry@0.7.0`, `@aburi/types@0.8.0`
+
 ## 0.7.0
 
 ### Minor Changes
