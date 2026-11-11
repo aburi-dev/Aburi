@@ -1,5 +1,6 @@
-import type { IR } from "@aburi/types"
+import { type IR, RESERVED_LANGUAGE_IDS } from "@aburi/types"
 import { describeCodePoints, toNfc } from "./codepoints"
+import { isCoreEffectId } from "./core-effects"
 import { CoreError, type IntegrityViolation } from "./errors"
 import {
   isComponentId,
@@ -8,9 +9,12 @@ import {
   isSymbolId,
   posixSpellingViolation,
   posixWorkspaceRelativeViolation,
-  RESERVED_LANGUAGE_IDS,
 } from "./id"
-import { checkCallResolutionStatsCensus, checkSkippedFilesCensus } from "./integrity-census"
+import {
+  checkCallResolutionStatsCensus,
+  checkDeclinedCallsStayCalls,
+  checkSkippedFilesCensus,
+} from "./integrity-census"
 import {
   checkCallEdgeEndpoints,
   checkCallGraphProjectionAgrees,
@@ -19,36 +23,6 @@ import {
 } from "./integrity-dependencies"
 import { checkArraySortOrder } from "./integrity-order"
 import { checkDocumentShape } from "./integrity-shape"
-
-const CORE_EFFECT_VOCAB: ReadonlySet<string> = new Set([
-  "db.read",
-  "db.write",
-  "db.transaction",
-  "db.migration",
-  "network.http",
-  "network.ws",
-  "network.rpc",
-  "queue.publish",
-  "queue.consume",
-  "event.publish",
-  "event.subscribe",
-  "fs.read",
-  "fs.write",
-  "state.mutate",
-  "collection.mutate",
-  "time.now",
-  "time.timer",
-  "random",
-  "env.read",
-  "env.write",
-  "process.exit",
-  "process.signal",
-])
-
-/** Whether `id` is one of the core effect ids, which no plugin owns and any may emit. */
-export function isCoreEffectId(id: string): boolean {
-  return CORE_EFFECT_VOCAB.has(id)
-}
 
 const CORE_KIND_ENUM: ReadonlySet<string> = new Set([
   "function",
@@ -99,6 +73,7 @@ export function checkIRIntegrity(document: unknown): IntegrityViolation[] {
   checkIdGrammar(ir, violations)
   checkWorkspaceLanguages(ir, violations)
   checkUnicodeNormalization(ir, violations)
+  checkDeclinedCallsStayCalls(ir, violations)
 
   return violations
 }
@@ -228,6 +203,9 @@ function checkUnicodeNormalization(ir: IR, out: IntegrityViolation[]): void {
   for (const file of ir.stats.skippedFiles ?? []) {
     reportUnnormalized(file.path, `stats.skippedFiles[path=${file.path}]`, "path", out)
   }
+  for (const [index, declined] of (ir.stats.declinedCalls ?? []).entries()) {
+    reportUnnormalized(declined.target, `stats.declinedCalls[${index}]`, "target", out)
+  }
 }
 
 function reportUnnormalized(
@@ -315,7 +293,7 @@ function checkSymbolConfidenceEnum(ir: IR, out: IntegrityViolation[]): void {
 function checkEffectVocab(ir: IR, out: IntegrityViolation[]): void {
   for (const symbol of ir.symbols) {
     for (const effect of symbol.effects) {
-      if (CORE_EFFECT_VOCAB.has(effect.id)) continue
+      if (isCoreEffectId(effect.id)) continue
       if (PLUGIN_EFFECT_PATTERN.test(effect.id)) continue
       out.push({
         invariant: 7,

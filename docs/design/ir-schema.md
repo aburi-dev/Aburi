@@ -20,6 +20,7 @@ The JSON Schema at `schema/aburi.ir.v1.json` is the single source of truth; this
   - `dependencies[]`: lexicographic by (`from`, `to`, `via`)
   - `publicApi[]` within a Component: ascending by value
   - `stats.skippedFiles[]`: ascending by `path`
+  - `stats.declinedCalls[]`: by (`symbolId`, `line`, `target`, `plugin`), with `line` compared as a number
   - `decorators[]` / `rules[]` / `effects[]` / `calls[]` within a Symbol: ascending by `line` (source order within the same line). Propagated effects are the one exception and sit in their own segment, ordered by (`id`, `target`) - see section 9.4
 
 Every string ordering above is by **UTF-16 code unit**, not by locale and not "alphabetical". Within the Basic Multilingual Plane that coincides with codepoint order; astral-plane strings differ, but the serializer, the integrity checker and every consumer using the default `<` / `>` operators or `Array.prototype.sort` all agree on it, which is what matters.
@@ -50,6 +51,7 @@ The reader rule is what carries backward compatibility, and it is the more impor
 |---|---|---|---|
 | `generatedAt` | no | B | reserved for the producer's clock; **no writer emits it today**, so the key is always absent. `--no-timestamp` (implied by `CI`) drops the clock from `aburi-vocab-discovered.json` (`discoveredAt`) and from the Markdown projection's "Generated" line, which has none to drop while this key is absent |
 | `stats.effectClassifyTimeouts` | no | B | omitted when no classification overran its budget |
+| `stats.declinedCalls` | no | B | omitted when no call an effect plugin declined stayed in `calls[]` |
 | `stats.lspEnrichment` | no | B | omitted when the LSP pass did not run |
 | `stats.lspEnrichment.hintsProduced` | no | B | emitted by the current pipeline whenever the enclosing record is; absence means the document predates the counter |
 | `stats.lspEnrichment.hintsConsumed` | no | B | as above |
@@ -90,7 +92,7 @@ Most of the table is convention that the schema cannot express, and the rows mar
 
 The rule is load-bearing rather than tidy, for two reasons.
 
-**Ordering.** Six of §1's orderings are on strings: `components[]` and `symbols[]` by `id`, `dependencies[]` by (`from`, `to`, `via`), `publicApi[]` by value, `stats.skippedFiles[]` by `path`, and the propagated segment of `effects[]` by (`id`, `target`) per §9.4. Every ordering decision in the pipeline compares the string held in memory, while the serializer writes the normalized one. Where the two differ, a Document satisfies the sort rule in memory and lands on disk violating it — `é` written as one codepoint and as `e` plus a combining acute sort on opposite sides of `z`, and are the same name.
+**Ordering.** Seven of §1's orderings are on strings: `components[]` and `symbols[]` by `id`, `dependencies[]` by (`from`, `to`, `via`), `publicApi[]` by value, `stats.skippedFiles[]` by `path`, `stats.declinedCalls[]` by `symbolId`, `target` and `plugin` around its `line`, and the propagated segment of `effects[]` by (`id`, `target`) per §9.4. Every ordering decision in the pipeline compares the string held in memory, while the serializer writes the normalized one. Where the two differ, a Document satisfies the sort rule in memory and lands on disk violating it — `é` written as one codepoint and as `e` plus a combining acute sort on opposite sides of `z`, and are the same name.
 
 **Identity.** Two spellings of one value are two entries: two Symbol ids for one construct, two effect targets for one table, a rename degraded into a delete plus an add. Which spelling a string arrives in is decided by how the text was created — an archive, an HFS+ volume, a `git` checkout of a name someone typed on a Mac — and it survives copying to any platform, so one source tree can hand back both.
 
@@ -99,11 +101,11 @@ Normalization therefore happens **where a string enters the process**, not where
 | Entry point | What it normalizes |
 |---|---|
 | `makeSymbolId` / `trySymbolId` | the three id parts, before validating them, so the ids the guard accepts are the ids the constructors can mint |
-| `toDocumentPath` | every path the file walk produces — `symbols[].source.file`, and `stats.skippedFiles[].path` for one the walk gave up on |
-| `toRelativePosix` (workspace detection) | `components[].roots` and `workspace.managers[].roots` |
-| `resolveComponents` (CLI config load) | those same fields when they come from `aburi.json` rather than from detection |
+| `toDocumentPath` | every path the file walk produces — `symbols[].source.file`, and `stats.skippedFiles[].path` for one the walk gave up on — and every `RelativePath` that workspace detection, the CLI config load and the plugin boundary hand on (§3.5) |
+| `toRelativePosix` (workspace detection) | the separator conversion and NFC of a found package directory, before `toDocumentPath` mints it as a `components[].roots` / `workspace.managers[].roots` entry |
+| `resolveComponents` (CLI config load) | `components[].roots` when they come from `aburi.json` rather than from detection |
 | `normalizePackagePath` (component detection) | `components[].publicApi` |
-| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target` or `effects[].target`, and the names a framework plugin hands back as `symbols[].middleware[]` |
+| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target`, `effects[].target` or `stats.declinedCalls[].target`, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
 | `buildDropCFilter` | the `suppress` / `keep` / `dropCallees` prefixes those call targets are matched against |
 
 Normalization is all these entry points do to a path. None of them converts a native path into a POSIX one, because the conversion is not decidable from the string: `\` is a separator on Windows and an ordinary filename character on POSIX, so a rewrite applied to every path silently renames any file whose name holds one. A caller that knows it holds a native path converts it — `toRelativePosix` does, on the platform separator, which is a separator exactly where a filename cannot hold one — and everything else hands over a path that is already POSIX and is validated as it stands.
@@ -119,7 +121,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 §14 invariant #19 checks this on a Document read off disk, scoped to the strings whose spelling decides an order or an identity. Two categories sit outside it:
 
 - **Values #17 already refuses a non-NFC spelling of** - `components[].id`, whose grammar is ASCII kebab-case and so leaves nothing for NFC to change, and `symbols[].id`, whose constructor checks NFC in its own right rather than as a side effect of an ASCII grammar. Reporting either under #19 as well would have the reader chase one string twice. `symbols[].name` sat here on the ASCII argument alone and moved onto #19's list when the qualified-name grammar widened to ECMAScript's IdentifierName — a decomposed `café` now satisfies the grammar, so only #19 tells the two spellings apart.
-- **Strings the Document quotes** - a decorator's raw source text, a signature type. Their spelling decides nothing, and rewriting a quotation would misquote it. They still reach disk normalized, since the serializer normalizes everything.
+- **Strings the Document quotes** - a decorator's raw source text, a signature type, the reason an effect plugin gave for a decline (`stats.declinedCalls[].reason`). Their spelling decides nothing, and rewriting a quotation would misquote it. They still reach disk normalized, since the serializer normalizes everything.
 
 **NFC, not NFKC.** NFC composes characters that are *canonically* equivalent: one character, spelled two ways. NFKC additionally folds compatibility characters - `ﬁ` to `fi`, fullwidth `Ａ` to `A` - which are different characters. Under NFKC two Symbols whose ids differ only by such a character would collapse onto one, and quoted source text would be rewritten into something that never appeared in the file.
 
@@ -179,6 +181,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
 - `workspace.managers[]`: one entry per tool, sorted by `tool`. Two manifests that spell the same tool, such as `pnpm-workspace.yaml` beside a `package.json#workspaces` with `pnpm-lock.yaml`, give one entry whose `roots` are every root either declares. A reader does not refuse a Document holding two entries for one tool, which a scan before this rule wrote and which is valid v1
 - `stats`: for human/CI logs. Excluded from fingerprint
 - `stats.skippedFiles`: every file the scan gave up on, and why — the projection of `ScanResult.skipped` into the Document. Sorted by path; invariant #21 holds the length to `totalFiles - parsedFiles`. Without it the only trace of a loss is `totalFiles > parsedFiles`, which names no file and is equally true of an over-size file, a timed-out one and a withdrawn one — so `aburi diff` reads a Symbol's absence as a deletion and reports API nobody removed. Optional so documents produced before the field existed remain valid v1; the current pipeline always emits it when anything was lost, so absence with `totalFiles > parsedFiles` means "this IR predates the field", not "nothing was lost". **No `detail`**: the scan carries one per entry, but the `unreadable` detail is an OS error message containing the absolute path, and a canonical document whose bytes depend on where the repository was checked out is not byte-stable
+- `stats.declinedCalls`: the calls an effect plugin recognized and declined to classify, and why ([`effect-plugin.md`](./effect-plugin.md) §4.5). One entry per plugin that declined a call which no plugin then classified: `plugin`, the owner's `symbolId`, the call's `target` and `line` as `calls[]` records them, and the plugin's `reason`. A call some plugin did classify has no entry, whichever plugins declined it first. Without the field, a call left unclassified on purpose looks the same as a call no plugin recognized, so the reviewer cannot tell a missing effect from an effect the plugin could not name. Unlike the call-resolution buckets below, these entries are persisted, for two reasons. A plugin returns a decline only for a shape it names (a raw query, a `query` in a file that also serves tRPC), so they grow with the uses of those shapes rather than with every call the workspace makes. And each entry is the plugin's statement about the source, which `aburi explain --no-rescan` and any later reader of a committed IR need, rather than a trace of how the resolver reached its answer. Invariant #22 holds every entry to a call its owner still carries
 - `stats.callResolution`: the call-resolution census of [`call-resolution.md`](./call-resolution.md) §8.1 — how many call sites the resolver saw, how many it identified, and why the rest stayed `null`. Optional so documents produced before the field existed remain valid v1; the current scan pipeline always emits it, so absence means "this IR predates the counter", not "nothing was unresolved". The per-call reasons behind these counts are deliberately **not** persisted — see §8.1
 
 ## 3. Symbol ID Convention
@@ -248,15 +251,17 @@ Two rules keep the namespaces from overlapping:
 1. **`slice` is a reserved language token.** A language plugin claiming it would mint Symbol IDs shaped exactly like Slice IDs, and deriving a Slice ID from one of those would produce `slice:slice:…`. `makeSymbolId` rejects the token; see [multi-language-id.md](./multi-language-id.md) Rule L-11.
 2. **The three types are nominal, not structural.** On the wire all three are JSON strings, and JSON Schema has no way to say otherwise. `@aburi/types` layers a brand onto each generated alias so `SymbolId`, `ComponentId`, and `SliceId` are mutually non-assignable in TypeScript and a bare `string` satisfies none of them.
 
-A brand is minted only by the constructors above. Assertions (`x as SymbolId`) live in four documented places and nowhere else:
+A brand is minted only by the constructors above. Assertions (`x as SymbolId`) live in the places below and nowhere else:
 
 | Where | Why |
 |---|---|
-| `packages/core/src/id.ts` | The two id constructors. Both run the full grammar check first |
+| `packages/core/src/id.ts` | The two id constructors and the two path constructors. Each runs its full grammar check first |
 | `sliceIdFor` in `packages/diff/src/slice.ts` | The only `SliceId` constructor |
 | `sliceRecordViolation` in `packages/diff/src/slice.ts` | Takes `unknown` by contract — it inspects records that have not been type-checked |
 | `readIR` in `packages/cli/src/ir-io.ts` | Brands a whole parsed document at once (`as unknown as IR`), which is the only way to type a JSON parse. Invariant #17 in §14 is what checks the ids inside it |
 | per-package test fixtures | A case that feeds a *malformed* id to the code that rejects it has to be able to write one |
+
+**Paths are branded on the same terms.** `RelativePath`, the type of every path invariant #10 in §14 names — `symbols[].source.file`, `components[].roots[]` and `workspace.managers[].roots[]` — carries a brand too, so a string nothing checked is a compile error at the site that would write it, not a Document `assertIRIntegrity` refuses after every file was extracted. A bare alias left each producer to remember the check: the plugin boundary read `source.file` through NFC alone, so one bad path refused the whole Document at `assertIRIntegrity`. The two path constructors in `packages/core/src/id.ts` mint it, each after running its grammar: `documentPathOrViolation` the grammar of invariant #10, handing a refusal back, with `toDocumentPath` throwing it instead, and `toPosixRelative` the stricter grammar of a Symbol id's file segment. Discovery, workspace-package detection, component detection's fallback root `.`, the configured `components[].roots` and the language-plugin boundary each go through the first, and `SourceFile.path` carries the brand to the plugin that writes it back as `source.file`. A path the Document records without that type — `stats.skippedFiles[].path`, or a rename git reports — stays a `string`, and code that compares it with a branded one reads both as strings.
 
 The brands are erased at runtime and are absent from the JSON. They constrain what the codebase can build, not what a document may contain — shape checking on the wire remains the job of the schema and of §14.
 
@@ -283,7 +288,7 @@ A logical boundary of the monorepo. Independent of physical packages.
 
 - `description` is Class A per §1.1 — always written, `null` when nothing supplied it. Only the config path (`components[].description`) can supply one today; automatic detection has no source for it and always writes `null`
 - `id` is fixed to ASCII kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`) so it can be used in URLs and CLI arguments. A segment may start with a digit: the id is derived by kebab-casing a package or directory name ([component-detect.md](./component-detect.md) §4.1), and `3d-force-graph` is an ordinary npm package name
-- Each element of `publicApi` is either a **glob** or a **symbol id**, non-empty and with no backslash (§14 #10)
+- Each element of `publicApi` is either a **glob** or a **symbol id**, non-empty and with no backslash (§14 #10). A glob is written from the workspace root, as `roots[]` are, whichever root of the component it falls under; component detection joins the package directory to each `package.json` path ([component-detect.md](./component-detect.md) §4.6). It joins the directory as written, and a schema without the backslash leaves no escape to write, so a detected entry under a directory whose name holds a glob metacharacter (`packages/[legacy]`) does not match its own file when read as a glob
 - Each element of `frameworks` is a framework id: one a framework plugin lists in `provides.frameworks[]`, or one the component detector records from a dependency (`nestjs`, `nextjs`, `vue`). A value declared through config (`components[].frameworks`) is carried verbatim, so a plugin's own name (`framework-nestjs`) can appear; `aburi scan` reports that on stderr rather than rewriting it, since the IR records what the config said ([config.md](./config.md) §6)
 - Physical Component boundary inference automatically reads package manager configuration (`pnpm-workspace.yaml`, `turbo.json`, `go.work`, `Cargo.toml` workspace, `pyproject.toml`/uv workspaces, etc.); see the separate document `component-detect.md` for details
 
@@ -500,18 +505,32 @@ The result of side-effect detection.
 
 A fixed set in `namespace:action` form. Only concepts that hold universally across any runtime/language.
 
-| Category | Values |
-|---|---|
-| `db.*` | `db.read`, `db.write`, `db.transaction`, `db.migration` |
-| `network.*` | `network.http`, `network.ws`, `network.rpc` |
-| `queue.*` | `queue.publish`, `queue.consume` |
-| `event.*` | `event.publish`, `event.subscribe` |
-| `fs.*` | `fs.read`, `fs.write` |
-| `state.*` | `state.mutate`, `collection.mutate` |
-| `time.*` | `time.now`, `time.timer` |
-| `random` | `random` |
-| `env.*` | `env.read`, `env.write` |
-| `process.*` | `process.exit`, `process.signal` |
+| Category | Value | Description |
+|---|---|---|
+| `db.*` | `db.read` | Database read |
+| | `db.write` | Database write |
+| | `db.transaction` | Database transaction |
+| | `db.migration` | Database schema migration |
+| `network.*` | `network.http` | HTTP request |
+| | `network.ws` | WebSocket connection or message |
+| | `network.rpc` | Remote procedure call |
+| `queue.*` | `queue.publish` | Message published to a queue |
+| | `queue.consume` | Message consumed from a queue |
+| `event.*` | `event.publish` | Event emitted |
+| | `event.subscribe` | Event listener registered |
+| `fs.*` | `fs.read` | File system read |
+| | `fs.write` | File system write |
+| `state.*` | `state.mutate` | Shared state mutated |
+| | `collection.mutate` | Collection mutated in place |
+| `time.*` | `time.now` | Current time read |
+| | `time.timer` | Timer scheduled |
+| `random` | `random` | Random value drawn |
+| `env.*` | `env.read` | Environment variable read |
+| | `env.write` | Environment variable written |
+| `process.*` | `process.exit` | Process exit |
+| | `process.signal` | Process signal sent or handled |
+
+The descriptions are what `aburi vocab` lists beside each id ([`cli-spec.md`](./cli-spec.md) §8).
 
 Within schema version `aburi.ir.v1`, this set is additive-only; deletion and semantic change are forbidden.
 
@@ -670,6 +689,7 @@ Guaranteed by Aburi internals. Item 20 restates the schema's own structural requ
 19. Every string the Document orders or identifies by is in Unicode NFC. §1.2 defines the rule, the fields it covers, and the two categories it deliberately excludes
 20. The Document has the shape `aburi.ir.v1` requires: every field the schema lists as `required`, of the declared kind, at every depth. This one is different in kind from the nineteen above — they relate fields to each other, this one establishes that the fields are there to relate. The scope is the schema's requirements rather than "whatever the other invariants happen to read", because `readIR` brands its result `IR` on the strength of this check alone: a narrower check would hand `@aburi/diff` a Document with no `fingerprint` and let it fail outside anyone's error handling. When #20 fails it is reported **alone** — the nineteen are statements about a Document, and a value that fails #20 is not one. The restatement is kept honest by a test that reads `schema/aburi.ir.v1.json` and fails on a `required` entry with no counterpart
 21. `stats.parsedFiles` never exceeds `stats.totalFiles`, and when `stats.skippedFiles` is present, its length is exactly `stats.totalFiles - stats.parsedFiles` and no path appears twice. A **read-side** check: inside Aburi's own scan both sides reduce to the same sum of the same two counts, so the census clause cannot fire on a document it wrote. What it guards is a document arriving from disk or from another generator, which `aburi diff` is about to read to decide that an absent Symbol is a loss rather than a deletion — a list short by one entry sends it back to reporting a deletion nobody made. It does not, and cannot, cover a file that parsed successfully and yielded no Symbols: that file is counted in `parsedFiles`, appears in no array, and satisfies the check. The census clause is conditional on presence, because a document written before the field existed has no way to satisfy it and its absence is itself the answer — the enumeration is unavailable. The ordering clause is unconditional, and has to be: for such a document the subtraction is the only trace of a loss there is, so a reader that reaches for it needs it to mean what it says. `parsedFiles > totalFiles` otherwise satisfies every invariant here, and a reader taking the difference for a count reads a negative one as "nothing was lost"
+22. Every `stats.declinedCalls[]` entry names a kept Symbol in `symbols[]` whose `calls[]` holds a call with the entry's `target` and `line`. A decline is recorded only for a call no plugin classified, so the call is still in `calls[]`. An entry naming an `effects[]` entry, a dropped Symbol or no Symbol at all describes a call the Document does not contain
 
 An invariant violation is a **fatal error**, not a warning.
 

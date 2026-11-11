@@ -16,13 +16,20 @@ function describeType(value: unknown): string {
   return typeof value
 }
 
-/** Refuses a manifest typed `PluginManifest` whose name, provides arrays or entries are not. */
+/** Refuses a manifest typed `PluginManifest` whose name, version, provides arrays or entries are not. */
 export function assertProvidesShape(m: PluginManifest): void {
   if (typeof m.name !== "string") {
     raise(
       `Plugin manifest name must be a string (got ${describeType(m.name)}).`,
       "manifest-invalid",
       [],
+    )
+  }
+  if (typeof m.version !== "string") {
+    raise(
+      `Plugin "${m.name}" manifest version must be a string (got ${describeType(m.version)}).`,
+      "manifest-invalid",
+      [m.name],
     )
   }
   if (!m.provides || typeof m.provides !== "object") {

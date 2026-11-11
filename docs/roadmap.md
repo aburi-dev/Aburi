@@ -24,11 +24,15 @@ controller that reaches `prisma.invoice.create` through a service carries the
 
 **Diff.** All seven statuses (`added`, `removed`, `moved`, `changed`,
 `moved+changed`, `dropped-toggled`, and `unknown` for a file one revision could
-not read), a `--fail-on` gate, and Slice View, which
+not read), a `--fail-on` gate, a `--filter` that narrows the report to chosen
+statuses, and Slice View, which
 clusters changed symbols along the call graph so a feature cutting through
 controller, service, and repository reads as one section.
 
-**Output.** The JSON analysis, a workspace overview, per-component detail, the pull request diff, and per-symbol explain views.
+**Output.** The JSON analysis, a workspace overview, per-component detail, the pull request diff, and per-symbol explain views. `aburi vocab` lists the effect ids and extension kinds the configured plugins declare, and which plugin owns each.
+
+**Terminal.** Coloured warnings and errors and a progress line on an interactive terminal,
+honouring `NO_COLOR`, `FORCE_COLOR` and CI, with stdout left plain for pipes.
 
 **Delivery.** `@aburi/cli` on npm, and `@aburi/github-action` for pull request
 comments.
@@ -89,14 +93,6 @@ Nothing here is committed.
 - `aburi review`, feeding the diff to a model for automated review comments.
 - Name Slice View clusters automatically. The report heads each with the
   members its calls start from today.
-- Warn when the two analyses `aburi diff --base --head` compares were made with
-  different plugins, from the plugin list each one records.
-- `aburi vocab`, listing the effect ids and extension kinds the loaded plugins
-  declare, and which plugin owns each.
-- `--quiet` for `scan` and `diff`, and `aburi diff --filter`, narrowing the
-  report to chosen statuses.
-- Colour and a progress line on an interactive terminal, honouring `NO_COLOR`
-  and `FORCE_COLOR`.
 - Browse the analysis in a web UI.
 
 ---

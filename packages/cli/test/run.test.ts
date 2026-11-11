@@ -18,10 +18,15 @@ describe("aburi — the exit codes", () => {
     expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it("prints the usage and exits 0", async () => {
-    const { code, stdout } = await run("--help")
+  it.each([
+    [["--help"], "Usage: aburi [options] [command]"],
+    [["help", "scan"], "Usage: aburi scan [options]"],
+    [["vocab", "help", "list"], "Usage: aburi vocab list [options]"],
+  ])("prints the usage for %j and exits 0", async (argv, usage) => {
+    const { code, stdout, stderr } = await run(...argv)
     expect(code).toBe(EXIT.SUCCESS)
-    expect(stdout).toContain("Usage")
+    expect(stdout.split("\n")[0]).toBe(usage)
+    expect(stderr).toBe("")
   })
 
   it("refuses a command it does not have at exit 2", async () => {

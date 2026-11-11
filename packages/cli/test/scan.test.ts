@@ -16,6 +16,7 @@ import {
   listTree,
   TYPESCRIPT,
   writeConfig,
+  writeMonorepo,
   writePackageJson,
   writeTypeScriptWorkspace,
 } from "./workspace"
@@ -75,6 +76,25 @@ describe("aburi scan — a workspace that declares nothing", () => {
     expect(lines[0]).toMatch(/^0 kept · 0 dropped · \d+ files$/)
     expect(lines[1]).toBe("calls 0 · resolved 0 · unresolved 0")
   })
+
+  it.each(["both", "json", "md"])(
+    "prints the census lines alone under --quiet --format %s",
+    async (format) => {
+      const loud = await runCliIn(workspace.root, ["scan", "--format", format])
+      const quiet = await runCliIn(workspace.root, ["scan", "--format", format, "--quiet"])
+
+      expect(loud.stdout).toContain("→ ")
+      expect(quiet.code).toBe(EXIT.SUCCESS)
+      expect(quiet.stdout).toBe(
+        loud.stdout
+          .split("\n")
+          .slice(0, 2)
+          .map((line) => `${line}\n`)
+          .join(""),
+      )
+      expect(quiet.stderr).toBe(loud.stderr)
+    },
+  )
 })
 
 describe("aburi scan — what the caller and the config add", () => {
@@ -137,18 +157,38 @@ describe("aburi scan — what the caller and the config add", () => {
     expect(error.message).toContain(named)
   })
 
-  it("normalizes a component's publicApi patterns, as component detection does", async () => {
-    const decomposed = "café".normalize("NFD")
-    await workspace.writeSource("packages/shared/index.ts", "export const shared = 1\n")
-    await declaredComponent({ roots: ["packages/shared"], publicApi: [`src/${decomposed}.ts`] })
+  const decomposed = "café".normalize("NFD")
+  const composed = decomposed.normalize("NFC")
 
-    const report = await scan()
+  it.each<
+    [string, string, Record<string, unknown>, (c: IR["components"][number]) => unknown, string[]]
+  >([
+    [
+      "publicApi patterns",
+      "packages/shared",
+      { roots: ["packages/shared"], publicApi: [`src/${decomposed}.ts`] },
+      (c) => c.publicApi,
+      [`src/${composed}.ts`],
+    ],
+    [
+      "roots",
+      `packages/${decomposed}`,
+      { roots: [`packages/${decomposed}`] },
+      (c) => c.roots,
+      [`packages/${composed}`],
+    ],
+  ])(
+    "normalizes a component's %s, as component detection does",
+    async (_what, directory, component, read, expected) => {
+      await workspace.writeSource(`${directory}/index.ts`, "export const shared = 1\n")
+      await declaredComponent(component)
 
-    const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as {
-      components: { publicApi?: string[] }[]
-    }
-    expect(ir.components[0]?.publicApi).toEqual([`src/${decomposed.normalize("NFC")}.ts`])
-  })
+      const report = await scan()
+
+      const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as IR
+      expect(ir.components.map(read)).toEqual([expected])
+    },
+  )
 
   it("carries a publicApi glob or Symbol id the IR schema admits as written, wherever it points", async () => {
     const publicApi = ["../shared/**", "./src/**", "/abs/index.ts", "ts:src/a.ts#Invoice"]
@@ -162,29 +202,60 @@ describe("aburi scan — what the caller and the config add", () => {
   })
 })
 
-describe("aburi scan — a package.json value that names the package directory", () => {
-  it.each<[string, Record<string, unknown>, string[] | undefined]>([
-    ['"main": "./"', { main: "./" }, undefined],
+describe("aburi scan — the public API a package.json declares", () => {
+  it("writes each entry from the workspace root, and the IR satisfies its schema", async () => {
+    await writeMonorepo(workspace.root)
+    await writePackageJson(resolve(workspace.root, "pkgs/app"), {
+      name: "app",
+      exports: { ".": "./src/a.ts" },
+    })
+
+    const report = await scan()
+
+    const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as IR
+    expect(ir.components.map((component) => component.publicApi)).toEqual([["pkgs/app/src/a.ts"]])
+    expect(irSchemaViolations(ir)).toEqual([])
+  })
+
+  it.each<[string, Record<string, unknown>, string[] | undefined, string]>([
+    [
+      '"main": "./"',
+      { main: "./" },
+      undefined,
+      'package.json#main is "./", the package directory rather than a file',
+    ],
     [
       'the folder mapping "./": "./" in exports',
       { exports: { ".": "./src/ok.js", "./": "./" } },
       ["src/ok.js"],
+      'package.json#exports["./"] is "./", the package directory rather than a file',
     ],
   ])(
-    "writes no publicApi entry for %s, and the IR satisfies its schema",
-    async (_value, manifest, publicApi) => {
+    "writes no publicApi entry for %s, says so on stderr, and exits 0",
+    async (_value, manifest, publicApi, line) => {
       await writePackageJson(workspace.root, { name: "scan-fixture", ...manifest })
 
-      const report = await scan()
+      const { code, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
 
-      expect(report.exitCode).toBe(EXIT.SUCCESS)
-      const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as {
-        components: { publicApi?: string[] }[]
-      }
+      expect(code).toBe(EXIT.SUCCESS)
+      expect(stderr).toBe(`⚠ Component "scan-fixture": ${line}, so it gives no publicApi entry.\n`)
+      const ir = JSON.parse(
+        await readFile(resolve(workspace.root, "out", IR_JSON_FILENAME), "utf8"),
+      ) as IR
       expect(ir.components.map((component) => component.publicApi)).toEqual([publicApi])
       expect(irSchemaViolations(ir)).toEqual([])
     },
   )
+
+  it("says nothing for a value the config's own components replace", async () => {
+    await writePackageJson(workspace.root, { name: "scan-fixture", main: "./lib/" })
+    await declaredComponent({ roots: ["."] })
+
+    const { code, stderr } = await runCliIn(workspace.root, ["scan", "--format", "json"])
+
+    expect(code).toBe(EXIT.SUCCESS)
+    expect(stderr).toBe("")
+  })
 })
 
 describe("aburi scan — files saved with a byte order mark", () => {

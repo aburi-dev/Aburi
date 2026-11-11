@@ -1,3 +1,4 @@
+import { RESERVED_LANGUAGE_IDS } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { symbolIdParts } from "../src/id"
 import {
@@ -14,7 +15,6 @@ import {
   makeNestedQname,
   makeSymbolId,
   makeTopLevelQname,
-  RESERVED_LANGUAGE_IDS,
   type SymbolIdParts,
   symbolIdFile,
   symbolIdSeparatorSite,
@@ -139,6 +139,9 @@ describe("the shared path table", () => {
   it("describes the path as the thing its caller was building", () => {
     expect(() => toPosixRelative("../outside.ts")).toThrowError(/^Symbol id file path /)
     expect(() => toDocumentPath("../outside.ts")).toThrowError(/^path /)
+    expect(() => toDocumentPath("../x", "components[id=a] root")).toThrowError(
+      /^components\[id=a\] root /,
+    )
   })
 
   it("normalizes to NFC either way, so a skip entry and a Symbol id spell one path", () => {

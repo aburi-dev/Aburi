@@ -52,10 +52,22 @@ This matters concretely because the two sides collide: the language plugin
 normalizes `publicProcedure.input(schema).query(resolver)` to
 `publicProcedure.input.query`, which is structurally identical to a client call.
 The only available discriminator is the import list, so **the `query` terminal is
-never classified in a file that imports `@trpc/server`**. The suppression is
-scoped to `query` alone — the server spells its other verbs `mutation` /
-`subscription`, which are absent from the client vocabulary, so `mutate` /
-`subscribe` / the hooks keep classifying even in a file that colocates both.
+never classified in a file that imports `@trpc/server`**. The plugin declines it
+instead, so each such call stays in `calls[]` and is listed in the IR's
+`stats.declinedCalls` under `effects-plugin:trpc:server-file-query`: a genuine
+client call colocated with a router is named there rather than left in `calls[]`
+with no reason given. The suppression is scoped to `query` alone — the server
+spells its other verbs `mutation` / `subscription`, which are absent from the
+client vocabulary, so `mutate` / `subscribe` / the hooks keep classifying even in
+a file that colocates both.
+
+The decline is keyed on the file, not on the call, so in such a file it covers
+every `.query` of three or more segments: the router's own builders
+(`t.procedure.query(resolver)`, listed under the function that builds the router)
+and a `.query` that is not tRPC's at all (`db.pool.query(sql)`) included. The
+reason says the call sits in a file that also serves tRPC, not that it is a tRPC
+call. Telling a client call apart would take the binding a `createTRPCClient(...)`
+result is assigned to, which an effect plugin is not handed.
 
 ### Known limitations
 

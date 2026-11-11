@@ -1,4 +1,4 @@
-import { errorFrom } from "@aburi/test-support"
+import { errorFrom, relativePath } from "@aburi/test-support"
 import type { Component } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
@@ -13,7 +13,7 @@ import { useWorkspaceTree } from "./fixtures/workspace"
 const tree = useWorkspaceTree("core-component-id")
 
 async function rootsToIds(): Promise<string[]> {
-  const components = await detectComponents({ workspaceRoot: tree.root })
+  const { components } = await detectComponents({ workspaceRoot: tree.root })
   return components.map((c) => `${c.roots[0]}=${c.id}`)
 }
 
@@ -169,7 +169,7 @@ describe("colliding ids", () => {
     const app = (): Component => ({
       id: makeComponentId("app"),
       name: "app",
-      roots: ["packages/app"],
+      roots: [relativePath("packages/app")],
       languages: [makeLanguageId("ts")],
       description: null,
     })

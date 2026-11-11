@@ -3,17 +3,20 @@ import { existsSync, rmSync, writeSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { availableParallelism, tmpdir } from "node:os"
 import { basename, resolve } from "node:path"
+import type { ScanProgress } from "@aburi/core"
 import type { GitRenameMap } from "@aburi/diff"
 import type { IR } from "@aburi/types"
 import type { PinnedConfig } from "../config-load"
 import type { LogLevel } from "../env"
 import { CliError, errorMessage, internalFault } from "../errors"
+import { listIndex } from "../git/index-listing"
 import { assertNotShallow, assertNotSparse, assertRefResolvable } from "../git/preflight"
 import { collectRenames } from "../git/renames"
 import { defaultGitRunner, type GitRunner, gitChildEnv } from "../git/runner"
 import { submoduleIgnorePatterns } from "../git/submodules"
+import { describeLinksReadAsSource, linksReadAsSource, plainFileLinks } from "../git/symlinks"
 import { readIR } from "../ir-io"
-import { writeToStderr } from "../logger"
+import type { LogWrite } from "../logger"
 import { cleanUpOnFatalSignal } from "../signal-cleanup"
 import type { WarnFn } from "../warn"
 import { resolveWorkspaceRoot } from "../workspace-root"
@@ -26,6 +29,12 @@ import { type PortableScanOptions, scanInThread, type ThreadedScan } from "./sca
 export type DiffSide = "base" | "head"
 
 export const SIDES: readonly DiffSide[] = ["base", "head"]
+
+/** What `runDiff` is doing: a scan of one side, the end of that scan, or the comparison. */
+export type DiffProgress =
+  | { readonly kind: "scan"; readonly side: DiffSide; readonly progress: ScanProgress }
+  | { readonly kind: "scanned"; readonly side: DiffSide }
+  | { readonly kind: "comparing" }
 
 export type ScanPair = Record<DiffSide, ScanReport>
 
@@ -43,6 +52,8 @@ export interface RevisionScanContext {
   logLevel: LogLevel | undefined
   pinConfigOnce: () => Promise<PinnedConfig>
   warn: WarnFn
+  log: LogWrite
+  progress: ((progress: DiffProgress) => void) | undefined
   parallelScans: boolean | undefined
 }
 
@@ -61,7 +72,12 @@ export async function scanRevisions(
 
   const pinnedConfig = await context.pinConfigOnce()
   const headWorkspaceRoot = await resolveWorkspaceRoot(cwd)
-  const submoduleIgnore = await submoduleIgnorePatterns(git, headWorkspaceRoot, warn)
+  const headIndex = await listIndex(git, headWorkspaceRoot)
+  const submoduleIgnore = submoduleIgnorePatterns(headIndex, warn)
+  const plainLinks: Record<DiffSide, string[]> = {
+    base: [],
+    head: await plainFileLinks(headIndex, headWorkspaceRoot),
+  }
   const gitRenames = await collectRenames(git, cwd, spec, warn)
   const tempParent = await mkdtemp(resolve(tmpdir(), "aburi-worktree-"))
   const worktreeParent = resolve(tempParent, "base")
@@ -79,6 +95,13 @@ export async function scanRevisions(
     ...(context.compact === undefined ? {} : { compact: context.compact }),
     ...(context.logLevel === undefined ? {} : { logLevel: context.logLevel }),
   })
+  const sayPlainFileLinks = (target: ScanTarget, ir: IR): IR => {
+    const read = linksReadAsSource(plainLinks[target.side], ir)
+    if (read.length > 0) {
+      warn(`⚠ ${labelFor(target)}: ${describeLinksReadAsSource(target.side, read)}`)
+    }
+    return ir
+  }
   const readBase = async (report: ScanReport): Promise<IR> => {
     reportScanIncidents(report, warn, labelFor({ side: "base", ref: spec.base }), said)
     if (report.workspaceRoot !== worktreeDir) {
@@ -91,14 +114,14 @@ export async function scanRevisions(
     if (report.irPath === null) {
       throw new CliError(`scan for base ref "${spec.base}" produced no IR file.`, "runtime-error")
     }
-    return readIR(report.irPath)
+    return sayPlainFileLinks({ side: "base", ref: spec.base }, await readIR(report.irPath))
   }
   const readHead = async (report: ScanReport): Promise<IR> => {
     reportScanIncidents(report, warn, labelFor({ side: "head" }), said)
     if (report.irPath === null) {
       throw new CliError("scan for head ref produced no IR file.", "runtime-error")
     }
-    return readIR(report.irPath)
+    return sayPlainFileLinks({ side: "head" }, await readIR(report.irPath))
   }
 
   let worktreeAdded = false
@@ -109,16 +132,25 @@ export async function scanRevisions(
     await mkdir(worktreeParent, { recursive: true })
     await git.run(["worktree", "add", "--detach", worktreeDir, spec.base], { cwd })
     worktreeAdded = true
-    const baseOptions = optionsFor(worktreeDir, resolve(tempParent, "base-out"))
-    const headOptions = optionsFor(cwd, resolve(tempParent, "head-out"))
+    plainLinks.base = await plainFileLinks(await listIndex(git, worktreeDir), worktreeDir)
+    const base: SideScan = {
+      options: optionsFor(worktreeDir, resolve(tempParent, "base-out")),
+      read: readBase,
+      ...reportOf("base", context.progress),
+    }
+    const head: SideScan = {
+      options: optionsFor(cwd, resolve(tempParent, "head-out")),
+      read: readHead,
+      ...reportOf("head", context.progress),
+    }
     const scanned =
       (context.parallelScans ?? availableParallelism() >= 2)
-        ? await scanTogether(baseOptions, headOptions, readBase, readHead, {
+        ? await scanTogether(base, head, context.log, {
             name: `base ref "${spec.base}"`,
-            log: writeToStderr,
+            log: context.log,
             warn,
           })
-        : await scanInTurn(baseOptions, headOptions, readBase, readHead)
+        : await scanInTurn(base, head, context.log)
     return { ...scanned, gitRenames }
   } finally {
     // Failures here only warn: a throw from `finally` would replace the error that ended the scan.
@@ -142,21 +174,52 @@ export async function scanRevisions(
   }
 }
 
-type ReadSide = (report: ScanReport) => Promise<IR>
+interface SideScan {
+  options: PortableScanOptions
+  read: (report: ScanReport) => Promise<IR>
+  report?: SideReport
+}
+
+interface SideReport {
+  progress: (progress: ScanProgress) => void
+  /** Called once the side's scan has returned, whatever it returned. */
+  scanned: () => void
+}
 
 type ScannedSides = Omit<ScannedRevisions, "gitRenames">
 
-async function scanInTurn(
-  baseOptions: PortableScanOptions,
-  headOptions: PortableScanOptions,
-  readBase: ReadSide,
-  readHead: ReadSide,
-): Promise<ScannedSides> {
-  const base = await runScan(baseOptions)
-  const baseIR = await readBase(base)
-  const head = await runScan(headOptions)
-  const headIR = await readHead(head)
-  return { baseIR, headIR, scans: { base, head } }
+function reportOf(
+  side: DiffSide,
+  report: ((progress: DiffProgress) => void) | undefined,
+): Pick<SideScan, "report"> {
+  if (report === undefined) return {}
+  return {
+    report: {
+      progress: (progress) => report({ kind: "scan", side, progress }),
+      scanned: () => report({ kind: "scanned", side }),
+    },
+  }
+}
+
+/** `runScan` for one side on this thread, its end reported however it ended. */
+async function scanHere(side: SideScan, log: LogWrite): Promise<ScanReport> {
+  try {
+    return await runScan({
+      ...side.options,
+      log,
+      ...(side.report === undefined ? {} : { progress: side.report.progress }),
+    })
+  } finally {
+    side.report?.scanned()
+  }
+}
+
+async function scanInTurn(base: SideScan, head: SideScan, log: LogWrite): Promise<ScannedSides> {
+  const baseScan = await scanHere(base, log)
+  const baseIR = await base.read(baseScan)
+  const headScan = await scanHere(head, log)
+  const headIR = await head.read(headScan)
+  return { baseIR, headIR, scans: { base: baseScan, head: headScan } }
 }
 
 /**
@@ -165,42 +228,48 @@ async function scanInTurn(
  * a base that fails waits for the head and discards it, as the head would never have started.
  */
 async function scanTogether(
-  baseOptions: PortableScanOptions,
-  headOptions: PortableScanOptions,
-  readBase: ReadSide,
-  readHead: ReadSide,
-  baseThread: ThreadedScan,
+  base: SideScan,
+  head: SideScan,
+  log: LogWrite,
+  baseThread: Omit<ThreadedScan, "progress">,
 ): Promise<ScannedSides> {
-  const headLog = heldLog()
-  const headScan = runScan({ ...headOptions, log: headLog.write })
+  const headLog = heldLog(log)
+  const headScan = scanHere(head, headLog.write)
   const headStopped = headScan.then(
     () => undefined,
     () => undefined,
   )
-  let base: ScanReport
+  let baseScan: ScanReport
   let baseIR: IR
   try {
-    base = await scanInThread(baseOptions, baseThread)
-    baseIR = await readBase(base)
+    try {
+      baseScan = await scanInThread(base.options, {
+        ...baseThread,
+        ...(base.report === undefined ? {} : { progress: base.report.progress }),
+      })
+    } finally {
+      base.report?.scanned()
+    }
+    baseIR = await base.read(baseScan)
   } catch (error) {
     await headStopped
     throw error
   }
   headLog.release()
-  const head = await headScan
-  const headIR = await readHead(head)
-  return { baseIR, headIR, scans: { base, head } }
+  const headReport = await headScan
+  const headIR = await head.read(headReport)
+  return { baseIR, headIR, scans: { base: baseScan, head: headReport } }
 }
 
-function heldLog(): { write: (line: string) => void; release: () => void } {
-  let held: string[] | null = []
+function heldLog(log: LogWrite): { write: LogWrite; release: () => void } {
+  let held: Parameters<LogWrite>[] | null = []
   return {
-    write: (line) => {
-      if (held === null) writeToStderr(line)
-      else held.push(line)
+    write: (line, level) => {
+      if (held === null) log(line, level)
+      else held.push([line, level])
     },
     release: () => {
-      for (const line of held ?? []) writeToStderr(line)
+      for (const [line, level] of held ?? []) log(line, level)
       held = null
     },
   }

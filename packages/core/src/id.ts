@@ -1,4 +1,11 @@
-import type { ComponentId, LanguageId, SymbolId } from "@aburi/types"
+import {
+  type ComponentId,
+  LANGUAGE_ID_PATTERN,
+  type LanguageId,
+  RESERVED_LANGUAGE_IDS,
+  type RelativePath,
+  type SymbolId,
+} from "@aburi/types"
 import { describeCodePoints, toNfc } from "./codepoints"
 import { CoreError, type CoreErrorCode } from "./errors"
 
@@ -7,10 +14,6 @@ export const DEFAULT_EXPORT_QNAME = "<default>"
 export const MODULE_SCOPE_QNAME = "<module>"
 
 const RESERVED_QNAMES: ReadonlySet<string> = new Set([DEFAULT_EXPORT_QNAME, MODULE_SCOPE_QNAME])
-
-const LANGUAGE_ID_PATTERN = /^[a-z][a-z0-9]*$/
-
-export const RESERVED_LANGUAGE_IDS: ReadonlySet<string> = new Set(["slice"])
 
 const QNAME_SEGMENT_PATTERN = /^[$_\p{ID_Start}][$\p{ID_Continue}]*$/u
 
@@ -101,10 +104,18 @@ export function isComponentId(value: string): value is ComponentId {
   return COMPONENT_ID_PATTERN.test(value)
 }
 
+export type MemberKind = "instance" | "static"
+
+export type MemberSeparator = "." | "::"
+
+export function memberSeparator(kind: MemberKind): MemberSeparator {
+  return kind === "instance" ? "." : "::"
+}
+
 export function makeMemberQname(
   ownerChain: readonly string[],
   member: string,
-  kind: "instance" | "static",
+  kind: MemberKind,
 ): string {
   if (ownerChain.length === 0) {
     throw new CoreError(
@@ -114,8 +125,7 @@ export function makeMemberQname(
   }
   for (const segment of ownerChain) assertQnameSegment(segment, segment)
   assertQnameSegment(member, member, { privateName: true })
-  const separator = kind === "instance" ? "." : "::"
-  return `${ownerChain.join(".")}${separator}${member}`
+  return `${ownerChain.join(".")}${memberSeparator(kind)}${member}`
 }
 
 export function makeTopLevelQname(name: string): string {
@@ -138,13 +148,19 @@ export function isDefaultExportQname(qname: string): boolean {
   return qname === DEFAULT_EXPORT_QNAME
 }
 
-export function toDocumentPath(rawPath: string): string {
+export function toDocumentPath(rawPath: string, subject: string = PATH_SUBJECT): RelativePath {
+  const path = documentPathOrViolation(rawPath, subject)
+  if (typeof path === "string") return path
+  throw new CoreError(path.message, { code: path.code, value: path.value })
+}
+
+/** `toDocumentPath` for a caller that answers a refusal its own way rather than with the throw. */
+export function documentPathOrViolation(
+  rawPath: string,
+  subject: string = PATH_SUBJECT,
+): RelativePath | GrammarViolation {
   const normalized = toNfc(rawPath)
-  const violation = posixWorkspaceRelativeViolation(normalized)
-  if (violation !== null) {
-    throw new CoreError(violation.message, { code: violation.code, value: violation.value })
-  }
-  return normalized
+  return posixWorkspaceRelativeViolation(normalized, subject) ?? (normalized as RelativePath)
 }
 
 const SYMBOL_ID_SEPARATORS = [":", "#"] as const
@@ -184,13 +200,13 @@ export function symbolIdSeparatorSite(path: string): SymbolIdSeparatorSite | nul
   return null
 }
 
-export function toPosixRelative(rawPath: string): string {
+export function toPosixRelative(rawPath: string): RelativePath {
   const normalized = toNfc(rawPath)
   const violation = symbolIdPathViolation(normalized)
   if (violation !== null) {
     throw new CoreError(violation.message, { code: violation.code, value: violation.value })
   }
-  return normalized
+  return normalized as RelativePath
 }
 
 function normalizeParts(parts: SymbolIdParts): SymbolIdParts {

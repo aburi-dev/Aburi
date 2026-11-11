@@ -51,6 +51,10 @@ describe("an option that takes one value, given twice", () => {
       repeated("--max-bytes", "1000", "0"),
     ],
     [
+      ["diff", "main..HEAD", "--filter", "added", "--filter", "removed"],
+      repeated("--filter", "added", "removed"),
+    ],
+    [
       ["diff", "main..HEAD", "--config", "a.json", "--config", "b.json"],
       repeated("--config", "a.json", "b.json"),
     ],
@@ -69,6 +73,14 @@ describe("an option that takes one value, given twice", () => {
     [
       ["explain", "alpha", "--config=a.json", "--config", "a.json"],
       repeated("--config", "a.json", "a.json"),
+    ],
+    [
+      ["vocab", "list", "--config", "a.json", "--config", "b.json"],
+      repeated("--config", "a.json", "b.json"),
+    ],
+    [
+      ["vocab", "--config", "a.json", "list", "--config", "b.json"],
+      repeated("--config", "a.json", "b.json"),
     ],
     [
       ["--log-level", "debug", "--log-level", "info", "scan"],
