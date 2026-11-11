@@ -1,5 +1,6 @@
 // The other end of a plugin process, standing in for a parser written in another language.
-import { appendFileSync, closeSync } from "node:fs"
+import { appendFileSync, closeSync, openSync } from "node:fs"
+import { devNull } from "node:os"
 import { createInterface } from "node:readline"
 
 // --hold outlives its stdin and SIGTERM, --stay its stdin alone.
@@ -39,8 +40,10 @@ createInterface({ input: process.stdin })
         return write(`${params.line.replaceAll("$ID", String(id))}\n`)
       case "deafen":
         process.stdin.destroy()
-        // Destroying the stream alone leaves the descriptor open, and a write to it unanswered.
+        // Destroying the stream alone leaves the descriptor open, and a write to it unanswered. A
+        // descriptor libuv opens later must not be numbered 0, or closing it aborts the process.
         closeSync(0)
+        openSync(devNull, "r")
         return answer(id, { result: true })
       case "garbage":
         return write("Traceback (most recent call last):\n")
