@@ -1,5 +1,28 @@
 # @aburi/lang-typescript
 
+## 0.7.0
+
+### Minor Changes
+
+- 3b3d306: Move the documentation site and the JSON Schemas to `aburi.dev`
+  
+  The four schemas now identify themselves as `https://aburi.dev/schema/...`, and that is the `$schema` an IR, a diff, an `aburi init` config and every bundled plugin manifest carries. The site, including the schemas under `/schema/`, is served from `https://aburi.dev`.
+  
+  Nothing written before has to change. Each schema's `$schema` now accepts the `aburi.kage1020.com` URL it carried until now beside the `aburi.dev` one, so an existing `aburi.json`, a plugin manifest naming the former host, and a committed IR all stay valid v1: `aburi diff` and `aburi explain` read such an IR, and a base and head that differ only in which host they name are diffed as one schema version. The former host keeps answering, so an editor resolving an old `$schema` line still finds the schema.
+  
+  `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
+  
+  An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.
+- 9ecce88: A call through `this` or `super` carries `thisBinding`, what `this` is where the call is written: the class in a static block or a static member, an instance in an instance member. The LSP pass looks a `this.m()` hint's member up on that side, so the class Symbol's calls in static blocks and field initializers no longer guess: a static block's or static field's `this.create()` resolves to `static create()` and an instance field's to the instance `create()` when a class declares both, and an instance field's `this.find(q)` beside a `static find()` and a `find` field with no Symbol is left unresolved instead of pointing at the static.
+
+### Patch Changes
+
+- 222f10e: `walkReceiverChain` and `chainCalls` export the walk down a call's receiver chain that `calleeName` reads. The TypeScript plugin's `call-statement:` entry and `chained-call` tag are read off it too, and so are the calls Express checks for a `.route()` path and names middleware from. A framework's name for a registration and the `call-statement:` entry can no longer drift apart, and no entry or name moves.
+  
+  `chainCalls` passes an index as it passes a member access. A `const`, a default export or a class field whose value calls through an index now gets the functions its chain invokes or is handed before the index, as it already did through a member access. For example, `export const h = (() => { q() })()["run"]()` gets the invoked function as its body, with `invoked-function` on `derivedBy` and `q` in `calls[]`; before, that function was on no Symbol. Such a Symbol's `logic` fingerprint moves once where the function has rules or effects, and its `api` and `syntax` fingerprints stay. `hasRouteArguments` likewise finds a `.route()` path before an index, so `app.route("/users")["get"](listUsers)` hands it a handler. No registration the TypeScript plugin extracts has an index on its chain, so no route or middleware moves.
+- cd3ad5a: Depend on yaml 2.9.1 (`@aburi/core`) and web-tree-sitter 0.27.1 (`@aburi/lang-typescript`).
+- Updated dependencies: `@aburi/core@0.7.0`, `@aburi/types@0.7.0`
+
 ## 0.6.0
 
 ### Minor Changes

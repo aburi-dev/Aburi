@@ -1,5 +1,38 @@
 # @aburi/cli
 
+## 0.7.0
+
+### Minor Changes
+
+- 0558bb0: `aburi diff --base <ir> --head <ir>` now warns when the two IRs were made with different plugins. Each IR records `generator.plugins[]`, and the two lists were never compared, so two IRs scanned with `effects-prisma` enabled on one side only diffed as a wave of `changed` Symbols whose `db.write` effects appeared or vanished, with nothing saying why. One stderr line now names every difference, ordered by plugin name — a plugin only one side loaded, with its version and type, and one both loaded under another type, version or grammar revision:
+  
+  ```
+  ⚠ The base and head IRs were made with different plugins: effects-prisma 0.6.0 (effects) only in base; lang-typescript version 0.6.0 → 0.7.0. A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. Rescan both sides with one plugin set, or diff the two revisions (`aburi diff <base>..<head>`), which scans both with the head's plugins.
+  ```
+  
+  The line is a warning: the exit code and `diff.json` are those of the same run without it. `aburi diff <base>..<head>` never prints it, since both scans load the head's plugins.
+- 4bf1c03: A detected component's `publicApi` entries are now written from the workspace root, like `roots[]` and every Symbol id. `"exports": { ".": "./src/index.ts" }` in `packages/a/package.json` now gives `packages/a/src/index.ts` rather than `src/index.ts`. A diff against an IR scanned before this release reports each such component's `publicApi` as changed. A package at the workspace root keeps its entries as they were.
+  
+  `aburi scan` now writes one line on stderr for each string `package.json` value that gives no entry: a directory, the package directory, an absolute path, a first segment that reads as a drive, a `..` segment, or a backslash. The line names the component, its manifest, the field and the value, in the order the manifest holds them. For example: `⚠ Component "demo": package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.` Only detected components get these lines; a component declared in `aburi.json`'s `components` has none. `aburi diff` writes the same lines for each of its scans, labelled with that scan (`⚠ base ref "main": Component …`).
+  
+  `detectComponents` now returns `{ components, ignoredPublicApi }` in place of the `Component[]` it returned before. `@aburi/core` exports the new `DetectComponentsResult`, `IgnoredPublicApi` and `IgnoredPublicApiReason` types. `ScanReport` gains the required `ignoredPublicApi`, so a caller that builds a `ScanReport` itself has to supply it.
+- 3b3d306: Move the documentation site and the JSON Schemas to `aburi.dev`
+  
+  The four schemas now identify themselves as `https://aburi.dev/schema/...`, and that is the `$schema` an IR, a diff, an `aburi init` config and every bundled plugin manifest carries. The site, including the schemas under `/schema/`, is served from `https://aburi.dev`.
+  
+  Nothing written before has to change. Each schema's `$schema` now accepts the `aburi.kage1020.com` URL it carried until now beside the `aburi.dev` one, so an existing `aburi.json`, a plugin manifest naming the former host, and a committed IR all stay valid v1: `aburi diff` and `aburi explain` read such an IR, and a base and head that differ only in which host they name are diffed as one schema version. The former host keeps answering, so an editor resolving an old `$schema` line still finds the schema.
+  
+  `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
+  
+  An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.
+
+### Patch Changes
+
+- 91e25b7: The workspace root now honours a working tree whose repository is kept elsewhere. While `GIT_DIR` or `GIT_WORK_TREE` is set, the CLI asks git for the top of the working tree (`git rev-parse --show-toplevel`) and roots there: at the top `GIT_WORK_TREE` or `core.worktree` names, or, with neither set, at the directory it runs in, as git does, unless a `.git` lies above it. A bare repository, which has no working tree, leaves the walk as it was. `detectWorkspaceRoot` takes git's answer as the new `workTree` option (`GitWorkTree`: `{ top }` or `"start"`) and stops at that top the way it stops at a `.git`, meeting it as the ancestor of the start with the same real path. So `aburi diff <base>..<head>` on such a working tree, with a workspace marker above it, no longer roots the head above the base worktree and reports every Symbol as moved under the work tree's name.
+- cdb5b31: `aburi diff <base>..<head>` now warns, for each side, about symbolic links that git checked out as plain files and that the scan then read as source. Discovery passes over a link, but git writes a link as a plain file holding its target while `core.symlinks` is false, and that is the usual setting on Windows. Changing the setting later leaves the files already checked out as they are. The check looks at what each checkout holds: the base worktree, and the head's working tree, which covers links the head adds and links checked out before the setting changed. It names only links that put a Symbol into that side's IR, so a link like `AGENTS.md -> CLAUDE.md`, or one to a directory, never triggers it. The warning also gives the remedy for that side. Previously the spec listed this check, but nothing ran it.
+- 53fb422: A write that stdout or stderr refuses for any reason but a reader that left (a descriptor opened read-only, a full disk) no longer ends `aburi` at the write with Node's stack. The run finishes and cleans up, so `aburi diff` removes its base worktree and temporary directory, then exits 1 with one line on the other stream naming the stream and the error, such as `aburi: could not write to stderr: EBADF: bad file descriptor, write`.
+- Updated dependencies: `@aburi/config@0.5.0`, `@aburi/core@0.7.0`, `@aburi/diff@0.7.0`, `@aburi/markdown-projection@0.5.1`, `@aburi/plugin-registry@0.6.0`, `@aburi/types@0.7.0`
+
 ## 0.6.0
 
 ### Minor Changes
