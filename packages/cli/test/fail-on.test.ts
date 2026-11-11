@@ -12,6 +12,7 @@ import {
 import type { DiffResult, IR, SymbolChange, SymbolRemoved, SymbolUnknown } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
+  DEFAULT_OUTPUT_DIRNAME,
   EXIT,
   type ExitCode,
   evaluateClause,
@@ -525,7 +526,7 @@ describe("aburi diff --fail-on", () => {
   ])(
     "refuses the values %j at exit 2, quoting the one at fault, before it reads either IR or removes an earlier report",
     async (values, says) => {
-      const earlier = await writeEarlierReports(workspace.root, ["out"])
+      const earlier = await writeEarlierReports(workspace.root, [DEFAULT_OUTPUT_DIRNAME])
       const { code, stderr } = await runCliIn(workspace.root, [
         "diff",
         "--base",

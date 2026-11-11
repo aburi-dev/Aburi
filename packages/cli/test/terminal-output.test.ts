@@ -1,5 +1,4 @@
 import { mkdir, readFile } from "node:fs/promises"
-import { resolve } from "node:path"
 import { useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { EXIT, type ExitCode, runCli, VOCAB_DISCOVERED_FILENAME } from "../src"
@@ -15,7 +14,7 @@ import {
   YELLOW,
 } from "./run-cli"
 import { writeStubRepository, writeStubWorkspace } from "./stub-language"
-import { writeConfig, writeFileAt, writeIRs, writePackageJson } from "./workspace"
+import { defaultOutput, writeConfig, writeFileAt, writeIRs, writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("terminal-output")
 
@@ -110,7 +109,7 @@ describe("stderr on a terminal", () => {
 
   it("erases the line before an error that ends the run, leaving what a pipe gets", async () => {
     await writeStubWorkspace(workspace.root, ["ok.stub"])
-    await mkdir(resolve(workspace.root, "out", "aburi.ir.json"), { recursive: true })
+    await mkdir(defaultOutput(workspace.root, "aburi.ir.json"), { recursive: true })
 
     const { piped, terminal } = await pipedAndOnTerminal(["scan", "--format", "json"])
 
@@ -124,7 +123,7 @@ describe("stderr on a terminal", () => {
   it("shows the comparison alone when aburi diff reads two IRs", async () => {
     await writeStubWorkspace(workspace.root, ["ok.stub"])
     expect((await runCliIn(workspace.root, ["scan", "--format", "json"])).code).toBe(EXIT.SUCCESS)
-    const ir = resolve(workspace.root, "out", "aburi.ir.json")
+    const ir = defaultOutput(workspace.root, "aburi.ir.json")
 
     const { terminal } = await pipedAndOnTerminal(["diff", "--base", ir, "--head", ir])
 
@@ -285,7 +284,7 @@ describe("CI mode", () => {
     expect((await runCliIn(workspace.root, ["scan", "--discover", "--ci"])).code).toBe(EXIT.SUCCESS)
 
     const record = JSON.parse(
-      await readFile(resolve(workspace.root, "out", VOCAB_DISCOVERED_FILENAME), "utf8"),
+      await readFile(defaultOutput(workspace.root, VOCAB_DISCOVERED_FILENAME), "utf8"),
     ) as Record<string, unknown>
     expect(record).toEqual({ items: [] })
   })
