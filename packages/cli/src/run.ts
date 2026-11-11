@@ -17,6 +17,7 @@ import { runDiff } from "./commands/diff"
 import { type CoverageDoubt, runExplain } from "./commands/explain"
 import { runInit } from "./commands/init"
 import { runScan } from "./commands/scan"
+import { runVocab, type VocabQuery } from "./commands/vocab"
 import { resolveConfigPath } from "./config-path"
 import { type LogLevel, readEnv } from "./env"
 import { assertNever, CliError, errorCode } from "./errors"
@@ -404,16 +405,52 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
         })(),
     )
 
+  const vocab = program
+    .command("vocab")
+    .description("List the extension vocabulary and owners")
+    .option("--json", "write JSON to stdout instead of a table")
+    .option("--config <path>", "config file path", parsePath)
+  const runVocabQuery = (query: VocabQuery) =>
+    runCommand(async () => {
+      const cmdOptions = vocab.opts<{ json?: boolean; config?: string }>()
+      const outcome = await runVocab({
+        cwd,
+        query,
+        ...definedOnly({
+          json: cmdOptions.json,
+          configPath: resolveConfigPath(cmdOptions.config, env),
+        }),
+      })
+      for (const line of outcome.stderr) stderr.write(`${line}\n`)
+      stdout.write(outcome.stdout)
+      return outcome.exitCode
+    })()
+  const lists = [
+    ["list", "the plugins, and every vocabulary they declare beside the core effect ids"],
+    ["effects", "the core effect ids, and the effect ids and prefixes plugins declare"],
+    ["extkinds", "the extKinds and extKind prefixes plugins declare"],
+    ["plugins", "the loaded plugins, and the config entry that loaded each"],
+  ] as const
+  for (const [kind, description] of lists) {
+    vocab
+      .command(kind)
+      .description(description)
+      .action(() => runVocabQuery({ kind }))
+  }
+  vocab
+    .command("who-owns")
+    .description("what owns a value, in each vocabulary it is in (exit 1 when nothing does)")
+    .argument("<value>", "an effect id, extKind, framework name or derivedBy value")
+    .action((value: string) => runVocabQuery({ kind: "who-owns", value }))
+
   for (const command of [program, ...program.commands]) refuseRepeatedValues(command)
 
   try {
     await program.parseAsync(options.argv, { from: "user" })
   } catch (error) {
     if (isCommanderError(error)) {
-      if (error.code === "commander.helpDisplayed" || error.code === "commander.version") {
-        return EXIT.SUCCESS
-      }
-      return EXIT.INPUT_ERROR
+      // Commander exits 0 only once it has printed help or the version, however it was asked for.
+      return error.exitCode === 0 ? EXIT.SUCCESS : EXIT.INPUT_ERROR
     }
     return handleError(error, stderr)
   }
@@ -427,8 +464,13 @@ function coverageLine(doubt: CoverageDoubt): string {
   return `⚠ This IR reports ${doubt.fileCount} file(s) it did not parse but predates stats.skippedFiles, so it cannot name them; a match may be in one of them. Re-run \`aburi scan\` to record the list.`
 }
 
-function isCommanderError(value: unknown): value is { code: string; message: string } {
-  return errorCode(value)?.startsWith("commander.") === true
+function isCommanderError(
+  value: unknown,
+): value is { code: string; message: string; exitCode: number } {
+  return (
+    errorCode(value)?.startsWith("commander.") === true &&
+    typeof (value as { exitCode?: unknown }).exitCode === "number"
+  )
 }
 
 function handleError(error: unknown, stderr: NodeJS.WritableStream): ExitCode {
