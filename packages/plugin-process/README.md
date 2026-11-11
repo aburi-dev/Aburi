@@ -84,7 +84,7 @@ for line in sys.stdin:
 |---|---|---|
 | `command`, `args` | — | Started with no shell, so a `.cmd` or `.bat` on Windows is named as `cmd.exe` with `/c` and the script first among the args |
 | `cwd` | the host's | The process's working directory |
-| `env` | the host's | Variables set over the host's environment; one set to `undefined` is left out |
+| `env` | the host's | Variables set over the host's environment, each replacing the host's variable of that name (in any case, on Windows); one set to `undefined` is left out |
 | `timeoutMs` | `30000` | How long a request may wait, the start included, at most 2^31−1 ms; `request(method, params, { timeoutMs })` overrides it for one |
 | `maxResponseBytes` | 256 MiB | The longest line the process may write |
 

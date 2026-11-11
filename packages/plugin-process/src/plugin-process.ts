@@ -192,7 +192,7 @@ class Running {
     try {
       child = spawn(options.command, [...(options.args ?? [])], {
         cwd: options.cwd,
-        env: { ...process.env, ...options.env },
+        env: environmentOf(options.env),
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       })
@@ -430,6 +430,14 @@ function rpcErrorOf(value: unknown): RpcError | null {
     return null
   }
   return { code, message, ...("data" in value ? { data: value.data } : {}) }
+}
+
+function environmentOf(variables: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  // Windows names a variable in any case, so a `PATH` given there replaces the host's `Path`.
+  const fold = process.platform === "win32" ? (name: string) => name.toUpperCase() : String
+  const given = new Set(Object.keys(variables).map(fold))
+  const kept = Object.entries(process.env).filter(([name]) => !given.has(fold(name)))
+  return { ...Object.fromEntries(kept), ...variables }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

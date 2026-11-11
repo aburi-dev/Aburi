@@ -64,7 +64,7 @@ it also keeps an expensive start-up out of the first file's `parseTimeoutMs`.
 |---|---|---|
 | `command`, `args` | — | Run as `spawn` runs them, with no shell between, so a `.cmd` or `.bat` on Windows is named as `cmd.exe` with `/c` and the script first among the args; named itself, it fails with `start-failed` saying so |
 | `cwd` | the host's | The process's working directory |
-| `env` | the host's | Variables set over the host's environment; one set to `undefined` is left out |
+| `env` | the host's | Variables set over the host's environment, each replacing the host's variable of that name (in any case, on Windows); one set to `undefined` is left out |
 | `timeoutMs` | `30000` | How long one request may wait for its answer, the process's start included. `request(method, params, { timeoutMs })` overrides it for one request. A value above 2^31−1 (about 24.8 days) waits that long |
 | `maxResponseBytes` | `268435456` (256 MiB) | The longest line the process may write on stdout |
 
@@ -165,10 +165,10 @@ stdin and exits too.
 | PP15 | Two processes that end without answering, one that answers before it exits, then two more that end without answering | The next request starts a process and is answered (PP-3 counts ends in a row) |
 | PP16 | A command `spawn` refuses outright, such as an empty one | `start-failed` three times, then `abandoned` |
 | PP17 | `close` while a process a timeout ended is still ending, with a second one running, both holding `SIGTERM` | Resolves once both have exited |
-| PP18 | A process that closes its stdin and keeps running | The next request rejects with `exited`, `Its stdin had closed:` and the reason |
+| PP18 | A process that closes its stdin and keeps running | The next request rejects with `exited`, `Its stdin had closed:` and the reason. A Node process cannot close its stdin on Windows, so Linux and macOS are where this runs |
 | PP19 | `close` of `sh -c "<parser> --hold; true"` | Resolves, the parser left running (PP-2) |
 | PP20 | A host whose last step awaits `close` of a process that holds `SIGTERM` | The host exits `0` after `close` resolves, with the process gone |
-| PP21 | `env` setting one variable and `PATH` to `undefined` | That variable set, `PATH` unset, the host's other variables as they were |
+| PP21 | `env` setting one variable and `PATH` to `undefined` | That variable set, `PATH` unset (on Windows, the host's `Path` too), the host's other variables as they were |
 | PP22 | `isPluginProcessError` over its own error, one from another copy of the package, one so named with another code, another error, and an object that is no error | `true` for the first two |
 
 ## 7. Design Decisions

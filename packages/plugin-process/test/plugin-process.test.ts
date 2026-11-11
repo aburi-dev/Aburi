@@ -262,15 +262,19 @@ describe("a plugin process", () => {
     expect([isRunning(first), isRunning(second)]).toEqual([false, false])
   })
 
-  it("ends a process that stops reading its stdin, saying so", async () => {
-    const plugin = peer({}, ["--stay"])
-    await plugin.request("deafen")
+  // Node never closes descriptors 0 to 2 on Windows, so the peer cannot stop reading its stdin there.
+  it.skipIf(process.platform === "win32")(
+    "ends a process that stops reading its stdin, saying so",
+    async () => {
+      const plugin = peer({}, ["--stay"])
+      await plugin.request("deafen")
 
-    await expect(plugin.request("pid")).rejects.toMatchObject({
-      code: "exited",
-      message: expect.stringMatching(/ended on SIGTERM\. Its stdin had closed: .*EPIPE/),
-    })
-  })
+      await expect(plugin.request("pid")).rejects.toMatchObject({
+        code: "exited",
+        message: expect.stringMatching(/ended on SIGTERM\. Its stdin had closed: .*EPIPE/),
+      })
+    },
+  )
 
   it.skipIf(process.platform === "win32")(
     "ends a process whose launcher leaves its parser holding its pipes",
