@@ -14,7 +14,7 @@ export {
   type DiffReport,
   runDiff,
 } from "./commands/diff"
-export type { DiffSide } from "./commands/diff-revisions"
+export type { DiffProgress, DiffSide } from "./commands/diff-revisions"
 export {
   type CoverageDoubt,
   type ExplainOptions,
@@ -34,6 +34,20 @@ export type {
   ScanReport,
   StrayPluginOptions,
 } from "./commands/scan-report"
+export {
+  runVocab,
+  type VocabEffect,
+  type VocabExtKind,
+  type VocabFramework,
+  type VocabOptions,
+  type VocabOutcome,
+  type VocabOwner,
+  type VocabPlugin,
+  type VocabPrefix,
+  type VocabQuery,
+  type Vocabulary,
+  type VocabularyKind,
+} from "./commands/vocab"
 export {
   classifyConfigError,
   loadPinnedConfig,
@@ -61,7 +75,14 @@ export {
 } from "./fail-on"
 export type { GitRunner } from "./git/runner"
 export { readIR } from "./ir-io"
-export { type LoadedPlugins, type LoadPluginsOptions, loadPlugins } from "./plugin-loader"
+export type { LogWrite } from "./logger"
+export {
+  type LoadedPlugins,
+  type LoadPluginsOptions,
+  loadPlugins,
+  type PluginField,
+  type PluginListing,
+} from "./plugin-loader"
 export { type RunCliOptions, runCli } from "./run"
 export {
   type DiscoveredVocabItem,

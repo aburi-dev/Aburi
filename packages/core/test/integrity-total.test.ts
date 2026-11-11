@@ -1,4 +1,13 @@
-import { component, decorator, dependency, effect, makeIR, rule, sig } from "@aburi/test-support"
+import {
+  component,
+  decorator,
+  dependency,
+  effect,
+  makeIR,
+  relativePath,
+  rule,
+  sig,
+} from "@aburi/test-support"
 import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { checkIRIntegrity } from "../src/index"
@@ -32,7 +41,7 @@ function richIR(): IR {
       description: null,
     }),
   ]
-  ir.workspace.managers = [{ tool: "pnpm", roots: ["apps/a"] }]
+  ir.workspace.managers = [{ tool: "pnpm", roots: [relativePath("apps/a")] }]
   ir.symbols = [
     makeSymbol("ts:src/a.ts#foo", {
       component: "a",
@@ -69,6 +78,9 @@ function richIR(): IR {
     },
   }
   ir.stats.effectClassifyTimeouts = [{ plugin: "p", symbolId: "ts:src/a.ts#foo", timeoutMs: 10 }]
+  ir.stats.declinedCalls = [
+    { plugin: "p", symbolId: "ts:src/a.ts#foo", target: "helper", line: 4, reason: "r" },
+  ]
   return ir
 }
 

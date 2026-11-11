@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
+import { makeLanguageId } from "@aburi/core"
 import { git, makeSymbol, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CliError, DIFF_JSON_FILENAME, DIFF_MD_FILENAME, EXIT, runCli, runDiff } from "../src"
@@ -22,9 +23,8 @@ afterEach(() => {
  */
 function timedPlugin(body: string): string {
   return pluginModuleSource(
-    { ...LANG_MANIFEST, name: "lang-timed" },
-    `  languageId: "timed",
-  fileExtensions: [".timed"],
+    { ...LANG_MANIFEST, name: "lang-timed", languageId: makeLanguageId("timed") },
+    `  fileExtensions: [".timed"],
   capabilities: ${JSON.stringify(FAKE_LANGUAGE_PLUGIN.capabilities)},
   init: async () => {},
   parseFile: async (file) => {
@@ -96,27 +96,19 @@ async function temporaryDirectory(): Promise<string> {
 async function diffWith(flag: string) {
   const stdout = new MemStream()
   const stderr = new MemStream()
-  const logged = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-    stderr.chunks.push(String(chunk))
-    return true
+  const code = await runCli({
+    argv: ["diff", "main..HEAD", flag],
+    cwd: workspace.root,
+    stdout,
+    stderr,
+    env: {},
   })
-  try {
-    const code = await runCli({
-      argv: ["diff", "main..HEAD", flag],
-      cwd: workspace.root,
-      stdout,
-      stderr,
-      env: {},
-    })
-    const report = await Promise.all(
-      [DIFF_JSON_FILENAME, DIFF_MD_FILENAME].map((name) =>
-        readFile(resolve(workspace.root, "out", name), "utf8").catch(() => null),
-      ),
-    )
-    return { code, stdout: stdout.text(), said: stderr.chunks, report }
-  } finally {
-    logged.mockRestore()
-  }
+  const report = await Promise.all(
+    [DIFF_JSON_FILENAME, DIFF_MD_FILENAME].map((name) =>
+      readFile(resolve(workspace.root, "out", name), "utf8").catch(() => null),
+    ),
+  )
+  return { code, stdout: stdout.text(), said: stderr.chunks, report }
 }
 
 describe("aburi diff — its two scans at once", () => {

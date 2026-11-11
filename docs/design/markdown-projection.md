@@ -995,6 +995,45 @@ will say is missed by exactly the length of the last name.
 Action passes 65507 by default: the 65536-byte limit less the 29-byte marker line the upsert
 prepends ([`github-action.md`](./github-action.md) §5.2).
 
+### 6.5 Status filter (`statuses`)
+
+`projectDiff(diff, { statuses })` lists only the Symbol changes whose `status` is one of
+`statuses`, a non-empty list of the seven ([`diff-algorithm.md`](./diff-algorithm.md) §3.5 and §4). An empty
+list, or a value that is no status, is refused (`RangeError`): a report filtered to nothing would
+read as a diff that found nothing. Absent, every change is listed.
+
+- **The sections of Symbol changes** — API changes through Syntax-only changes, and Test files —
+  are built from the kept changes alone, so a section none of them reaches is left out as an
+  empty section always is.
+- **The Slice View** keeps a Slice when one of its members is a kept change outside test code,
+  and draws it whole: a Slice is the feature a change cuts through, and its other members are
+  how the kept one is reached. It is the rule test code already follows (§6.1), applied to the
+  filter as well. A Slice naming a member no change holds is refused as it is without a filter
+  (`ProjectionInvariantError`), rather than read as one whose members were all left out.
+- **Component changes, Dependency changes and Not compared** are not Symbol changes, and are
+  listed in full. An edge from a test caller goes with its caller, as §6.1 has it: into Test files
+  when the filter keeps the caller's change, and out of the report when it does not, rather than
+  into Dependency changes. The note counts the edges that leave this way.
+- **The Summary line** counts every change, and so does its `· N in test files`: it is the diff's
+  account, and the filter is the reader's view of it.
+
+When the filter leaves a change out, a note directly under the Summary says what is listed and how
+much is not, ahead of the size cap's note when there is one:
+
+```md
+> ℹ **Only `added` and `removed` changes are listed.** 12 other Symbol changes are left out of this report; the Summary counts them.
+```
+
+When it also took out edges from test code, the note counts them beside the Symbol changes, which
+are what the Summary counts:
+
+```md
+> ℹ **Only `removed` changes are listed.** 3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.
+```
+
+A filter that leaves nothing out writes no note. The note counts against `maxBytes` (§6.4), which
+caps the filtered document.
+
 ## 7. `aburi explain <id>` — single Symbol
 
 Renders L2 standalone. Written to `out/symbols/<sanitized-id>.md` or to `stdout`.
@@ -1040,6 +1079,8 @@ Renders L2 standalone. Written to `out/symbols/<sanitized-id>.md` or to `stdout`
 The title carries the confidence badge when the Symbol's `confidence` is not `high` (§3.5), as every Symbol heading does.
 
 A framework registration that names middleware gets a `## Middleware` section between Signature and Rules, holding the names in the order they run on one line, as the component page's **Middleware** line does (§5.2).
+
+A Symbol that makes a call an effect plugin declined to classify ([`effect-plugin.md`](./effect-plugin.md) §4.5) gets a `## Declined effects` section between Effects and Calls. It has one line for each `stats.declinedCalls` entry that names the Symbol, ordered by line, then target, then plugin: `` - `client.user.byId.query` (L12) [effects-trpc]: `effects-plugin:trpc:server-file-query` ``. The call is also listed under Calls, because a declined call is still a call. The section is the Symbol's view of the IR's record, so `aburi explain --no-rescan` shows it as well.
 
 The default output of `aburi explain` is stdout; `--output <path>` writes to a file.
 
@@ -1143,6 +1184,9 @@ All Markdown projection output is **English, with fixed wording**.
 | MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
 | MP22 | Symbol block, and `aburi explain` page, of a registration whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
 | MP23 | diff entry whose `delta.middleware` removed `requireAdmin`, added `rateLimit(…)`, or reordered `requireAdmin`, `audit` into `audit`, `requireAdmin` | ``- middleware removed: `requireAdmin` ``, ``- middleware added: `rateLimit(…)` ``, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, and no "no field-level detail" row; an unmoved `delta.middleware` writes no row |
+| MP27 | diff with an added Symbol joined by a Slice to a changed one, a removed one, and in test files an added Symbol whose call edge was added and a removed one, projected with `statuses: ["added"]` | The sections list the two added Symbols alone, the test one in `## 🧪 Test files` under `1 symbol in a test file` with its edge, and the Slice is drawn whole; the Summary line counts every change, `· 2 in test files` included, and the note under it reads ``> ℹ **Only `added` changes are listed.** 3 other Symbol changes are left out of this report; the Summary counts them.`` `## 🔗 Dependency changes` lists every edge not from test code |
+| MP27a | the same diff projected with `statuses: ["removed"]` | The added test Symbol's edge is in neither `## 🧪 Test files` nor `## 🔗 Dependency changes`, and the note reads ``… 3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.`` |
+| MP27b | `statuses` naming every status the diff holds; `statuses` empty, or holding a value that is no status; a Slice naming a member no change holds, under a filter that lists none of its other members | The document written without `statuses`; `RangeError`; `ProjectionInvariantError`, as without a filter |
 
 ## 12. Design decisions
 

@@ -18,13 +18,46 @@ export interface CliRun {
   stderr: string
 }
 
+/** `aburi <argv>` in `cwd`, its stderr written to `stderr` (a pipe, unless a `TerminalStream`). */
 export async function runCliIn(
   cwd: string,
   argv: readonly string[],
   env: NodeJS.ProcessEnv = {},
+  stderr: MemStream = new MemStream(),
 ): Promise<CliRun> {
   const stdout = new MemStream()
-  const stderr = new MemStream()
   const code = await runCli({ argv, cwd, stdout, stderr, env })
   return { code, stdout: stdout.text(), stderr: stderr.text() }
+}
+
+/** A stream that says it is a terminal `columns` wide, as stderr on an interactive shell does. */
+export class TerminalStream extends MemStream {
+  readonly isTTY = true
+  constructor(readonly columns = 200) {
+    super()
+  }
+}
+
+/** The carriage return and erase-line sequence that wipes the progress line. */
+export const ERASE = "\r\u001b[2K"
+
+/** `text` in each colour the CLI writes, opened and closed on the one line. */
+export const YELLOW = (text: string): string => `\u001b[33m${text}\u001b[39m`
+export const RED = (text: string): string => `\u001b[31m${text}\u001b[39m`
+export const DIM = (text: string): string => `\u001b[2m${text}\u001b[22m`
+
+const SGR = ["33", "31", "2", "39", "22"].map((code) => `\u001b[${code}m`)
+
+export function withoutColor(text: string): string {
+  return SGR.reduce((stripped, sequence) => stripped.replaceAll(sequence, ""), text)
+}
+
+/** What `text`, written to a terminal, leaves on it: a carriage return and erase-line wipe the line. */
+export function screenOf(text: string): string {
+  const lines = text.split("\n").map((line) => {
+    const erased = line.lastIndexOf(ERASE)
+    return erased === -1 ? line : line.slice(erased + ERASE.length)
+  })
+  const last = lines.pop() ?? ""
+  return [...lines, ...(last.length === 0 ? [] : [last])].map((kept) => `${kept}\n`).join("")
 }

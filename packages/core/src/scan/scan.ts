@@ -42,6 +42,22 @@ import type { UndeclaredVocabOccurrence } from "./vocab"
 
 export type { ExtractionFailure, ParseErrorRecord } from "./extract-files"
 
+/**
+ * Where a scan is, for a caller that shows it. The phases are entered in this order, each once:
+ * `discovering`; `extracting`, sent before each file and once more when the last one is done;
+ * then `resolving`, everything after extraction.
+ */
+export type ScanProgress =
+  | { readonly phase: "discovering" }
+  | {
+      readonly phase: "extracting"
+      /** Files extracted so far, counting up to `total`. */
+      readonly done: number
+      /** Files the scan will extract. */
+      readonly total: number
+    }
+  | { readonly phase: "resolving" }
+
 export interface ScanInput {
   workspaceRoot: string
   config: Config
@@ -56,6 +72,7 @@ export interface ScanInput {
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
+  onProgress?: (progress: ScanProgress) => void
 }
 
 export interface ScanResult {
@@ -74,7 +91,9 @@ export interface ScanResult {
 
 export async function scan(input: ScanInput): Promise<ScanResult> {
   assertWorkspaceRootAbsolute(input.workspaceRoot)
+  assertLanguageIdsDeclared(input.languages)
   const logger = input.logger ?? silentLogger
+  const progress = input.onProgress ?? (() => {})
 
   const router = buildLanguageRouter(input.languages)
   const langDropPatterns = languageFileDropPatterns(input.languages)
@@ -89,6 +108,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   if (input.config.maxFileSizeBytes !== undefined) {
     discoverOptions.maxFileSizeBytes = input.config.maxFileSizeBytes
   }
+  progress({ phase: "discovering" })
   const discovered = await discoverFiles(discoverOptions)
 
   const extracted = await extractFiles({
@@ -101,7 +121,9 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     registry: input.registry,
     components: input.components ?? [],
     logger,
+    progress: (done, total) => progress({ phase: "extracting", done, total }),
   })
+  progress({ phase: "resolving" })
   const { symbols } = extracted
 
   symbols.sort(compareBy((symbol) => symbol.id))
@@ -111,7 +133,8 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     workspaceRoot: input.workspaceRoot,
     fileContents: extracted.fileContents,
     lspConfig: input.config.lsp,
-    languageIds: input.languages.map((plugin) => plugin.languageId),
+    languageIds: input.languages.map((plugin) => plugin.manifest.languageId),
+    thisBindings: extracted.thisBindings,
     logger,
   }
   if (input.lspServerFactory !== undefined) enrichmentInput.serverFactory = input.lspServerFactory
@@ -162,6 +185,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     skipped,
     symbols: propagatedSymbols,
     timeoutEvents: extracted.timeoutEvents,
+    declinedCalls: extracted.declinedCalls,
     propagation: propagation.stats,
     lspEnrichment:
       enrichment.stats === undefined
@@ -173,7 +197,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   const workspace: IR["workspace"] = {
     root: ".",
     managers: [...(input.workspaceManagers ?? [])],
-    languages: uniqueSorted(input.languages.map((l) => l.languageId)),
+    languages: uniqueSorted(input.languages.map((l) => l.manifest.languageId)),
   }
 
   const ir: IR = {
@@ -225,6 +249,22 @@ function assertWorkspaceRootAbsolute(root: string): void {
     throw new CoreError(
       `ScanInput.workspaceRoot must be an absolute path, got "${root}". A relative root would be resolved against process.cwd() and produce non-portable Symbol ids.`,
       { code: "scan-workspace-not-absolute", value: root },
+    )
+  }
+}
+
+/** The registry refuses such a manifest; a caller that skips it reaches `scan` with one. */
+function assertLanguageIdsDeclared(languages: readonly LanguagePlugin[]): void {
+  for (const { manifest } of languages) {
+    const declared: unknown = manifest.languageId
+    if (typeof declared === "string") continue
+    const found =
+      declared === undefined
+        ? "declares no languageId"
+        : `declares languageId ${JSON.stringify(declared)}, which is not a string`
+    throw new CoreError(
+      `Language plugin "${manifest.name}" ${found} in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.`,
+      { code: "scan-plugin-misconfigured", value: manifest.name },
     )
   }
 }

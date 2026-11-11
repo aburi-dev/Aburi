@@ -18,9 +18,14 @@ const defaultReraise: Reraise = (signal) => {
   process.kill(process.pid, signal)
 }
 
+/**
+ * `first` puts `cleanup` ahead of the listeners already registered, for one whose effect the others'
+ * output depends on.
+ */
 export function cleanUpOnFatalSignal(
   cleanup: SignalCleanup,
   reraise: Reraise = defaultReraise,
+  { first = false }: { first?: boolean } = {},
 ): () => void {
   const listeners = FATAL_SIGNALS.map((signal) => {
     const listener = () => {
@@ -34,7 +39,8 @@ export function cleanUpOnFatalSignal(
       if (process.listenerCount(signal) > 0) return
       reraise(signal)
     }
-    process.on(signal, listener)
+    if (first) process.prependListener(signal, listener)
+    else process.on(signal, listener)
     return [signal, listener] as const
   })
   function release(): void {

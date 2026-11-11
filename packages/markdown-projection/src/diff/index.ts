@@ -1,4 +1,11 @@
-import { type DiffResult, representativeSymbol } from "@aburi/types"
+import {
+  type DiffResult,
+  isSymbolChangeStatus,
+  representativeSymbol,
+  SYMBOL_CHANGE_STATUSES,
+  type SymbolChange,
+  type SymbolChangeStatus,
+} from "@aburi/types"
 import { counted, inlineCode } from "../format"
 import { renderComponentChanges } from "./component-changes"
 import { renderDependencyChanges } from "./dependency-changes"
@@ -29,6 +36,8 @@ import { inTestFile, renderTestFiles, splitDependencies } from "./test-files"
 export interface ProjectDiffOptions {
   readonly maxBytes?: number
   readonly fullReportLocation?: string
+  /** The statuses whose Symbol changes the report lists; absent, every one. */
+  readonly statuses?: readonly SymbolChangeStatus[]
 }
 
 export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}): string {
@@ -43,19 +52,28 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
       "projectDiff: fullReportLocation must not contain a line break; it is set inside a one-line note.",
     )
   }
-  const testChanges = diff.symbols.filter(inTestFile)
+  const listed = listedChanges(diff.symbols, options.statuses)
+  const everyTestChange = diff.symbols.filter(inTestFile)
+  const testChanges = listed.filter(inTestFile)
+  const dependencies = splitDependencies(diff.dependencies, everyTestChange, testChanges)
   const heading = [
     `# Aburi diff: ${titleRef(diff.base.ref)}..${titleRef(diff.head.ref)}`,
     "",
-    `**Summary**: ${summaryLine(diff, testChanges.length)}`,
+    `**Summary**: ${summaryLine(diff, everyTestChange.length)}`,
     "",
+    ...filterNote(options.statuses, diff.symbols.length - listed.length, dependencies.leftOut),
   ]
-  const dependencies = splitDependencies(diff.dependencies, testChanges)
-  const buckets = partition(diff.symbols.filter((change) => !inTestFile(change)))
-  const testIds = new Set(testChanges.map((change) => representativeSymbol(change).id))
-  // A Slice with no members is left for the Slice View to refuse.
+  const outsideTests = listed.filter((change) => !inTestFile(change))
+  const buckets = partition(outsideTests)
+  const shown = new Set(outsideTests)
+  const hiddenIds = new Set(
+    diff.symbols
+      .filter((change) => !shown.has(change))
+      .map((change) => representativeSymbol(change).id),
+  )
+  // A Slice with no members, or with one no change names, is left for the Slice View to refuse.
   const slices = diff.slices.filter(
-    ({ members }) => members.length === 0 || members.some((id) => !testIds.has(id)),
+    ({ members }) => members.length === 0 || members.some((id) => !hiddenIds.has(id)),
   )
   const sections = [
     plainSection(
@@ -108,6 +126,43 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
   ].filter((entry): entry is Section => entry !== null)
 
   return assemble(heading, sections, maxBytes, fullReportLocation)
+}
+
+function listedChanges(
+  symbols: readonly SymbolChange[],
+  statuses: readonly SymbolChangeStatus[] | undefined,
+): readonly SymbolChange[] {
+  if (statuses === undefined) return symbols
+  if (statuses.length === 0) {
+    throw new RangeError(
+      "projectDiff: statuses must name at least one status; a report filtered to nothing reads as a diff that found nothing.",
+    )
+  }
+  const unknown = statuses.filter((status) => !isSymbolChangeStatus(status))
+  if (unknown.length > 0) {
+    throw new RangeError(
+      `projectDiff: ${unknown.map((status) => JSON.stringify(status)).join(", ")} is no Symbol change status (expected ${SYMBOL_CHANGE_STATUSES.join(", ")}).`,
+    )
+  }
+  const kept = new Set(statuses)
+  return symbols.filter((change) => kept.has(change.status))
+}
+
+function filterNote(
+  statuses: readonly SymbolChangeStatus[] | undefined,
+  leftOut: number,
+  edgesLeftOut: number,
+): string[] {
+  if (statuses === undefined || leftOut === 0) return []
+  const names = SYMBOL_CHANGE_STATUSES.filter((status) => statuses.includes(status)).map(inlineCode)
+  const listed =
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+  const changes = counted(leftOut, "other Symbol change", "other Symbol changes")
+  const omitted =
+    edgesLeftOut === 0
+      ? `${changes} ${leftOut === 1 ? "is" : "are"} left out of this report; the Summary counts ${leftOut === 1 ? "it" : "them"}.`
+      : `${changes} and ${counted(edgesLeftOut, "dependency change", "dependency changes")} from test code are left out of this report; the Summary counts the Symbol ${leftOut === 1 ? "change" : "changes"}.`
+  return [`> ℹ **Only ${listed} changes are listed.** ${omitted}`, ""]
 }
 
 export function projectDiffSummaryLine(diff: DiffResult): string {

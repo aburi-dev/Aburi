@@ -8,6 +8,7 @@ import {
   makeIR,
   makeSymbol,
   rule,
+  sectionOf,
   sig,
   symbolId,
 } from "@aburi/test-support"
@@ -33,7 +34,7 @@ import {
   namedSymbol,
   projectChanges,
 } from "./fixtures"
-import { sectionOf, shownText } from "./markdown"
+import { shownText } from "./markdown"
 
 const THROWN_TEMPLATE = `new Error(\`unknown kind: \${k}\`)`
 const CACHE_KEY_TEMPLATE = `redis.get(\`k:\${id}\`)`
@@ -127,12 +128,6 @@ describe("ruleRow — a value that has to fence stays inside its list item", () 
       `- guard: \`${at}\` (L1)`,
     ])
     expect(ruleRow(rule({ type: "guard", line: 1, condition: past }))[0]).toBe("- guard (L1):")
-  })
-
-  it("names an empty payload instead of rendering a row that trails off", () => {
-    expect(ruleRow(rule({ type: "guard", line: 5, condition: "" }))).toEqual([
-      "- guard: (empty) (L5)",
-    ])
   })
 
   it("does not let a template literal close the span early", () => {

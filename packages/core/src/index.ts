@@ -1,5 +1,5 @@
 export { AsyncMemo } from "./async-memo"
-export { makeCallSiteKey, receiverHead } from "./call-site"
+export { makeCallSiteKey, receiverHead, type ThisBindingSites } from "./call-site"
 export {
   type CallEdge,
   type ResolveCallGraphInput,
@@ -13,9 +13,17 @@ export { countBy, groupBy } from "./collections"
 export {
   __testing as __testing_component,
   type DetectComponentsOptions,
+  type DetectComponentsResult,
   detectComponents,
+  type IgnoredPublicApi,
 } from "./component"
-export { NPM_MANIFEST, readWorkspacePackages, type WorkspacePackage } from "./component-manifest"
+export {
+  type IgnoredPublicApiReason,
+  NPM_MANIFEST,
+  readWorkspacePackages,
+  type WorkspacePackage,
+} from "./component-manifest"
+export { CORE_EFFECTS, type CoreEffect, type CoreEffectId, isCoreEffectId } from "./core-effects"
 export {
   CoreError,
   type CoreErrorCode,
@@ -55,7 +63,6 @@ export {
   makeTopLevelQname,
   posixSpellingViolation,
   posixWorkspaceRelativeViolation,
-  RESERVED_LANGUAGE_IDS,
   type SegmentOptions,
   type SymbolIdParts,
   symbolIdFile,
@@ -73,7 +80,7 @@ export {
   type ImportBinding,
   splitAliasedImportName,
 } from "./import-edge"
-export { assertIRIntegrity, checkIRIntegrity, isCoreEffectId } from "./integrity"
+export { assertIRIntegrity, checkIRIntegrity } from "./integrity"
 export { checkDocumentShape, DOCUMENT_SUBJECT } from "./integrity-shape"
 export {
   type EnrichmentInput,
@@ -137,6 +144,7 @@ export {
   languageFileDropPatterns,
   type ParseErrorRecord,
   type ScanInput,
+  type ScanProgress,
   type ScanResult,
   scan,
   writeCanonicalIR,
@@ -170,13 +178,16 @@ export {
   calleeLeaf,
   calleeName,
   calleeText,
+  chainCalls,
   declaratorValue,
   findFirstDescendantOfType,
   findNamedChildOfType,
   type ReceiverChain,
+  type ReceiverChainWalk,
   receiverChain,
   type SyntaxNode,
   unwrapValue,
+  walkReceiverChain,
   writtenChildren,
 } from "./syntax-node"
 export { computeWeaklyConnectedComponents } from "./wcc"
@@ -188,4 +199,8 @@ export {
   type UnresolvedDeclaration,
   type WorkspaceCandidate,
 } from "./workspace"
-export { type DetectWorkspaceRootOptions, detectWorkspaceRoot } from "./workspace-root"
+export {
+  type DetectWorkspaceRootOptions,
+  detectWorkspaceRoot,
+  type GitWorkTree,
+} from "./workspace-root"

@@ -6,6 +6,7 @@ import type {
   EffectId,
   ExtKind,
   LanguageId,
+  RelativePath,
   Rule,
   Signature,
   SourceRange,
@@ -19,7 +20,7 @@ export type ParsedTree = unknown
 export type OpaqueAstNode = unknown
 
 export interface SourceFile {
-  path: string
+  path: RelativePath
   content: string
 }
 
@@ -119,7 +120,12 @@ export interface CallCandidate {
   dynamicReceiver?: boolean
   /** The named type the receiver is declared with, type arguments aside, e.g. `EventEmitter2`. */
   receiverType?: string
+  /** For a call through `this` or `super`, what `this` is where the call is written. */
+  thisBinding?: ThisBinding
 }
+
+/** `class` in a static block or a static member, `instance` in an instance member. */
+export type ThisBinding = "class" | "instance"
 
 export interface BodyExtraction {
   rules: Rule[]
@@ -212,6 +218,16 @@ export interface EffectClassification {
   derivedBy: string
 }
 
+/**
+ * `classify`'s answer for a call whose shape the plugin recognises and leaves unclassified on
+ * purpose, so the IR can say why the call stayed in `calls[]` when no later plugin classifies it.
+ * It carries no `effectId`: an answer holding both keys fails the run.
+ */
+export interface EffectDecline {
+  /** Plugin-defined reason, e.g. `"effects-plugin:trpc:server-file-query"`. */
+  declined: string
+}
+
 export interface SymbolClassification {
   /** Newly assigned extKind, e.g. `"framework:nestjs:controller"`. */
   extKind?: ExtKind
@@ -242,13 +258,12 @@ export interface LanguageCapabilities {
   hasJsDoc: boolean
 }
 
-export type LangManifest = PluginManifest & { type: "lang" }
-export type EffectsManifest = PluginManifest & { type: "effects" }
-export type FrameworkManifest = PluginManifest & { type: "framework" }
+export type LangManifest = PluginManifest & { type: "lang"; languageId: LanguageId }
+export type EffectsManifest = PluginManifest & { type: "effects"; languageId?: never }
+export type FrameworkManifest = PluginManifest & { type: "framework"; languageId?: never }
 
 export interface LanguagePlugin<TTree = ParsedTree, TNode = OpaqueAstNode> {
   manifest: LangManifest
-  languageId: LanguageId
   /** Extension list (not glob), e.g. [".ts", ".tsx"]. */
   fileExtensions: string[]
   capabilities: LanguageCapabilities
@@ -275,7 +290,7 @@ export interface EffectPlugin {
   init(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
-  classify(call: CallCandidate, ctx: ClassifyContext): EffectClassification | null
+  classify(call: CallCandidate, ctx: ClassifyContext): EffectClassification | EffectDecline | null
 
   /** Drop-list category C additions (logger-style plugins only). */
   dropCallees?: string[]

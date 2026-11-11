@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import { frameworkHintPlugins } from "@aburi/config"
+import { makeLanguageId } from "@aburi/core"
 import { RegistryError } from "@aburi/plugin-registry"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
 import type { Config, FrameworkPlugin, Provides } from "@aburi/types"
@@ -11,13 +12,16 @@ import {
   FAKE_EFFECTS_PLUGIN,
   FAKE_LANGUAGE_PLUGIN,
   FRAMEWORK_MANIFEST,
+  LANG_MANIFEST,
   pluginModuleSource,
 } from "./plugin-fakes"
 import { runCliIn } from "./run-cli"
-import { writeStubWorkspace } from "./stub-language"
+import { stubPluginSource, writeStubWorkspace } from "./stub-language"
 import { writeFileAt } from "./workspace"
 
 const workspace = useScratchWorkspace("plugin-loading")
+
+const { languageId: _languageId, ...MANIFEST_WITHOUT_LANGUAGE_ID } = LANG_MANIFEST
 
 const FRAMEWORK_CORE: FrameworkPlugin = {
   manifest: {
@@ -185,6 +189,32 @@ describe("loadPlugins — a manifest the registry refuses", () => {
       "effects-b",
       "duplicate-prefix",
     ],
+    [
+      "a language token two plugins claim",
+      { languages: ["lang-fake", "lang-other"] },
+      {
+        "@aburi/lang-fake": { plugin: FAKE_LANGUAGE_PLUGIN },
+        "@aburi/lang-other": {
+          plugin: {
+            ...FAKE_LANGUAGE_PLUGIN,
+            manifest: { ...FAKE_LANGUAGE_PLUGIN.manifest, name: "lang-other" },
+          },
+        },
+      },
+      "lang-other",
+      "duplicate-id",
+    ],
+    [
+      "a language plugin whose manifest names no language token",
+      { languages: ["lang-fake"] },
+      {
+        "@aburi/lang-fake": {
+          plugin: { ...FAKE_LANGUAGE_PLUGIN, manifest: MANIFEST_WITHOUT_LANGUAGE_ID },
+        },
+      },
+      "lang-fake",
+      "manifest-invalid",
+    ],
   ])(
     "reports %s as a fault of the plugin's config entry, keeping the registry's error as the cause",
     async (_, config, modules, ref, code) => {
@@ -227,16 +257,16 @@ function frameworkModule(name: string, provides: Partial<Provides>): string {
 }
 
 describe("aburi scan — a configured plugin that cannot be loaded", () => {
-  it.each<[string, string[], Record<string, string>, string]>([
+  it.each<[string, Record<string, unknown>, Record<string, string>, string]>([
     [
       "fails to import",
-      ["./framework-missing.mjs"],
+      { frameworks: ["./framework-missing.mjs"] },
       {},
       'Failed to import plugin "./framework-missing.mjs"',
     ],
     [
       "declares a prefix another configured plugin declared",
-      ["./framework-one.mjs", "./framework-two.mjs"],
+      { frameworks: ["./framework-one.mjs", "./framework-two.mjs"] },
       {
         "framework-one.mjs": frameworkModule("framework-one", {
           extKindPrefixes: ["framework:acme"],
@@ -249,7 +279,7 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
     ],
     [
       "has the name of another configured plugin and a different manifest",
-      ["./framework-one.mjs", "./framework-copy.mjs"],
+      { frameworks: ["./framework-one.mjs", "./framework-copy.mjs"] },
       {
         "framework-one.mjs": frameworkModule("framework-one", {
           extKindPrefixes: ["framework:acme"],
@@ -262,13 +292,13 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
     ],
     [
       "declares a name in a reserved namespace",
-      ["./framework-core.mjs"],
+      { frameworks: ["./framework-core.mjs"] },
       { "framework-core.mjs": frameworkModule("framework-core", { frameworks: ["core"] }) },
       'Plugin "./framework-core.mjs" cannot be registered: Plugin "framework-core" declares framework name "core" inside a reserved namespace',
     ],
     [
       "declares a prefix outside the namespaces its type may own",
-      ["./framework-shape.mjs"],
+      { frameworks: ["./framework-shape.mjs"] },
       {
         "framework-shape.mjs": frameworkModule("framework-shape", {
           extKindPrefixes: ["effects:acme"],
@@ -278,16 +308,47 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
     ],
     [
       "holds a manifest value JSON cannot carry",
-      ["./framework-odd.mjs"],
+      { frameworks: ["./framework-odd.mjs"] },
       {
         "framework-odd.mjs": `${frameworkModule("framework-odd", {})}plugin.manifest.homepage = undefined\n`,
       },
       'Plugin "./framework-odd.mjs" cannot be registered: Plugin manifest contains a non-JSON value (undefined) at $.homepage',
     ],
+    [
+      "has a manifest without a version",
+      { frameworks: ["./framework-nov.mjs"] },
+      {
+        "framework-nov.mjs": `${frameworkModule("framework-nov", {})}delete plugin.manifest.version\n`,
+      },
+      'Plugin "./framework-nov.mjs" cannot be registered: Plugin "framework-nov" manifest version must be a string (got undefined).',
+    ],
+    [
+      "declares a language token another configured plugin declared",
+      { languages: ["./lang-stub.mjs", "./lang-twin.mjs"] },
+      {
+        "lang-twin.mjs": stubPluginSource({
+          ...LANG_MANIFEST,
+          name: "lang-twin",
+          languageId: makeLanguageId("stub"),
+        }),
+      },
+      'Plugin "./lang-twin.mjs" cannot be registered: Language id "stub" is already declared by plugin "lang-stub".',
+    ],
+    [
+      "sets its language token on the plugin object, not in its manifest",
+      { languages: ["./lang-old.mjs"] },
+      {
+        "lang-old.mjs": stubPluginSource(
+          { ...MANIFEST_WITHOUT_LANGUAGE_ID, name: "lang-old" },
+          '  languageId: "old",\n',
+        ),
+      },
+      'Plugin "./lang-old.mjs" cannot be registered: Plugin "lang-old" (type lang) declares no languageId: a lang manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.',
+    ],
   ])(
     "exits 3 for a plugin that %s, naming its config entry, before writing anything",
-    async (_, frameworks, files, says) => {
-      await writeStubWorkspace(workspace.root, [], { frameworks })
+    async (_, config, files, says) => {
+      await writeStubWorkspace(workspace.root, [], config)
       for (const [path, content] of Object.entries(files)) {
         await writeFileAt(workspace.root, path, content)
       }

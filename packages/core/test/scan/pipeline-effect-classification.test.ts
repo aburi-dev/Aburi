@@ -1,7 +1,14 @@
-import { makeCall, spend } from "@aburi/test-support"
-import type { CallCandidate, ClassifyContext, Decorator, EffectClassification } from "@aburi/types"
+import { errorFrom, makeCall, spend } from "@aburi/test-support"
+import type {
+  CallCandidate,
+  ClassifyContext,
+  Decorator,
+  EffectClassification,
+  EffectDecline,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeCallSiteKey } from "../../src/call-site"
+import { CoreError } from "../../src/errors"
 import {
   extractOneSymbol,
   stubCandidate,
@@ -115,6 +122,154 @@ describe("runFilePipeline — effect classification", () => {
     expect(result.dynamicCallSites).toEqual([makeCallSiteKey("test.stub", 3, "make().run")])
   })
 
+  describe("a call a plugin declines", () => {
+    const declining = stubEffectsPlugin("effects-wary", (call) =>
+      call.target.endsWith(".query") ? { declined: "effects-wary:ambiguous-query" } : null,
+    )
+    const CLASSIFIED: EffectClassification = {
+      effectId: "network.rpc",
+      confidence: "high",
+      derivedBy: "effects-sure:rpc",
+    }
+
+    it("stays in calls[], recorded with the plugin's reason, and later plugins are still asked", async () => {
+      const asked: string[] = []
+      const result = await extractOneSymbol({
+        effects: [
+          declining,
+          stubEffectsPlugin("effects-next", (call) => {
+            asked.push(call.target)
+            return null
+          }),
+        ],
+        body: bodyCalling(
+          makeCall({ target: "client.user.query", line: 3 }),
+          makeCall({ target: "helper.run", line: 4 }),
+        ),
+      })
+
+      expect(result.symbols[0]?.calls.map((call) => call.target)).toEqual([
+        "client.user.query",
+        "helper.run",
+      ])
+      expect(result.declinedCalls).toEqual([
+        {
+          plugin: "effects-wary",
+          symbolId: "stub:test.stub#Fn",
+          target: "client.user.query",
+          line: 3,
+          reason: "effects-wary:ambiguous-query",
+        },
+      ])
+      expect(asked).toEqual(["client.user.query", "helper.run"])
+    })
+
+    it("is not recorded once a later plugin classifies it", async () => {
+      const result = await extractOneSymbol({
+        effects: [declining, stubEffectsPlugin("effects-sure", () => CLASSIFIED)],
+        body: bodyCalling(makeCall({ target: "client.user.query", line: 3 })),
+      })
+
+      expect(result.symbols[0]?.effects.map((effect) => effect.plugin)).toEqual(["effects-sure"])
+      expect(result.declinedCalls).toEqual([])
+    })
+
+    it("keeps one entry per declining plugin, in config order, and the call once", async () => {
+      const result = await extractOneSymbol({
+        effects: [
+          declining,
+          stubEffectsPlugin("effects-also", () => ({ declined: "effects-also:raw" })),
+        ],
+        body: bodyCalling(makeCall({ target: "client.user.query", line: 3 })),
+      })
+
+      expect(result.symbols[0]?.calls.map((call) => call.target)).toEqual(["client.user.query"])
+      expect(result.declinedCalls.map((entry) => [entry.plugin, entry.reason])).toEqual([
+        ["effects-wary", "effects-wary:ambiguous-query"],
+        ["effects-also", "effects-also:raw"],
+      ])
+    })
+
+    it.each([
+      ["an empty reason", ""],
+      ["a blank reason", "  "],
+      ["a reason that is not a string", 7 as never],
+    ])("ends the run for %s, a fault in the plugin", async (_label, declined) => {
+      const error = await errorFrom(CoreError, () =>
+        extractOneSymbol({
+          effects: [stubEffectsPlugin("effects-mute", () => ({ declined }))],
+          body: bodyCalling(makeCall({ target: "client.user.query" })),
+        }),
+      )
+      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-mute" })
+    })
+
+    it("ends the run for a reason it refuses, whatever a later plugin answers", async () => {
+      const error = await errorFrom(CoreError, () =>
+        extractOneSymbol({
+          effects: [
+            stubEffectsPlugin("effects-mute", () => ({ declined: "" })),
+            stubEffectsPlugin("effects-sure", () => CLASSIFIED),
+          ],
+          body: bodyCalling(makeCall({ target: "client.user.query" })),
+        }),
+      )
+      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-mute" })
+    })
+
+    it.each([
+      ["a reason", "effects-torn:raw"],
+      ["an undefined reason", undefined],
+    ])(
+      "ends the run for a classification that carries %s too, rather than reading it as either",
+      async (_label, declined) => {
+        const error = await errorFrom(CoreError, () =>
+          extractOneSymbol({
+            effects: [stubEffectsPlugin("effects-torn", () => ({ ...CLASSIFIED, declined }))],
+            body: bodyCalling(makeCall({ target: "client.user.query" })),
+          }),
+        )
+        expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "effects-torn" })
+        expect(error.message).toContain("both `effectId` and `declined`")
+      },
+    )
+  })
+
+  it("keys each call's this binding by its call site, once for each side one key is written on", async () => {
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        makeCall({ target: "this.make", line: 3, thisBinding: "class" }),
+        makeCall({ target: "this.make", line: 3, thisBinding: "instance" }),
+        makeCall({ target: "this.find", line: 4, thisBinding: "instance" }),
+      ),
+    })
+
+    expect(result.thisBindings).toEqual([
+      [makeCallSiteKey("test.stub", 3, "this.make"), "class"],
+      [makeCallSiteKey("test.stub", 3, "this.make"), "instance"],
+      [makeCallSiteKey("test.stub", 4, "this.find"), "instance"],
+    ])
+  })
+
+  it("keys no binding for a classified call, a call with none, or a value it does not know", async () => {
+    const result = await extractOneSymbol({
+      effects: [
+        stubEffectsPlugin("effects-db", (call) =>
+          call.target === "this.save"
+            ? { effectId: "db.write", confidence: "high", derivedBy: "effects-db:hit" }
+            : null,
+        ),
+      ],
+      body: bodyCalling(
+        makeCall({ target: "this.save", line: 3, thisBinding: "instance" }),
+        makeCall({ target: "this.run", line: 4, thisBinding: "module" as never }),
+        makeCall({ target: "helper.run", line: 5 }),
+      ),
+    })
+
+    expect(result.thisBindings).toEqual([])
+  })
+
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {
     const seen: ClassifyContext["owner"]["decorators"][] = []
     const candidate = stubCandidate("Fn", {
@@ -182,7 +337,7 @@ const WRITE: EffectClassification = {
 
 function answering(
   name: string,
-  answer: EffectClassification | null,
+  answer: EffectClassification | EffectDecline | null,
   ms: number,
   asked: string[] = [],
 ) {
@@ -227,6 +382,29 @@ describe("runFilePipeline — a classification that ran past its budget", () => 
     // The next plugin is timed against the same 10 ms, so only the slow one's overrun is certain.
     expect(timeoutEvents.filter((e) => e.plugin === "effects-slow")).toHaveLength(1)
     expect(symbols[0]?.effects.map((e) => [e.id, e.plugin])).toEqual([["db.read", "effects-next"]])
+  })
+
+  it("keeps a decline, as a fast decline would", async () => {
+    const { symbols, timeoutEvents, declinedCalls } = await extractOneSymbol({
+      config: FLOOR,
+      effects: [
+        answering("effects-slow", { declined: "effects-slow:raw" }, SLOW_MS),
+        answering("effects-next", null, 0),
+      ],
+      body: bodyCalling(makeCall({ target: "db.query", line: 2 })),
+    })
+
+    expect(timeoutEvents.filter((e) => e.plugin === "effects-slow")).toHaveLength(1)
+    expect(symbols[0]?.calls.map((call) => call.target)).toEqual(["db.query"])
+    expect(declinedCalls).toEqual([
+      {
+        plugin: "effects-slow",
+        symbolId: "stub:test.stub#Fn",
+        target: "db.query",
+        line: 2,
+        reason: "effects-slow:raw",
+      },
+    ])
   })
 
   it("leaves the Symbol, fingerprint included, as a fast run leaves it", async () => {

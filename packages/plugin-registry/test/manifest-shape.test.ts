@@ -18,6 +18,15 @@ describe("a manifest whose shape register cannot read", () => {
     expect(err.message).toBe(`Plugin manifest name must be a string (got ${got}).`)
   })
 
+  it.each([
+    ["missing", undefined, "undefined"],
+    ["a number", 1, "number"],
+  ])("refuses a version that is %s, naming the plugin", async (_, version, got) => {
+    const err = await refusal({ ...effectsManifest({ name: "effects-nov" }), version })
+    expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["effects-nov"] })
+    expect(err.message).toBe(`Plugin "effects-nov" manifest version must be a string (got ${got}).`)
+  })
+
   it("refuses a manifest without provides", async () => {
     const err = await refusal({ ...langManifest(), provides: undefined })
     expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["lang-foo"] })
