@@ -154,6 +154,7 @@ export {
   languageFileDropPatterns,
   type ParseErrorRecord,
   type ScanInput,
+  type ScanProgress,
   type ScanResult,
   scan,
   writeCanonicalIR,

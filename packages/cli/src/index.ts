@@ -14,7 +14,7 @@ export {
   type DiffReport,
   runDiff,
 } from "./commands/diff"
-export type { DiffSide } from "./commands/diff-revisions"
+export type { DiffProgress, DiffSide } from "./commands/diff-revisions"
 export {
   type CoverageDoubt,
   type ExplainOptions,
@@ -75,6 +75,7 @@ export {
 } from "./fail-on"
 export type { GitRunner } from "./git/runner"
 export { readIR } from "./ir-io"
+export type { LogWrite } from "./logger"
 export {
   type LoadedPlugins,
   type LoadPluginsOptions,

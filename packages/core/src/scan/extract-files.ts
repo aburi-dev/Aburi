@@ -23,6 +23,7 @@ export type ParsePoolFactory = (job: ExtractionJob) => ParsePool | null
 export interface ExtractFilesInput extends ExtractionJob, ExtractionPlugins {
   logger: Logger
   parsePool?: ParsePoolFactory
+  progress?: (done: number, total: number) => void
 }
 
 export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedFiles> {
@@ -33,18 +34,34 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     components: input.components,
   }
   const collator = new ExtractionCollator(input.files, input.logger)
+  const total = input.files.length
+  let done = 0
+  input.progress?.(done, total)
   const pool = input.parsePool?.(job) ?? null
   if (pool === null) {
     const extractor = createFileExtractor(job, input)
-    for (const [fileId] of input.files.entries()) collator.add(await extractor.extract(fileId))
+    for (const [fileId] of input.files.entries()) {
+      collator.add(await extractor.extract(fileId))
+      input.progress?.(++done, total)
+    }
     return collator.finish()
   }
+  let folding = true
   try {
     const extractions = input.files.map((_, fileId) => pool.extract(fileId))
-    // The collator stops at the first file that ends the run, leaving the rest unawaited.
-    for (const extraction of extractions) extraction.catch(() => {})
+    // Counted as they finish, not as they are folded, so one slow file does not stall the count;
+    // the collator stops at the first file that ends the run, leaving the rest unawaited.
+    for (const extraction of extractions) {
+      extraction.then(
+        () => {
+          if (folding) input.progress?.(++done, total)
+        },
+        () => {},
+      )
+    }
     for (const extraction of extractions) collator.add(await extraction)
   } finally {
+    folding = false
     await pool.close()
   }
   return collator.finish()

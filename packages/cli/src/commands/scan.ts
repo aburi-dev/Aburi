@@ -4,6 +4,7 @@ import {
   isComponentId,
   isPluginSetFault,
   isStrict,
+  type ScanProgress,
   type ScanResult,
   scan,
   serializeCanonical,
@@ -35,7 +36,7 @@ import type { LogLevel } from "../env"
 import { CliError, errorMessage, internalFault } from "../errors"
 import { EXIT } from "../exit-codes"
 import { readGeneratorInfo } from "../generator-info"
-import { createLogger } from "../logger"
+import { createLogger, type LogWrite } from "../logger"
 import {
   createOutputDir,
   listOutputFiles,
@@ -84,7 +85,8 @@ export interface ScanOptions {
   /** The scans running at once, which share the machine the default concurrency is sized to. */
   scansAtOnce?: number
   logLevel?: LogLevel
-  log?: (line: string) => void
+  log?: LogWrite
+  progress?: (progress: ScanProgress) => void
   incidents?: {
     warn: WarnFn
     label?: string
@@ -155,6 +157,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         setup: { config, workspaceRoot, pluginRefRoot },
         logger,
       }),
+      ...(options.progress === undefined ? {} : { onProgress: options.progress }),
     })
   } catch (error) {
     if (isPluginSetFault(error)) {
