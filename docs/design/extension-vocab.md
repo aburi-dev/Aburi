@@ -80,6 +80,8 @@ The manifest is the `manifest` property of the plugin object the module exports:
 
 As official npm packages these are split into two: `@aburi/effects-nest` and `@aburi/framework-nestjs`.
 
+A `type: lang` manifest also declares `languageId`, the `<language>` token every Symbol id the plugin mints opens with (`"languageId": "ts"`, [`multi-language-id.md`](./multi-language-id.md) Rule L-1). The schema makes it optional, so that a lang manifest written before the field stays a valid v1 document (§9.5), and the registry requires it of every lang manifest. Like `xPrefix` for effects plugins, it belongs to one type: an effects or framework manifest that declares one is refused.
+
 ### 3.2 Individual enumeration vs prefix ownership
 
 There are two styles of vocab declaration:
@@ -186,6 +188,10 @@ The same applies to `fp:` / `oop:` / `meta:`: each sub-namespace is owned by exa
 | One plugin declares two `extKindPrefixes[]`, or two `derivedByPrefixes[]`, where one nests under the other | **startup error**. Each list is compared with itself only: the same string in both lists, as every framework plugin writes it, is accepted |
 | Plugin A declares `extKinds[].id: "framework:acme:job"` and plugin B declares `extKindPrefixes: ["framework:acme"]` | **startup error** (B's prefix subsumes A's id) |
 | Two plugins with the same `name` and different manifests | **startup error** (an identical manifest is idempotent, V9) |
+| Two plugins declare the same `languageId` | **startup error** ([`multi-language-id.md`](./multi-language-id.md) Rule L-1) |
+| A `type: lang` manifest declares no `languageId`, or one outside `[a-z][a-z0-9]*` | **startup error** |
+| A manifest declares `languageId: "slice"` | **startup error** (a Slice id opens with `slice:`, Rule L-11) |
+| A `type` other than `lang` declares `languageId` | **manifest validation error** (schema if/then), and a startup error from `register` |
 | A `type` other than `effects` declares `x-*` | **startup error** |
 | A `type` other than `lang` declares `fp:*` / `oop:*` / `meta:*` | **startup error** |
 | A `type` other than `framework` declares `framework:*` | **startup error** |
@@ -239,16 +245,25 @@ interface VocabRegistry {
 
 `findEffect("x-acme:custom-action")` returns the entry with its description when `x-acme:custom-action` is individually enumerated; if it is covered only by prefix ownership, it returns the owning plugin's information with description=null.
 
-## 8. CLI (future use)
+## 8. CLI
 
-The planned `aburi vocab` subcommand ([`cli-spec.md`](./cli-spec.md) §8; not implemented):
+`aburi vocab` ([`cli-spec.md`](./cli-spec.md) §8) loads the configured plugins and `frameworkHints`
+entries, registers their manifests as a scan would, and lists what the registry then holds, the core
+effect ids included, without scanning:
 
 ```bash
 aburi vocab list                                       # show all vocab
-aburi vocab effects                                    # effect ids only
+aburi vocab effects                                    # effect ids and prefixes
+aburi vocab extkinds                                   # extKinds and prefixes
 aburi vocab plugins                                    # list plugins
 aburi vocab who-owns x-nest:lifecycle.on-module-init   # the plugin that owns this id
+aburi vocab list --json                                # the same, as JSON
 ```
+
+`who-owns` resolves a value through `findEffect`, `findExtKind`, `findFramework` and
+`findDerivedByOwner` (§7), so it answers as the extraction-time check would: an id a manifest
+enumerates resolves to its description, one only a prefix covers to the prefix's owner with no
+description.
 
 ## 9. Verifiable properties (test criteria)
 
@@ -272,6 +287,7 @@ aburi vocab who-owns x-nest:lifecycle.on-module-init   # the plugin that owns th
 | V11a | One plugin declares two extKind prefixes or two derivedBy prefixes where one contains the other (`fp:pipe` and `fp:pipe:async`) | startup error. The same prefix written twice in one list is refused earlier, by the schema's `uniqueItems`; `register` itself leaves an exact repeat alone, since it cannot give a lookup two owners |
 | V12 | Emitting undeclared values under `aburi scan --discover` | warning only; recorded in `aburi-vocab-discovered.json` |
 | V13 | Treating `@Foo` as a boundary via Framework hints (§11.3) alone | OK; no plugin manifest required |
+| V13a | Two lang manifests declare the same `languageId`; a lang manifest declares none, one outside `[a-z][a-z0-9]*`, or `slice`; an effects or framework manifest declares one | startup error naming the plugin (and, for a duplicate, the plugin that declared it first) |
 | V14 | `aburi scan` with a plugin listed in `aburi.json` whose manifest the registry refuses at startup (§6.1–§6.2), for any of the refusals [`cli-spec.md`](./cli-spec.md) CL49 lists | exit 3 before extraction, stderr naming the config entry that loaded the plugin ahead of the registry's reason |
 
 ## 9.5 Manifest schema compatibility policy
@@ -287,6 +303,8 @@ aburi vocab who-owns x-nest:lifecycle.on-module-init   # the plugin that owns th
 | Tightening a pattern | Breaking |
 | Loosening a pattern | Non-breaking |
 | Adding an array uniqueness constraint | Breaking |
+
+`languageId` shows how a field one type needs is added within v1: the schema lists it as optional and the registry requires it of `type: lang`. Requiring it in the schema would make every lang manifest written before it invalid, which the table above counts as breaking.
 
 Since consumers may treat unknown values of the `type` enum (`lang` / `effects` / `framework`) as errors, additions to it are also treated as breaking.
 
@@ -439,6 +457,7 @@ If `lang-crystal` were hypothetically written, it could get by on the core vocab
   "name": "lang-crystal",
   "version": "0.1.0",
   "type": "lang",
+  "languageId": "cr",
   "engines": { "aburi": "^1.0.0" },
   "provides": {
     "effects": [],

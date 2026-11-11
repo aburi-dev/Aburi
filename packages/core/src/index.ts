@@ -23,6 +23,7 @@ export {
   readWorkspacePackages,
   type WorkspacePackage,
 } from "./component-manifest"
+export { CORE_EFFECTS, type CoreEffect, type CoreEffectId, isCoreEffectId } from "./core-effects"
 export {
   CoreError,
   type CoreErrorCode,
@@ -62,7 +63,6 @@ export {
   makeTopLevelQname,
   posixSpellingViolation,
   posixWorkspaceRelativeViolation,
-  RESERVED_LANGUAGE_IDS,
   type SegmentOptions,
   type SymbolIdParts,
   symbolIdFile,
@@ -80,7 +80,7 @@ export {
   type ImportBinding,
   splitAliasedImportName,
 } from "./import-edge"
-export { assertIRIntegrity, checkIRIntegrity, isCoreEffectId } from "./integrity"
+export { assertIRIntegrity, checkIRIntegrity } from "./integrity"
 export { checkDocumentShape, DOCUMENT_SUBJECT } from "./integrity-shape"
 export {
   type EnrichmentInput,

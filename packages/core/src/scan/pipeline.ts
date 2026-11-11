@@ -19,13 +19,13 @@ import type {
   WalkContext,
 } from "@aburi/types"
 import type { CallSiteBinding } from "../call-site"
-import { buildDroppedSymbol, buildKeptSymbol, extractLanguageFromId } from "./build-symbol"
+import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
 import type { ImportOrigins } from "./import-origins"
-import { normalizeCandidateStrings, normalizeImportEdge } from "./normalize"
+import { normalizeCandidates, normalizeImportEdge } from "./normalize"
 import { type ClassifyTimeoutEvent, type ParseTimeoutEvent, startParseDeadline } from "./timeout"
 import type { VocabCheck } from "./vocab"
 
@@ -42,6 +42,13 @@ export interface ExtractedFile extends FileOutcomeCommon {
   dynamicCallSites: readonly string[]
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
+  /** What withdraws the file although nothing threw; its `symbols` are then empty. */
+  fault: FileFault | null
+}
+
+export interface FileFault {
+  code: string
+  message: string
 }
 
 export interface ParseFailedFile extends FileOutcomeCommon {
@@ -117,9 +124,27 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     if (deadline.expired()) return abandonedFile()
 
     const extractCtx: ExtractionContext = { file, registry, config }
-    const candidates = language
-      .extractSymbols(parseResult.tree, extractCtx)
-      .map(normalizeCandidateStrings)
+    const candidates = normalizeCandidates(
+      language.extractSymbols(parseResult.tree, extractCtx),
+      language.manifest.name,
+    )
+    if (!Array.isArray(candidates)) {
+      return {
+        kind: "extracted",
+        path: file.path,
+        parseErrors,
+        symbols: [],
+        imports: writtenImports,
+        timeoutEvents,
+        dynamicCallSites: [],
+        declinedCalls: [],
+        thisBindings: [],
+        fault: {
+          code: candidates.code,
+          message: `${candidates.message}. ctx.file.path holds this file's path already spelled for the Document, so this is a path the language plugin built`,
+        },
+      }
+    }
     if (deadline.expired()) return abandonedFile()
 
     const origins = input.origins
@@ -154,6 +179,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           symbol: candidate.id,
         })
       }
+      assertIdLanguage(candidate.id, language.manifest)
       const dropReason = decideDropReason(candidate, language, frameworks, frameworkCtx)
 
       if (dropReason !== null) {
@@ -161,7 +187,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           buildDroppedSymbol(
             candidate,
             dropReason,
-            extractLanguageFromId(candidate.id),
+            language.manifest.languageId,
             component,
             confidence,
           ),
@@ -180,7 +206,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         component,
         candidate,
         file,
-        language: extractLanguageFromId(candidate.id),
+        language: language.manifest.languageId,
         imports,
         dropCFilter,
         timeoutEvents,
@@ -203,7 +229,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       symbols.push(
         buildKeptSymbol({
           candidate,
-          language: extractLanguageFromId(candidate.id),
+          language: language.manifest.languageId,
           component,
           rules: body.rules,
           effects: classifiedEffects,
@@ -227,6 +253,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       dynamicCallSites,
       declinedCalls,
       thisBindings,
+      fault: null,
     }
   } finally {
     if (parseResult.tree !== null) {
