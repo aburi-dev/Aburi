@@ -435,9 +435,9 @@ ${writes}
     const scanned = await call(client, "scan")
 
     expect(scanned.isError).toBe(true)
-    expect(scanned.text).toContain(
-      `Invalid package config ${join(workspace.root, "node_modules/@aburi/cli/package.json")}`,
-    )
+    expect(scanned.text).toContain("Invalid package config")
+    // Windows names the file behind its long-path prefix.
+    expect(scanned.text).toContain(join(workspace.root, "node_modules/@aburi/cli/package.json"))
   })
 
   it.each<[string, Partial<AburiServerOptions>, string, Record<string, unknown>, string[]]>([
