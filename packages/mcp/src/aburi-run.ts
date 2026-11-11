@@ -4,6 +4,8 @@ import { createRequire } from "node:module"
 import { dirname, resolve, sep } from "node:path"
 
 export interface AburiRun {
+  /** The CLI's bin the run started: the workspace's own, or the one this package was installed with. */
+  readonly bin: string
   /** The arguments the CLI was given, the server's own output directories included. */
   readonly argv: readonly string[]
   /** `null` when the run ended on a signal rather than with a code. */
@@ -31,7 +33,8 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
       fail(signal.reason)
       return
     }
-    const child = spawn(process.execPath, [aburiBin(options.cwd), ...argv], {
+    const bin = aburiBin(options.cwd)
+    const child = spawn(process.execPath, [bin, ...argv], {
       cwd: options.cwd,
       // Its stderr is kept as text, where colour would be escape sequences.
       env: { ...options.env, FORCE_COLOR: "0" },
@@ -39,6 +42,7 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
     })
     let escalation: NodeJS.Timeout | undefined
     const stop = () => {
+      // On Windows this ends the process at once, with no cleanup of its own.
       child.kill("SIGTERM")
       // A plugin can hold SIGTERM, and the call it served has already ended.
       escalation = setTimeout(() => child.kill("SIGKILL"), KILL_AFTER_MS)
@@ -53,6 +57,7 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
       signal?.removeEventListener("abort", stop)
       clearTimeout(escalation)
       done({
+        bin,
         argv,
         exitCode: code,
         stdout: Buffer.concat(stdout).toString("utf8"),
@@ -84,7 +89,9 @@ const MANIFEST = "@aburi/cli/package.json"
 function resolveFrom(directory: string): string | null {
   try {
     return createRequire(directory).resolve(MANIFEST)
-  } catch {
-    return null
+  } catch (error) {
+    // A workspace CLI that is there but does not load must not be answered for by another CLI.
+    if (error instanceof Error && "code" in error && error.code === "MODULE_NOT_FOUND") return null
+    throw error
   }
 }

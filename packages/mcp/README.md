@@ -27,11 +27,11 @@ For a client configured with JSON:
 { "mcpServers": { "aburi": { "command": "npx", "args": ["-y", "@aburi/mcp"] } } }
 ```
 
-Each run starts the `@aburi/cli` the workspace installed, resolved from the directory the server
-serves, because a plugin `aburi.json` names by package (`lang-typescript`) is loaded from where the
-CLI is installed. So `npx -y @aburi/mcp` in a workspace with `@aburi/cli` installed answers as
-`aburi scan` there would. In a workspace with none, the server runs the CLI it was installed with,
-which loads only the plugins `aburi.json` names by path.
+Each run starts the `@aburi/cli` the workspace installed, the one Node resolves from the directory
+the server serves upward, because a plugin `aburi.json` names by package (`lang-typescript`) is
+loaded from where the CLI is installed. So `npx -y @aburi/mcp` in a workspace with `@aburi/cli`
+installed answers as `aburi scan` there would. In a workspace with none, the server runs the CLI it
+was installed with, which loads only the plugins `aburi.json` names by path.
 
 ```
 aburi-mcp [--cwd <path>] [--config <path>]
@@ -57,14 +57,19 @@ as `aburi --config` takes it.
 - `base` and `head` each take a scan's id or the path of an `aburi.ir.json`, so
   `{ base: "scan-1", head: "scan-2" }` is what changed between two scans, committed or not.
 
-Every answer also carries a structured result: the text, and each run's arguments, exit code and
-stderr. What a run wrote on stderr is the answer's second text block, since a scan's warnings
-qualify what it answered. A call fails (`isError`) when its run wrote no answer, with the run's
-stderr as the reason, or when it names a scan, a Component or a Symbol that does not exist.
+- `maxBytes` caps `diff.md`. The uncapped report a capped one points to is not returned; the call
+  without `maxBytes`, or with `format: "json"`, has every change.
+
+Every answer also carries a structured result: the text, and each run's bin, arguments, exit code
+and stderr. What a run wrote on stderr is the answer's second text block, since a scan's warnings
+qualify what it answered. A call fails (`isError`) when its run gave no answer, saying what it
+lacks before the run's stderr, or when it names a scan, a Component or a Symbol that does not
+exist.
 
 Calls run one at a time. A cancelled call ends its run, and the server writes only in a directory
-of its own under the system's temporary directory, removed when the connection closes. Nothing is
-written in the workspace.
+of its own under the system's temporary directory, removed when the connection closes. A diff's
+base worktree is made there too, so a diff killed before its own cleanup (any cancelled diff on
+Windows) leaves nothing behind in the repository. Nothing is written in the workspace.
 
 ## See also
 

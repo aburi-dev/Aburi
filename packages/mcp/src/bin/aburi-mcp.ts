@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { rmSync } from "node:fs"
 import { createRequire } from "node:module"
+import { constants } from "node:os"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { serveStdio } from "@modelcontextprotocol/server/stdio"
@@ -17,12 +18,14 @@ Options:
   -h, --help       display help
 `
 
+const SIGNALS = ["SIGINT", "SIGTERM"] as const
+
 function main(): void {
   let parsed: ReturnType<typeof parseOptions>
   try {
     parsed = parseOptions()
   } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`)
+    process.stderr.write(`${messageOf(error)}\n\n${USAGE}`)
     process.exitCode = 2
     return
   }
@@ -43,19 +46,47 @@ function main(): void {
     ...(parsed.config === undefined ? {} : { configPath: resolve(parsed.config) }),
     version,
   })
-  const connection = serveStdio(() => aburi.server, {
-    onerror: (error) => process.stderr.write(`aburi-mcp: ${error.message}\n`),
+  const connection = serveStdio(aburi.server, {
+    onerror: (error) => say(error.message),
   })
-  // The process ends by itself once stdin closes; this is the last point that knows the directory.
-  process.on("exit", () => rmSync(aburi.directory, { recursive: true, force: true }))
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
+  const removeDirectory = (): void => {
+    try {
+      rmSync(aburi.directory, { recursive: true, force: true })
+    } catch (error) {
+      say(`could not remove ${aburi.directory}: ${messageOf(error)}`)
+    }
+  }
+  const endOn = (signal: (typeof SIGNALS)[number]): void => {
+    for (const each of SIGNALS) process.removeAllListeners(each)
+    // Windows has no signal to end on, so the exit code says which one it was, as aburi's does.
+    if (process.platform === "win32") process.exit(128 + constants.signals[signal])
+    // A process that dies of a signal runs no `exit` listener.
+    removeDirectory()
+    process.kill(process.pid, signal)
+  }
+  // Stdin closing cancels the calls in flight, and the process ends once their runs have.
+  process.on("exit", removeDirectory)
+  let stopping = false
+  for (const signal of SIGNALS) {
+    process.on(signal, () => {
+      // A second signal does not wait for the runs to end.
+      if (stopping) return endOn(signal)
+      stopping = true
       void connection
         .close()
+        .catch((error: unknown) => say(messageOf(error)))
         .then(() => aburi.close())
-        .finally(() => process.kill(process.pid, signal))
+        .finally(() => endOn(signal))
     })
   }
+}
+
+function say(line: string): void {
+  process.stderr.write(`aburi-mcp: ${line}\n`)
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function parseOptions() {

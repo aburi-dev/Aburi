@@ -33,38 +33,56 @@ The server speaks MCP over stdio: requests on stdin, answers on stdout, one JSON
 line. It serves the workspace of the directory it is started in, or of `--cwd`; `--config` is
 passed to every run it makes, as `--config` is to the CLI ([`cli-spec.md`](./cli-spec.md) §13).
 `--help` and `--version` print and exit `0`; any other argument exits `2` with the reason on
-stderr. An agent is configured with the command, for instance:
+stderr.
+
+The server exits `0` once stdin closes: the calls then in flight are cancelled (MC-3), and it ends
+when their runs have, removing its directory (MC-4). `SIGINT` or `SIGTERM` closes the connection,
+waits for the runs to end and removes the directory, then ends the process on that signal; a
+second one ends it at once, the directory removed but the runs not waited for. Windows has no such
+signal for one process to send another: one ended from outside, Ctrl-C aside, ends at once, and its
+directory stays in the system's temporary directory.
+
+An agent is configured with the command, for instance:
 
 ```json
 { "mcpServers": { "aburi": { "command": "npx", "args": ["-y", "@aburi/mcp"] } } }
 ```
 
-Rule MC-1: **each tool call is a run of the `aburi` CLI**, in a process of its own, started with
-the server's working directory and environment. What the call answers is what that run wrote:
-its stdout, its stderr, its exit code and the files it wrote. A plugin that writes to stdout, calls
+Rule MC-1: **every answer comes from runs of the `aburi` CLI**, each in a process of its own,
+started in the directory the server serves with the server's environment. A call naming a scan
+reads what that scan's run wrote and makes no run of its own; `explain` naming none makes two, the
+scan and then `aburi explain`. What a call answers is what its runs wrote: their stdout, their
+stderr, their exit codes and the files they wrote. A plugin that writes to stdout, calls
 `process.exit()` or leaks memory does so in that process, so it neither corrupts the protocol nor
 outlives the call, and an answer is the CLI's own by construction, not a second rendering of the
 same IR that could drift from it.
 
-Rule MC-2: the CLI a run starts is **the workspace's own** `@aburi/cli`, the one that resolves from
-the directory the server serves as `pnpm exec aburi` finds it, at the time of the run. Only where
-none resolves does the server run the `@aburi/cli` it was installed with. A plugin `aburi.json`
+Rule MC-2: the CLI a run starts is **the workspace's own** `@aburi/cli`, the one Node resolves
+from the directory the server serves upward, at the time of the run. Only where none resolves does
+the server run the `@aburi/cli` it was installed with; one that is there but does not load, a
+`package.json` that does not parse for instance, fails the call instead. A plugin `aburi.json`
 names by package is imported from where the CLI is installed, so the workspace's CLI loads the
 plugins the workspace installed, and a server fetched by `npx` answers about the workspace as
 `aburi scan` there would. The CLI of its own loads only the plugins `aburi.json` names by path.
+Each run in the structured result names the bin it started.
 
-Rule MC-3: calls are run **one at a time**, in the order they arrive. Two `aburi diff` runs of one
-repository at once would contend for its base worktree, and a scan already holds the machine's
-processors ([`performance.md`](./performance.md)). A call the client cancels ends its run with
-`SIGTERM`, which removes what it was building as an interrupted `aburi diff` does
-([`cli-spec.md`](./cli-spec.md) §6.4 step 8), and with `SIGKILL` if it is still running five
-seconds later, since a plugin can hold `SIGTERM`. The next call starts only once that run has
-exited.
+Rule MC-3: calls are run **one at a time**, in the order they arrive. A run sizes its work as the
+only one on the machine, `aburi diff` running its two scans at once
+([`cli-spec.md`](./cli-spec.md) §14.1), and the scans' ids follow the order of the calls. A call
+the client cancels ends its run with `SIGTERM`, and with `SIGKILL` if it is still running five
+seconds later, since a plugin can hold `SIGTERM`. On POSIX `SIGTERM` lets an interrupted
+`aburi diff` remove what it was building ([`cli-spec.md`](./cli-spec.md) §6.4 step 8); on
+Windows the process is ended at once, as after `SIGKILL` anywhere, and the server removes what the
+run left (MC-4). The next call starts only once that run has exited and that is done.
 
 Rule MC-4: the server writes **only in a directory of its own** under the system's temporary
 directory, never in the workspace: no `.aburi/`, no `aburi.ir.json` an `aburi explain` would later
-read. That directory is removed when the connection closes, and with it every scan the server
-made; a scan that wrote no IR is removed at once.
+read. Each run is given a directory inside it as its system temp dir (`TMPDIR`, `TEMP` and `TMP`),
+so the base worktree of an `aburi diff` is made there too. When the run ends, whatever it left
+there is removed, a worktree unregistered from the repository first. The server's directory is
+removed when the connection closes, and with it every scan the server made; a scan that wrote no
+answer is removed at once. What the server cannot remove is reported on its stderr, and never
+replaces the answer.
 
 ## 3. Tools
 
@@ -86,23 +104,31 @@ made; a scan that wrote no IR is removed at once.
 - `base` and `head` are each a scan's id or the path of an IR file, so `diff` with `base: "scan-1"`
   and `head: "scan-2"` is what changed between two scans of the tree, committed or not.
 - `failOn` is a list of `--fail-on` values ([`cli-spec.md`](./cli-spec.md) §6.7), `failOnScope` is
-  `--fail-on-scope`, and `maxBytes` is `--max-bytes`, capping `diff.md`.
+  `--fail-on-scope`, and `maxBytes` is `--max-bytes`, capping `diff.md`. The uncapped
+  `diff.full.md` a capped report points to is not returned, since the server removes the run's
+  output: the call without `maxBytes`, or with `format: "json"`, has every change.
+- `target` and `refspec` follow `--` on the command line, so a value that reads as an option is
+  still the target or the refspec.
 - `symbol` is a Symbol id. The answer is then JSON: the Slice whose members hold it
   ([`slice-view.md`](./slice-view.md)) and the change of each member, from `diff.json`.
 
-Every answer carries, beside its text, a structured result with the run's exit code and its stderr,
-and the `scan` it read when there is one. The stderr is the second text block of the answer when
-it is not empty, headed `aburi <command> wrote on stderr (exit <code>):`, since what a scan warns about — a
-file it withdrew, a value it could not classify — qualifies the answer. Each run is started with
+Every answer carries, beside its text, a structured result with each run's bin, arguments, exit
+code and stderr, and the `scan` it read when there is one, failures included. The stderr is the
+second text block of the answer when it is not empty, headed
+`aburi <command> wrote on stderr (exit <code>):`, since what a scan warns about — a file it
+withdrew, a value it could not classify — qualifies the answer. Each run is started with
 `FORCE_COLOR=0`, so that stderr holds no colour whatever the server's environment says: the client
 gets it as text.
 
-Rule MC-5: a call **fails** (`isError`) when its run wrote no answer: `scan` wrote no IR, `diff`
-wrote no `diff.json`, `explain` printed nothing. The text is then the run's stderr, which says why,
-and the exit code is the CLI's (§9 of cli-spec). A run that answered and also exited non-zero
-answers: a scan that withdrew a file (`3`), a `diff` whose `failOn` tripped (`3`), an `explain`
-with several candidates (`2`). A `scan`, a `component` or a `symbol` the call names that does not
-exist fails too, listing the ones that do.
+Rule MC-5: a call **fails** (`isError`) when its run gave no answer: a `scan` or a `diff` that
+ended on a signal or with a code other than `0` and `3`, or wrote no IR, `diff.json`, `diff.md` or
+page, or one that does not parse; an `explain` that ended on a signal or printed nothing. A scan
+the client cancelled gives no answer either, even with its IR written, and no scan it wrote is
+named. The text's first line says how the run ended and what it lacks, the rest is the run's stderr,
+which says why, and the exit code is the CLI's (§9 of cli-spec). A run that answered and also
+exited non-zero answers: a scan that withdrew a file (`3`), a `diff` whose `failOn` tripped (`3`),
+an `explain` with several candidates (`2`). A `scan`, a `component` or a `symbol` the call names
+that does not exist fails too, listing the ones that do.
 
 ## 4. Verifiable Properties
 
@@ -118,11 +144,18 @@ exist fails too, listing the ones that do.
 | MC8 | `diff` with `symbol` naming a changed Symbol, and one naming no changed Symbol | The Slice holding it and its members' changes; the second fails, naming the Symbol |
 | MC9 | `component` or `scan` naming one that does not exist | Fails, listing the ids that do |
 | MC10 | A workspace whose language plugin cannot be loaded | `scan` fails with the CLI's message and exit `3` |
-| MC11 | Two `diff` calls sent at once | Both answered, with the same report |
+| MC11 | Two `diff` calls sent at once | The second run starts once the first has exited |
 | MC12 | `aburi-mcp` over stdio, then stdin closed | The tools listed and a `scan` answered; the process exits and its directory is gone |
 | MC13 | `aburi-mcp --bogus` | exit 2, the argument named on stderr |
 | MC14 | A `scan` the client cancels while a plugin that holds `SIGTERM` is loading, then another call | The run's process has exited before the next call is answered, and the cancelled scan is given no id |
-| MC15 | A workspace whose `node_modules` holds an `@aburi/cli` | Every run starts that CLI |
+| MC15 | A workspace whose `node_modules` holds an `@aburi/cli`, and one whose `@aburi/cli` has a `package.json` that does not parse | Every run starts that CLI, and each run names its bin; the second fails, naming the `package.json` |
+| MC16 | `explain` with a `target` of `--output`, `--config` or `-x`; `diff` with a `refspec` of `--config=<path>` | Each read as the target or the refspec: no matches, and not a valid ref spec; nothing written in the workspace |
+| MC17 | `explain` naming a scan after the tree was edited | That scan's answer, from one run |
+| MC18 | A scan that exits `1` after writing its IR, one that writes an IR cut short, and one that writes no `workspace.md` | Each call fails saying what the run lacks; the first two are given no id |
+| MC19 | `--config` given to the server, `maxBytes` or `failOnScope` given to `diff` | The run is given `--config`, `--max-bytes` or `--fail-on-scope` with the value |
+| MC20 | A `diff` of `HEAD..HEAD` the client cancels while a plugin that takes away the CLI's `SIGTERM` handling is loading | The base worktree is unregistered and removed once the run is killed, and the server's directory holds no run's temp dir |
+| MC21 | A diff, or the server closing, where the directory cannot be removed | The report answered, or the server closed, and the directory named on stderr |
+| MC22 | The server closing, or `aburi-mcp`'s stdin closing, while a run is going | The run's process ends, and the server's directory is removed |
 
 ## 5. Design Decisions
 
