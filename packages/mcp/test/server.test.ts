@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises"
 import { join } from "node:path"
+import { DEFAULT_OUTPUT_DIRNAME } from "@aburi/cli"
 import { git, gitTestEnv, useScratchWorkspace } from "@aburi/test-support"
 import { Client } from "@modelcontextprotocol/client"
 import { InMemoryTransport } from "@modelcontextprotocol/server"
@@ -159,7 +160,7 @@ describe("the aburi MCP server", () => {
     expect(markdown.isError).toBe(false)
     expect(markdown.text).toBe(await readFile(join(cli.root, "diff.md"), "utf8"))
     expect(json.text).toBe(await readFile(join(cli.root, "diff.json"), "utf8"))
-    await expect(access(join(workspace.root, "out"))).rejects.toThrow()
+    await expect(access(join(workspace.root, DEFAULT_OUTPUT_DIRNAME))).rejects.toThrow()
     expect(await git(["status", "--porcelain"], workspace.root)).toBe(
       " M pkgs/api/src/invoice.service.ts\n",
     )

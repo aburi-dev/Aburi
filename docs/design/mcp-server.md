@@ -62,7 +62,7 @@ seconds later, since a plugin can hold `SIGTERM`. The next call starts only once
 exited.
 
 Rule MC-4: the server writes **only in a directory of its own** under the system's temporary
-directory, never in the workspace: no `out/`, no `aburi.ir.json` an `aburi explain` would later
+directory, never in the workspace: no `.aburi/`, no `aburi.ir.json` an `aburi explain` would later
 read. That directory is removed when the connection closes, and with it every scan the server
 made; a scan that wrote no IR is removed at once.
 

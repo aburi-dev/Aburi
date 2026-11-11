@@ -172,7 +172,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
 
 | Option | Meaning |
 |---|---|
-| `--output-dir <path>` | Output directory (default: `config.output.dir`, then `out`). Resolved against the working directory, as the config value is |
+| `--output-dir <path>` | Output directory (default: `config.output.dir`, then `.aburi`). Resolved against the working directory, as the config value is. The default directory, when the run creates it, ignores itself (§5.3) |
 | `--format <json\|md\|both>` | Output format (default: `both`). What the format leaves out is removed from the output directory, not left from an earlier run (§5.3) |
 | `--no-md` | Drops the Markdown output. Alone, equivalent to `--format json`. With `--no-json`, or with any `--format` that would have written Markdown (`md`, `both`), exit 2 |
 | `--no-json` | Drops the IR JSON output. Alone, equivalent to `--format md`. With `--no-md`, or with any `--format` that would have written JSON (`json`, `both`), exit 2 |
@@ -198,6 +198,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
    - **Only Aburi's own files are removed.** The output directory, and `components/` in particular, may hold files of the caller's — a README, notes, Markdown a person wrote, a subdirectory — and those stay, as `components/` itself does. `aburi.ir.json` and `workspace.md` are recognised by name alone, as `aburi diff` recognises its report (§6.4), so a file of the caller's under either name is removed with them. A component page is recognised by name and content both, since its name is any Component id: a regular file directly in `components/`, named `<id>.md` for a valid Component id ([`ir-schema.md`](./ir-schema.md) §4), that opens with the heading the page opens with, `# Component: <id>` ([`markdown-projection.md`](./markdown-projection.md) §5.1), and a line ending, LF or CRLF alike. A file whose name is no Component id, or whose first line is anything else — another heading, or that heading with more on its line — is not one. Reading that line is part of removing the page: the scan reads only as many bytes as the heading and a CRLF take, reading again until it has them or the file ends, and a failure to read is refused the same way
    - **A run that stops before this step removes nothing, and a run writes before it removes.** A plugin that fails to load, a strict scan's undeclared value (exit `3`) or a file the scan could not read (exit `1`) leaves the earlier run's files as they were: together they still describe the last scan that completed, as the discovered-vocabulary record is removed only by a strict scan that completes (§5.2). So does a write that fails or a page that fails to render, since every removal follows the last write: a `--format md` run that cannot write `workspace.md` leaves the earlier `aburi.ir.json` where it was. The removals go one file at a time, so a run that fails at one of them has already removed those before it; nothing the run should have produced is lost, and the next run that completes removes the rest. `aburi diff` removes its earlier report before it starts instead (§6.4): its exit `3` is both the gate's and a plugin failure's, and a caller that reads the report after either would take an earlier one for its own
    - These removals are `aburi scan`'s, whatever the format: a scan run for another command (`runScan` called with that `command`) removes nothing. The scan `aburi explain` runs (§7.4) writes the IR alone, and the scans `aburi diff` runs write into directories of their own
+   - **The default directory ignores itself.** When the output directory is `.aburi` directly in the working directory (`<cwd>/.aburi`) and this run is the one that creates it, a `.gitignore` holding a comment line and `*` is written into it straight after, so the run that creates it leaves `git status` clean without an entry in the repository's own `.gitignore`, and under `respectGitignore` discovery passes over it. The place decides, not the spelling: `--output-dir .aburi`, its absolute path, a path to it through a link, another casing where the filesystem ignores case, and `output.dir: "./.aburi/"` are the default as much as naming nothing is, as the schema's `default` has to mean ([`config.md`](./config.md) §9). A directory that was already there is the caller's, and gets none, so a `.gitignore` the caller rewrote or removed stays as they left it; so does any other directory, which may be one the caller means to commit. A `.gitignore` that appears between the directory's creation and the write is kept, as one the caller put there. A write that fails otherwise ends the run at exit 1, naming the `.gitignore`, and the run first removes the directory it created: left in place, it would read to every later run as one that was already there, and never be ignored. The scan `aburi explain` runs and `aburi diff` (§6.4) create theirs by the same rule
 6. Print the census lines and the path of each artefact written to stdout (§5.5)
 
 ### 5.4 Exit Codes
@@ -231,8 +232,8 @@ refusal.
 ```
 542 kept · 87 dropped · 1234 files
 calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambiguous 3 · no-match 14)
-→ /repo/out/aburi.ir.json
-→ /repo/out/workspace.md
+→ /repo/.aburi/aburi.ir.json
+→ /repo/.aburi/workspace.md
 ```
 
 The kept/dropped line is followed by the call-resolution census in the same format `aburi diff`
@@ -632,7 +633,7 @@ aburi diff --base <ir.json> --head <ir.json>               # specify existing IR
 |---|---|
 | `--base <path>` | Base IR file path (instead of a ref) |
 | `--head <path>` | Head IR file path (instead of a ref) |
-| `--output-dir <path>` | Destination for diff.json / diff.md / diff.full.md (default: `config.output.dir`, then `out`) |
+| `--output-dir <path>` | Destination for diff.json / diff.md / diff.full.md (default: `config.output.dir`, then `.aburi`, ignoring itself when the run creates it directly in the working directory, as `aburi scan`'s does — §5.3) |
 | `--format <json\|md\|both>` | Output format |
 | `--filter <statuses>` | List only the Symbol changes of these statuses in `diff.md`, comma-separated from `added`, `removed`, `changed`, `moved`, `moved+changed`, `dropped-toggled` and `unknown` (§6.8). `diff.json`, the glyph line and `--fail-on` still read every change |
 | `--fail-on <kinds>` | Exit 3 if even one change of the given kinds (status granularity) exists (for CI gates). Repeatable: each occurrence adds its clauses after the earlier ones' (§6.7) |
@@ -785,7 +786,7 @@ Normal:
 ```
 +5 -3 ~12 ↔2 ⤴1
 calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambiguous 3 · no-match 14)
-→ /repo/out/diff.md
+→ /repo/.aburi/diff.md
 ```
 
 The glyphs are added, removed, changed, moved and moved+changed, in that order.
@@ -1022,7 +1023,7 @@ than a name, and is looked up as any other path.
 | Option | Meaning |
 |---|---|
 | `--output <path>` | Write to a file (default: stdout). The directories the path names are created, as `--output-dir` creates its own; a path that cannot hold a file — it names a directory, or a file stands on its parent path — is exit 2 |
-| `--ir <path>` | Use an existing IR file. Resolved against the working directory, as every path-bearing flag is. Without it the command looks for `<output-dir>/aburi.ir.json` — `config.output.dir` when the config names one, otherwise `out` — starting at the working directory and walking up to the workspace root, taking the nearest — `aburi scan` writes under the directory it was run from, and a scan covers the whole workspace wherever it was started, so either place holds an answer about the same tree. Nothing found triggers a scan, or exits 2 under `--no-rescan` |
+| `--ir <path>` | Use an existing IR file. Resolved against the working directory, as every path-bearing flag is. Without it the command looks for `<output-dir>/aburi.ir.json` — `config.output.dir` when the config names one, otherwise `.aburi` — starting at the working directory and walking up to the workspace root, taking the nearest — `aburi scan` writes under the directory it was run from, and a scan covers the whole workspace wherever it was started, so either place holds an answer about the same tree. Nothing found triggers a scan, or exits 2 under `--no-rescan` |
 | `--no-rescan` | Exit `2` when the lookup above finds no IR, instead of scanning. Staleness is not examined: an IR that is found is read whatever its age. An `aburi scan --format md` removes the IR an earlier run left in its output directory (§5.3), so a scan that wrote only pages leaves none to be read in its place |
 | `--config <path>` | The config file the rescan reads, and where `config.output.dir` comes from for the lookup above (§13) |
 | `--debug-resolution` | Append a `## Call resolution` table: one row per call site with the resolved callee, or the [`call-resolution.md`](./call-resolution.md) §8.1 bucket that explains the `null`, plus the competing candidates for `ambiguous`. Those buckets are per-run diagnostics that the IR deliberately does not persist, so the flag **always rescans** and is rejected (exit 2) alongside `--no-rescan` or `--ir`. It is a reporting flag, not a tuning knob — no IR or diff content changes |
@@ -1076,7 +1077,7 @@ never analysed, and it attaches to **every** miss the document could not tie to 
 question named — including a miss in the two naming arms on a file that was analysed after all.
 
 ```
-$ aburi explain src/route.ts --ir out/aburi.ir.json
+$ aburi explain src/route.ts --ir .aburi/aburi.ir.json
 Cannot answer "src/route.ts": this IR never analysed src/route.ts (parse-failed), so it cannot say what that file declares.
 EXIT=3
 ```
@@ -1678,6 +1679,7 @@ a command's option, not a global one (§3).
 | CL71 | `aburi diff main..HEAD` under `--parallel-scans` and under `--no-parallel-scans` with stderr on a terminal; `aburi diff --base <ir> --head <ir>` | The progress line names each scan's side, both sides on one line while both run and never under `--no-parallel-scans`, then `comparing…`, and leaves on the terminal what the run with stderr piped writes, stdout byte for byte the same. File mode draws `comparing…` alone |
 | CL72 | Any command with stderr piped, `TERM=dumb`, or both streams piped under `FORCE_COLOR=1`, `aburi diff main..HEAD --parallel-scans --log-level debug` among them | No progress line; under `FORCE_COLOR=1` the warnings yellow, errors red, `debug:` lines from either side's scan dim, and stderr with the escape sequences stripped byte for byte that of the run without it |
 | CL73 | `aburi explain <id> --ir <missing>` at `--log-level debug`; a run that fails with exit 1 or 3 at `--log-level debug` and at `warn`, its causes including a value that is not an `Error` and a cycle | The first: the message alone, exit 2. The second: at debug the message, then the stack trace and each `caused by:` one, dim under `FORCE_COLOR=1`, a cause that is not an `Error` as `caused by: <value>` and each cause of the cycle once; at warn the message alone |
+| CL74 | `aburi scan`, `aburi diff --base <ir> --head <ir>`, `aburi diff main..HEAD` and `aburi explain <name>` rescanning, with neither `--output-dir` nor `config.output.dir`, where `.aburi/` does not exist; `aburi scan` with `--output-dir .aburi`, its absolute path, its path through a link to the working directory, or `output.dir: "./.aburi/"`; with `--output-dir artifacts`, `output.dir: "artifacts"` or `--output-dir nested/.aburi`; where `.aburi/` exists; after the caller rewrote the `.gitignore` a first run wrote; and where the `.gitignore` cannot be written | The first eight create `.aburi/` holding a `.gitignore` of a comment line and `*`, the ref diff writing neither side's IR there, and in a repository whose files are all committed, `git status --porcelain --untracked-files=all` after `aburi scan` prints nothing. The next five write no `.gitignore`, and the caller's stays as they wrote it. The last exits 1 naming the `.gitignore`, with no `.aburi/` left, and the next run creates both |
 | CL75 | `aburi vocab who-owns` for an id a manifest enumerates, an id only an `effectPrefixes` entry covers, a core effect id, and an extKind a framework plugin's `derivedByPrefixes` also covers | exit 0. One block each: the first with `explicit` and the manifest's description, the second naming the prefix with no description, the third naming no plugin; the last two blocks, the extKind before the derivedBy value (§8.5) |
 | CL76 | `aburi vocab effects --json` with no config found; `aburi vocab plugins` with a config that lists an effect plugin alone, whose `init` throws; `aburi vocab plugins` reading `custom.json` through `--config`, before the subcommand or after it, or through `ABURI_CONFIG` | exit 0 all. The first writes the core effect ids alone and no effect prefix, and says on stderr that no config was found; the second lists that plugin, since nothing calls `init` and no language plugin is needed (§8); the third lists the plugin `custom.json` names, with nothing on stderr |
 | CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value or with two; `aburi vocab list` with a configured plugin that fails to import, or whose manifest has no `version`; with a `frameworkHints` entry the registry refuses | exit 2, nothing on stdout, and stderr opening with the usage of `aburi vocab`, the unknown command, the missing argument or the extra one; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
@@ -1721,3 +1723,7 @@ In CI / Docker / Makefiles, configuring via env is easier than threading flags t
 ### 18.8 Why Planned Features Are Reserved
 
 Reserving the names `aburi watch` / `aburi doctor` / `aburi serve` and the flags of §15 today prevents name collisions and compatibility breaks when they are added later. They are not implemented, but are documented.
+
+### 18.9 Why the Default Output Directory Is `.aburi/`, and Ignores Itself
+
+`out/` is where tsc's `outDir`, Next.js, Electron Forge and VS Code extensions put build output, so Aburi's artefacts would land beside it, go with a `clean` step, and leave a reader of the tree unsure whose they are. A dot-directory named after the tool says whose it is, as `.next/` and `.turbo/` do. The `.gitignore` inside it keeps the change out of the repository's own files: `aburi init` editing the root `.gitignore` would write outside the files Aburi owns, and would not cover a first `aburi scan` run without it. It is written only into a directory the run creates at the default place, so a `.aburi/` the caller made for files of their own — local plugins, notes — is never given a rule that hides them, and a directory named elsewhere, which may be one whose pages the caller commits, is never given one either.

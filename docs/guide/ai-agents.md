@@ -60,7 +60,7 @@ members.
 ## What it leaves alone
 
 The server writes only in a temporary directory of its own, removed when the agent disconnects,
-so no `out/` appears in the workspace. It runs one question at a time, and a question the agent
+so no `.aburi/` appears in the workspace. It runs one question at a time, and a question the agent
 cancels ends the run answering it.
 
 The [design document](../design/mcp-server.md) has the full contract.

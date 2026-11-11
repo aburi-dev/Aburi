@@ -7,7 +7,7 @@ import type {
   Symbol as IRSymbol,
   SkippedFile,
 } from "@aburi/types"
-import { type DiffOptions, IR_JSON_FILENAME, runDiff } from "../src"
+import { DEFAULT_OUTPUT_DIRNAME, type DiffOptions, IR_JSON_FILENAME, runDiff } from "../src"
 import { writeFileAt, writeIRs, writePackageJson } from "./workspace"
 
 /** A Symbol named after its id's last segment, declared in `file` (by default the id's file). */
@@ -69,7 +69,11 @@ export function documentWithCensus(shape: DocumentShape, callResolution: CallRes
 export async function writeScannedWorkspace(root: string, shape: DocumentShape): Promise<void> {
   await writePackageJson(root)
   await writeFileAt(root, ".aburi-workspace", "")
-  await writeFileAt(root, `out/${IR_JSON_FILENAME}`, JSON.stringify(documentWith(shape)))
+  await writeFileAt(
+    root,
+    `${DEFAULT_OUTPUT_DIRNAME}/${IR_JSON_FILENAME}`,
+    JSON.stringify(documentWith(shape)),
+  )
 }
 
 /** `runDiff` over `base` and `head` written into `root`, with every warning it gave. */

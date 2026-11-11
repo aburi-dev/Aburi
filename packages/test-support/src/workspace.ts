@@ -4,7 +4,11 @@ import { dirname, join } from "node:path"
 import { afterEach, beforeEach } from "vitest"
 
 export interface ScratchWorkspace {
-  /** Absolute path of the current test's directory; only meaningful inside a test or hook. */
+  /**
+   * Absolute path of the current test's directory. Read before the first test's `beforeEach` has
+   * made one, as an `it.each` table is collected, it throws: `resolve("", …)` would quietly name a
+   * path in the repository instead.
+   */
   readonly root: string
   /** Write `content` at `rel` under `root`, creating parent directories as needed. */
   writeSource(rel: string, content: string): Promise<void>
@@ -27,12 +31,21 @@ export function useScratchWorkspace(prefix: string): ScratchWorkspace {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
+  const current = (): string => {
+    if (root === "") {
+      throw new Error(
+        `the "${prefix}" scratch workspace has no directory outside a test or its hooks`,
+      )
+    }
+    return root
+  }
+
   return {
     get root() {
-      return root
+      return current()
     },
     async writeSource(rel, content) {
-      const abs = join(root, rel)
+      const abs = join(current(), rel)
       await mkdir(dirname(abs), { recursive: true })
       await writeFile(abs, content, "utf8")
     },
