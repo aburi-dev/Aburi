@@ -4,13 +4,13 @@
   "description": "Aburi CLI: `aburi init | scan | diff | explain | vocab`. Wires @aburi/config + @aburi/core + @aburi/diff + @aburi/markdown-projection into those commands, with commander-driven subcommands, git-worktree-backed ref diff, stable exit codes (0/1/2/3), and a --fail-on gate parser for CI enforcement.",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/cli#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/cli#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/cli"
   },
   "type": "module",

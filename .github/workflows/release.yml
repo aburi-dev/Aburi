@@ -23,7 +23,7 @@ permissions:
 jobs:
   release:
     name: version + publish
-    if: github.event_name == 'push' && github.repository == 'kage1020/Aburi'
+    if: github.event_name == 'push' && github.repository == 'aburi-dev/Aburi'
     runs-on: ubuntu-latest
     outputs:
       published: ${{ steps.changesets.outputs.published }}
@@ -67,7 +67,7 @@ jobs:
     name: tag the action release
     needs: release
     if: |
-      always() && github.repository == 'kage1020/Aburi' && (
+      always() && github.repository == 'aburi-dev/Aburi' && (
         github.event_name == 'workflow_dispatch' || (
           needs.release.result == 'success' && needs.release.outputs.published == 'true'
         )

@@ -67,7 +67,7 @@ file on the main thread.
   `shadcn-ui` to 29.0% on `zod`, with NestJS itself at 8.1%. `no-match` is the
   largest unresolved bucket everywhere but NestJS, whose constructor-injected
   interfaces make `dynamic` larger, and a
-  [hand-classified sample of it](https://github.com/kage1020/Aburi/blob/main/benchmarks/public-repos/no-match/README.md)
+  [hand-classified sample of it](https://github.com/aburi-dev/Aburi/blob/main/benchmarks/public-repos/no-match/README.md)
   puts 70% ± 5% of it within reach of a rule that needs no types. Little of that
   is a missing edge, though: most of it is a global, a binding of the caller or
   a method of a builtin or package type, filed in the wrong bucket. Rules would
@@ -99,4 +99,4 @@ Nothing here is committed.
 ---
 
 The [design documents](./design/overview.md) specify everything above, and the JSON
-Schemas live in [`schema/`](https://github.com/kage1020/Aburi/blob/main/schema/).
+Schemas live in [`schema/`](https://github.com/aburi-dev/Aburi/blob/main/schema/).

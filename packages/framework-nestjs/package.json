@@ -4,13 +4,13 @@
   "description": "Aburi NestJS framework plugin: recognizes @Module / @Controller / @Injectable class-level decorators, HTTP method decorators (@Get / @Post / @Put / @Delete / @Patch / @Options / @Head / @All), and Guards / Interceptors / Pipes / Filters. Emits framework:nestjs:* extKinds and toggles decorator boundary flags on classified Symbols",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/framework-nestjs#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/framework-nestjs#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/framework-nestjs"
   },
   "type": "module",

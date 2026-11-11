@@ -317,7 +317,7 @@ function describeIdFault(symbols: readonly IRSymbol[], path: string): FileFault 
 }
 
 const REPORT =
-  "This is a bug in Aburi — please report it at https://github.com/kage1020/Aburi/issues."
+  "This is a bug in Aburi — please report it at https://github.com/aburi-dev/Aburi/issues."
 
 function unhandled(what: string, value: never): CoreError {
   return new CoreError(

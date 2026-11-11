@@ -15,7 +15,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy
-    if: github.repository == 'kage1020/Aburi'
+    if: github.repository == 'aburi-dev/Aburi'
     runs-on: ubuntu-latest
     steps:
       # Full history: VitePress' lastUpdated reads each page's date from the git log.

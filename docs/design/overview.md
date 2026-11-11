@@ -88,7 +88,7 @@ Details are covered by the documents in this directory:
 
 ## 5. IR and Config
 
-The IR schema (`aburi.ir.v1`) is defined in [`ir-schema.md`](./ir-schema.md); the JSON Schema is [`schema/aburi.ir.v1.json`](https://github.com/kage1020/Aburi/blob/main/schema/aburi.ir.v1.json).
+The IR schema (`aburi.ir.v1`) is defined in [`ir-schema.md`](./ir-schema.md); the JSON Schema is [`schema/aburi.ir.v1.json`](https://github.com/aburi-dev/Aburi/blob/main/schema/aburi.ir.v1.json).
 
 The configuration file is `aburi.json` or `aburi.jsonc` (workspace root). Details in [`config.md`](./config.md).
 

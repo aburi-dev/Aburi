@@ -6,10 +6,10 @@
   "description": "Semantic IR extraction for high-level code review",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi",
+  "homepage": "https://github.com/aburi-dev/Aburi",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git"
+    "url": "git+https://github.com/aburi-dev/Aburi.git"
   },
   "engines": {
     "node": ">=24"

@@ -68,7 +68,7 @@ describe("classifyConfigError — what is not a ConfigError at all", () => {
     expect(cliError.code).toBe("runtime-error")
     expect(cliError.message).toContain("Internal error while loading the Aburi config")
     expect(cliError.message).toContain("This is a bug in Aburi, not in your configuration")
-    expect(cliError.message).toContain("https://github.com/kage1020/Aburi/issues")
+    expect(cliError.message).toContain("https://github.com/aburi-dev/Aburi/issues")
     expect(cliError.cause).toBe(thrown)
   })
 

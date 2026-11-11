@@ -11,7 +11,7 @@ a development environment and what we expect from contributions.
 ## Setup
 
 ```bash
-git clone https://github.com/kage1020/Aburi.git
+git clone https://github.com/aburi-dev/Aburi.git
 cd Aburi
 pnpm install
 ```
@@ -201,7 +201,7 @@ merging the release PR created by the release workflow publishes the packages
 to npm, and that same run deploys the docs site (see above).
 
 Publishing uses npm Trusted Publishing (OIDC), so no npm token exists anywhere. On npmjs.com every
-`@aburi/*` package needs a trusted publisher entry for repository `kage1020/Aburi` and workflow
+`@aburi/*` package needs a trusted publisher entry for repository `aburi-dev/Aburi` and workflow
 `.github/workflows/release.yml`, with no environment restriction. Renaming that workflow, or adding
 an `environment:` to its job, breaks publishing until every entry is updated to match.
 

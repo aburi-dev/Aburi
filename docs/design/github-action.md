@@ -5,7 +5,7 @@ request, posts the report as one comment it keeps rewriting, and fails the check
 `--fail-on` gate trips.
 
 See: [`cli-spec.md`](./cli-spec.md) §6.4 (`aburi diff`), §9 (exit codes), §6.7 (`--fail-on` grammar)
-Implementation: [`packages/github-action/action.yml`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/action.yml)
+Implementation: [`packages/github-action/action.yml`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/action.yml)
 
 ---
 
@@ -75,7 +75,7 @@ against one that has them: everything the base branch added, changed or removed 
 as the pull request's own, `--fail-on removed` fails a pull request that deleted nothing, and the
 header names `head.sha` for a tree that is the merge.
 
-The fallback, [`scripts/resolve-refspec.mjs`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/resolve-refspec.mjs),
+The fallback, [`scripts/resolve-refspec.mjs`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/resolve-refspec.mjs),
 reads the commit checked out in `working-directory`, where the CLI will run:
 
 | Checked out | Ref spec | Reports |
@@ -122,7 +122,7 @@ says the checkout is the base branch and points at a ref for `actions/checkout`.
 
 The step runs after the toolchain setup, so the resolver uses the pinned Node when there is one, and
 from `working-directory`, because the commit it reads has to be the one the CLI scans. Its body is
-[`scripts/refspec-step.sh`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/refspec-step.sh),
+[`scripts/refspec-step.sh`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/refspec-step.sh),
 a committed script for the reason the resolvers are (§3.2). A step output ends at a newline and
 `$(...)` strips only the last one, so it writes `value` only for a one-line answer, and the resolver
 refuses a `refspec` input that spans lines. Any other outcome records its exit code as
@@ -174,7 +174,7 @@ The one arrangement it does not serve is Yarn PnP, which has no `node_modules` a
 `yarn node` to load `.pnp.cjs`. `cli: workspace` exits 2 there; `cli: dlx` is the answer for a PnP
 project whose config names no plugin by package.
 
-The resolver is [`scripts/resolve-cli-bin.mjs`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/resolve-cli-bin.mjs) —
+The resolver is [`scripts/resolve-cli-bin.mjs`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/resolve-cli-bin.mjs) —
 a committed script rather than an inline heredoc, so that it can be run in tests, and plain `.mjs`
 rather than built output, because a consumer references the action by path and nothing builds this
 repository for them. Its contract:
@@ -222,13 +222,13 @@ including to a caller that runs the action under `continue-on-error` and gates o
 step that can stop the action before the diff records its own code, and the final step passes on
 the diff's or, failing that, the stopping step's. None recorded means a setup step failed: that is
 1, with an annotation, rather than an empty output that reads as a pass. Its body is
-[`scripts/exit-code-step.sh`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/exit-code-step.sh).
+[`scripts/exit-code-step.sh`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/exit-code-step.sh).
 
 The comment step is skipped for exit 1 and 2, where `diff.md` is missing or partial and an ENOENT
 from the upsert would bury the real failure. Exit 3 alone does not say a report exists, since a
 plugin error exits 3 before anything is written, so the step also needs a non-empty
 `diff-md-path`, and the diff step sets one only for a file that is there after the CLI returns
-([`scripts/report-paths.mjs`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/report-paths.mjs)).
+([`scripts/report-paths.mjs`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/report-paths.mjs)).
 That check means "this run wrote it" because `aburi diff` removes the reports an earlier run left
 before it compares anything. A path it does set is absolute, resolved from `working-directory`, so
 an absolute `output-dir` reaches the comment step as itself.
@@ -247,7 +247,7 @@ comment is never rewritten, whether it quotes the marker in a code span or opens
 fork's author could post one before the `workflow_run` companion (§5.1) runs. Both writers put the
 marker first, even in a report that quotes it further down.
 
-The upsert itself is [`scripts/upsert-comment.mjs`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/upsert-comment.mjs),
+The upsert itself is [`scripts/upsert-comment.mjs`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/upsert-comment.mjs),
 a committed dependency-free script rather than an inline `actions/github-script` block, for the
 reason the CLI resolver is a script too — it can be run in a test — and for one the resolver does
 not have: a second caller runs it (§5.1), and an inline block cannot be called from a workflow.
@@ -271,8 +271,8 @@ So the work splits across two workflows, which is what this repository does:
 
 | | Runs as | Does |
 |---|---|---|
-| [`aburi.yml`](https://github.com/kage1020/Aburi/blob/main/.github/workflows/aburi.yml) | `pull_request`, read-only on a fork | Analyses the head, gates the check, uploads `.aburi/` as the `aburi-diff` artifact, hidden files included since the directory is one |
-| [`aburi-comment.yml`](https://github.com/kage1020/Aburi/blob/main/.github/workflows/aburi-comment.yml) | `workflow_run`, base repository | Downloads that artifact and upserts the comment |
+| [`aburi.yml`](https://github.com/aburi-dev/Aburi/blob/main/.github/workflows/aburi.yml) | `pull_request`, read-only on a fork | Analyses the head, gates the check, uploads `.aburi/` as the `aburi-diff` artifact, hidden files included since the directory is one |
+| [`aburi-comment.yml`](https://github.com/aburi-dev/Aburi/blob/main/.github/workflows/aburi-comment.yml) | `workflow_run`, base repository | Downloads that artifact and upserts the comment |
 
 Three things make the second half safe to give a writable token:
 
@@ -313,9 +313,9 @@ signal, and a failure shows up in the Actions tab.
 
 `aburi-comment.yml` is this repository's own configuration rather than a template: its checkout
 takes the upsert script from the repository the workflow lives in. A consumer's copy needs
-`repository: kage1020/Aburi` and a pinned `ref:` on that step — which adds a line to the argument
+`repository: aburi-dev/Aburi` and a pinned `ref:` on that step — which adds a line to the argument
 above, since it runs third-party code in the privileged half — and
-[`packages/github-action/README.md`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/README.md)
+[`packages/github-action/README.md`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/README.md)
 carries that recipe. A consumer who does not want the second workflow at all can keep
 `comment: false` on fork pull requests and read the report from the artifact; the diff and the gate
 run either way.
@@ -341,7 +341,7 @@ The budget is `ABURI_COMMENT_BODY_MAX_BYTES` in `src/comment.ts`, and the manife
 the number: a marker of a different length moves the budget, and a manifest still passing the old
 one is either 29 bytes short or 29 bytes over.
 
-The decision lives in [`scripts/resolve-max-bytes.mjs`](https://github.com/kage1020/Aburi/blob/main/packages/github-action/scripts/resolve-max-bytes.mjs)
+The decision lives in [`scripts/resolve-max-bytes.mjs`](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/scripts/resolve-max-bytes.mjs)
 rather than in a branch inside the step, for the reason the CLI resolver does (§3.2): a `run:`
 block is never executed by a test, so everything a test can say about one is spelling. Dropping a
 guard from it would leave CI green and break every run — and the failure here is the quiet kind,
