@@ -1,5 +1,11 @@
 # @aburi/effects-nest
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/plugin-registry@0.7.0`, `@aburi/types@0.8.0`
+
 ## 0.5.0
 
 ### Minor Changes

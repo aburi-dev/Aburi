@@ -1,5 +1,17 @@
 # @aburi/effects-prisma
 
+## 0.6.0
+
+### Minor Changes
+
+- f74ae9d: An effect plugin can now decline a call it recognises but cannot classify: `classify()` may return `{ declined: reason }` (`EffectDecline`) instead of `null`. A declined call that no later plugin classifies stays in `calls[]`, and the IR names it in the new `stats.declinedCalls` — plugin, owning Symbol, target, line and reason — so a call left unclassified on purpose can be told from one no plugin recognised. An empty or non-string reason, or an answer carrying both `effectId` and `declined`, fails the run with `scan-plugin-misconfigured`, and the integrity check refuses a `stats.declinedCalls` entry whose call its Symbol does not carry.
+  
+  `@aburi/effects-trpc` declines the `query` terminal in a file that imports `@trpc/server` (`effects-plugin:trpc:server-file-query`), `@aburi/effects-prisma` declines `$queryRaw`, `$executeRaw` and the other raw-query methods (`effects-plugin:prisma:raw-query`), and `@aburi/effects-drizzle` declines `.execute(statement)` on a Drizzle client (`effects-plugin:drizzle:raw-sql`). `aburi explain` lists a Symbol's declines under `## Declined effects`.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/plugin-registry@0.7.0`, `@aburi/types@0.8.0`
+
 ## 0.5.0
 
 ### Minor Changes

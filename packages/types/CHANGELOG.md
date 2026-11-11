@@ -1,5 +1,45 @@
 # @aburi/types
 
+## 0.8.0
+
+### Minor Changes
+
+- bcafe89: Brand `RelativePath`, so a path nothing checked cannot be written into the IR
+  
+  `RelativePath` — the type of `symbols[].source.file`, `components[].roots[]` and `workspace.managers[].roots[]` — is now a branded string like `SymbolId` and `ComponentId`: it still reads as a `string`, but a bare `string` no longer satisfies it. `SourceFile.path`, the path a language plugin is handed, carries the brand, so a plugin that writes `ctx.file.path` back as `source.file` needs no change. `toDocumentPath` from `@aburi/core` is the only other way to mint one, and now takes an optional subject to name the value in its refusal.
+  
+  A language plugin whose candidate carries a `source.file` the path grammar refuses — a backslash, a `..` segment, an absolute path — now withdraws that file, recorded under `extractionFailures` with code `non-posix-path` and a message naming the plugin, instead of failing the whole scan at the integrity check once every file was extracted. The file keeps its recoverable parse errors, as a file withdrawn for a duplicate Symbol id does.
+  
+  In `@aburi/core`, `DiscoveredFile.path` and `WorkspaceCandidate.relativeRoot` are `RelativePath`. In `@aburi/diff`, the lost-file and rename maps are keyed by `string`, as `stats.skippedFiles[].path` and `GitRenameMap` are.
+- ed8231e: Add `--quiet` to `aburi scan` and `aburi diff`, and `--filter` to `aburi diff`
+  
+  `aburi scan --quiet` prints the two census lines alone, and `aburi diff --quiet` the glyph line alone; stderr, the files written and the exit code are unchanged.
+  
+  `aburi diff --filter <statuses>` lists only the changes of the statuses named in `diff.md`, with a note under the Summary saying how many it left out. A Slice holding a kept change is drawn whole, and component changes, dependency changes and Not compared are listed in full, except a dependency change from test code whose caller the filter left out, which the note counts. `diff.json`, the glyph line and `--fail-on` still read every change, and when a tripped `--fail-on` clause counted changes the filter leaves out, stderr says how many and of which statuses. An empty value, an empty segment or a word that is no status exits 2. `runDiff` takes the filter as that string or as a list of statuses.
+  
+  `projectDiff` takes the filter as its `statuses` option, and `@aburi/types` exports every `SymbolChange` status as the frozen `SYMBOL_CHANGE_STATUSES`, with its type `SymbolChangeStatus` and the guard `isSymbolChangeStatus`.
+- f74ae9d: An effect plugin can now decline a call it recognises but cannot classify: `classify()` may return `{ declined: reason }` (`EffectDecline`) instead of `null`. A declined call that no later plugin classifies stays in `calls[]`, and the IR names it in the new `stats.declinedCalls` — plugin, owning Symbol, target, line and reason — so a call left unclassified on purpose can be told from one no plugin recognised. An empty or non-string reason, or an answer carrying both `effectId` and `declined`, fails the run with `scan-plugin-misconfigured`, and the integrity check refuses a `stats.declinedCalls` entry whose call its Symbol does not carry.
+  
+  `@aburi/effects-trpc` declines the `query` terminal in a file that imports `@trpc/server` (`effects-plugin:trpc:server-file-query`), `@aburi/effects-prisma` declines `$queryRaw`, `$executeRaw` and the other raw-query methods (`effects-plugin:prisma:raw-query`), and `@aburi/effects-drizzle` declines `.execute(statement)` on a Drizzle client (`effects-plugin:drizzle:raw-sql`). `aburi explain` lists a Symbol's declines under `## Declined effects`.
+- eefcfb3: A language plugin's `LanguageId` is now its manifest's `languageId`, not a field of the plugin object: `LanguagePlugin.languageId` is removed, and `LangManifest` carries `languageId`. The plugin manifest schema adds it as an optional field that only a `lang` manifest may hold, and `VocabRegistry.register` requires it of every `lang` manifest. The registry refuses a token outside `[a-z][a-z0-9]*`, the reserved `slice`, and a token another registered plugin already declared (`duplicate-id`, naming both). The core refuses, with `scan-plugin-misconfigured`, a language plugin handed to `scan` whose manifest carries no string `languageId` (before any file is parsed) and a Symbol id whose prefix is not the minting plugin's `languageId`. `EffectsManifest` and `FrameworkManifest` no longer admit a `languageId`. `LANGUAGE_ID_PATTERN` and `RESERVED_LANGUAGE_IDS` move to `@aburi/types`, beside `LANGUAGE_ID_GRAMMAR`, the unanchored grammar, and `@aburi/core` no longer exports `RESERVED_LANGUAGE_IDS`.
+- a61aa54: An owner that no stage could pair by name is paired on its members. `class Invoice { render() }` that moved file without git rename information used to report `added Invoice` and `removed Invoice` beside `moved Invoice.render`, because a class name of one word and a null signature leave stage 3 and stage 4 nothing to read; a class pluralised in place split the same way while each of its methods paired. After stage 4, an unpaired class, namespace or object literal a binding holds is paired with the head owner its member pairs all point into, when every member pair of that head owner comes back from it, the two are of one kind and at one nesting depth, and their names pass the owner gate that stage 4 already asks of a member's owner. Nested owners are settled deepest first, so a namespace pairs on the class inside it. A class split into two, merged with another, or moved into a class of an unrelated name or a scope deeper stays added and removed.
+  
+  The pair's rationale is `name-signature`, and its `moved` or `moved+changed` entry carries `throughMembers`, the number of member pairs it rests on. The field is optional in `aburi.diff.v1.json` and written only on such a pair: a writer that predates it never paired an owner this way, so its absence means the pairing rests on the rationale alone. Under `--log-level debug`, stage 4 says why it left an owner unpaired although its members paired, and no longer writes its "not compared by name" line for an owner it then paired.
+  
+  `matchStageNameSignature` takes a `NameSignatureOptions`, `{ paired, logger }`, as its third argument in place of a bare `Logger`, and the argument is required. `paired` is what stages 1 to 3 paired, which says where an owner's members went: pass `{ paired: [], logger }` where a `Logger` was passed, and `{ paired: [] }` where nothing was. A TypeScript caller still passing a `Logger` gets a compile error; a JavaScript one gets a `TypeError` for the missing `paired`. `SymbolMoved` and `SymbolMovedChanged` in `@aburi/types` gain the optional `throughMembers`.
+
+### Patch Changes
+
+- 7cc013b: Write to `.aburi/` by default instead of `out/`
+  
+  With neither `--output-dir` nor `output.dir` in the config, `aburi scan`, `aburi diff` and `aburi explain` now write their artefacts to `.aburi/`, and that is where `aburi explain` looks for an IR. `out/` is where tsc, Next.js, Electron Forge and VS Code extensions put build output, so Aburi's files landed beside theirs and went with a `clean` step.
+  
+  When a run creates `.aburi/` directly in the working directory, it writes a `.gitignore` into it that ignores everything there, so the run that creates it leaves `git status` clean with nothing added to your own `.gitignore`. What decides is the place, not the spelling: `--output-dir .aburi`, its absolute path, a path to it through a link and `output.dir: ".aburi"` get the same file. If that `.gitignore` cannot be written, the run fails and removes the directory it created, so the next run starts afresh. A `.aburi/` that was already there is left as it is, as is any other output directory, which may be one you commit.
+  
+  The GitHub Action's `output-dir` input now defaults to `.aburi` too, and the config schema's `output.dir` default reads `".aburi"`.
+  
+  To keep the old place, set `"output": { "dir": "out" }` in `aburi.json`, and `output-dir: out` on the action. A workflow that reads `out/diff.md` or uploads `out/` as an artifact has to read `.aburi/` instead, and `actions/upload-artifact` needs `include-hidden-files: true` to upload a dot-directory.
+
 ## 0.7.0
 
 ### Minor Changes

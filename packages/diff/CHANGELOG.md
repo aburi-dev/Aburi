@@ -1,5 +1,27 @@
 # @aburi/diff
 
+## 0.8.0
+
+### Minor Changes
+
+- a61aa54: An owner that no stage could pair by name is paired on its members. `class Invoice { render() }` that moved file without git rename information used to report `added Invoice` and `removed Invoice` beside `moved Invoice.render`, because a class name of one word and a null signature leave stage 3 and stage 4 nothing to read; a class pluralised in place split the same way while each of its methods paired. After stage 4, an unpaired class, namespace or object literal a binding holds is paired with the head owner its member pairs all point into, when every member pair of that head owner comes back from it, the two are of one kind and at one nesting depth, and their names pass the owner gate that stage 4 already asks of a member's owner. Nested owners are settled deepest first, so a namespace pairs on the class inside it. A class split into two, merged with another, or moved into a class of an unrelated name or a scope deeper stays added and removed.
+  
+  The pair's rationale is `name-signature`, and its `moved` or `moved+changed` entry carries `throughMembers`, the number of member pairs it rests on. The field is optional in `aburi.diff.v1.json` and written only on such a pair: a writer that predates it never paired an owner this way, so its absence means the pairing rests on the rationale alone. Under `--log-level debug`, stage 4 says why it left an owner unpaired although its members paired, and no longer writes its "not compared by name" line for an owner it then paired.
+  
+  `matchStageNameSignature` takes a `NameSignatureOptions`, `{ paired, logger }`, as its third argument in place of a bare `Logger`, and the argument is required. `paired` is what stages 1 to 3 paired, which says where an owner's members went: pass `{ paired: [], logger }` where a `Logger` was passed, and `{ paired: [] }` where nothing was. A TypeScript caller still passing a `Logger` gets a compile error; a JavaScript one gets a `TypeError` for the missing `paired`. `SymbolMoved` and `SymbolMovedChanged` in `@aburi/types` gain the optional `throughMembers`.
+
+### Patch Changes
+
+- bcafe89: Brand `RelativePath`, so a path nothing checked cannot be written into the IR
+  
+  `RelativePath` — the type of `symbols[].source.file`, `components[].roots[]` and `workspace.managers[].roots[]` — is now a branded string like `SymbolId` and `ComponentId`: it still reads as a `string`, but a bare `string` no longer satisfies it. `SourceFile.path`, the path a language plugin is handed, carries the brand, so a plugin that writes `ctx.file.path` back as `source.file` needs no change. `toDocumentPath` from `@aburi/core` is the only other way to mint one, and now takes an optional subject to name the value in its refusal.
+  
+  A language plugin whose candidate carries a `source.file` the path grammar refuses — a backslash, a `..` segment, an absolute path — now withdraws that file, recorded under `extractionFailures` with code `non-posix-path` and a message naming the plugin, instead of failing the whole scan at the integrity check once every file was extracted. The file keeps its recoverable parse errors, as a file withdrawn for a duplicate Symbol id does.
+  
+  In `@aburi/core`, `DiscoveredFile.path` and `WorkspaceCandidate.relativeRoot` are `RelativePath`. In `@aburi/diff`, the lost-file and rename maps are keyed by `string`, as `stats.skippedFiles[].path` and `GitRenameMap` are.
+- eefcfb3: A language plugin's `LanguageId` is now its manifest's `languageId`, not a field of the plugin object: `LanguagePlugin.languageId` is removed, and `LangManifest` carries `languageId`. The plugin manifest schema adds it as an optional field that only a `lang` manifest may hold, and `VocabRegistry.register` requires it of every `lang` manifest. The registry refuses a token outside `[a-z][a-z0-9]*`, the reserved `slice`, and a token another registered plugin already declared (`duplicate-id`, naming both). The core refuses, with `scan-plugin-misconfigured`, a language plugin handed to `scan` whose manifest carries no string `languageId` (before any file is parsed) and a Symbol id whose prefix is not the minting plugin's `languageId`. `EffectsManifest` and `FrameworkManifest` no longer admit a `languageId`. `LANGUAGE_ID_PATTERN` and `RESERVED_LANGUAGE_IDS` move to `@aburi/types`, beside `LANGUAGE_ID_GRAMMAR`, the unanchored grammar, and `@aburi/core` no longer exports `RESERVED_LANGUAGE_IDS`.
+- Updated dependencies: `@aburi/core@0.8.0`, `@aburi/types@0.8.0`
+
 ## 0.7.0
 
 ### Minor Changes
