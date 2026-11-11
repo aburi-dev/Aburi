@@ -93,7 +93,9 @@ made; a scan that wrote no IR is removed at once.
 Every answer carries, beside its text, a structured result with the run's exit code and its stderr,
 and the `scan` it read when there is one. The stderr is the second text block of the answer when
 it is not empty, headed `aburi <command> wrote on stderr (exit <code>):`, since what a scan warns about — a
-file it withdrew, a value it could not classify — qualifies the answer.
+file it withdrew, a value it could not classify — qualifies the answer. Each run is started with
+`FORCE_COLOR=0`, so that stderr holds no colour whatever the server's environment says: the client
+gets it as text.
 
 Rule MC-5: a call **fails** (`isError`) when its run wrote no answer: `scan` wrote no IR, `diff`
 wrote no `diff.json`, `explain` printed nothing. The text is then the run's stderr, which says why,
@@ -112,7 +114,7 @@ exist fails too, listing the ones that do.
 | MC4 | `workspace`, `component` or `explain` naming no scan, twice | Each scans afresh and says which scan it read, `scan-1` then `scan-2` |
 | MC5 | `diff` with `refspec: "HEAD..HEAD"` over an uncommitted edit, as Markdown and as JSON | `diff.md` and `diff.json` of `aburi diff HEAD..HEAD`; nothing written in the workspace |
 | MC6 | `diff` with `base` and `head` naming two scans, before and after an edit | The report of `aburi diff --base <first IR> --head <second IR>` |
-| MC7 | `diff` with a `failOn` that trips | Not a failure: the report, exit `3`, and the tripped clause on stderr |
+| MC7 | `diff` with a `failOn` that trips, with and without `FORCE_COLOR=1` in the server's environment | Not a failure: the report, exit `3`, and the tripped clause on stderr, uncoloured |
 | MC8 | `diff` with `symbol` naming a changed Symbol, and one naming no changed Symbol | The Slice holding it and its members' changes; the second fails, naming the Symbol |
 | MC9 | `component` or `scan` naming one that does not exist | Fails, listing the ids that do |
 | MC10 | A workspace whose language plugin cannot be loaded | `scan` fails with the CLI's message and exit `3` |

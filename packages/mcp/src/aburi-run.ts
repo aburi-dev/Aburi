@@ -33,7 +33,8 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
     }
     const child = spawn(process.execPath, [aburiBin(options.cwd), ...argv], {
       cwd: options.cwd,
-      env: options.env,
+      // Its stderr is kept as text, where colour would be escape sequences.
+      env: { ...options.env, FORCE_COLOR: "0" },
       stdio: ["ignore", "pipe", "pipe"],
     })
     let escalation: NodeJS.Timeout | undefined

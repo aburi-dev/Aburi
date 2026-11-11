@@ -18,10 +18,10 @@ afterEach(async () => {
   open = null
 })
 
-async function connected(): Promise<Client> {
+async function connected(env: NodeJS.ProcessEnv = {}): Promise<Client> {
   const server = createAburiServer({
     cwd: workspace.root,
-    env: gitTestEnv(workspace.root),
+    env: { ...gitTestEnv(workspace.root), ...env },
     version: "0.0.0-test",
   })
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair()
@@ -188,17 +188,21 @@ describe("the aburi MCP server", () => {
     expect(report.text).toContain("InvoiceService.create")
   })
 
-  it("answers a diff whose failOn trips, with the gate on stderr and exit 3", async () => {
-    await writeRepository(workspace.root)
-    await writeFileAt(workspace.root, "pkgs/api/src/invoice.service.ts", SERVICE_EDITED)
-    const client = await connected()
-    const report = await call(client, "diff", { refspec: "HEAD..HEAD", failOn: ["changed"] })
+  it.each([{}, { FORCE_COLOR: "1" }])(
+    "answers a diff whose failOn trips, with the gate on stderr uncoloured and exit 3, under %j",
+    async (env) => {
+      await writeRepository(workspace.root)
+      await writeFileAt(workspace.root, "pkgs/api/src/invoice.service.ts", SERVICE_EDITED)
+      const client = await connected(env)
+      const report = await call(client, "diff", { refspec: "HEAD..HEAD", failOn: ["changed"] })
 
-    expect(report.isError).toBe(false)
-    expect(report.structured.runs[0]?.exitCode).toBe(3)
-    expect(report.stderr).toMatch(/^aburi diff wrote on stderr \(exit 3\):\n/)
-    expect(report.stderr).toContain("--fail-on changed tripped")
-  })
+      expect(report.isError).toBe(false)
+      expect(report.structured.runs[0]?.exitCode).toBe(3)
+      expect(report.stderr).toMatch(/^aburi diff wrote on stderr \(exit 3\):\n/)
+      expect(report.stderr).toContain("--fail-on changed tripped")
+      expect(report.stderr).not.toContain("\u001b[")
+    },
+  )
 
   it("answers diff with the Slice holding a symbol, and fails for one no Slice holds", async () => {
     await writeRepository(workspace.root)
