@@ -1,3 +1,4 @@
+import { SYMBOL_CHANGE_STATUSES } from "@aburi/types"
 import { Command } from "commander"
 import {
   collect,
@@ -200,6 +201,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
     .option("--respect-gitignore", "honour .gitignore patterns (overrides config)")
     .option("--no-respect-gitignore", "ignore .gitignore patterns (overrides config)")
     .option("--compact", "compact JSON output")
+    .option("--quiet", "print the census lines alone, not the path of each artefact")
     .option(
       "--no-timestamp",
       "omit discoveredAt from aburi-vocab-discovered.json (default under CI)",
@@ -222,6 +224,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
         ignore?: string[]
         respectGitignore?: boolean
         compact?: boolean
+        quiet?: boolean
         timestamp?: boolean
         config?: string
         lsp?: boolean
@@ -256,8 +259,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               `${unnameable === 0 ? "" : ` · ${unnameable} unnameable`}\n`,
           )
           out(`${report.callResolutionLine}\n`)
-          if (report.irPath !== null) out(`→ ${report.irPath}\n`)
-          if (report.workspaceMdPath !== null) out(`→ ${report.workspaceMdPath}\n`)
+          if (cmdOptions.quiet !== true) {
+            if (report.irPath !== null) out(`→ ${report.irPath}\n`)
+            if (report.workspaceMdPath !== null) out(`→ ${report.workspaceMdPath}\n`)
+          }
           return report.exitCode
         })(),
     )
@@ -285,7 +290,12 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
       "all | non-test: whether --fail-on counts the Symbols of the files config testFiles names (default: all)",
       parseFailOnScope,
     )
+    .option(
+      "--filter <statuses>",
+      `list only these statuses' changes in diff.md, comma-separated: ${SYMBOL_CHANGE_STATUSES.join(", ")} (diff.json and --fail-on still read every change)`,
+    )
     .option("--compact", "compact JSON output")
+    .option("--quiet", "print the glyph line alone")
     .option(
       "--max-bytes <n>",
       "cap diff.md at n UTF-8 bytes, shortening sections to names and then dropping them least-important-first (GitHub rejects a comment body over 65536)",
@@ -308,7 +318,9 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
           failOn?: string[]
           failOnScope?: FailOnScope
           compact?: boolean
+          quiet?: boolean
           maxBytes?: number
+          filter?: string
           parallelScans?: boolean
           config?: string
         },
@@ -329,6 +341,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               failOnScope: cmdOptions.failOnScope,
               compact: cmdOptions.compact,
               maxBytes: cmdOptions.maxBytes,
+              filter: cmdOptions.filter,
               parallelScans: cmdOptions.parallelScans,
               logLevel: logLevel(),
               configPath: resolveConfigPath(cmdOptions.config, env),
@@ -338,10 +351,12 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
             ...progressTo(showDiffProgress),
           })
           out(`${report.summaryLine}\n`)
-          if (report.callResolutionLine !== null) {
-            out(`${report.callResolutionLine}\n`)
+          if (cmdOptions.quiet !== true) {
+            if (report.callResolutionLine !== null) {
+              out(`${report.callResolutionLine}\n`)
+            }
+            if (report.diffMdPath !== null) out(`→ ${report.diffMdPath}\n`)
           }
-          if (report.diffMdPath !== null) out(`→ ${report.diffMdPath}\n`)
           if (report.triggered !== null) {
             terminal.say(formatTriggered(report.triggered), "error")
           }

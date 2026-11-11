@@ -5,6 +5,7 @@ import {
   makeDiff,
   movedChanged,
   relativePath,
+  sectionOf,
   sliceId,
   sliceOf,
   symbolAt,
@@ -13,7 +14,6 @@ import {
 import type { Symbol as IRSymbol, SliceRecord, SymbolChange } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ProjectionInvariantError, projectDiff } from "../src"
-import { sectionOf } from "./markdown"
 
 const HEADING = "## 🧵 Slice View"
 
