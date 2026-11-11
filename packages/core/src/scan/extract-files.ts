@@ -50,6 +50,7 @@ export interface ExtractFilesInput {
   registry: VocabRegistry
   components: readonly Component[]
   logger: Logger
+  progress?: (done: number, total: number) => void
 }
 
 export interface ExtractedFiles {
@@ -105,7 +106,9 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     loadSource: (file) => loadSourceFile(input.workspaceRoot, file),
     treeReleaseFailures: out.treeReleaseFailures,
   })
-  for (const discoveredFile of input.files) {
+  const total = input.files.length
+  for (const [done, discoveredFile] of input.files.entries()) {
+    input.progress?.(done, total)
     const language = router.route(discoveredFile.path)
     if (language === null) {
       out.skipped.push({
@@ -240,6 +243,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
         throw unhandledOutcome(result)
     }
   }
+  input.progress?.(total, total)
 
   for (const [plugin, count] of countBy(out.treeReleaseFailures, (failure) => failure.plugin)) {
     if (count > 1) {

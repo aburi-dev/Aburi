@@ -20,8 +20,10 @@ export interface VocabOptions {
 
 export interface VocabOutcome {
   stdout: string
-  /** Lines for stderr, each without its line ending, in the order they are to be written, ahead of stdout. */
-  stderr: readonly string[]
+  /** Each without its line ending, for stderr ahead of stdout. */
+  warnings: readonly string[]
+  /** Why the run exits 1, for stderr after the warnings. */
+  error?: string
   exitCode: ExitCode
 }
 
@@ -111,7 +113,7 @@ export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
     workspaceRoot,
     syntheticPlugins: loaded.syntheticPlugins,
   })
-  const notes = loaded.found ? [] : [NO_CONFIG]
+  const warnings = loaded.found ? [] : [NO_CONFIG]
   const json = options.json === true
   const { query } = options
   if (query.kind === "who-owns") {
@@ -119,13 +121,14 @@ export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
     if (owners.length === 0) {
       return {
         stdout: json ? renderJson({ value: query.value, owners }) : "",
-        stderr: [...notes, noOwnerLine(query.value)],
+        warnings,
+        error: noOwnerLine(query.value),
         exitCode: EXIT.RUNTIME,
       }
     }
     return {
       stdout: json ? renderJson({ value: query.value, owners }) : renderOwners(owners),
-      stderr: notes,
+      warnings,
       exitCode: EXIT.SUCCESS,
     }
   }
@@ -133,7 +136,7 @@ export async function runVocab(options: VocabOptions): Promise<VocabOutcome> {
   const stdout = json
     ? renderJson(pickLists(query.kind, vocabulary))
     : renderVocabTable(query.kind, vocabulary)
-  return { stdout, stderr: notes, exitCode: EXIT.SUCCESS }
+  return { stdout, warnings, exitCode: EXIT.SUCCESS }
 }
 
 /** The core effect ids, then what each registered plugin declares, in load order. */
