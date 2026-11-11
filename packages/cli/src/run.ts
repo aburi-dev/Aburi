@@ -316,7 +316,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
     )
     .option(
       "--concurrency <n>",
-      "parser workers each scan extracts files on (default: the processors, shared by the scans; 1: none)",
+      "parser workers each scan extracts files on (default: one fewer than the processors, halved when the two scans run at once; 1: none)",
       parseConcurrency,
     )
     .option("--config <path>", "config file path", parsePath)

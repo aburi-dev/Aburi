@@ -31,8 +31,9 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
     diff. On two or more CPUs the two scans run at once, the base on a worker
     thread, with the output of running them in turn; `--no-parallel-scans` runs
     them in turn, which uses less memory, and `--parallel-scans` runs them at
-    once on one CPU; `--concurrency <n>` sizes each scan's worker threads, which
-    two scans running at once share the machine for. Rename collection failures warn on stderr rather than silently
+    once on one CPU; `--concurrency <n>` sizes each scan's worker threads, and
+    two scans running at once each have half the free memory, and by default
+    half the processors. Rename collection failures warn on stderr rather than silently
     degrading `moved` to `removed + added`.
   - `--base <ir.json> --head <ir.json>` — file mode, skips git entirely.
   `--fail-on <spec>` supports the full grammar (see below) and returns

@@ -241,7 +241,7 @@ whose two scans load the head's plugins.
 | `--quiet` | Print the glyph line (`+5 -3 ~12 ↔2 ⤴1`) alone on stdout. stderr, the files written and the exit code are unchanged. |
 | `--max-bytes <n>` | Cap `diff.md` at n bytes. See below. |
 | `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once. By default they do on a machine with two or more CPUs, and run in turn on one. The output is the same either way; `--no-parallel-scans`, one at a time, uses less memory. |
-| `--concurrency <n>` | How many worker threads each scan extracts its files on, as for `aburi scan`. Two scans running at once share the processors and memory the default is sized to. |
+| `--concurrency <n>` | How many worker threads each scan extracts its files on, as for `aburi scan`. Two scans running at once each have half the free memory, and by default half the processors. |
 | `--config <path>` | Use a different config file. |
 
 In ref mode, a scan that did not finish cleanly exits `3` even with no

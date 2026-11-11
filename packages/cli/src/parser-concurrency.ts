@@ -38,11 +38,11 @@ export function parserWorkers(sizing: ParserSizing): number {
   const wanted =
     sizing.requested ?? Math.max(1, Math.ceil((sizing.parallelism - 1) / sizing.scansAtOnce))
   const memory = Math.floor(sizing.availableMemoryMb / sizing.scansAtOnce / sizing.heapPerWorkerMb)
-  const work =
+  const source =
     sizing.requested === undefined
       ? Math.floor(sizing.sourceBytes / BYTES_PER_WORKER)
-      : sizing.fileCount
-  return Math.max(1, Math.min(wanted, memory, work))
+      : Number.POSITIVE_INFINITY
+  return Math.max(1, Math.min(wanted, memory, source, sizing.fileCount))
 }
 
 /** Sized for the hungriest language, since any worker may be handed any file. */

@@ -38,8 +38,18 @@ describe("parserWorkers", () => {
       { requested: 8, availableMemoryMb: 2048, heapPerWorkerMb: 512 },
       4,
     ],
+    [
+      "as many whole workers as memory allows",
+      { requested: 8, availableMemoryMb: 1000, heapPerWorkerMb: 256 },
+      3,
+    ],
     ["one where memory allows none", { availableMemoryMb: 100 }, 1],
-    ["no more than there are files", { requested: 8, fileCount: 3 }, 3],
+    ["no more than there are files under --concurrency", { requested: 8, fileCount: 3 }, 3],
+    [
+      "no more than there are files by default",
+      { parallelism: 16, fileCount: 3, sourceBytes: 12 * BYTES_PER_WORKER },
+      3,
+    ],
     [
       "none by default for less source than one worker pays for",
       { sourceBytes: BYTES_PER_WORKER - 1 },

@@ -82,7 +82,7 @@ export interface ScanOptions {
   lsp?: boolean
   /** How many parser workers extract the files; undefined sizes the pool to the machine. */
   concurrency?: number
-  /** The scans running at once, which share the machine the default concurrency is sized to. */
+  /** The scans running at once, which share the machine's memory, and its processors by default. */
   scansAtOnce?: number
   logLevel?: LogLevel
   log?: LogWrite
