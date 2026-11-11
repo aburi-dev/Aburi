@@ -92,17 +92,18 @@ in a code span goes through this rule: `` key === `x-${plugin}:write` `` is ordi
 and under a fixed single backtick it would close the span at its own first backtick and spill the
 rest of the row into the document as Markdown.
 
-A span whose value opens or closes with a backtick also carries a space of padding at each end,
-for two separate reasons worth keeping apart:
+A span whose value opens or closes with a backtick or a space also carries a space of padding at
+each end, for two separate reasons worth keeping apart:
 
 - **It is needed.** CommonMark reads the delimiter as a run of backticks, so a value beginning
   with one extends that run: two backticks of delimiter against a value starting with a backtick
   is a three-run against a three-run, and the delimiters are consumed instead of delimiting. The
-  space is what separates the value from the run — the spec says as much.
+  space is what separates the value from the run — the spec says as much. A value with a space
+  at both ends needs it too, or the stripping below would take those spaces off.
 - **It is safe.** The parser removes one space from each end again, but only when the content
   *both* begins and ends with a space and is not made entirely of spaces. Hence padding on both
-  ends or neither. The one value this cannot round-trip is an all-space one: a single space
-  renders as three, because the stripping rule declines to touch it.
+  ends or neither, and none on a value of spaces alone, which the stripping rule leaves whole
+  and so renders as written.
 
 Newlines collapse to a single space inside a code span, because a span belongs to one row. A
 value that needs its lines is a fenced block instead — and a fenced block cannot sit mid-row:
@@ -119,19 +120,29 @@ report the change.
 GFM resolves table cells before it parses inlines, so a `|` in a value opens a column the header
 row never declared and every cell after it shifts left — inside a code span too, where a reader
 would expect the pipe to be literal. Every cell this projection emits therefore escapes `|` as
-`\|`, which the row scanner reads as a literal pipe, and maps newlines to `<br>`.
+`\|`, which the row scanner reads as a literal pipe. A row also ends at a newline, so one becomes
+`<br>` outside a code span and a space inside one, the space CommonMark would read it as there.
+A backslash in front of a line ending outside a span makes it a hard break, which `<br>` already
+is; left in front of `<br>`, it would escape the `<` and show the tag as text, so it is dropped.
 
-The scanner reads a backslash and the character after it as one escape pair, so a value that
-already contains `\|` needs its backslash doubled first: escaped naively it becomes `\\|`, where
-the first backslash consumes the second and the pipe delimits again. Only a backslash run
-directly in front of a pipe is doubled, so a path elsewhere in the cell keeps its backslashes.
-The cost is one visible backslash inside the code span, which is the price of a column that
-still lines up; GFM has no encoding that avoids both.
+GFM's row scanner takes the backslash off every `\|` before the cell's inlines are parsed, code
+spans included, and a backslash right before the pipe escapes it whatever stands before that
+backslash. So a cell reads as the same Markdown reads outside a table when every pipe carries one
+backslash more than it would there, in a code span or not. A call target `pipe(a\|b)` is written
+`` `pipe(a\\|b)` ``, and the scanner's removal leaves the span holding exactly the target.
+Outside a span, `a\|b` is written `a\\|b` and reads `a|b`, as it does outside a table; inside
+raw HTML or an autolink, where a backslash is literal, the one more is what keeps it.
 
-Which cells can actually carry one is narrower than it looks: `ComponentId` is kebab-case,
-`EffectId` is a frozen enum or an `x-…` pattern, and `RelativePath` and `SymbolId` forbid
-backslash outright. `RelativePath` admits `|`, and `Call.target` (`minLength: 1`, nothing else)
-admits both. The escaping is applied to every cell regardless — a table whose correctness
+Which runs of backticks are code spans is CommonMark's rule: a run opens a span when a run of the
+same length closes it later, and a backtick a backslash escapes outside a span opens nothing. It
+decides only how a line ending is written, so raw HTML and autolinks, which take precedence over
+a backtick inside them, are not read: a span found inside one writes its line ending as a space
+rather than `<br>`.
+
+Which cells can actually carry a pipe or a backslash is narrower than it looks: `ComponentId` is
+kebab-case, `EffectId` is a frozen enum or an `x-…` pattern, and `RelativePath` and `SymbolId`
+forbid backslash outright. `RelativePath` admits `|`, and `Call.target` (`minLength: 1`, nothing
+else) admits both. The escaping is applied to every cell regardless — a table whose correctness
 depends on which column the value landed in is one schema change away from being wrong.
 
 #### 3.4.2 Values in a row
@@ -714,6 +725,8 @@ The folded list below reads the same way, less the head name it otherwise opens 
 
 A move between files that changed the Symbol's name as well gives each path with its name, ``**Moved**: `parseAmount` in `src/parse.ts` → `readAmount` in `src/amount.ts` ``, and so do the folded row (without the head name it would open with), the Slice member row, and the names-only row, ``(from `parseAmount` in `src/parse.ts`)``. The sections that render the pair again (API changes, Logic changes, Confidence changes) title it by its head name with no route, so wherever a pair whose name changed renders a delta body, the body opens with ``- name: `<base name>` → `<head name>` ``; in Moved + Changed it repeats the route, since the body is the same in every section. Their names-only rows carry the same ``(from …)`` as the Moved + Changed one (§6.4): the size cap can omit Moved + Changed and keep the other section, and the old name would then be on no line. The old name of an exported function is the name its callers use, which is the fact a reviewer needs.
 
+An owner paired on its members ([`diff-algorithm.md`](./diff-algorithm.md) §3.4.8) adds their count after the rationale, ``**Moved**: `src/old.ts` → `src/new.ts` (`name-signature` through 2 members)``, `1 member` for one, on its **Moved** line and on its folded row. The rationale is stage 4's, but the pair rests on member pairs rather than a name-and-signature score, and the count sends the reader to the member entries it rests on. Its folded row is its own: the count makes its route differ from the one its members moved along.
+
 #### 🔀 Moved (folded)
 
 ```md
@@ -1163,7 +1176,7 @@ All Markdown projection output is **English, with fixed wording**.
 | MP13a | diff of a large refactor (+142 · −302 · ~326 · 25 moved · 44 moved+changed) projected with `maxBytes: 65507` | Fits, and every removed Symbol is named with its `file:line` |
 | MP13b | diff with one thin removed Symbol and eight syntax-only changes, a component added, projected with a budget that holds Removed whole but not as names | `➖ Removed` is kept whole rather than omitted, since its names-only form costs more in the note than it saves; with a budget that also holds Component changes, both are kept |
 | MP13c | diff with twelve API changes and one thin removed Symbol, projected with a budget that holds API changes only as names | `➖ Removed` is kept whole below the names-only API changes wherever that fits: not named only in a larger document, and not omitted |
-| MP14 | Symbol block with Rules, Effects, Calls and a fingerprint, the last rule inline or fenced | A blank line before `**Effects**:`, `**Calls**:` and the `<sub>` line in both cases; none before a list or after the last section |
+| MP14 | Symbol block with Rules, Effects, Calls and a fingerprint, the last rule inline or fenced, alone, on a component page and as an Added entry in `diff.md` | Rendered, the Rules list holds the rule as its one item and `**Effects**:` is the paragraph after it, not part of the item, after an inline or a fenced last rule, in each of the three; a blank line before `**Calls**:` and the `<sub>` line; no blank line before a list or after the last section, and never two in a row |
 | MP15 | A signature with an optional input and a rest input; a diff entry whose `signature.inputs.added` holds a rest input | `(a?: string, ...ids: string[])` in the signature line, and `` `...ids: string[]` `` in the diff row (§5.5). An input with an empty `type` prints as its name alone |
 | MP16 | A value holding `_x_`, `*x*`, `<T>`, a backtick, `~~s~~` and a newline followed by `## `, as a thrown type, as a propagated effect's direct source (Symbol block, Boundary effect surface, delta row), as a Component `name`, as a component-level Dependency endpoint (component page, `workspace.md` list), as the generator's `name` or `version` or the `generatedAt` of the `workspace.md` header, as either ref of the `diff.md` title, and as a `dropReason` (component page, Dropped changes, `explain`) | Rendered as CommonMark, each shows the value as written, its newline as a space: no emphasis, no HTML and no block of its own (§3.4.2) |
 | MP16a | A `diff.md` title whose ref is a commit SHA of 40 or of 7 lowercase hex digits, and one whose ref is six hex digits, uppercase hex or a branch name | The SHA bare, which GitHub links; every other ref in a span (§6.1) |
@@ -1174,6 +1187,7 @@ All Markdown projection output is **English, with fixed wording**.
 | MP17c | diff entry whose delta flags `asyncChanged`, `generatorChanged`, `typeParametersChanged`, `componentChanged` or `visibilityChanged` | One row per flag with the base value before the head one: `- signature.async: false → true`, ``- signature.typeParameters: none → `<T>` ``, ``- component: `billing` → none``, ``- visibility: `internal` → `public` `` |
 | MP17d | diff entry whose `delta.exportedAs` holds an added or a removed name | ``- export name added: `<name>`, …`` and ``- export name removed: `<name>`, …``, one row per bucket after the decorator rows; either row explains the API flag, so no `fingerprint changed` note follows. An empty bucket writes no row. A renamed pair whose `removed` is exactly the base's name and whose `added` is exactly the head's writes neither row, and keeps the note MP11b gives a new owner alone; one that also gained or lost another name writes both rows, the two own names included |
 | MP17e | diff with a `removed` entry whose `duplicateOf` names a head Symbol, and `summary.removedDuplicates` 1 | The entry carries ``**Duplicate of**: `<id>`, which holds the same body`` under its **File** line, and its names-only row ends `` (duplicate of `<id>`) ``; the Summary line reads `-1 removed (1 duplicate)`, `(2 duplicates)` for two, and the glyph line `-1`. A `duplicateOf` of `null`, an absent one, and a `removedDuplicates` of 0 or absent add nothing |
+| MP17f | diff with a `moved` or `moved+changed` entry carrying `throughMembers` | The route ends ``(`name-signature` through <N> members)``, `1 member` for one, on the **Moved** line and in the folded Moved list, where the owner has a row apart from the members that moved along its route; an entry without the field ends ``(`<rationale>`)`` |
 | MP18 | diff whose `dependencies.added` holds a call edge between two Symbols of one file, one between two files, and one from a Component to a Symbol | The first reads `` `a` → `b` in `<file>` (via `call`) ``, the second `` `a` in `<file>` → `b` in `<file>` (via `call`) ``, the third `` `billing` → `b` in `<file>` (via `import`) ``; no Symbol id appears |
 | MP19 | diff with an added, a removed and an unknown Symbol, each with a non-zero fingerprint | No entry carries a `<sub>` fingerprint line; the same Symbol on its component page does |
 | MP20 | Symbol block whose calls are `log` (L3), `svc.save` (L5), `log` (L9) and `log` (L9) | **Calls** reads ``- `log` (L3, L9)`` then ``- `svc.save` (L5)`` |
@@ -1184,6 +1198,9 @@ All Markdown projection output is **English, with fixed wording**.
 | MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
 | MP22 | Symbol block, and `aburi explain` page, of a registration whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
 | MP23 | diff entry whose `delta.middleware` removed `requireAdmin`, added `rateLimit(…)`, or reordered `requireAdmin`, `audit` into `audit`, `requireAdmin` | ``- middleware removed: `requireAdmin` ``, ``- middleware added: `rateLimit(…)` ``, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, and no "no field-level detail" row; an unmoved `delta.middleware` writes no row |
+| MP24 | A table cell holding a pipe, a pipe behind one or two backslashes, a lone or a trailing backslash, or a line ending (LF, CR or CRLF, and behind one or two backslashes), written bare and in a code span; a cell where finding the spans is the question: an escaped backtick or backslash before a span, an unclosed run, a run that closes on another length, a lone backtick inside a double-backtick span, and text mixed with spans; the Components table with roots, and the call resolution table with targets and candidates, holding such values | Rendered, each cell reads as the same Markdown reads outside a table, and every row's cells are the ones it was written with, none spilling into the next: a code span holds the value byte for byte (§3.4.1) |
+| MP25 | A code span of a value holding backticks inside or at either end, a leading or trailing space, spaces alone, or a template literal; a fenced block whose source holds a run of three or four backticks, a `~~~` line, or a fence line indented two spaces; a rule's list item fencing a run of three backticks | Rendered, the span holds the value byte for byte and the block's content is the source (§3.4) |
+| MP26 | A Symbol's rules, some of them fenced, on a component page | Rendered, one list with an item per rule, each fenced payload inside its own item |
 | MP27 | diff with an added Symbol joined by a Slice to a changed one, a removed one, and in test files an added Symbol whose call edge was added and a removed one, projected with `statuses: ["added"]` | The sections list the two added Symbols alone, the test one in `## 🧪 Test files` under `1 symbol in a test file` with its edge, and the Slice is drawn whole; the Summary line counts every change, `· 2 in test files` included, and the note under it reads ``> ℹ **Only `added` changes are listed.** 3 other Symbol changes are left out of this report; the Summary counts them.`` `## 🔗 Dependency changes` lists every edge not from test code |
 | MP27a | the same diff projected with `statuses: ["removed"]` | The added test Symbol's edge is in neither `## 🧪 Test files` nor `## 🔗 Dependency changes`, and the note reads ``… 3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.`` |
 | MP27b | `statuses` naming every status the diff holds; `statuses` empty, or holding a value that is no status; a Slice naming a member no change holds, under a filter that lists none of its other members | The document written without `statuses`; `RangeError`; `ProjectionInvariantError`, as without a filter |

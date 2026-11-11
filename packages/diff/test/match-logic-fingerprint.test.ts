@@ -1,23 +1,13 @@
-import { logicFingerprint } from "@aburi/core"
 import { fp, guardedBody, makeSymbol, rule, sig, zeroFp } from "@aburi/test-support"
 import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { matchStageLogicFingerprint, matchStageNameSignature } from "../src"
-import { changesBetween } from "./helpers"
+import { bare, changesBetween, guarded } from "./helpers"
 
 const SHARED_LOGIC = "111111111111"
 
-/** A method whose logic fingerprint names a guard, so the hash is evidence of identity. */
-function withLogic(file: string, name: string, logic = SHARED_LOGIC): IRSymbol {
-  return makeSymbol({
-    id: `ts:${file}#${name}`,
-    name,
-    kind: "method",
-    fingerprint: { api: "aaaaaaaaaaaa", logic, syntax: "bbbbbbbbbbbb" },
-    rules: guardedBody(logic),
-    signature: sig(),
-  })
-}
+/** A method on the one logic every method here shares, which names a guard. */
+const withLogic = (file: string, name: string) => guarded(file, name, SHARED_LOGIC)
 
 function stage3(base: readonly IRSymbol[], head: readonly IRSymbol[]) {
   const result = matchStageLogicFingerprint(base, head)
@@ -136,23 +126,11 @@ describe("matchStageLogicFingerprint", () => {
 })
 
 describe("matchStageLogicFingerprint over a logic fingerprint that names nothing", () => {
-  const symbolAt = (
-    file: string,
-    name: string,
-    kind: IRSymbol["kind"],
-    rules: IRSymbol["rules"],
-  ) => {
-    const shape = makeSymbol({ id: `ts:${file}#${name}`, name, kind, rules })
-    return makeSymbol({ ...shape, fingerprint: { ...fp("same"), logic: logicFingerprint(shape) } })
-  }
-  const at = (file: string, name: string, kind: IRSymbol["kind"] = "function") =>
-    symbolAt(file, name, kind, [])
-
   it.each([
-    ["an unrelated class", at("src/invoice.ts", "InvoiceRenderer", "class")],
-    ["an unrelated function", at("src/invoice.ts", "renderInvoiceTotal")],
+    ["an unrelated class", bare("src/invoice.ts", "InvoiceRenderer")],
+    ["an unrelated function", bare("src/invoice.ts", "renderInvoiceTotal", "function")],
   ])("does not pair a lone deleted function with %s", (_, head) => {
-    const base = at("src/mail.ts", "sendWelcomeEmail")
+    const base = bare("src/mail.ts", "sendWelcomeEmail", "function")
     expect(stage3([base], [head])).toEqual({
       pairs: [],
       remainingBase: [base.id],
@@ -164,31 +142,36 @@ describe("matchStageLogicFingerprint over a logic fingerprint that names nothing
     ["one `for` loop", rule({ type: "loop", loopKind: "for" })],
     ["one `try`", rule({ type: "try" })],
   ])("treats a body of only %s as naming nothing", (_, shape) => {
-    const base = symbolAt("src/mail.ts", "sendAllEmails", "function", [shape])
-    const head = symbolAt("src/invoice.ts", "renderInvoiceRows", "function", [shape])
+    const base = bare("src/mail.ts", "sendAllEmails", "function", [shape])
+    const head = bare("src/invoice.ts", "renderInvoiceRows", "function", [shape])
     expect(base.fingerprint.logic).toBe(head.fingerprint.logic)
     expect(stage3([base], [head]).pairs).toEqual([])
   })
 
   it("leaves two unrelated top-level `main`s apart", () => {
-    expect(stage3([at("src/tool-a.ts", "main")], [at("src/tool-b.ts", "main")]).pairs).toEqual([])
+    expect(
+      stage3(
+        [bare("src/tool-a.ts", "main", "function")],
+        [bare("src/tool-b.ts", "main", "function")],
+      ).pairs,
+    ).toEqual([])
   })
 
   it("pairs a class whose name says two words when it moves file", () => {
-    const base = at("src/old.ts", "InvoiceRenderer", "class")
-    const head = at("src/new.ts", "InvoiceRenderer", "class")
+    const base = bare("src/old.ts", "InvoiceRenderer")
+    const head = bare("src/new.ts", "InvoiceRenderer")
     expect(stage3([base], [head]).pairs).toEqual([
       [base.id, head.id, "logic-fingerprint+name-disambiguation"],
     ])
   })
 
   it("leaves a class whose name says one word apart, while its method pairs", () => {
-    const oldMethod = at("src/old.ts", "Invoice.render", "method")
-    const newMethod = at("src/new.ts", "Invoice.render", "method")
+    const oldMethod = bare("src/old.ts", "Invoice.render", "method")
+    const newMethod = bare("src/new.ts", "Invoice.render", "method")
     expect(
       stage3(
-        [at("src/old.ts", "Invoice", "class"), oldMethod],
-        [at("src/new.ts", "Invoice", "class"), newMethod],
+        [bare("src/old.ts", "Invoice"), oldMethod],
+        [bare("src/new.ts", "Invoice"), newMethod],
       ),
     ).toEqual({
       pairs: [[oldMethod.id, newMethod.id, "logic-fingerprint+name-disambiguation"]],
@@ -200,35 +183,39 @@ describe("matchStageLogicFingerprint over a logic fingerprint that names nothing
   it("keeps a function and a class of one admissible name apart on their kind alone", () => {
     expect(
       stage3(
-        [at("src/a.ts", "InvoiceRenderer", "function")],
-        [at("src/b.ts", "InvoiceRenderer", "class")],
+        [bare("src/a.ts", "InvoiceRenderer", "function")],
+        [bare("src/b.ts", "InvoiceRenderer")],
       ).pairs,
     ).toEqual([])
   })
 
   it("holds the 0.85 bar: 6/7 of a name pairs, 5/6 does not", () => {
-    const base = at("src/a.ts", "fetchUserAccountBillingInvoiceTotal")
-    const longer = at("src/b.ts", "fetchUserAccountBillingInvoiceTotalAmount")
+    const base = bare("src/a.ts", "fetchUserAccountBillingInvoiceTotal", "function")
+    const longer = bare("src/b.ts", "fetchUserAccountBillingInvoiceTotalAmount", "function")
     expect(stage3([base], [longer]).pairs).toEqual([
       [base.id, longer.id, "logic-fingerprint+name-disambiguation"],
     ])
-    expect(stage3([base], [at("src/b.ts", "fetchUserAccountBillingInvoice")]).pairs).toEqual([])
+    expect(
+      stage3([base], [bare("src/b.ts", "fetchUserAccountBillingInvoice", "function")]).pairs,
+    ).toEqual([])
   })
 
   it("refuses a pair below the bar whether or not its base was the last one left", () => {
-    const moved = at("src/a.ts", "parseAmount")
-    const renamed = at("src/b.ts", "parseAmountValue")
+    const moved = bare("src/a.ts", "parseAmount", "function")
+    const renamed = bare("src/b.ts", "parseAmountValue", "function")
     expect(stage3([moved], [renamed]).pairs).toEqual([])
-    expect(stage3([moved, at("src/audit.ts", "flushAuditLog")], [renamed]).pairs).toEqual([])
+    expect(
+      stage3([moved, bare("src/audit.ts", "flushAuditLog", "function")], [renamed]).pairs,
+    ).toEqual([])
   })
 
   it("does not fall back to pairing a lone base after a scored round", () => {
-    const before = at("src/a.ts", "createOrderEntry")
-    const after = at("src/b.ts", "createOrderEntry")
+    const before = bare("src/a.ts", "createOrderEntry", "function")
+    const after = bare("src/b.ts", "createOrderEntry", "function")
     expect(
       stage3(
-        [before, at("src/mail.ts", "sendWelcomeEmail")],
-        [after, at("src/invoice.ts", "renderInvoiceTotal")],
+        [before, bare("src/mail.ts", "sendWelcomeEmail", "function")],
+        [after, bare("src/invoice.ts", "renderInvoiceTotal", "function")],
       ),
     ).toEqual({
       pairs: [[before.id, after.id, "logic-fingerprint+name-disambiguation"]],
@@ -238,12 +225,13 @@ describe("matchStageLogicFingerprint over a logic fingerprint that names nothing
   })
 
   it("leaves a renamed call-only method to stage 4, which refuses it too", () => {
-    const base = makeSymbol({ ...at("src/a.ts", "Cls.getUser", "method"), signature: sig() })
-    const head = makeSymbol({ ...at("src/a.ts", "Cls.fetchUser", "method"), signature: sig() })
+    const base = makeSymbol({ ...bare("src/a.ts", "Cls.getUser", "method"), signature: sig() })
+    const head = makeSymbol({ ...bare("src/a.ts", "Cls.fetchUser", "method"), signature: sig() })
     const afterStage3 = matchStageLogicFingerprint([base], [head])
     expect(afterStage3.matched).toEqual([])
     expect(
-      matchStageNameSignature(afterStage3.remainingBase, afterStage3.remainingHead).matched,
+      matchStageNameSignature(afterStage3.remainingBase, afterStage3.remainingHead, { paired: [] })
+        .matched,
     ).toEqual([])
   })
 })
@@ -281,7 +269,8 @@ describe("matchStageLogicFingerprint across kinds", () => {
     const afterStage3 = matchStageLogicFingerprint([base], [head])
     expect(afterStage3.matched).toEqual([])
     expect(
-      matchStageNameSignature(afterStage3.remainingBase, afterStage3.remainingHead).matched,
+      matchStageNameSignature(afterStage3.remainingBase, afterStage3.remainingHead, { paired: [] })
+        .matched,
     ).toEqual([])
   })
 })

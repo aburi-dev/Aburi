@@ -1,4 +1,4 @@
-import MarkdownIt from "markdown-it"
+import { commonMark } from "./rendered"
 
 export function bytes(markdown: string): number {
   return Buffer.byteLength(markdown, "utf8")
@@ -7,9 +7,6 @@ export function bytes(markdown: string): number {
 export function noteOf(markdown: string): string {
   return markdown.split("\n").find((line) => line.startsWith("> ⚠")) ?? ""
 }
-
-/** `html: true`, as GitHub drops an unknown tag like `<T>`; escaped, it would decode back and hide that loss. */
-const commonMark = new MarkdownIt({ html: true })
 
 const ENTITIES: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">", quot: '"' }
 

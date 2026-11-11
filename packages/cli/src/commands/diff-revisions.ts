@@ -55,6 +55,7 @@ export interface RevisionScanContext {
   log: LogWrite
   progress: ((progress: DiffProgress) => void) | undefined
   parallelScans: boolean | undefined
+  concurrency: number | undefined
 }
 
 type ScanTarget = { side: "base"; ref: string } | { side: "head" }
@@ -84,6 +85,7 @@ export async function scanRevisions(
   const worktreeDir = resolve(worktreeParent, baseWorktreeLeaf(headWorkspaceRoot))
 
   const said = new Set<string>()
+  const together = context.parallelScans ?? availableParallelism() >= 2
   const optionsFor = (dir: string, outputDir: string): PortableScanOptions => ({
     cwd: dir,
     command: "diff",
@@ -94,6 +96,8 @@ export async function scanRevisions(
     ...(submoduleIgnore.length === 0 ? {} : { ignore: submoduleIgnore }),
     ...(context.compact === undefined ? {} : { compact: context.compact }),
     ...(context.logLevel === undefined ? {} : { logLevel: context.logLevel }),
+    ...(context.concurrency === undefined ? {} : { concurrency: context.concurrency }),
+    scansAtOnce: together ? 2 : 1,
   })
   const sayPlainFileLinks = (target: ScanTarget, ir: IR): IR => {
     const read = linksReadAsSource(plainLinks[target.side], ir)
@@ -143,14 +147,13 @@ export async function scanRevisions(
       read: readHead,
       ...reportOf("head", context.progress),
     }
-    const scanned =
-      (context.parallelScans ?? availableParallelism() >= 2)
-        ? await scanTogether(base, head, context.log, {
-            name: `base ref "${spec.base}"`,
-            log: context.log,
-            warn,
-          })
-        : await scanInTurn(base, head, context.log)
+    const scanned = together
+      ? await scanTogether(base, head, context.log, {
+          name: `base ref "${spec.base}"`,
+          log: context.log,
+          warn,
+        })
+      : await scanInTurn(base, head, context.log)
     return { ...scanned, gitRenames }
   } finally {
     // Failures here only warn: a throw from `finally` would replace the error that ended the scan.

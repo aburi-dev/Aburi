@@ -44,6 +44,11 @@ scan passing 470 MiB peak — cost is roughly linear in file count. Three
 consecutive scans of an unchanged tree produce byte-identical IR. `aburi diff`
 runs its two scans at once on a machine with two or more CPUs, so it takes about
 1.3× one scan where it took 1.7–2.2×; on one CPU it still runs them in turn.
+Each scan extracts its files on a [pool of worker threads](./design/performance.md),
+one fewer than the processors by default and none for a small workspace, and
+writes the same analysis and log as on one thread: on four processors it takes a
+scan of Aburi's own 878 files from 6.0 s to 3.9 s. `--concurrency 1` keeps every
+file on the main thread.
 
 ## Not yet
 
@@ -77,10 +82,6 @@ runs its two scans at once on a machine with two or more CPUs, so it takes about
   [process of its own](./design/plugin-process.md), so these can use
   `go/packages` or a Python type checker rather than syntax alone.
 - **More effects plugins.** Django, FastAPI, SQLAlchemy, GORM.
-- **Large monorepos.** A 1,000-file scan finishes in under 30 seconds
-  single-threaded, so the [worker pool](./design/performance.md) would buy at
-  best ~4× on a 4-core runner — the ideal scaling, unmeasured — on a workload
-  already inside its budget.
 - **A functional language.** Scala or Rust, proving that the extension
   vocabulary can express pattern matching and algebraic data types.
 

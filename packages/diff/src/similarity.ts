@@ -106,7 +106,7 @@ export function jaccardTokens(a: string, b: string): number {
   return jaccard(tokenizeName(a), tokenizeName(b))
 }
 
-function ownerPart(qname: string): string {
+export function ownerPart(qname: string): string {
   return qname.slice(0, Math.max(0, qname.lastIndexOf("::"), qname.lastIndexOf(".")))
 }
 
@@ -123,7 +123,11 @@ export function memberSimilarity(baseName: string, headName: string): number {
 }
 
 export function ownersAreCompatible(baseName: string, headName: string): boolean {
-  return ownersCompatible(ownerPart(baseName), ownerPart(headName), uncachedTokenSets)
+  return ownersCorrespond(ownerPart(baseName), ownerPart(headName))
+}
+
+export function ownersCorrespond(baseOwner: string, headOwner: string): boolean {
+  return ownersCompatible(baseOwner, headOwner, uncachedTokenSets)
 }
 
 function sameWord(a: string, b: string): boolean {

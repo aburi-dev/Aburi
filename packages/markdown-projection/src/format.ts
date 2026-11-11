@@ -61,10 +61,61 @@ export function tableHeader(cells: readonly string[]): string[] {
   return [tableRow(cells), `|${cells.map(() => "---").join("|")}|`]
 }
 
+/**
+ * Makes a cell that reads as `text` reads outside a table. GFM takes the backslash off every `\|` in
+ * a row before it reads the cell, code spans included, so every pipe gets one.
+ */
 export function tableCell(text: string): string {
-  return text
-    .replace(/(\\*)\|/g, (_, slashes: string) => `${slashes}${slashes}\\|`)
-    .replace(new RegExp(LINE_ENDING, "g"), "<br>")
+  let cell = ""
+  let at = 0
+  for (const span of codeSpans(text)) {
+    cell += textInCell(text.slice(at, span.start)) + codeInCell(text.slice(span.start, span.end))
+    at = span.end
+  }
+  return (cell + textInCell(text.slice(at))).replaceAll("|", "\\|")
+}
+
+/**
+ * A row ends at a line ending, so it becomes `<br>`. The backslash that makes one a hard break goes:
+ * `<br>` is a break already, and `\<` would show the tag as text.
+ */
+function textInCell(text: string): string {
+  return text.replace(
+    new RegExp(`(\\\\*)(?:${LINE_ENDING.source})`, "g"),
+    (_line: string, slashes: string) => `${slashes.slice(slashes.length % 2)}<br>`,
+  )
+}
+
+/** CommonMark reads a line ending inside a code span as a space. */
+function codeInCell(span: string): string {
+  return span.replace(new RegExp(LINE_ENDING, "g"), " ")
+}
+
+interface Span {
+  start: number
+  end: number
+}
+
+/**
+ * Where CommonMark finds code spans in `text`, each from its opening backtick run past its closing
+ * one. Raw HTML and autolinks, which take precedence over a backtick inside them, are not read: a
+ * span found there only writes a line ending as a space rather than `<br>`.
+ */
+function codeSpans(text: string): Span[] {
+  const spans: Span[] = []
+  // An escape pair is matched as one, so a backtick a backslash escapes opens nothing.
+  const opener = /\\[!-/:-@[-`{-~]|`+/g
+  for (let open = opener.exec(text); open !== null; open = opener.exec(text)) {
+    const fence = open[0]
+    if (fence.startsWith("\\")) continue
+    // Backslashes are literal inside the span, so the closer is the next run of exactly this length.
+    const closer = new RegExp(`(?<!\`)${fence}(?!\`)`, "g")
+    closer.lastIndex = opener.lastIndex
+    if (closer.exec(text) === null) continue
+    spans.push({ start: open.index, end: closer.lastIndex })
+    opener.lastIndex = closer.lastIndex
+  }
+  return spans
 }
 
 function longestBacktickRun(text: string): number {
@@ -88,7 +139,9 @@ export function inlineCode(value: string): string {
   if (collapsed.length === 0) return EMPTY_VALUE
   const fence = "`".repeat(longestBacktickRun(collapsed) + 1)
   const edge = `${collapsed.at(0)}${collapsed.at(-1)}`
-  const pad = edge.includes("`") || edge.includes(" ") ? " " : ""
+  // CommonMark strips a space off each end only when both ends have one and the span is not spaces
+  // alone, which it keeps whole.
+  const pad = (edge.includes("`") || edge.includes(" ")) && !/^ +$/.test(collapsed) ? " " : ""
   return `${fence}${pad}${collapsed}${pad}${fence}`
 }
 

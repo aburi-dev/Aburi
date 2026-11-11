@@ -46,6 +46,7 @@ import {
   removeOutputFileOpeningWith,
   writeOutputFile,
 } from "../output-file"
+import { parsePoolFor, requireWorkerCount } from "../parser-concurrency"
 import { loadPlugins } from "../plugin-loader"
 import {
   renderVocabDiscovered,
@@ -79,6 +80,10 @@ export interface ScanOptions {
   suppressTimestamp?: boolean
   strict?: boolean
   lsp?: boolean
+  /** How many parser workers extract the files; undefined sizes the pool to the machine. */
+  concurrency?: number
+  /** The scans running at once, which share the machine's memory, and its processors by default. */
+  scansAtOnce?: number
   logLevel?: LogLevel
   log?: LogWrite
   progress?: (progress: ScanProgress) => void
@@ -94,6 +99,7 @@ export interface ScanOptions {
 }
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
+  requireWorkerCount(options.concurrency)
   const cwd = options.cwd ?? process.cwd()
   const workspaceRoot = await resolveWorkspaceRoot(cwd)
 
@@ -101,10 +107,11 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const loaded = await loadPinnedConfig(pinnedConfig)
   const config = mergeCliOverrides(loaded.config, options)
 
+  const pluginRefRoot = options.pluginRefRoot ?? workspaceRoot
   const plugins = await loadPlugins({
     config,
     workspaceRoot,
-    pluginRefRoot: options.pluginRefRoot ?? workspaceRoot,
+    pluginRefRoot,
     syntheticPlugins: loaded.syntheticPlugins,
   })
   requireLanguagePlugin(plugins.languages.length, loaded.source)
@@ -143,6 +150,13 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       workspacePackages,
       generator: await readGeneratorInfo(),
       logger,
+      parsePool: parsePoolFor({
+        requested: options.concurrency,
+        scansAtOnce: options.scansAtOnce ?? 1,
+        languages: plugins.languages,
+        setup: { config, workspaceRoot, pluginRefRoot },
+        logger,
+      }),
       ...(options.progress === undefined ? {} : { onProgress: options.progress }),
     })
   } catch (error) {

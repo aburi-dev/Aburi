@@ -33,8 +33,12 @@ import {
   sortComponents,
   uniqueSorted,
 } from "./document"
-import { type ExtractionFailure, extractFiles, type ParseErrorRecord } from "./extract-files"
-import { withPluginLifecycle } from "./lifecycle"
+import {
+  type ExtractionFailure,
+  extractFiles,
+  type ParseErrorRecord,
+  type ParsePoolFactory,
+} from "./extract-files"
 import type { TreeReleaseFailure } from "./pipeline"
 import { buildLanguageRouter } from "./route"
 import { markTestFiles } from "./test-files"
@@ -73,6 +77,8 @@ export interface ScanInput {
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
+  /** Without one, or when it answers `null`, the scan extracts one file at a time on its own thread. */
+  parsePool?: ParsePoolFactory
   onProgress?: (progress: ScanProgress) => void
 }
 
@@ -112,28 +118,19 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   progress({ phase: "discovering" })
   const discovered = await discoverFiles(discoverOptions)
 
-  const extracted = await withPluginLifecycle(
-    [...input.languages, ...input.frameworks, ...input.effects],
-    {
-      registry: input.registry,
-      config: input.config,
-      workspaceRoot: input.workspaceRoot,
-      log: logger,
-    },
-    () =>
-      extractFiles({
-        workspaceRoot: input.workspaceRoot,
-        files: discovered.files,
-        router,
-        config: input.config,
-        frameworks: input.frameworks,
-        effects: input.effects,
-        registry: input.registry,
-        components: input.components ?? [],
-        logger,
-        progress: (done, total) => progress({ phase: "extracting", done, total }),
-      }),
-  )
+  const extracted = await extractFiles({
+    workspaceRoot: input.workspaceRoot,
+    files: discovered.files,
+    config: input.config,
+    components: input.components ?? [],
+    languages: input.languages,
+    frameworks: input.frameworks,
+    effects: input.effects,
+    registry: input.registry,
+    logger,
+    ...(input.parsePool === undefined ? {} : { parsePool: input.parsePool }),
+    progress: (done, total) => progress({ phase: "extracting", done, total }),
+  })
   progress({ phase: "resolving" })
   const { symbols } = extracted
 

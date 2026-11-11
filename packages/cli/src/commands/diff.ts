@@ -30,6 +30,7 @@ import type { GitRunner } from "../git/runner"
 import { readIR } from "../ir-io"
 import { createLogger, type LogWrite, writeToStderr } from "../logger"
 import { createOutputDir, removeOutputFile, writeOutputFile } from "../output-file"
+import { requireWorkerCount } from "../parser-concurrency"
 import { parseFilter, unlistedTripped } from "../status-filter"
 import type { WarnFn } from "../warn"
 import { chooseInputs, type DiffInputs } from "./diff-inputs"
@@ -71,6 +72,8 @@ export interface DiffOptions {
   /** The statuses whose changes `diff.md` lists: the `--filter` value, or a list of them. */
   filter?: string | readonly SymbolChangeStatus[]
   parallelScans?: boolean
+  /** Parser workers for each of the two scans; undefined sizes them to the machine. */
+  concurrency?: number
   logLevel?: LogLevel
   /** Where the scans' and the matcher's log lines go (default: stderr). */
   log?: LogWrite
@@ -105,6 +108,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
       "input-error",
     )
   }
+  requireWorkerCount(options.concurrency)
   let pinned: PinnedConfig | null = null
   const pinConfigOnce = async (): Promise<PinnedConfig> => {
     pinned ??= await pinConfig(cwd, options.configPath)
@@ -128,6 +132,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     log: options.log ?? writeToStderr,
     progress: options.progress,
     parallelScans: options.parallelScans,
+    concurrency: options.concurrency,
   })
   options.progress?.({ kind: "comparing" })
 
