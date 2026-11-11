@@ -38,10 +38,10 @@ export function pairOwnersThroughMembers(
   const freeHeads = new Map<string, IRSymbol>(
     remainingHead.filter(isCandidate).map((symbol) => [symbol.id, symbol]),
   )
-  const partnerOfHead = new Map<string, string>()
   const matched: SymbolPair[] = []
   const refusals: OwnerRefusal[] = []
   // Deepest first, so a nested owner's pair is evidence for the owner holding it by that one's turn.
+  // Owners pair only at one depth, so the pairs into a head's members are all made by then too.
   for (const base of deepestFirst(remainingBase.filter(isCandidate))) {
     const targets = pointsInto.get(base.id)
     if (targets === undefined) continue
@@ -52,7 +52,9 @@ export function pairOwnersThroughMembers(
     }
     const head = freeHeads.get(target)
     if (head === undefined || head.kind !== base.kind) continue
-    if (!ownersCorrespond(base.name, head.name)) {
+    // A changed depth is two scopes, and the gate counts the segments `.` separates, not `::`.
+    const sameDepth = depthOf(qualifiedNameOf(base)) === depthOf(qualifiedNameOf(head))
+    if (!sameDepth || !ownersCorrespond(base.name, head.name)) {
       refusals.push({ rule: "names", base, head })
       continue
     }
@@ -60,12 +62,7 @@ export function pairOwnersThroughMembers(
       refusals.push({ rule: "shared", base, head })
       continue
     }
-    // The head's owner was paired on the members it held, and this would give it one from elsewhere.
-    const holder = headOwner(head)
-    const holderPartner = holder === undefined ? undefined : partnerOfHead.get(holder.id)
-    if (holderPartner !== undefined && holderPartner !== baseOwner(base)?.id) continue
     freeHeads.delete(head.id)
-    partnerOfHead.set(head.id, base.id)
     const pair: SymbolPair = {
       base,
       head,
@@ -78,7 +75,10 @@ export function pairOwnersThroughMembers(
   return { matched, refusals }
 }
 
-/** One with a signature has had stage 4's judgement, and a dropped one is stage 4.5's. */
+/**
+ * One with a signature is stage 4's to score, whatever it made of the name; a dropped one is
+ * stage 4.5's.
+ */
 function isCandidate(symbol: IRSymbol): boolean {
   return !symbol.dropped && (symbol.signature ?? null) === null
 }
@@ -102,9 +102,13 @@ function splitId(symbol: IRSymbol): { prefix: string; qualifiedName: string } {
   return { prefix: symbol.id.slice(0, end), qualifiedName: symbol.id.slice(end) }
 }
 
+function qualifiedNameOf(symbol: IRSymbol): string {
+  return splitId(symbol).qualifiedName
+}
+
 function deepestFirst(symbols: readonly IRSymbol[]): IRSymbol[] {
   return symbols
-    .map((symbol) => ({ symbol, depth: depthOf(splitId(symbol).qualifiedName) }))
+    .map((symbol) => ({ symbol, depth: depthOf(qualifiedNameOf(symbol)) }))
     .sort((a, b) => b.depth - a.depth || compareCodeUnit(a.symbol.id, b.symbol.id))
     .map(({ symbol }) => symbol)
 }

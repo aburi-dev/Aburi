@@ -16,14 +16,14 @@ import {
 
 export interface NameSignatureOptions {
   /** What the earlier stages paired, which says where an owner's members went. */
-  paired?: readonly SymbolPair[]
+  paired: readonly SymbolPair[]
   logger?: Logger
 }
 
 export function matchStageNameSignature(
   remainingBase: readonly IRSymbol[],
   remainingHead: readonly IRSymbol[],
-  { paired = [], logger }: NameSignatureOptions = {},
+  { paired, logger }: NameSignatureOptions,
 ): StageResult {
   const unread: { symbol: IRSymbol; why: string }[] = []
   const compared = (symbol: IRSymbol): boolean => {

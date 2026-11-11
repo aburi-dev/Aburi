@@ -21,7 +21,8 @@ stderr, from `aburi scan` and from the scans `aburi diff` and `aburi explain` ru
 a line for every file extracted as well, and `error` shows none of it. Its lines
 name no scan; `aburi diff` writes the base's before the head's. At `debug`, `aburi diff` also
 writes a `diff/stage4:` line for each Symbol, or pair of Symbols, it would not pair by name,
-naming the rule that stopped it. The `⚠` warnings are printed
+and for each class, namespace or object whose members paired but which it would not pair through
+them, naming the rule that stopped it. The `⚠` warnings are printed
 whatever the level. Any other value exits `2`.
 
 An option that takes a value takes one. Given twice (`--config a.json --config b.json`), the

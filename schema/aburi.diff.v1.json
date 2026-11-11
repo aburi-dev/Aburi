@@ -240,7 +240,7 @@
     "ThroughMembers": {
       "type": "integer",
       "minimum": 1,
-      "description": "Present only on an owner no stage could pair by name or signature (a class, a namespace, an object a binding holds), paired with rationale `name-signature` on its members instead: every member pair of the base owner points into the head owner, every member pair of the head owner comes back from it, and the two names pass the owner gate. The number of those member pairs. A writer that predates the field never paired an owner this way, so its absence says the pairing rests on the rationale alone."
+      "description": "Present only on an owner no stage could pair by name or signature (a class, a namespace, an object a binding holds), paired with rationale `name-signature` on its members instead: every member pair of the base owner points into the head owner, every member pair of the head owner comes back from it, the two owners are of one kind and at one nesting depth, and their names correspond segment by segment, each word to itself or its inflection, as the owners of a method paired by name must. An owner nested in it and paired this way counts as one of its member pairs. The number of those member pairs. A writer that predates the field never paired an owner this way, so its absence says the pairing rests on the rationale alone."
     },
 
     "SymbolDelta": {

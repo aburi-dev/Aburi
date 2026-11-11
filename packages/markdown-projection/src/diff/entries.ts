@@ -112,7 +112,10 @@ export function moveRoute(before: IRSymbol, after: IRSymbol): string {
   )
 }
 
-/** An owner paired on its members has no name or signature the rationale could have read. */
+/**
+ * The rationale is stage 4's, but an owner's pair rests on member pairs rather than a
+ * name-and-signature score; the count says how many.
+ */
 function pairedBy(entry: SymbolMoved | SymbolMovedChanged): string {
   const rationale = inlineCode(entry.rationale)
   if (entry.throughMembers === undefined) return `(${rationale})`

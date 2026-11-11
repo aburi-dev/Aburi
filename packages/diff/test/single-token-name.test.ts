@@ -75,7 +75,7 @@ describe("a name that says one thing is not evidence of identity", () => {
   it("leaves both in the stage's remainder rather than removing them from the diff", () => {
     const base = fn("src/a.ts", "main", "aaa")
     const head = fn("src/b.ts", "main", "bbb")
-    expect(matchStageNameSignature([base], [head])).toEqual({
+    expect(matchStageNameSignature([base], [head], { paired: [] })).toEqual({
       matched: [],
       remainingBase: [base],
       remainingHead: [head],

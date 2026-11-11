@@ -52,18 +52,21 @@ describe("diff — a class paired with the class its methods moved into", () => 
     ])
   })
 
-  it("leaves a class added and removed when its method moved into another class", async () => {
+  it("leaves a class added and removed when its method moved into a class of another name", async () => {
+    const guarded = invoice.replace(
+      "    return",
+      '    if (t < 0) throw new RangeError("negative")\n    return',
+    )
     const diff = await diffOfMove(
       workspace,
-      { "src/old.ts": invoice },
-      { "src/new.ts": invoice.replace("class Invoice", "class Receipt") },
+      { "src/old.ts": guarded },
+      { "src/new.ts": guarded.replace("class Invoice", "class Receipt") },
     )
 
     expect(pairingOutcome(diff)).toEqual([
       "added Receipt",
-      "added Receipt.render",
+      "moved Invoice.render -> Receipt.render (logic-fingerprint)",
       "removed Invoice",
-      "removed Invoice.render",
     ])
   })
 })

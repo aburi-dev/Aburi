@@ -2,7 +2,17 @@ import { changeLines, dependency, fp, makeIR, makeSymbol, sig } from "@aburi/tes
 import type { Symbol as IRSymbol, SymbolChange } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { diffSchemaViolations } from "./diff-schema"
-import { bare, diffOf, diffSymbols, guarded, method } from "./helpers"
+import {
+  bare,
+  diffOf,
+  diffSymbols,
+  guarded,
+  method,
+  PRINT,
+  RENDER,
+  type Revision,
+  UNSETTLED_OWNERS,
+} from "./helpers"
 
 /** Each change with the rationale and the member count it was paired on. */
 function pairings(changes: readonly SymbolChange[]): string[] {
@@ -12,9 +22,6 @@ function pairings(changes: readonly SymbolChange[]): string[] {
     return `${changeLines([change]).join("")} (${change.rationale}${through})`
   })
 }
-
-const RENDER = "aaaaaaaaaaa1"
-const PRINT = "aaaaaaaaaaa2"
 
 describe("an owner no stage pairs by name, paired on its members", () => {
   it("pairs a class whose name says one word with the class its method moved into", () => {
@@ -128,37 +135,28 @@ describe("an owner no stage pairs by name, paired on its members", () => {
     expect(diff.dependencies).toEqual({ added: [], removed: [], unknown: [] })
   })
 
-  it("writes a diff that validates against aburi.diff.v1, the member count included", () => {
-    const diff = diffSymbols(
-      [bare("src/old.ts", "Invoice"), guarded("src/old.ts", "Invoice.render", RENDER)],
-      [
-        { ...bare("src/new.ts", "Invoice"), fingerprint: fp("edited") },
-        guarded("src/new.ts", "Invoice.render", RENDER),
-      ],
-    )
+  it.each<[string, IRSymbol]>([
+    ["moved", bare("src/new.ts", "Invoice")],
+    ["moved+changed", { ...bare("src/new.ts", "Invoice"), fingerprint: fp("edited") }],
+  ])(
+    "writes a %s owner that validates against aburi.diff.v1, the member count included",
+    (status, owner) => {
+      const diff = diffSymbols(
+        [bare("src/old.ts", "Invoice"), guarded("src/old.ts", "Invoice.render", RENDER)],
+        [owner, guarded("src/new.ts", "Invoice.render", RENDER)],
+      )
 
-    expect(diff.symbols).toContainEqual(
-      expect.objectContaining({ status: "moved+changed", throughMembers: 1 }),
-    )
-    expect(diffSchemaViolations(diff)).toEqual([])
-  })
+      expect(diff.symbols).toContainEqual(expect.objectContaining({ status, throughMembers: 1 }))
+      expect(diffSchemaViolations(diff)).toEqual([])
+    },
+  )
 })
 
 describe("an owner whose members do not all say where it went", () => {
-  it.each<[string, IRSymbol[], IRSymbol[], string[]]>([
+  it.each<[string, Revision, string[]]>([
     [
       "its methods paired into two classes",
-      [
-        bare("src/old.ts", "Invoice"),
-        guarded("src/old.ts", "Invoice.render", RENDER),
-        guarded("src/old.ts", "Invoice.print", PRINT),
-      ],
-      [
-        bare("src/new.ts", "Invoice"),
-        bare("src/new.ts", "Printer"),
-        guarded("src/new.ts", "Invoice.render", RENDER),
-        guarded("src/new.ts", "Printer.print", PRINT),
-      ],
+      UNSETTLED_OWNERS.split,
       [
         "added ts:src/new.ts#Invoice",
         "added ts:src/new.ts#Printer",
@@ -166,49 +164,51 @@ describe("an owner whose members do not all say where it went", () => {
       ],
     ],
     [
-      "its method became a top-level function's twin",
-      [bare("src/old.ts", "Invoice"), guarded("src/old.ts", "Invoice.render", RENDER)],
-      [bare("src/new.ts", "Invoice"), guarded("src/new.ts", "renderInvoice", RENDER)],
-      ["added ts:src/new.ts#Invoice", "removed ts:src/old.ts#Invoice"],
+      "its function moved to the top level",
+      UNSETTLED_OWNERS.hoisted,
+      ["added ts:src/new.ts#Billing", "removed ts:src/old.ts#Billing"],
     ],
     [
-      "the class its method went to has a name the owner gate refuses",
-      [bare("src/old.ts", "Invoice"), guarded("src/old.ts", "Invoice.render", RENDER)],
-      [bare("src/new.ts", "Receipt"), guarded("src/new.ts", "Receipt.render", RENDER)],
+      "the class its method went to has a name that does not correspond",
+      UNSETTLED_OWNERS.renamed,
       ["added ts:src/new.ts#Receipt", "removed ts:src/old.ts#Invoice"],
     ],
     [
+      "the class its method went to sits a scope deeper",
+      UNSETTLED_OWNERS.nested,
+      ["added ts:src/new.ts#Billing::Invoice", "removed ts:src/old.ts#BillingInvoices"],
+    ],
+    [
       "two classes merged into one",
-      [
-        bare("src/a.ts", "Invoice"),
-        guarded("src/a.ts", "Invoice.render", RENDER),
-        bare("src/b.ts", "Invoice"),
-        guarded("src/b.ts", "Invoice.print", PRINT),
-      ],
-      [
-        bare("src/c.ts", "Invoice"),
-        guarded("src/c.ts", "Invoice.render", RENDER),
-        guarded("src/c.ts", "Invoice.print", PRINT),
-      ],
+      UNSETTLED_OWNERS.merged,
       ["added ts:src/c.ts#Invoice", "removed ts:src/a.ts#Invoice", "removed ts:src/b.ts#Invoice"],
     ],
     [
+      "the namespace its function went to also took in a top-level one",
+      UNSETTLED_OWNERS.joined,
+      ["added ts:src/new.ts#Billing", "removed ts:src/old.ts#Billing"],
+    ],
+    [
       "its kind changed",
-      [bare("src/old.ts", "api", "variable"), method("src/old.ts", "api.get", "a")],
-      [bare("src/new.ts", "api", "const"), method("src/new.ts", "api.get", "a")],
+      {
+        base: [bare("src/old.ts", "api", "variable"), method("src/old.ts", "api.get", "a")],
+        head: [bare("src/new.ts", "api", "const"), method("src/new.ts", "api.get", "a")],
+      },
       ["added ts:src/new.ts#api", "removed ts:src/old.ts#api"],
     ],
     [
       "the class its method went to was paired by its id",
-      [
-        bare("src/old.ts", "Invoice"),
-        guarded("src/old.ts", "Invoice.render", RENDER),
-        bare("src/new.ts", "Invoice"),
-      ],
-      [bare("src/new.ts", "Invoice"), guarded("src/new.ts", "Invoice.render", RENDER)],
+      {
+        base: [
+          bare("src/old.ts", "Invoice"),
+          guarded("src/old.ts", "Invoice.render", RENDER),
+          bare("src/new.ts", "Invoice"),
+        ],
+        head: [bare("src/new.ts", "Invoice"), guarded("src/new.ts", "Invoice.render", RENDER)],
+      },
       ["removed ts:src/old.ts#Invoice"],
     ],
-  ])("leaves it added and removed when %s", (_label, base, head, unpaired) => {
+  ])("leaves it added and removed when %s", (_label, { base, head }, unpaired) => {
     const diff = diffSymbols(base, head)
 
     expect(
@@ -219,7 +219,7 @@ describe("an owner whose members do not all say where it went", () => {
 
   it.each<[string, Partial<IRSymbol>]>([
     ["is dropped", { dropped: true, dropReason: "size" }],
-    ["has a signature, which stage 4 has already read", { signature: sig() }],
+    ["has a signature, which is stage 4's to score", { signature: sig() }],
   ])("does not pair an owner that %s", (_label, overrides) => {
     const owner = (file: string) => ({ ...bare(file, "Invoice"), ...overrides })
     const diff = diffSymbols(
@@ -230,28 +230,33 @@ describe("an owner whose members do not all say where it went", () => {
     expect(diff.symbols.some((change) => "throughMembers" in change)).toBe(false)
   })
 
-  it("never gives an owner it paired a member from outside its partner", () => {
-    const diff = diffSymbols(
-      [
-        bare("src/a.ts", "Billing"),
-        method("src/a.ts", "Billing.charge", "a"),
-        bare("src/a.ts", "BillingInvoices"),
-        method("src/a.ts", "BillingInvoices.run", "r"),
-      ],
-      [
-        bare("src/b.ts", "Billing"),
-        method("src/b.ts", "Billing.charge", "a"),
-        bare("src/b.ts", "Billing::Invoice"),
-        method("src/b.ts", "Billing::Invoice.run", "r"),
-      ],
-    )
+  it.each(["src/a.ts", "src/0.ts"])(
+    "pairs the class its members kept to, not the one a scope deeper, beside it in %s",
+    (file) => {
+      const diff = diffSymbols(
+        [
+          bare("src/a.ts", "Billing"),
+          method("src/a.ts", "Billing.charge", "a"),
+          bare(file, "BillingInvoices"),
+          method(file, "BillingInvoices.run", "r"),
+        ],
+        [
+          bare("src/b.ts", "Billing"),
+          method("src/b.ts", "Billing.charge", "a"),
+          bare("src/b.ts", "Billing::Invoice"),
+          method("src/b.ts", "Billing::Invoice.run", "r"),
+        ],
+      )
 
-    expect(pairings(diff.symbols)).toEqual([
-      "added ts:src/b.ts#Billing::Invoice",
-      "moved ts:src/a.ts#Billing -> ts:src/b.ts#Billing (name-signature x1)",
-      "moved ts:src/a.ts#Billing.charge -> ts:src/b.ts#Billing.charge (logic-fingerprint+name-disambiguation)",
-      "moved ts:src/a.ts#BillingInvoices.run -> ts:src/b.ts#Billing::Invoice.run (name-signature)",
-      "removed ts:src/a.ts#BillingInvoices",
-    ])
-  })
+      expect(pairings(diff.symbols).toSorted()).toEqual(
+        [
+          "added ts:src/b.ts#Billing::Invoice",
+          "moved ts:src/a.ts#Billing -> ts:src/b.ts#Billing (name-signature x1)",
+          "moved ts:src/a.ts#Billing.charge -> ts:src/b.ts#Billing.charge (logic-fingerprint+name-disambiguation)",
+          `moved ts:${file}#BillingInvoices.run -> ts:src/b.ts#Billing::Invoice.run (name-signature)`,
+          `removed ts:${file}#BillingInvoices`,
+        ].toSorted(),
+      )
+    },
+  )
 })
