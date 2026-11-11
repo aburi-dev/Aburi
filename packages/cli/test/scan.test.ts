@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import {
   CliError,
   COMPONENTS_DIRNAME,
+  DEFAULT_OUTPUT_DIRNAME,
   EXIT,
   IR_JSON_FILENAME,
   runScan,
@@ -13,6 +14,7 @@ import {
 } from "../src"
 import { runCliIn } from "./run-cli"
 import {
+  defaultOutput,
   listTree,
   TYPESCRIPT,
   writeConfig,
@@ -30,7 +32,7 @@ beforeEach(async () => {
 function scan(options: Omit<ScanOptions, "cwd" | "outputDir"> = {}) {
   return runScan({
     cwd: workspace.root,
-    outputDir: resolve(workspace.root, "out"),
+    outputDir: defaultOutput(workspace.root),
     format: "json",
     ...options,
   })
@@ -125,7 +127,7 @@ describe("aburi scan — what the caller and the config add", () => {
 
     expect(code, stderr).toBe(EXIT.SUCCESS)
     const ir = JSON.parse(
-      await readFile(resolve(workspace.root, "out", IR_JSON_FILENAME), "utf8"),
+      await readFile(defaultOutput(workspace.root, IR_JSON_FILENAME), "utf8"),
     ) as IR
     expect(ir.symbols.map((symbol) => symbol.id)).toEqual(["ts:src/keep.ts#keep"])
   })
@@ -240,7 +242,7 @@ describe("aburi scan — the public API a package.json declares", () => {
       expect(code).toBe(EXIT.SUCCESS)
       expect(stderr).toBe(`⚠ Component "scan-fixture": ${line}, so it gives no publicApi entry.\n`)
       const ir = JSON.parse(
-        await readFile(resolve(workspace.root, "out", IR_JSON_FILENAME), "utf8"),
+        await readFile(defaultOutput(workspace.root, IR_JSON_FILENAME), "utf8"),
       ) as IR
       expect(ir.components.map((component) => component.publicApi)).toEqual([publicApi])
       expect(irSchemaViolations(ir)).toEqual([])
@@ -336,13 +338,16 @@ describe("aburi scan — files skipped for a reason that is not a plugin throw",
 })
 
 describe("aburi scan's removals, when another command runs the scan", () => {
-  const outputs = () => listTree(resolve(workspace.root, "out"))
+  const outputs = () => listTree(defaultOutput(workspace.root))
 
   it.each(["explain", "diff"] as const)(
     "removes nothing an earlier scan wrote when %s's scan writes only Markdown",
     async (command) => {
       await scan({ format: "both" })
-      await workspace.writeSource(`out/${COMPONENTS_DIRNAME}/stale.md`, "# Component: stale\n")
+      await workspace.writeSource(
+        `${DEFAULT_OUTPUT_DIRNAME}/${COMPONENTS_DIRNAME}/stale.md`,
+        "# Component: stale\n",
+      )
       const earlier = await outputs()
 
       await scan({ command, format: "md" })

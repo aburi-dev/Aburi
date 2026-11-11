@@ -116,7 +116,7 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     options.outputDir,
     options.outputDir === undefined ? await configuredOutputDir(await pinConfigOnce()) : undefined,
   )
-  await createOutputDir("diff", outputDir)
+  await createOutputDir("diff", outputDir, cwd)
   await removeEarlierReport(outputDir)
   const compared = await readSides(inputs, {
     cwd,

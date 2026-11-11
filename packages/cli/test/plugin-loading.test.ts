@@ -5,7 +5,13 @@ import { RegistryError } from "@aburi/plugin-registry"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
 import type { Config, FrameworkPlugin, Provides } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { CliError, EXIT, type LoadPluginsOptions, loadPlugins } from "../src"
+import {
+  CliError,
+  DEFAULT_OUTPUT_DIRNAME,
+  EXIT,
+  type LoadPluginsOptions,
+  loadPlugins,
+} from "../src"
 import { pathExists } from "../src/fs-probe"
 import {
   EFFECTS_MANIFEST,
@@ -358,7 +364,7 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
       expect(code, stderr).toBe(EXIT.GATE)
       expect(stderr).toContain(says)
       expect(stdout).toBe("")
-      expect(await pathExists(resolve(workspace.root, "out"))).toBe(false)
+      expect(await pathExists(resolve(workspace.root, DEFAULT_OUTPUT_DIRNAME))).toBe(false)
     },
   )
 })
