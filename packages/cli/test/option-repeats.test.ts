@@ -1,6 +1,6 @@
 import { useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
-import { EXIT } from "../src"
+import { DEFAULT_OUTPUT_DIRNAME, EXIT } from "../src"
 import { runCliIn } from "./run-cli"
 import { filesUnder, writeEarlierReports, writeTypeScriptWorkspace } from "./workspace"
 
@@ -51,6 +51,10 @@ describe("an option that takes one value, given twice", () => {
       repeated("--max-bytes", "1000", "0"),
     ],
     [
+      ["diff", "main..HEAD", "--filter", "added", "--filter", "removed"],
+      repeated("--filter", "added", "removed"),
+    ],
+    [
       ["diff", "main..HEAD", "--config", "a.json", "--config", "b.json"],
       repeated("--config", "a.json", "b.json"),
     ],
@@ -91,7 +95,12 @@ describe("an option that takes one value, given twice", () => {
       repeated("--log-level", "warn", "loud"),
     ],
   ])("%j exits 2 naming the option, and writes or removes nothing", async (argv, message) => {
-    const earlier = await writeEarlierReports(workspace.root, [".", "out", "a", "b"])
+    const earlier = await writeEarlierReports(workspace.root, [
+      ".",
+      DEFAULT_OUTPUT_DIRNAME,
+      "a",
+      "b",
+    ])
     const { code, stdout, stderr } = await runCliIn(workspace.root, argv)
     expect(code).toBe(EXIT.INPUT_ERROR)
     expect(stderr).toBe(`${message}\n`)

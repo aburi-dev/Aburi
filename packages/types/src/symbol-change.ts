@@ -8,3 +8,25 @@ import type { Symbol as IRSymbol } from "./generated/ir"
 export function representativeSymbol(change: SymbolChange): IRSymbol {
   return "symbol" in change ? change.symbol : change.after
 }
+
+export type SymbolChangeStatus = SymbolChange["status"]
+
+// A Record, so that a status the schema adds and this list lacks is a compile error.
+const STATUS_ORDER: Record<SymbolChangeStatus, null> = {
+  added: null,
+  removed: null,
+  changed: null,
+  moved: null,
+  "moved+changed": null,
+  "dropped-toggled": null,
+  unknown: null,
+}
+
+/** Every `SymbolChange` status, in the order reports name them. */
+export const SYMBOL_CHANGE_STATUSES: readonly SymbolChangeStatus[] = Object.freeze(
+  Object.keys(STATUS_ORDER) as SymbolChangeStatus[],
+)
+
+export function isSymbolChangeStatus(value: unknown): value is SymbolChangeStatus {
+  return typeof value === "string" && Object.hasOwn(STATUS_ORDER, value)
+}
