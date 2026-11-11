@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import { DIFF_JSON_FILENAME, DIFF_MD_FILENAME, EXIT, runDiff } from "../src"
 import { diffDocuments, documentWith, documentWithCensus } from "./ir-documents"
 import { runCliIn } from "./run-cli"
-import { writeIRs } from "./workspace"
+import { defaultOutput, writeIRs } from "./workspace"
 
 const workspace = useScratchWorkspace("diff-filter")
 
@@ -39,7 +39,7 @@ async function cli(base: IR, head: IR, ...flags: string[]) {
     paths.head,
     ...flags,
   ])
-  const outputs = resolve(workspace.root, "out")
+  const outputs = defaultOutput(workspace.root)
   return {
     ...run,
     markdown: await read(resolve(outputs, DIFF_MD_FILENAME)),
@@ -273,7 +273,7 @@ describe("aburi diff --quiet", () => {
 
     expect(loud.stdout.split("\n").slice(1, 3)).toEqual([
       "calls 2 · resolved 1 · unresolved 1 (no-match 1)",
-      `→ ${resolve(workspace.root, "out", DIFF_MD_FILENAME)}`,
+      `→ ${defaultOutput(workspace.root, DIFF_MD_FILENAME)}`,
     ])
     expect(quiet.stdout).toBe(`${loud.stdout.split("\n")[0]}\n`)
     expect(quiet.stdout).toMatch(/^\+1 -0 ~1 ↔0 ⤴0 · \?1 unknown\n$/)

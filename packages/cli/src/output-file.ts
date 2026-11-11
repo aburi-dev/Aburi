@@ -1,8 +1,8 @@
 import { mkdir, open, readdir, rm, writeFile } from "node:fs/promises"
-import { dirname } from "node:path"
-import { OUTPUT_DIR_SOURCES } from "./artifact-paths"
+import { dirname, join } from "node:path"
+import { OUTPUT_DIR_GITIGNORE, OUTPUT_DIR_SOURCES, resolveOutputDir } from "./artifact-paths"
 import { CliError, errorCode, errorMessage } from "./errors"
-import { ABSENT_ERRNOS } from "./fs-probe"
+import { ABSENT_ERRNOS, samePlace } from "./fs-probe"
 
 export type OutputCommand = "init" | "scan" | "diff" | "explain"
 
@@ -90,11 +90,37 @@ async function unlessAbsent<T>(
   }
 }
 
-export async function createOutputDir(command: OutputCommand, path: string): Promise<void> {
+/**
+ * Only the default directory, and only when this run created it, is Aburi's to mark ignored: one
+ * that was already there is the user's, and another place may be one they mean to commit. The
+ * default is a place, not a spelling, as a schema default must be: naming it in the flag or the
+ * config, through a link or in another case, changes nothing.
+ */
+export async function createOutputDir(
+  command: OutputCommand,
+  path: string,
+  cwd: string,
+): Promise<void> {
+  let created: string | undefined
   try {
-    await mkdir(path, { recursive: true })
+    created = await mkdir(path, { recursive: true })
   } catch (error) {
     throw cannot("write", { command, artefact: "the output directory", path }, error)
+  }
+  if (created === undefined || !(await samePlace(path, resolveOutputDir(cwd, undefined)))) return
+  const gitignore = join(path, ".gitignore")
+  try {
+    await writeFile(gitignore, OUTPUT_DIR_GITIGNORE, { encoding: "utf8", flag: "wx" })
+  } catch (error) {
+    // Something put a .gitignore there after the mkdir, and it is not this run's to replace.
+    if (errorCode(error) === "EEXIST") return
+    // Left in place, the directory would read to every later run as one that was already there.
+    await rm(created, { recursive: true, force: true }).catch(() => undefined)
+    throw cannot(
+      "write",
+      { command, artefact: "the output directory's .gitignore", path: gitignore },
+      error,
+    )
   }
 }
 

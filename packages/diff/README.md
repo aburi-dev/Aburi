@@ -54,9 +54,9 @@ const diff = buildDiff({
 diff.summary
 // { added, removed, moved, movedChanged, changed, droppedToggled, ... }
 
-await writeFile("out/diff.json", writeCanonicalDiff(diff), "utf8")
+await writeFile(".aburi/diff.json", writeCanonicalDiff(diff), "utf8")
 // Or, to mirror `aburi diff --compact`:
-await writeFile("out/diff.json", writeCanonicalDiff(diff, { format: "compact" }), "utf8")
+await writeFile(".aburi/diff.json", writeCanonicalDiff(diff, { format: "compact" }), "utf8")
 ```
 
 ## See also

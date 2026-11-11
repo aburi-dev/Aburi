@@ -121,7 +121,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
   const command = options.command ?? "scan"
   const outputDir = resolveOutputDir(cwd, options.outputDir, config.output?.dir)
-  await createOutputDir(command, outputDir)
+  await createOutputDir(command, outputDir, cwd)
   const logger = createLogger({
     ...(options.logLevel === undefined ? {} : { minimum: options.logLevel }),
     ...(options.log === undefined ? {} : { write: options.log }),
