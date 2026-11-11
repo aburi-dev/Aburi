@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { makeLanguageId, makeSymbolId, serializeCanonical } from "@aburi/core"
 import { scanWith } from "@aburi/test-harness"
-import { useScratchWorkspace } from "@aburi/test-support"
+import { NO_LANGUAGE_CAPABILITIES, useScratchWorkspace } from "@aburi/test-support"
 import {
   type LanguagePlugin,
   type ParseResult,
@@ -49,19 +49,7 @@ function toyLanguage(): { plugin: LanguagePlugin<ToyTree, ToyFunction>; trees: T
       },
     },
     fileExtensions: [".toy"],
-    capabilities: {
-      hasDecorators: false,
-      hasGenerics: false,
-      hasAsync: false,
-      hasMacros: false,
-      hasPatternMatching: false,
-      hasAbstractTypes: false,
-      hasModules: false,
-      hasNamespaces: false,
-      hasTypeParameters: false,
-      hasExplicitVisibility: false,
-      hasJsDoc: false,
-    },
+    capabilities: NO_LANGUAGE_CAPABILITIES,
     async init(ctx) {
       parser = createPluginProcess({
         command: process.execPath,

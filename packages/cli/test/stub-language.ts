@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { makeLanguageId } from "@aburi/core"
-import { commitAll, initRepository } from "@aburi/test-support"
+import { commitAll, initRepository, NO_LANGUAGE_CAPABILITIES } from "@aburi/test-support"
 import type { PluginManifest } from "@aburi/types"
 import { LANG_MANIFEST, pluginModuleSource } from "./plugin-fakes"
 import { writeConfig, writeFileAt, writePackageJson } from "./workspace"
@@ -61,19 +61,7 @@ export function stubPluginSource(manifest: PluginManifest, members = ""): string
   return pluginModuleSource(
     manifest,
     `${members}  fileExtensions: [".stub"],
-  capabilities: {
-    hasDecorators: false,
-    hasGenerics: false,
-    hasAsync: false,
-    hasMacros: false,
-    hasPatternMatching: false,
-    hasAbstractTypes: false,
-    hasModules: false,
-    hasNamespaces: false,
-    hasTypeParameters: false,
-    hasExplicitVisibility: false,
-    hasJsDoc: false,
-  },
+  capabilities: ${JSON.stringify(NO_LANGUAGE_CAPABILITIES)},
   init: async () => {},
   parseFile: async (file) => {
     const tree = { path: file.path }

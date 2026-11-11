@@ -268,7 +268,7 @@ export interface LanguagePlugin<TTree = ParsedTree, TNode = OpaqueAstNode> {
   fileExtensions: string[]
   capabilities: LanguageCapabilities
 
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   parseFile(file: SourceFile): Promise<ParseResult<TTree>>
@@ -287,7 +287,7 @@ export interface LanguagePlugin<TTree = ParsedTree, TNode = OpaqueAstNode> {
 
 export interface EffectPlugin {
   manifest: EffectsManifest
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   classify(call: CallCandidate, ctx: ClassifyContext): EffectClassification | EffectDecline | null
@@ -298,7 +298,7 @@ export interface EffectPlugin {
 
 export interface FrameworkPlugin<TNode = OpaqueAstNode> {
   manifest: FrameworkManifest
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   classifySymbol(

@@ -228,6 +228,14 @@ let parser: PluginProcess
 // in the plugin object
 async init(ctx) {
   parser = createPluginProcess({ command: "python3", args: ["-m", "my_parser"], cwd: ctx.workspaceRoot })
+  try {
+    // The first request starts the process, so a parser that cannot run fails here.
+    await parser.request("initialize", { workspaceRoot: ctx.workspaceRoot })
+  } catch (error) {
+    // A plugin whose init fails is not cleaned up, so it ends what it started.
+    await parser.close()
+    throw error
+  }
 },
 async cleanup() {
   await parser.close()
@@ -241,9 +249,9 @@ async parseFile(file) {
 The process reads one request per line from stdin and writes one answer per line
 to stdout, `{"jsonrpc":"2.0","id":<id>,"result":<tree>}`, and exits when stdin
 closes. The tree is yours: `extractSymbols`, `walkBody` and `normalizeAst` read
-the JSON it answered with. A request that fails — an error answer, a crash, no
-answer within `timeoutMs` — throws from `parseFile`, so that one file is
-withdrawn, and the next request starts a fresh process. The
+the JSON it answered with. A request that fails throws from `parseFile`, so that
+one file is withdrawn. An error answer keeps the process; after a crash, or no
+answer within `timeoutMs`, the next request starts a fresh one. The
 [plugin process contract](../design/plugin-process.md) has the protocol and every
 way a request can fail.
 

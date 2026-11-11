@@ -66,7 +66,7 @@ The actual types are defined in the `types` package of `@aburi/core`. This docum
 ```ts
 interface EffectPlugin {
   manifest: PluginManifest                   // type: "effects"
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   // effect classification (ideally implemented as a pure function)

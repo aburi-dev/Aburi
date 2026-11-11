@@ -151,11 +151,40 @@ describe("the plugin lifecycle of a scan", () => {
     expect(calls).toEqual(["parse a.stub", "parse bad.stub", "parse c.stub"])
   })
 
+  it("initializes and cleans up once a plugin object listed twice", async () => {
+    const { calls, contexts: _, effects, ...plugins } = lineup()
+    await scanStubs(workspace.root, { ...plugins, effects: [...effects, ...effects] })
+
+    expect(calls.filter((call) => call.endsWith("effects"))).toEqual([
+      "init effects",
+      "cleanup effects",
+    ])
+  })
+
+  it.each<["init" | "cleanup", unknown, string]>([
+    ["init", true, "a boolean"],
+    ["cleanup", null, "null"],
+  ])(
+    "refuses a plugin whose %s is %o before any plugin is initialized",
+    async (member, value, described) => {
+      const { calls, contexts: _, ...plugins } = lineup()
+      const [effects] = plugins.effects
+      const misshapen = { ...(effects as EffectPlugin), [member]: value } as EffectPlugin
+
+      await expect(
+        scanStubs(workspace.root, { ...plugins, effects: [misshapen] }),
+      ).rejects.toMatchObject({
+        code: "scan-plugin-misconfigured",
+        value: "effects-stub",
+        message: `Plugin "effects-stub" sets ${member} to ${described}, not a function: leave it out, or make it an async function.`,
+      })
+      expect(calls).toEqual([])
+    },
+  )
+
   it("scans with a plugin written without init or cleanup", async () => {
     const { init: _init, cleanup: _cleanup, ...bare } = oneSymbolPerFile()
-    const result = await scanStubs(workspace.root, {
-      languages: [bare as LanguagePlugin],
-    })
+    const result = await scanStubs(workspace.root, { languages: [bare] })
 
     expect(result.ir.stats.parsedFiles).toBe(3)
   })

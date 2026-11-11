@@ -34,7 +34,13 @@ export const plugin: LanguagePlugin<PythonTree, PythonNode> = {
   // manifest (with its languageId), fileExtensions, capabilities …
   async init(ctx) {
     parser = createPluginProcess({ command: "python3", args: ["-m", "aburi_python"], cwd: ctx.workspaceRoot })
-    await parser.request("initialize", { workspaceRoot: ctx.workspaceRoot }, { timeoutMs: 60_000 })
+    try {
+      await parser.request("initialize", { workspaceRoot: ctx.workspaceRoot }, { timeoutMs: 60_000 })
+    } catch (error) {
+      // A plugin whose init fails is not cleaned up, so it ends what it started.
+      await parser.close()
+      throw error
+    }
   },
   async cleanup() {
     await parser.close()
@@ -50,14 +56,16 @@ export const plugin: LanguagePlugin<PythonTree, PythonNode> = {
 ```
 
 `createPluginProcess(options)` starts nothing. The first request starts the process, so a scan with
-no file of the language never does; a plugin with an expensive start-up sends it a first request
-from `init`, whose time no file's `parseTimeoutMs` counts.
+no file of the language never does. A first request from `init` is where a parser that cannot run
+ends the scan with exit `3`, naming the plugin, rather than withdrawing every file of its language;
+it also keeps an expensive start-up out of the first file's `parseTimeoutMs`.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `command`, `args` | — | Run as `spawn` runs them, with no shell between, so a `.cmd` shim on Windows is named as `cmd.exe` with `/c` |
-| `cwd`, `env` | the host's | The process's working directory and environment |
-| `timeoutMs` | `30000` | How long one request may wait for its answer, the process's start included. `request(method, params, { timeoutMs })` overrides it for one request |
+| `command`, `args` | — | Run as `spawn` runs them, with no shell between, so a `.cmd` or `.bat` on Windows is named as `cmd.exe` with `/c` and the script first among the args; named itself, it fails with `start-failed` saying so |
+| `cwd` | the host's | The process's working directory |
+| `env` | the host's | Variables set over the host's environment; one set to `undefined` is left out |
+| `timeoutMs` | `30000` | How long one request may wait for its answer, the process's start included. `request(method, params, { timeoutMs })` overrides it for one request. A value above 2^31−1 (about 24.8 days) waits that long |
 | `maxResponseBytes` | `268435456` (256 MiB) | The longest line the process may write on stdout |
 
 Both numbers must be positive integers; anything else is a `RangeError` from
@@ -77,14 +85,17 @@ JSON-RPC 2.0 messages, one per line, UTF-8, each ending in `\n`:
   `request` is given and resolves with `result` as it was parsed.
 - `params` is left out of a request `request` was not given params for.
 - Answers may come in any order; each is matched to its request by `id`. A plugin may have several
-  requests in flight, and the core may parse several files at once.
+  requests in flight. The core calls one plugin object for one file at a time; a scan that extracts
+  on parser workers holds a plugin object, and so a process, on each.
 - A line ending in `\r\n` is read as one ending in `\n`, and a blank line is ignored. A response
   may leave out `"jsonrpc"`.
 - **Every other line on stdout is a fault**: a line that is not JSON, not an object, carries no
-  numeric `id`, carries an `id` no request is waiting on, or has neither `result` nor `error`.
-  Diagnostics go to stderr, which the helper keeps the last 8 KiB of and otherwise ignores.
-- The process ends when its stdin closes. That is how `close` asks it to, and what it sees when
-  its host exits.
+  numeric `id`, carries an `id` no request is waiting on, has neither `result` nor `error` or has
+  both, or has an `error` that is not an object with an integer `code` and a string `message`.
+  Diagnostics go to stderr, which the helper keeps the last 8,192 characters of and otherwise
+  ignores.
+- The process is to exit when its stdin closes. That is what it sees when its host exits, and how
+  the helper first asks it to end (PP-2).
 
 ## 4. Failures
 
@@ -95,19 +106,24 @@ message on `ScanResult.extractionFailures`, and the scan goes on.
 
 | `code` | When | The process |
 |---|---|---|
-| `error-response` | The process answered with `error`: `<command> answered <method> with an error: <error.message>` | Kept |
-| `exited` | The process ended with requests waiting: `<command> exited with code <n>` or `ended on <signal>`, then `. It wrote on stderr:` and its stderr's tail, if any. A request still waiting when another one's timeout ended the process gets it too, naming that request | Gone |
+| `error-response` | The process answered with `error`: `<command> answered <method> with an error: <error.message>`, the error object, `data` included, on the error's `rpcError` | Kept |
+| `exited` | The process ended with requests waiting: `<command> exited with code <n>` or `ended on <signal>`, then `. Its stdin had closed: <reason>` if it stopped reading its requests, and `. It wrote on stderr:` and its stderr's tail, if any. A request still waiting when another one's timeout ended the process gets it too, naming that request | Gone |
 | `timeout` | No answer within `timeoutMs`: `<command> did not answer <method> within <n>ms` | Ended |
 | `oversize` | A line passed `maxResponseBytes` | Ended |
 | `protocol` | A line on stdout that answers no request (§3), quoted to its first 200 characters | Ended |
-| `start-failed` | The command could not be started: `Could not start <command>: <reason>` | — |
+| `start-failed` | The command could not be started, whether `spawn` refused it outright or reported it: `Could not start <command>: <reason>` | — |
 | `abandoned` | See PP-3 | Not started |
 | `closed` | `close` was called before the request was answered | Ended |
 
 Rule PP-2: **a process that has ended is replaced by the next request**, so one file that kills
 the parser costs that file alone: the request that met the fault, and any others in flight with
-it, are rejected, and the next file is parsed by a fresh process. A process the helper ends is
-sent `SIGTERM` with its stdin closed, then `SIGKILL` if it is still running five seconds later.
+it, are rejected, and the next file is parsed by a fresh process. A process the helper ends has its
+stdin closed and a second to exit; then it is sent `SIGTERM`, and `SIGKILL` five seconds later if
+it is still running. On Windows either signal ends the process at once (`TerminateProcess`), so the
+second after its stdin closes is all the warning it gets there. Five seconds after `SIGKILL` the
+helper stops waiting. Once the process has exited, its pipes have a second to close: a launcher
+that runs the parser without `exec`ing it leaves the parser holding them, and the helper closes its
+own ends and leaves that parser running.
 
 Rule PP-3: **after three processes in a row end without answering a request, no fourth is
 started.** Every request after them rejects at once with `abandoned`, quoting the last one's end,
@@ -123,9 +139,10 @@ per scan through `init` and `cleanup`. A scan extracting on parser workers loads
 each, so it runs one process for each worker ([`lang-plugin.md`](./lang-plugin.md) §3).
 
 Rule PP-5: **an idle process does not keep its host alive.** The process and its pipes are
-detached from the host's event loop, and only a waiting request's timer holds it. A host that
-never calls `close`, or that the user interrupts, still exits; the process then reads the end of
-its stdin and exits too.
+detached from the host's event loop; only a waiting request's timer holds it, and a process being
+ended until it has exited (PP-2), so a host awaiting `close` sees it resolve. A host that never
+calls `close`, or that the user interrupts, still exits; the process then reads the end of its
+stdin and exits too.
 
 ## 6. Verifiable Properties
 
@@ -133,16 +150,26 @@ its stdin and exits too.
 |---|---|---|
 | PP1 | `request("request", { file: "a.py" })`, then `request("request")` to a process that answers with the line it read | `{"jsonrpc":"2.0","id":1,"method":"request","params":{"file":"a.py"}}`, then the same with `"id":2` and no `params` |
 | PP2 | Three requests at once, answered last-sent first, one with `\r\n` | Each resolves with its own result, from one process |
-| PP3 | An `error` answer | `error-response` with its message; the process kept |
-| PP4 | The process exits, hangs past `timeoutMs`, writes a line over `maxResponseBytes`, or writes a line that is not an answer | `exited` with the stderr tail, `timeout`, `oversize`, `protocol`; the process gone and the next request answered by a new one |
+| PP3 | An `error` answer | `error-response` with its message, and its `code` and `message` on `rpcError`; the process kept |
+| PP4 | The process exits, hangs past `timeoutMs`, writes a line over `maxResponseBytes` in one read or over several, or writes a line that is not an answer | `exited` with the stderr tail, `timeout`, `oversize`, `protocol`; the process gone and the next request answered by a new one |
 | PP5 | The process exits with another request in flight | Both rejected with `exited` |
 | PP6 | A process that exits on start, asked four times, then closed and asked again | `exited` three times, `abandoned` without a fourth start, then a start after `close` |
 | PP7 | A command that does not exist | `start-failed` |
-| PP8 | `close` with a request in flight, and with a process that holds `SIGTERM` and outlives its stdin | `closed`; each process gone; a later request starts a new one |
-| PP9 | `timeoutMs` `0` or `1.5`, `maxResponseBytes` `-1` | `RangeError` naming the option |
+| PP8 | `close` with a request in flight, and with a process that holds `SIGTERM` and outlives its stdin | `closed`; each process gone; a later request starts a new one. `SIGTERM` ends any process at once on Windows, so Linux and macOS are where the escalation to `SIGKILL` runs |
+| PP9 | `timeoutMs` `0` or `1.5` for the helper, `0` for one request, `maxResponseBytes` `-1`; `timeoutMs` 2^53−1 for the helper and 2^32 for one request | `RangeError` naming the option; requests answered after 50 ms |
 | PP10 | A host that makes one request and never calls `close` | The host exits `0`, and the process after it |
 | PP11 | A language plugin whose parser is a process, over a workspace scanned twice | One process per scan, gone when the scan ends, and the same IR both times |
 | PP12 | The same plugin over a file its parser exits on | That file withdrawn with `exited`; the next file parsed by a new process |
+| PP13 | An answer of over a megabyte whose multi-byte characters straddle the reads | Resolved whole |
+| PP14 | A line that is `null` or an array, has a string `id`, neither or both of `result` and `error`, an `error` that is no object or has no integer `code`, or an `id` no request waits on | `protocol`; the process ended |
+| PP15 | Two processes that end without answering, one that answers before it exits, then two more that end without answering | The next request starts a process and is answered (PP-3 counts ends in a row) |
+| PP16 | A command `spawn` refuses outright, such as an empty one | `start-failed` three times, then `abandoned` |
+| PP17 | `close` while a process a timeout ended is still ending, with a second one running, both holding `SIGTERM` | Resolves once both have exited |
+| PP18 | A process that closes its stdin and keeps running | The next request rejects with `exited`, `Its stdin had closed:` and the reason |
+| PP19 | `close` of `sh -c "<parser> --hold; true"` | Resolves, the parser left running (PP-2) |
+| PP20 | A host whose last step awaits `close` of a process that holds `SIGTERM` | The host exits `0` after `close` resolves, with the process gone |
+| PP21 | `env` setting one variable and `PATH` to `undefined` | That variable set, `PATH` unset, the host's other variables as they were |
+| PP22 | `isPluginProcessError` over its own error, one from another copy of the package, one so named with another code, another error, and an object that is no error | `true` for the first two |
 
 ## 7. Design Decisions
 

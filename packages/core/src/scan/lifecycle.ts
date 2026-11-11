@@ -7,7 +7,7 @@ import type {
 } from "@aburi/types"
 import { CoreError } from "../errors"
 import type { ExtractionJob, ExtractionPlugins } from "./extract-file"
-import { describeThrown } from "./faults"
+import { describeJsonType, describeThrown } from "./faults"
 
 type ScanPlugin = LanguagePlugin | FrameworkPlugin | EffectPlugin
 
@@ -29,16 +29,18 @@ export async function initializePlugins(
     workspaceRoot: job.workspaceRoot,
     log,
   }
+  const lineup = new Set<ScanPlugin>([
+    ...plugins.languages,
+    ...plugins.frameworks,
+    ...plugins.effects,
+  ])
+  for (const plugin of lineup) assertLifecycleShape(plugin)
   const ready: ScanPlugin[] = []
   const cleanUp = async (): Promise<void> => {
     for (const plugin of ready.splice(0).reverse()) await cleanUpOne(plugin, log)
   }
   try {
-    for (const plugin of new Set<ScanPlugin>([
-      ...plugins.languages,
-      ...plugins.frameworks,
-      ...plugins.effects,
-    ])) {
+    for (const plugin of lineup) {
       await initialize(plugin, ctx)
       ready.push(plugin)
     }
@@ -49,9 +51,21 @@ export async function initializePlugins(
   return cleanUp
 }
 
+// Plugins arrive as plain JavaScript, so the types alone do not keep a value that cannot be called
+// out of `init` or `cleanup`.
+function assertLifecycleShape(plugin: ScanPlugin): void {
+  for (const member of ["init", "cleanup"] as const) {
+    const value: unknown = plugin[member]
+    if (value === undefined || typeof value === "function") continue
+    throw new CoreError(
+      `Plugin "${plugin.manifest.name}" sets ${member} to ${describeJsonType(value)}, not a function: leave it out, or make it an async function.`,
+      { code: "scan-plugin-misconfigured", value: plugin.manifest.name },
+    )
+  }
+}
+
 async function initialize(plugin: ScanPlugin, ctx: PluginContext): Promise<void> {
-  // Plugins arrive as plain JavaScript, and one written before the core called `init` may lack it.
-  if (typeof plugin.init !== "function") return
+  if (plugin.init === undefined) return
   try {
     await plugin.init(ctx)
   } catch (error) {
@@ -64,7 +78,7 @@ async function initialize(plugin: ScanPlugin, ctx: PluginContext): Promise<void>
 }
 
 async function cleanUpOne(plugin: ScanPlugin, log: Logger): Promise<void> {
-  if (typeof plugin.cleanup !== "function") return
+  if (plugin.cleanup === undefined) return
   try {
     await plugin.cleanup()
   } catch (error) {

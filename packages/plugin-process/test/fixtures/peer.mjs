@@ -1,12 +1,12 @@
 // The other end of a plugin process, standing in for a parser written in another language.
-import { appendFileSync } from "node:fs"
+import { appendFileSync, closeSync } from "node:fs"
 import { createInterface } from "node:readline"
 
+// --hold outlives its stdin and SIGTERM, --stay its stdin alone.
 const hold = process.argv.includes("--hold")
-if (hold) {
-  process.on("SIGTERM", () => {})
-  setInterval(() => {}, 1_000)
-}
+const stay = hold || process.argv.includes("--stay")
+if (hold) process.on("SIGTERM", () => {})
+if (stay) setInterval(() => {}, 1_000)
 const startsFile = process.env.PEER_STARTS
 if (startsFile !== undefined) appendFileSync(startsFile, "x")
 const exitsFile = process.env.PEER_EXITS
@@ -32,7 +32,16 @@ createInterface({ input: process.stdin })
         process.stderr.write(params.stderr)
         return process.exit(params.code)
       case "big":
-        return write(`${JSON.stringify({ id, result: "x".repeat(params.bytes) })}\n`)
+        return write(`${JSON.stringify({ id, result: params.text.repeat(params.times) })}\n`)
+      case "env":
+        return answer(id, { result: process.env[params.name] ?? null })
+      case "say":
+        return write(`${params.line.replaceAll("$ID", String(id))}\n`)
+      case "deafen":
+        process.stdin.destroy()
+        // Destroying the stream alone leaves the descriptor open, and a write to it unanswered.
+        closeSync(0)
+        return answer(id, { result: true })
       case "garbage":
         return write("Traceback (most recent call last):\n")
       case "crlf":
@@ -42,5 +51,5 @@ createInterface({ input: process.stdin })
     }
   })
   .on("close", () => {
-    if (!hold) process.exit(0)
+    if (!stay) process.exit(0)
   })

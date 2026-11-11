@@ -1,5 +1,6 @@
 import type {
   ExtractionContext,
+  LanguageCapabilities,
   SymbolCandidate,
   SymbolKind,
   Visibility,
@@ -7,6 +8,21 @@ import type {
 } from "@aburi/types"
 import { relativePath, symbolId, type WithLiteralFile } from "./ir"
 import { noopRegistry } from "./registry"
+
+/** A language that claims no feature, for a test plugin whose capabilities nothing reads. */
+export const NO_LANGUAGE_CAPABILITIES: Readonly<LanguageCapabilities> = Object.freeze({
+  hasDecorators: false,
+  hasGenerics: false,
+  hasAsync: false,
+  hasMacros: false,
+  hasPatternMatching: false,
+  hasAbstractTypes: false,
+  hasModules: false,
+  hasNamespaces: false,
+  hasTypeParameters: false,
+  hasExplicitVisibility: false,
+  hasJsDoc: false,
+})
 
 /** An `ExtractionContext` over one in-memory file, backed by `noopRegistry`. */
 export function makeExtractionCtx(path = "src/a.ts", content = ""): ExtractionContext {

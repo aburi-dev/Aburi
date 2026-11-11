@@ -5,6 +5,7 @@ import { useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   createPluginProcess,
+  isPluginProcessError,
   type PluginProcess,
   PluginProcessError,
   type PluginProcessErrorCode,
@@ -64,6 +65,7 @@ describe("a plugin process", () => {
     await expect(plugin.request("fail", { message: "no tree for a.py" })).rejects.toMatchObject({
       code: "error-response",
       message: `${NAME} answered fail with an error: no tree for a.py`,
+      rpcError: { code: -32000, message: "no tree for a.py" },
     })
     expect(await plugin.request("pid")).toBe(pid)
   })
@@ -90,9 +92,17 @@ describe("a plugin process", () => {
         "writes a line over maxResponseBytes",
         { maxResponseBytes: 1_024 },
         "big",
-        { bytes: 2_048 },
+        { text: "x", times: 2_048 },
         "oversize",
         /wrote a line longer than maxResponseBytes \(1024 bytes\)$/,
+      ],
+      [
+        "writes a line over maxResponseBytes across several reads",
+        { maxResponseBytes: 100_000 },
+        "big",
+        { text: "x", times: 300_000 },
+        "oversize",
+        /wrote a line longer than maxResponseBytes \(100000 bytes\)$/,
       ],
       [
         "writes a line that is no answer",
@@ -119,6 +129,33 @@ describe("a plugin process", () => {
     },
   )
 
+  it("answers with a line of several reads whose multi-byte characters straddle them", async () => {
+    const plugin = peer()
+    const text = "€".repeat(400_000)
+
+    expect(await plugin.request("big", { text: "€", times: 400_000 })).toBe(text)
+  })
+
+  it.each<[string, string]>([
+    ["null", "null"],
+    ["an array", "[]"],
+    ["a string id", '{"id":"$ID","result":1}'],
+    ["neither result nor error", '{"id":$ID}'],
+    ["both result and error", '{"id":$ID,"result":1,"error":{"code":1,"message":"no"}}'],
+    ["an error that is not an error object", '{"id":$ID,"error":"no"}'],
+    ["an error with no integer code", '{"id":$ID,"error":{"code":"E1","message":"no"}}'],
+    ["an id no request waits on", '{"id":999,"result":1}'],
+  ])("ends the process on a line on stdout that is %s", async (_, line) => {
+    const plugin = peer()
+    const pid = (await plugin.request("pid")) as number
+
+    await expect(plugin.request("say", { line })).rejects.toMatchObject({
+      code: "protocol",
+      message: expect.stringContaining("answers no request it was sent: "),
+    })
+    await expect.poll(() => isRunning(pid)).toBe(false)
+  })
+
   it("rejects every request still waiting when the process ends", async () => {
     const plugin = peer()
     const outcomes = await Promise.allSettled([
@@ -134,7 +171,7 @@ describe("a plugin process", () => {
 
   it("stops starting a process that ends three times without answering, until it is closed", async () => {
     const starts = join(scratch.root, "starts")
-    const plugin = peer({ env: { ...process.env, PEER_STARTS: starts } }, ["--exit-at-start"])
+    const plugin = peer({ env: { PEER_STARTS: starts } }, ["--exit-at-start"])
 
     for (let attempt = 0; attempt < 3; attempt++) {
       await expect(plugin.request("pid")).rejects.toMatchObject({ code: "exited" })
@@ -148,6 +185,34 @@ describe("a plugin process", () => {
     await plugin.close()
     await expect(plugin.request("pid")).rejects.toMatchObject({ code: "exited" })
     expect(await readFile(starts, "utf8")).toBe("xxxx")
+  })
+
+  it("abandons only processes that end without answering three times in a row", async () => {
+    const plugin = peer()
+    const crash = () =>
+      expect(plugin.request("crash", { code: 1, stderr: "" })).rejects.toMatchObject({
+        code: "exited",
+      })
+
+    await crash()
+    await crash()
+    await plugin.request("pid")
+    await crash()
+    await crash()
+    await crash()
+    expect(await plugin.request("pid")).toEqual(expect.any(Number))
+  })
+
+  it("counts a command that spawn refuses outright as a start that failed", async () => {
+    const plugin = peer({ command: "", args: [] })
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(plugin.request("pid")).rejects.toMatchObject({
+        code: "start-failed",
+        message: expect.stringMatching(/^Could not start : /),
+      })
+    }
+    await expect(plugin.request("pid")).rejects.toMatchObject({ code: "abandoned" })
   })
 
   it("fails a request when the command cannot be started", async () => {
@@ -183,6 +248,72 @@ describe("a plugin process", () => {
     expect(isRunning(pid)).toBe(false)
   })
 
+  it("waits on close for a process it is still ending as well as the one running", async () => {
+    const plugin = peer({}, ["--hold"])
+    const first = (await plugin.request("pid")) as number
+    await expect(plugin.request("hang", undefined, { timeoutMs: 100 })).rejects.toMatchObject({
+      code: "timeout",
+    })
+    const second = (await plugin.request("pid")) as number
+
+    await plugin.close()
+
+    expect(second).not.toBe(first)
+    expect([isRunning(first), isRunning(second)]).toEqual([false, false])
+  })
+
+  it("ends a process that stops reading its stdin, saying so", async () => {
+    const plugin = peer({}, ["--stay"])
+    await plugin.request("deafen")
+
+    await expect(plugin.request("pid")).rejects.toMatchObject({
+      code: "exited",
+      message: expect.stringMatching(/ended on SIGTERM\. Its stdin had closed: .*EPIPE/),
+    })
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "ends a process whose launcher leaves its parser holding its pipes",
+    async () => {
+      const plugin = createPluginProcess({
+        command: "sh",
+        args: ["-c", `"${process.execPath}" "${PEER}" --hold; true`],
+      })
+      const parser = (await plugin.request("pid")) as number
+
+      try {
+        await plugin.close()
+      } finally {
+        process.kill(parser, "SIGKILL")
+      }
+    },
+  )
+
+  it("merges its environment over the host's, leaving out a variable set to undefined", async () => {
+    const plugin = peer({ env: { PEER_PROBE: "set", PATH: undefined } })
+
+    expect(await plugin.request("env", { name: "PEER_PROBE" })).toBe("set")
+    expect(await plugin.request("env", { name: "PATH" })).toBeNull()
+    expect(await plugin.request("env", { name: "HOME" })).toBe(process.env.HOME ?? null)
+  })
+
+  it("reads a timeoutMs too long for a timer as the longest one", async () => {
+    const plugin = peer({ timeoutMs: Number.MAX_SAFE_INTEGER })
+
+    expect(await plugin.request("delay", { ms: 50, value: "waited" })).toBe("waited")
+    expect(await plugin.request("delay", { ms: 50, value: "again" }, { timeoutMs: 2 ** 32 })).toBe(
+      "again",
+    )
+  })
+
+  it("refuses a request whose timeoutMs is not a positive integer", async () => {
+    const plugin = peer()
+
+    await expect(plugin.request("pid", undefined, { timeoutMs: 0 })).rejects.toThrow(
+      new RangeError("timeoutMs must be a positive integer (got 0)"),
+    )
+  })
+
   it.each<[Partial<PluginProcessOptions>, string]>([
     [{ timeoutMs: 0 }, "timeoutMs must be a positive integer (got 0)"],
     [{ timeoutMs: 1.5 }, "timeoutMs must be a positive integer (got 1.5)"],
@@ -191,5 +322,25 @@ describe("a plugin process", () => {
     expect(() => createPluginProcess({ command: process.execPath, ...options })).toThrow(
       new RangeError(says),
     )
+  })
+})
+
+describe("isPluginProcessError", () => {
+  it.each<[string, unknown, boolean]>([
+    ["one of its own", new PluginProcessError("ended", "exited"), true],
+    [
+      "one from another copy of the package",
+      Object.assign(new Error("ended"), { name: "PluginProcessError", code: "timeout" }),
+      true,
+    ],
+    [
+      "one so named with a code of no plugin process",
+      Object.assign(new Error("ended"), { name: "PluginProcessError", code: "ENOENT" }),
+      false,
+    ],
+    ["another error", new TypeError("ended"), false],
+    ["a value that is no error", { name: "PluginProcessError", code: "exited" }, false],
+  ])("recognises %s: %s", (_, error, recognised) => {
+    expect(isPluginProcessError(error)).toBe(recognised)
   })
 })

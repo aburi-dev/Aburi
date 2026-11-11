@@ -23,7 +23,7 @@ const REFERENCE = new RegExp(
     "§",
     String.raw`(?:^|[^&\w/])#\d+\b`,
     String.raw`\bthe issue\b`,
-    String.raw`\b(?:LP|LE|MP|DF|CR|EP|CL|SV|PR|CD|ML|PT|FP)\d+[a-z]?\b`,
+    String.raw`\b(?:LP|LE|MP|DF|CR|EP|CL|SV|PR|CD|ML|PT|FP|PP)\d+[a-z]?\b`,
     String.raw`\binvariant\s*#?\d+`,
     String.raw`(?<![\w.-])(?:${DOCUMENTS.join("|")})\b`,
   ].join("|"),

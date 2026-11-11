@@ -1,10 +1,11 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { type ChildProcess, spawn } from "node:child_process"
 
 export interface PluginProcessOptions {
   /** Run as `spawn` runs it, with no shell between. */
   readonly command: string
   readonly args?: readonly string[]
   readonly cwd?: string
+  /** Merged over the host's environment; a variable set to `undefined` is left out. */
   readonly env?: NodeJS.ProcessEnv
   /** How long one request may wait for its answer, the process's own start included. */
   readonly timeoutMs?: number
@@ -34,19 +35,59 @@ export type PluginProcessErrorCode =
   | "abandoned"
   | "closed"
 
+/** The `error` member of a JSON-RPC answer. */
+export interface RpcError {
+  readonly code: number
+  readonly message: string
+  readonly data?: unknown
+}
+
 export class PluginProcessError extends Error {
   readonly code: PluginProcessErrorCode
+  /** What the process answered with, on an `error-response`. */
+  readonly rpcError: RpcError | undefined
 
-  constructor(message: string, code: PluginProcessErrorCode, options?: { cause?: unknown }) {
-    super(message, options)
+  constructor(
+    message: string,
+    code: PluginProcessErrorCode,
+    options?: { cause?: unknown; rpcError?: RpcError },
+  ) {
+    super(message, options !== undefined && "cause" in options ? { cause: options.cause } : {})
     this.name = "PluginProcessError"
     this.code = code
+    this.rpcError = options?.rpcError
   }
+}
+
+const CODES: ReadonlySet<string> = new Set<PluginProcessErrorCode>([
+  "start-failed",
+  "exited",
+  "timeout",
+  "oversize",
+  "protocol",
+  "error-response",
+  "abandoned",
+  "closed",
+])
+
+/** Matched by name and code, so a copy of this package installed twice still recognises it. */
+export function isPluginProcessError(error: unknown): error is PluginProcessError {
+  if (!(error instanceof Error) || error.name !== "PluginProcessError") return false
+  const { code } = error as { code?: unknown }
+  return typeof code === "string" && CODES.has(code)
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024 * 1024
+// A longer delay is read by `setTimeout` as 1 ms.
+const MAX_TIMER_MS = 2 ** 31 - 1
+/** From closing its stdin, which a peer reading to the end of it takes to exit on, to SIGTERM. */
+const END_GRACE_MS = 1_000
 const KILL_AFTER_MS = 5_000
+/** From SIGKILL to no longer waiting for an exit that cannot then be helped. */
+const GIVE_UP_AFTER_MS = 5_000
+// A process that leaves a child of its own holding its pipes would never close them.
+const DRAIN_AFTER_EXIT_MS = 1_000
 const STDERR_TAIL_CHARS = 8 * 1024
 const NEWLINE = 0x0a
 // A process that dies before answering anything three times running will not answer the next
@@ -61,7 +102,7 @@ interface Pending {
 }
 
 export function createPluginProcess(options: PluginProcessOptions): PluginProcess {
-  const timeoutMs = positiveInteger(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, "timeoutMs")
+  const timeoutMs = timeoutOf(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const maxResponseBytes = positiveInteger(
     options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     "maxResponseBytes",
@@ -91,9 +132,7 @@ export function createPluginProcess(options: PluginProcessOptions): PluginProces
   return {
     async request(method, params, requestOptions = {}) {
       const waitMs =
-        requestOptions.timeoutMs === undefined
-          ? timeoutMs
-          : positiveInteger(requestOptions.timeoutMs, "timeoutMs")
+        requestOptions.timeoutMs === undefined ? timeoutMs : timeoutOf(requestOptions.timeoutMs)
       if (silentEnds >= MAX_SILENT_ENDS) {
         throw new PluginProcessError(
           `${name} ended ${MAX_SILENT_ENDS} times without answering a request, so no more are sent to it. The last time: ${lastEnd?.message ?? "no reason was given"}`,
@@ -125,15 +164,20 @@ export function createPluginProcess(options: PluginProcessOptions): PluginProces
 /** One start of the process, from spawn to exit. */
 class Running {
   readonly closed: Promise<void>
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: ChildProcess | null
   private readonly pending = new Map<number, Pending>()
   private readonly line: Buffer[] = []
   private lineBytes = 0
   private stderrTail = ""
+  private stdinError: Error | null = null
   private answered = false
   private exited = false
+  private stopping = false
+  private settled = false
   private failure: PluginProcessError | null = null
-  private escalation: NodeJS.Timeout | undefined
+  /** The next step of ending the process, or of waiting for its pipes. */
+  private step: NodeJS.Timeout | undefined
+  private done: () => void = () => {}
 
   constructor(
     private readonly name: string,
@@ -141,43 +185,72 @@ class Running {
     private readonly maxResponseBytes: number,
     private readonly onEnd: (answered: boolean, why: PluginProcessError) => void,
   ) {
-    this.child = spawn(options.command, [...(options.args ?? [])], {
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
+    this.closed = new Promise((done) => {
+      this.done = done
+    })
+    let child: ChildProcess
+    try {
+      child = spawn(options.command, [...(options.args ?? [])], {
+        cwd: options.cwd,
+        env: { ...process.env, ...options.env },
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      })
+    } catch (error) {
+      // Some commands are refused at once rather than with an `error` event: an empty one, or a
+      // `.cmd` on Windows, which runs only through `cmd.exe`.
+      this.child = null
+      const failure = this.startFailed(error, options.command)
+      queueMicrotask(() => {
+        this.fail(failure)
+        this.settle()
+      })
+      return
+    }
+    this.child = child
+    child.on("error", (error) => {
+      // Once the process has started, an `error` is a failed signal, and its exit still follows.
+      if (child.pid !== undefined) return
+      this.fail(this.startFailed(error, options.command))
+      this.settle()
     })
     // Pending requests hold their timers, which keep the event loop alive while they wait; an
     // idle process must not, so a plugin that never closes it still lets its host exit.
-    this.child.unref()
-    for (const stream of [this.child.stdin, this.child.stdout, this.child.stderr]) {
-      unref(stream)
-    }
-    // A write to a process that has gone fails here too; its end is reported once, by `close`.
-    this.child.stdin.on("error", () => {})
-    this.child.stdout.on("data", (chunk: Buffer) => this.read(chunk))
-    this.child.stderr.setEncoding("utf8")
-    this.child.stderr.on("data", (text: string) => {
+    child.unref()
+    // A process the system could not give pipes to, as when it is out of file descriptors, has
+    // none; its `error` follows.
+    const { stdin, stdout, stderr } = child
+    if (stdin === null || stdout === null || stderr === null) return
+    for (const stream of [stdin, stdout, stderr]) unref(stream)
+    stdin.on("error", (error) => {
+      // The process has stopped reading its requests, so none sent will be answered.
+      this.stdinError ??= error
+      this.stop()
+    })
+    stdout.on("data", (chunk: Buffer) => this.read(chunk))
+    stderr.setEncoding("utf8")
+    stderr.on("data", (text: string) => {
       this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL_CHARS)
     })
-    this.closed = new Promise((done) => {
-      this.child.on("error", (error) => {
-        this.fail(
-          new PluginProcessError(`Could not start ${name}: ${error.message}`, "start-failed", {
-            cause: error,
-          }),
-        )
-        if (this.child.pid === undefined) this.settle(done)
-      })
-      this.child.on("close", (code, signal) => {
-        this.fail(
-          new PluginProcessError(
-            `${name} ${signal === null ? `exited with code ${code}` : `ended on ${signal}`}${this.quotedStderr()}`,
-            "exited",
-          ),
-        )
-        this.settle(done)
-      })
+    child.on("exit", () => {
+      this.exited = true
+      clearTimeout(this.step)
+      this.step = setTimeout(() => {
+        stdout.destroy()
+        stderr.destroy()
+      }, DRAIN_AFTER_EXIT_MS)
+    })
+    child.on("close", (code, signal) => {
+      const stdinClosed =
+        this.stdinError === null ? "" : `. Its stdin had closed: ${this.stdinError.message}`
+      this.fail(
+        new PluginProcessError(
+          `${this.name} ${signal === null ? `exited with code ${code}` : `ended on ${signal}`}${stdinClosed}${this.quotedStderr()}`,
+          "exited",
+          this.stdinError === null ? undefined : { cause: this.stdinError },
+        ),
+      )
+      this.settle()
     })
   }
 
@@ -200,18 +273,35 @@ class Running {
         )
       }, timeoutMs)
       this.pending.set(id, { method, resolve, reject, timer })
-      this.child.stdin.write(line)
+      this.child?.stdin?.write(line)
     })
   }
 
-  /** Rejects what is still waiting with `why` and stops the process. */
+  /** Rejects what is still waiting with `why` and ends the process. */
   end(why: PluginProcessError): void {
     this.fail(why)
-    if (this.exited || this.escalation !== undefined) return
-    this.child.stdin.end()
-    this.child.kill("SIGTERM")
-    // A process can hold SIGTERM; this timer also keeps the host alive until the process is gone.
-    this.escalation = setTimeout(() => this.child.kill("SIGKILL"), KILL_AFTER_MS)
+    this.stop()
+  }
+
+  /**
+   * Closes the process's stdin, then sends SIGTERM and, if it holds that, SIGKILL. The host is kept
+   * alive until the process has exited, so a host that awaits `close` sees it resolve.
+   */
+  private stop(): void {
+    const { child } = this
+    if (child === null || this.exited || this.stopping) return
+    this.stopping = true
+    child.stdin?.end()
+    this.step = setTimeout(() => {
+      child.kill("SIGTERM")
+      this.step = setTimeout(() => {
+        child.kill("SIGKILL")
+        this.step = setTimeout(() => {
+          this.fail(new PluginProcessError(`${this.name} did not exit after SIGKILL`, "exited"))
+          this.settle()
+        }, GIVE_UP_AFTER_MS)
+      }, KILL_AFTER_MS)
+    }, END_GRACE_MS)
   }
 
   private read(chunk: Buffer): void {
@@ -260,8 +350,9 @@ class Running {
     if ("error" in response) {
       waiting.reject(
         new PluginProcessError(
-          `${this.name} answered ${waiting.method} with an error: ${response.error}`,
+          `${this.name} answered ${waiting.method} with an error: ${response.error.message}`,
           "error-response",
+          { rpcError: response.error },
         ),
       )
     } else {
@@ -285,10 +376,26 @@ class Running {
     for (const id of [...this.pending.keys()]) this.reject(id, this.failure)
   }
 
-  private settle(done: () => void): void {
-    this.exited = true
-    clearTimeout(this.escalation)
-    done()
+  private settle(): void {
+    if (this.settled) return
+    this.settled = true
+    clearTimeout(this.step)
+    this.done()
+  }
+
+  private startFailed(error: unknown, command: string): PluginProcessError {
+    const reason = error instanceof Error ? error.message : String(error)
+    const shim =
+      /\.(cmd|bat)$/i.test(command) && (error as { code?: unknown }).code === "EINVAL"
+        ? '. A .cmd or .bat runs only through cmd.exe: make "cmd.exe" the command, with "/c" and the script first among the args'
+        : ""
+    return new PluginProcessError(
+      `Could not start ${this.name}: ${reason}${shim}`,
+      "start-failed",
+      {
+        cause: error,
+      },
+    )
   }
 
   private quotedStderr(): string {
@@ -297,7 +404,7 @@ class Running {
   }
 }
 
-type Response = { id: number; result: unknown } | { id: number; error: string }
+type Response = { id: number; result: unknown } | { id: number; error: RpcError }
 
 function parseResponse(text: string): Response | null {
   let value: unknown
@@ -306,15 +413,27 @@ function parseResponse(text: string): Response | null {
   } catch {
     return null
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null
-  const { id } = value as { id?: unknown }
+  if (!isRecord(value)) return null
+  const { id } = value
   if (typeof id !== "number") return null
+  // JSON-RPC answers with one of the two, never both.
+  if ("result" in value === "error" in value) return null
   if ("result" in value) return { id, result: value.result }
-  if (!("error" in value)) return null
-  const { error } = value
-  const message =
-    typeof error === "object" && error !== null && "message" in error ? error.message : error
-  return { id, error: typeof message === "string" ? message : JSON.stringify(message) }
+  const error = rpcErrorOf(value.error)
+  return error === null ? null : { id, error }
+}
+
+function rpcErrorOf(value: unknown): RpcError | null {
+  if (!isRecord(value)) return null
+  const { code, message } = value
+  if (typeof code !== "number" || !Number.isInteger(code) || typeof message !== "string") {
+    return null
+  }
+  return { code, message, ...("data" in value ? { data: value.data } : {}) }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function clip(text: string): string {
@@ -324,6 +443,10 @@ function clip(text: string): string {
 function unref(stream: object): void {
   const handle = stream as { unref?: () => void }
   handle.unref?.()
+}
+
+function timeoutOf(value: number): number {
+  return Math.min(positiveInteger(value, "timeoutMs"), MAX_TIMER_MS)
 }
 
 function positiveInteger(value: number, option: string): number {
