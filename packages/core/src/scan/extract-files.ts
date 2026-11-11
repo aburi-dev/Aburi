@@ -1,317 +1,68 @@
-import { readFile } from "node:fs/promises"
-import { resolve } from "node:path"
-import type {
-  Component,
-  Config,
-  DeclinedCall,
-  EffectPlugin,
-  FrameworkPlugin,
-  ImportEdge,
-  Symbol as IRSymbol,
-  Logger,
-  ParseError,
-  SourceFile,
-  ThisBinding,
-  VocabRegistry,
-} from "@aburi/types"
-import type { ThisBindingSites } from "../call-site"
-import { countBy } from "../collections"
-import { CoreError } from "../errors"
-import { symbolIdFile } from "../id"
-import type { ReadFile } from "../lsp"
-import { buildComponentAttribution } from "./attribute"
-import type { DiscoveredFile, SkippedFile } from "./discover"
-import { buildDropCFilter } from "./drop-c"
-import { describeThrown, errorCode, isPluginSetFault, isVanishedFile } from "./faults"
-import { ImportOrigins } from "./import-origins"
-import { type FileFault, runFilePipeline, type TreeReleaseFailure } from "./pipeline"
-import type { LanguageRouter } from "./route"
-import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
-import { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./vocab"
+import type { Logger } from "@aburi/types"
+import { type ExtractedFiles, ExtractionCollator } from "./collate"
+import {
+  createFileExtractor,
+  type ExtractionJob,
+  type ExtractionPlugins,
+  type FileExtraction,
+} from "./extract-file"
 
-export interface ExtractionFailure {
-  file: string
-  message: string
-  code?: string
+export type { ExtractedFiles, ExtractionFailure, ParseErrorRecord } from "./collate"
+
+/** Extracts a scan's files on threads of its own. */
+export interface ParsePool {
+  /** The answers may settle in any order; the scan folds them in file order. */
+  extract(fileId: number): Promise<FileExtraction>
+  /** Ends the pool; an extraction still pending rejects. */
+  close(): Promise<void>
 }
 
-export interface ParseErrorRecord {
-  file: string
-  errors: readonly ParseError[]
-}
+/** A pool for the job, or `null` for the scan to extract every file on its own thread. */
+export type ParsePoolFactory = (job: ExtractionJob) => ParsePool | null
 
-export interface ExtractFilesInput {
-  workspaceRoot: string
-  files: readonly DiscoveredFile[]
-  router: LanguageRouter
-  config: Config
-  frameworks: readonly FrameworkPlugin[]
-  effects: readonly EffectPlugin[]
-  registry: VocabRegistry
-  components: readonly Component[]
+export interface ExtractFilesInput extends ExtractionJob, ExtractionPlugins {
   logger: Logger
+  parsePool?: ParsePoolFactory
   progress?: (done: number, total: number) => void
 }
 
-export interface ExtractedFiles {
-  symbols: IRSymbol[]
-  skipped: SkippedFile[]
-  parseErrors: ParseErrorRecord[]
-  timeoutEvents: ClassifyTimeoutEvent[]
-  parseTimeouts: ParseTimeoutEvent[]
-  extractionFailures: ExtractionFailure[]
-  treeReleaseFailures: TreeReleaseFailure[]
-  undeclaredVocab: UndeclaredVocabOccurrence[]
-  importsByFile: Map<string, readonly ImportEdge[]>
-  fileContents: Map<string, ReadFile>
-  dynamicCallSites: Set<string>
-  declinedCalls: DeclinedCall[]
-  thisBindings: ThisBindingSites
-}
-
 export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedFiles> {
-  const { logger, router } = input
-  const attribute = buildComponentAttribution(input.components)
-
-  const dropCFilterInput: Parameters<typeof buildDropCFilter>[0] = {
-    pluginDropCallees: input.effects.flatMap((e) => e.dropCallees ?? []),
-  }
-  if (input.config.suppress !== undefined) dropCFilterInput.suppress = input.config.suppress
-  if (input.config.keep !== undefined) dropCFilterInput.keep = input.config.keep
-  const dropCFilter = buildDropCFilter(dropCFilterInput)
-
-  const thisBindings: Record<ThisBinding, Set<string>> = { class: new Set(), instance: new Set() }
-  const out: ExtractedFiles = {
-    symbols: [],
-    skipped: [],
-    parseErrors: [],
-    timeoutEvents: [],
-    parseTimeouts: [],
-    extractionFailures: [],
-    treeReleaseFailures: [],
-    undeclaredVocab: [],
-    importsByFile: new Map(),
-    fileContents: new Map(),
-    dynamicCallSites: new Set(),
-    declinedCalls: [],
-    thisBindings,
-  }
-  const strictVocab = isStrict(input.config)
-  const warnedReleaseFailure = new Set<string>()
-  const origins = new ImportOrigins({
+  const job: ExtractionJob = {
     workspaceRoot: input.workspaceRoot,
     files: input.files,
-    router,
-    logger,
-    loadSource: (file) => loadSourceFile(input.workspaceRoot, file),
-    treeReleaseFailures: out.treeReleaseFailures,
-  })
+    config: input.config,
+    components: input.components,
+  }
+  const collator = new ExtractionCollator(input.files, input.logger)
   const total = input.files.length
-  for (const [done, discoveredFile] of input.files.entries()) {
-    input.progress?.(done, total)
-    const language = router.route(discoveredFile.path)
-    if (language === null) {
-      out.skipped.push({
-        path: discoveredFile.path,
-        reason: "unroutable",
-        detail: "extension survived discovery filter but no plugin claims it",
-      })
-      continue
+  let done = 0
+  input.progress?.(done, total)
+  const pool = input.parsePool?.(job) ?? null
+  if (pool === null) {
+    const extractor = createFileExtractor(job, input)
+    for (const [fileId] of input.files.entries()) {
+      collator.add(await extractor.extract(fileId))
+      input.progress?.(++done, total)
     }
-
-    let sourceFile: SourceFile
-    try {
-      sourceFile = await loadSourceFile(input.workspaceRoot, discoveredFile)
-    } catch (error) {
-      if (!isVanishedFile(error)) throw error
-      const detail = describeThrown(error)
-      out.skipped.push({ path: discoveredFile.path, reason: "unreadable", detail })
-      logger.warn(
-        `Skipped ${discoveredFile.path}: it was no longer a file by the time it was read — ${detail}`,
+    return collator.finish()
+  }
+  let folding = true
+  try {
+    const extractions = input.files.map((_, fileId) => pool.extract(fileId))
+    // Counted as they finish, not as they are folded, so one slow file does not stall the count;
+    // the collator stops at the first file that ends the run, leaving the rest unawaited.
+    for (const extraction of extractions) {
+      extraction.then(
+        () => {
+          if (folding) input.progress?.(++done, total)
+        },
+        () => {},
       )
-      continue
     }
-
-    let result: Awaited<ReturnType<typeof runFilePipeline>>
-    const releasesRecordedBefore = out.treeReleaseFailures.length
-    const fileVocab = new VocabCheck(input.registry, strictVocab)
-    try {
-      result = await runFilePipeline({
-        file: sourceFile,
-        language,
-        frameworks: input.frameworks,
-        effects: input.effects,
-        registry: input.registry,
-        config: input.config,
-        dropCFilter,
-        component: attribute(sourceFile.path),
-        log: logger,
-        treeReleaseFailures: out.treeReleaseFailures,
-        vocab: fileVocab,
-        origins,
-      })
-    } catch (error) {
-      if (isPluginSetFault(error)) throw error
-      const message = describeThrown(error)
-      out.skipped.push({
-        path: discoveredFile.path,
-        reason: "extraction-failed",
-        detail: message,
-      })
-      const code = errorCode(error)
-      out.extractionFailures.push({
-        file: discoveredFile.path,
-        message,
-        ...(code === null ? {} : { code }),
-      })
-      logger.warn(`Skipped ${discoveredFile.path}: extraction threw — ${message}`)
-      continue
-    } finally {
-      for (const failure of out.treeReleaseFailures.slice(releasesRecordedBefore)) {
-        if (warnedReleaseFailure.has(failure.plugin)) continue
-        warnedReleaseFailure.add(failure.plugin)
-        logger.warn(
-          `Plugin ${failure.plugin} did not release the parse tree for ${failure.file}: ${failure.detail}. ` +
-            "A tree the plugin does not free is not reclaimed by the garbage collector, so a long " +
-            "enough run exhausts the parser's heap.",
-        )
-      }
-    }
-
-    if (result.parseErrors.length > 0) {
-      out.parseErrors.push({ file: discoveredFile.path, errors: result.parseErrors })
-    }
-    if (result.kind !== "parse-timeout") origins.remember(result.path, result.imports)
-
-    switch (result.kind) {
-      case "parse-timeout": {
-        const spent = Math.round(result.timeout.elapsedMs)
-        const budget = result.timeout.budgetMs
-        out.parseTimeouts.push(result.timeout)
-        out.skipped.push({
-          path: discoveredFile.path,
-          reason: result.kind,
-          detail: `extraction reached ${spent}ms, exceeding parseTimeoutMs (${budget}ms)`,
-        })
-        logger.warn(
-          `Skipped ${discoveredFile.path}: extraction reached ${spent}ms, exceeding parseTimeoutMs (${budget}ms). Override with config.parseTimeoutMs.`,
-        )
-        break
-      }
-      case "parse-failed": {
-        const detail = describeParseFailure(result.parseErrors)
-        out.skipped.push({ path: discoveredFile.path, reason: result.kind, detail })
-        logger.warn(`Skipped ${discoveredFile.path}: ${detail}`)
-        out.importsByFile.set(result.path, result.imports)
-        break
-      }
-      case "extracted": {
-        const fault = result.fault ?? describeIdFault(result.symbols, discoveredFile.path)
-        if (fault !== null) {
-          out.skipped.push({
-            path: discoveredFile.path,
-            reason: "extraction-failed",
-            detail: fault.message,
-          })
-          out.extractionFailures.push({
-            file: discoveredFile.path,
-            message: fault.message,
-            code: fault.code,
-          })
-          logger.warn(`Skipped ${discoveredFile.path}: ${fault.message}`)
-          out.timeoutEvents.push(...result.timeoutEvents)
-          out.importsByFile.set(discoveredFile.path, result.imports)
-          break
-        }
-
-        out.undeclaredVocab.push(...fileVocab.occurrences)
-
-        out.fileContents.set(sourceFile.path, {
-          content: sourceFile.content,
-          fsPath: discoveredFile.fsPath,
-        })
-
-        out.timeoutEvents.push(...result.timeoutEvents)
-        out.symbols.push(...result.symbols)
-        out.importsByFile.set(result.path, result.imports)
-        for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
-        out.declinedCalls.push(...result.declinedCalls)
-        for (const [key, binding] of result.thisBindings) thisBindings[binding].add(key)
-        break
-      }
-      default:
-        throw unhandledOutcome(result)
-    }
+    for (const extraction of extractions) collator.add(await extraction)
+  } finally {
+    folding = false
+    await pool.close()
   }
-  input.progress?.(total, total)
-
-  for (const [plugin, count] of countBy(out.treeReleaseFailures, (failure) => failure.plugin)) {
-    if (count > 1) {
-      logger.warn(`Plugin ${plugin} failed to release ${count} parse trees over this run.`)
-    }
-  }
-  origins.reportFaults()
-
-  return out
-}
-
-function describeParseFailure(errors: readonly ParseError[]): string {
-  const fatal = errors.find((error) => error.recoverable === false)
-  if (fatal !== undefined) return `parse reported a non-recoverable error at ${quote(fatal)}`
-  const first = errors[0]
-  if (first === undefined) return "the language plugin returned no tree"
-  return `the language plugin returned no tree; first error at ${quote(first)}`
-}
-
-function quote(error: ParseError): string {
-  return `${error.line}:${error.column} — ${error.message}`
-}
-
-function describeIdFault(symbols: readonly IRSymbol[], path: string): FileFault | null {
-  const here = new Map<string, IRSymbol>()
-  for (const symbol of symbols) {
-    const claimed = symbolIdFile(symbol.id)
-    if (claimed !== null && claimed !== path) {
-      return {
-        code: "duplicate-symbol-id",
-        message:
-          `Symbol id "${symbol.id}" names ${claimed}, which is not this file. An id carries the ` +
-          `file its Symbol was declared in, so the language plugin wrote a path that is not ` +
-          `this file's`,
-      }
-    }
-    const twin = here.get(symbol.id)
-    if (twin !== undefined) {
-      return {
-        code: "duplicate-symbol-id",
-        message:
-          `two Symbols share the id "${symbol.id}" (lines ${twin.source.startLine} and ` +
-          `${symbol.source.startLine}); the language plugin gave two declarations one qualified ` +
-          `name, and nothing it reported separates them`,
-      }
-    }
-    here.set(symbol.id, symbol)
-  }
-  return null
-}
-
-async function loadSourceFile(
-  workspaceRoot: string,
-  discovered: DiscoveredFile,
-): Promise<SourceFile> {
-  const absolute = resolve(workspaceRoot, discovered.fsPath)
-  const content = await readFile(absolute, "utf8")
-  return { path: discovered.path, content: normalizeLineTerminators(content) }
-}
-
-export function normalizeLineTerminators(content: string): string {
-  return content.includes("\r") ? content.replace(/\r\n?/g, "\n") : content
-}
-
-function unhandledOutcome(outcome: never): CoreError {
-  return new CoreError(
-    `Internal error: the scan does not handle the file outcome ${describeThrown(outcome)}\n` +
-      "This is a bug in Aburi — please report it at https://github.com/kage1020/Aburi/issues.",
-    { code: "scan-outcome-unhandled" },
-  )
+  return collator.finish()
 }

@@ -11,6 +11,7 @@ import { pathExists } from "../fs-probe"
 import { readIR } from "../ir-io"
 import type { LogWrite } from "../logger"
 import { writeOutputFile } from "../output-file"
+import { requireWorkerCount } from "../parser-concurrency"
 import type { WarnFn } from "../warn"
 import { resolveWorkspaceRoot } from "../workspace-root"
 import { runScan } from "./scan"
@@ -25,6 +26,8 @@ export interface ExplainOptions {
   outputPath?: string
   noRescan?: boolean
   debugResolution?: boolean
+  /** Parser workers for the scan it runs; undefined sizes them to the machine. */
+  concurrency?: number
   logLevel?: LogLevel
   log?: LogWrite
   progress?: (progress: ScanProgress) => void
@@ -67,6 +70,7 @@ export type CoverageDoubt =
   | { kind: "unnamed-losses"; fileCount: number }
 
 export async function runExplain(options: ExplainOptions): Promise<ExplainOutcome> {
+  requireWorkerCount(options.concurrency)
   const cwd = options.cwd ?? process.cwd()
   const workspaceRoot = await resolveWorkspaceRoot(cwd)
   assertDebugResolutionCombination(options)
@@ -257,6 +261,7 @@ async function readOrScanIR(
     format: "json",
     ...(options.configPath === undefined ? {} : { configPath: options.configPath }),
     ...(options.logLevel === undefined ? {} : { logLevel: options.logLevel }),
+    ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(options.log === undefined ? {} : { log: options.log }),
     ...(options.progress === undefined ? {} : { progress: options.progress }),
     ...(options.warn === undefined ? {} : { incidents: { warn: options.warn } }),

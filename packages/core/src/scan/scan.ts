@@ -33,7 +33,12 @@ import {
   sortComponents,
   uniqueSorted,
 } from "./document"
-import { type ExtractionFailure, extractFiles, type ParseErrorRecord } from "./extract-files"
+import {
+  type ExtractionFailure,
+  extractFiles,
+  type ParseErrorRecord,
+  type ParsePoolFactory,
+} from "./extract-files"
 import type { TreeReleaseFailure } from "./pipeline"
 import { buildLanguageRouter } from "./route"
 import { markTestFiles } from "./test-files"
@@ -72,6 +77,8 @@ export interface ScanInput {
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
+  /** Without one, or when it answers `null`, the scan extracts one file at a time on its own thread. */
+  parsePool?: ParsePoolFactory
   onProgress?: (progress: ScanProgress) => void
 }
 
@@ -114,13 +121,14 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   const extracted = await extractFiles({
     workspaceRoot: input.workspaceRoot,
     files: discovered.files,
-    router,
     config: input.config,
+    components: input.components ?? [],
+    languages: input.languages,
     frameworks: input.frameworks,
     effects: input.effects,
     registry: input.registry,
-    components: input.components ?? [],
     logger,
+    ...(input.parsePool === undefined ? {} : { parsePool: input.parsePool }),
     progress: (done, total) => progress({ phase: "extracting", done, total }),
   })
   progress({ phase: "resolving" })
