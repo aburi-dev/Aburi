@@ -641,7 +641,7 @@ aburi diff --base <ir.json> --head <ir.json>               # specify existing IR
 | `--max-bytes <n>` | Cap `diff.md` at n UTF-8 bytes, keeping sections most important first at their smallest (names only for a section of whole Symbols) and then growing the name lists back to full entries from the top ([`markdown-projection.md`](./markdown-projection.md) §6.4). `diff.json` is never capped, and when the cap changed the report the uncapped one is written as `diff.full.md` beside it. Absent: no cap — `0` is exit 2 here, not the opt-out it is on the action input. Warns when `--format json` leaves it nothing to cap, and when the budget could not be met |
 | `--compact` | Compact `diff.json` to a single line |
 | `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once (§14.1). `--no-parallel-scans` runs the base and then the head, which uses less memory; `--parallel-scans` runs both at once even on one CPU. Neither: at once when the machine has two or more CPUs, one after the other on one. No effect with `--base/--head`, which scans nothing |
-| `--concurrency <n>` | How many parser workers each of the two scans extracts its files on (§14.2). Default: `aburi scan`'s, with the processors and the free memory halved between the two scans when they run at once (§14.1). No effect with `--base/--head`, which scans nothing, though anything but a positive integer is exit 2 there too |
+| `--concurrency <n>` | How many parser workers each of the two scans extracts its files on (§14.2). Default: `aburi scan`'s, with the spare processors halved between the two scans when they run at once (§14.1). The free memory is halved between them then at any value. No effect with `--base/--head`, which scans nothing, though anything but a positive integer is exit 2 there too |
 | `--config <path>` | The config file both scans read (§13, §6.4 step 3) |
 | `--quiet` | Limit stdout to the glyph line, leaving out the call-resolution census and the `→` line (§6.6). stderr is unchanged, the `--fail-on` lines included |
 
@@ -1544,9 +1544,11 @@ sees of it is this:
   that free memory still lowers, and it is capped at the file count.
 - Without it, the pool is one fewer than `os.availableParallelism()` reports, at least one;
   clamped to `floor(availableMemoryMB / wasmHeapPerWorkerMB)`, `availableMemoryMB` being the free
-  memory the runtime reports; and to one worker for each 256 KiB of source, so a small workspace
-  is extracted on the main thread ([`performance.md`](./performance.md) Rule PF-2). The two scans
-  of `aburi diff` running at once (§14.1) halve the processors and the memory between them.
+  memory the runtime reports; to one worker for each 256 KiB of source, so a small workspace is
+  extracted on the main thread; and to the file count
+  ([`performance.md`](./performance.md) Rule PF-2).
+- The two scans of `aburi diff` running at once (§14.1) halve the free memory between them,
+  whatever `--concurrency` says, and halve the spare processors the default is drawn from.
   - The per-worker budget's source of truth is **`capabilities.wasmHeapPerWorkerMB` in the plugin
     manifest** (range: 16–4096 MiB; 256 MiB when undeclared)
     ([`lang-plugin.md`](./lang-plugin.md) §8.1)
@@ -1560,21 +1562,25 @@ The pool changes nothing the run writes, prints or exits with: the IR, the pages
 discovered-vocabulary record and the report are byte for byte those of `--concurrency 1`, and so
 are stdout, the exit code and stderr, but for the debug line above and the frames of a debug run's
 stack traces (§10.3), which name the calls of the thread an error was thrown on: an error and each
-of its causes keep their class names and messages across the thread. Each file's log is said in
+of its causes keep their class names and messages across the thread. A worker's stack, and that of
+the thread `aburi diff` scans its base on, nests to within 2% of the main thread's depth and no
+further, so a file nested that close to the limit extracts on the main thread alone
+([`performance.md`](./performance.md) §6.2). Each file's log is said in
 file order, and a scan that stops at a file stops there as one thread does, saying nothing of the
 files after it. The progress line (§10.2) counts a file once a worker has finished it, so a slow file
 does not hold the count back while the workers extract the files after it.
 
 What has no single-thread counterpart is a worker that ends — a plugin that calls `process.exit()`,
-an error thrown outside the scan's own handling, a worker out of memory — and it costs the file the
-worker was extracting rather than the run. That file is withdrawn as a file whose extraction threw
+an error thrown outside the scan's own handling, a worker out of memory, an answer the main thread
+cannot read — and it costs the file the worker was extracting rather than the run. That file is withdrawn as a file whose extraction threw
 is ([`lang-plugin.md`](./lang-plugin.md) §7.2), with
 `Skipped <file>: the parser worker extracting it <what ended it>. Run with --concurrency 1 to extract every file on the main thread.`
 on stderr, and the scan exits `3`; the worker's next file is handed to another worker, and nothing already
 extracted is lost. A file whose extraction holds a value that cannot leave the worker is withdrawn the same way.
 The third worker to end in one scan ends the run with exit `1`, naming the three files, and so does
-a worker that cannot load the scan's plugins, `A parser worker failed: <error>`; both name
-`--concurrency 1`, which never starts a worker.
+a worker that cannot load the scan's plugins, `A parser worker failed: <error>`, or that cannot be
+started, `A parser worker could not be started: <error>`; each names `--concurrency 1`, which never
+starts a worker.
 
 ## 15. Planned Features
 
@@ -1713,10 +1719,10 @@ a command's option, not a global one (§3).
 | CL76 | `aburi vocab effects --json` with no config found; `aburi vocab plugins` with a config that lists an effect plugin alone, whose `init` throws; `aburi vocab plugins` reading `custom.json` through `--config`, before the subcommand or after it, or through `ABURI_CONFIG` | exit 0 all. The first writes the core effect ids alone and no effect prefix, and says on stderr that no config was found; the second lists that plugin, since nothing calls `init` and no language plugin is needed (§8); the third lists the plugin `custom.json` names, with nothing on stderr |
 | CL77 | `aburi vocab`, `aburi vocab nope`, `aburi vocab who-owns` with no value or with two; `aburi vocab list` with a configured plugin that fails to import, or whose manifest has no `version`; with a `frameworkHints` entry the registry refuses | exit 2, nothing on stdout, and stderr opening with the usage of `aburi vocab`, the unknown command, the missing argument or the extra one; exit 3 naming the config entry; exit 2 naming the hint (§8.3) |
 | CL78 | `aburi vocab list`, `plugins`, `effects` and `extkinds`, with and without `--json`, over a file listing `frameworkHints`, `effects`, `frameworks` and `languages` in that order; and over two `effects` entries and two `frameworkHints` entries, each pair out of alphabetical order | The plugins in the order `languages`, `frameworks`, `effects`, `frameworkHints`, and within a field in the file's order, each row naming the config entry that loaded it; each plugin's values before its prefixes, columns aligned and no line ending in a space; `list` as its five sections, the `Effects` one the `effects` table indented (§8.4–§8.5) |
-| CL79 | `aburi scan --concurrency N` for N ∈ {2, 3, more than there are files}, over files that fail to parse, throw, collide on an id and emit an undeclared value, strict and not; `aburi diff main..HEAD --concurrency 2`, with its scans at once and in turn | The exit code, stdout, the artefacts and stderr of `--concurrency 1`, but for the `scan: extracting on` debug line and the frames of the stack traces at debug, the strict run's `caused by:` lines naming the same classes (§14.2) |
-| CL80 | `aburi scan --concurrency 2` where a plugin on a worker calls `process.exit(7)`, or throws from a microtask, while extracting one file, or leaves a function in that file's Symbol | exit 3; that file in `stats.skippedFiles` as `extraction-failed`, `Skipped <file>: ` and what happened on stderr, and every other file's Symbols in the IR (§14.2) |
+| CL79 | `aburi scan --concurrency N` for N ∈ {2, 3, more than there are files}, over files that fail to parse, throw, collide on an id and emit an undeclared value, strict and not; `aburi diff main..HEAD --concurrency 2`, with its scans at once and in turn; `aburi explain <name> --concurrency 2` over the scan it runs | The exit code, stdout, the artefacts and stderr of `--concurrency 1`, but for the `scan: extracting on` debug line and the frames of the stack traces at debug, the strict run's `caused by:` lines naming the same classes (§14.2). The debug line names N workers, the file count for more than there are files, and `shared by 2 scans` on each of the diff's scans at once |
+| CL80 | `aburi scan --concurrency 2` where a plugin on a worker calls `process.exit(7)`, or throws an `Error` or `null` from a microtask, while extracting one file, or leaves a function in that file's Symbol | exit 3; that file in `stats.skippedFiles` as `extraction-failed`, `Skipped <file>: ` and what happened on stderr, and every other file's Symbols in the IR (§14.2) |
 | CL81 | `aburi scan --concurrency 2` where workers end under three files | exit 1, stderr naming the three files and `--concurrency 1` |
-| CL82 | `aburi scan --concurrency 2` where a plugin throws when loaded on a worker | exit 1, `A parser worker failed: ` with the plugin's error and `--concurrency 1` on stderr |
+| CL82 | `aburi scan --concurrency 2` where a plugin throws, or calls `process.exit(5)`, when loaded on a worker | exit 1, `A parser worker failed: ` with the plugin's error, or `A parser worker ended with exit code 5; a plugin may have called process.exit() before it had loaded the scan's plugins.`, and `--concurrency 1` on stderr |
 | CL83 | `aburi scan --concurrency` 0, -1, 1.5, `two` or a value past the largest safe integer; `runScan`, `runDiff` or `runExplain` with `concurrency` 0, -1, 1.5, `NaN` or 2⁵³ | exit 2 and `--concurrency must be a positive integer (got "<value>")` on stderr; the functions reject with that error, code `input-error`, before reading the workspace or an IR |
 
 ## 18. Design Decisions

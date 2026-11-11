@@ -9,7 +9,12 @@ import {
   IR_JSON_FILENAME,
   VOCAB_DISCOVERED_FILENAME,
 } from "../../src"
-import { STUB_PLUGIN, writeStubRepository, writeStubWorkspace } from "../stub-language"
+import {
+  STUB_PLUGIN,
+  workerEndingPlugin,
+  writeStubRepository,
+  writeStubWorkspace,
+} from "../stub-language"
 import { writeConfig, writeFileAt } from "../workspace"
 import { removeWorktreeTempDirs, runBin, useBuiltBin } from "./bin"
 import { fixtureRoot } from "./project"
@@ -22,8 +27,8 @@ afterEach(async () => {
   await removeWorktreeTempDirs(workspace.root)
 })
 
-/** What says how many workers a run used, a line two such runs may differ by. */
-const SIZING = /^debug: scan: extracting on /
+/** The debug line saying what a scan extracts on, which runs at two counts differ by. */
+const SIZING = /^debug: scan: extracting on (.*)\n$/
 /** A frame of the trace a debug run prints after its error, naming the calls of a thread. */
 const FRAME = /^\s+at /
 
@@ -34,35 +39,42 @@ interface Outcome {
   written: Record<string, string>
 }
 
-async function scanned(argv: readonly string[], read: readonly string[] = []): Promise<Outcome> {
+interface Run {
+  outcome: Outcome
+  /** What each scan of the run says it extracts on. */
+  extractedOn: string[]
+}
+
+/** A run whose artefacts land in `out`, which it starts without. */
+async function ran(argv: readonly string[], read: readonly string[] = []): Promise<Run> {
   const out = join(workspace.root, "out")
   await rm(out, { recursive: true, force: true })
   const run = await runBin(
     workspace.root,
-    ["--log-level", "debug", ...argv, "--output-dir", out],
+    ["--log-level", "debug", ...argv],
     gitTestEnv(workspace.root),
   )
   const written: Record<string, string> = {}
   for (const name of read) written[name] = await readFile(join(out, name), "utf8")
+  const lines = run.stderr.split(/(?<=\n)/)
   return {
-    code: run.code,
-    stdout: run.stdout,
-    stderr: run.stderr.split(/(?<=\n)/).filter((line) => !SIZING.test(line) && !FRAME.test(line)),
-    written,
+    outcome: {
+      code: run.code,
+      stdout: run.stdout,
+      stderr: lines.filter((line) => !SIZING.test(line) && !FRAME.test(line)),
+      written,
+    },
+    extractedOn: lines.flatMap((line) => SIZING.exec(line)?.slice(1) ?? []),
   }
 }
 
-/** The stub language, except that on a worker it ends the thread under a file named `crash`. */
-function workerEndingPlugin(end: string): string {
-  return STUB_PLUGIN.replace(
-    "  parseFile: async (file) => {\n",
-    `  parseFile: async (file) => {
-    const { isMainThread } = await import("node:worker_threads")
-    if (!isMainThread && file.path.includes("crash")) {
-${end}
-    }
-`,
-  )
+function scanned(argv: readonly string[], read: readonly string[] = []): Promise<Run> {
+  return ran([...argv, "--output-dir", join(workspace.root, "out")], read)
+}
+
+/** What a scan says it extracts on when it starts `workers`, asked as `asked` says. */
+function onWorkers(workers: number | string, asked: string): unknown {
+  return expect.stringMatching(new RegExp(`^${workers} parser workers \\(${asked}, \\d+ files `))
 }
 
 /** The stub language, except that a file named `crash` is extracted holding a function. */
@@ -99,22 +111,32 @@ describe("aburi scan --concurrency", () => {
     const read = [IR_JSON_FILENAME, VOCAB_DISCOVERED_FILENAME]
     const alone = await scanned([...argv, "--concurrency", "1"], read)
 
-    expect(alone.code).toBe(EXIT.GATE)
-    expect(alone.stderr.join("")).toMatch(
+    expect(alone.outcome.code).toBe(EXIT.GATE)
+    expect(alone.outcome.stderr.join("")).toMatch(
       /Skipped c-boom\.stub: extraction threw — plugin exploded/,
     )
-    for (const workers of ["2", "3", String(FILES.length + 4)]) {
-      expect(await scanned([...argv, "--concurrency", workers], read)).toEqual(alone)
+    expect(alone.extractedOn).toEqual([])
+    for (const [asked, workers] of [
+      [2, 2],
+      [3, 3],
+      [FILES.length + 4, FILES.length],
+    ] as const) {
+      const run = await scanned([...argv, "--concurrency", String(asked)], read)
+
+      expect(run.outcome).toEqual(alone.outcome)
+      expect(run.extractedOn).toEqual([onWorkers(workers, `--concurrency ${asked}`)])
     }
   })
 
   it("stops at the file a strict scan stops at, saying what one thread says", async () => {
     await writeStubWorkspace(workspace.root, FILES)
     const alone = await scanned(["scan", "--concurrency", "1"])
+    const run = await scanned(["scan", "--concurrency", "3"])
 
-    expect(alone.code).toBe(EXIT.GATE)
-    expect(alone.stderr.join("")).toMatch(/emitted extKind "stub:odd:thing" at f-odd\.stub/)
-    expect(await scanned(["scan", "--concurrency", "3"])).toEqual(alone)
+    expect(alone.outcome.code).toBe(EXIT.GATE)
+    expect(alone.outcome.stderr.join("")).toMatch(/emitted extKind "stub:odd:thing" at f-odd\.stub/)
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(3, "--concurrency 3")])
   })
 
   it.each<[string, string, RegExp]>([
@@ -130,6 +152,12 @@ describe("aburi scan --concurrency", () => {
       /the parser worker extracting it threw outside the scan's own error handling: Error: escaped the scan/,
     ],
     [
+      "a worker throws a value that is not an Error under",
+      workerEndingPlugin(`      queueMicrotask(() => { throw null })
+      await new Promise(() => {})`),
+      /the parser worker extracting it threw outside the scan's own error handling: null\. Run with/,
+    ],
+    [
       "whose extraction a worker cannot send back",
       UNCLONEABLE_PLUGIN,
       /extraction threw — its extraction holds a value that cannot leave the parser worker: .*could not be cloned/,
@@ -143,14 +171,14 @@ describe("aburi scan --concurrency", () => {
       "d-ok.stub",
     ])
     await writeFileAt(workspace.root, "lang-stub.mjs", plugin)
-    const run = await scanned(["scan", "--concurrency", "2"], [IR_JSON_FILENAME])
-    const ir = JSON.parse(run.written[IR_JSON_FILENAME] ?? "") as {
+    const { outcome } = await scanned(["scan", "--concurrency", "2"], [IR_JSON_FILENAME])
+    const ir = JSON.parse(outcome.written[IR_JSON_FILENAME] ?? "") as {
       symbols: { source: { file: string } }[]
       stats: { skippedFiles: { path: string; reason: string }[] }
     }
 
-    expect(run.code).toBe(EXIT.GATE)
-    expect(run.stderr.join("")).toMatch(new RegExp(`Skipped b-crash\\.stub: ${why.source}`))
+    expect(outcome.code).toBe(EXIT.GATE)
+    expect(outcome.stderr.join("")).toMatch(new RegExp(`Skipped b-crash\\.stub: ${why.source}`))
     expect(ir.symbols.map((symbol) => symbol.source.file)).toEqual([
       "a-ok.stub",
       "c-ok.stub",
@@ -168,57 +196,71 @@ describe("aburi scan --concurrency", () => {
     ])
     await writeFileAt(workspace.root, "lang-stub.mjs", ASTRAY_PLUGIN)
     const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
+    const run = await scanned(["scan", "--concurrency", "2"], [IR_JSON_FILENAME])
 
-    expect(alone.code).toBe(EXIT.GATE)
-    expect(alone.stderr.join("")).toMatch(
+    expect(alone.outcome.code).toBe(EXIT.GATE)
+    expect(alone.outcome.stderr.join("")).toMatch(
       /Skipped b-astray\.stub: lang-stub's SymbolCandidate\.source\.file /,
     )
-    expect(await scanned(["scan", "--concurrency", "2"], [IR_JSON_FILENAME])).toEqual(alone)
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(2, "--concurrency 2")])
   })
 
   it("ends the run once workers have ended under three files, naming them", async () => {
     const files = ["a-crash.stub", "b-crash.stub", "c-ok.stub", "d-crash.stub", "e-ok.stub"]
     await writeStubWorkspace(workspace.root, files)
     await writeFileAt(workspace.root, "lang-stub.mjs", workerEndingPlugin("      process.exit(7)"))
-    const run = await scanned(["scan", "--concurrency", "2"])
+    const { outcome } = await scanned(["scan", "--concurrency", "2"])
 
     const ended =
       /^Parser workers ended 3 times \((.*)\), so the plugins, not one file, are ending them\. Run with --concurrency 1/.exec(
-        run.stderr.at(-1) ?? "",
+        outcome.stderr.at(-1) ?? "",
       )
 
-    expect(run.code).toBe(EXIT.RUNTIME)
+    expect(outcome.code).toBe(EXIT.RUNTIME)
     // Which worker ends first is the scheduler's to decide.
     expect(ended?.[1]?.split("; ").sort()).toEqual(
       ["a-crash.stub", "b-crash.stub", "d-crash.stub"].map((file) => `extracting ${file}`),
     )
   })
 
-  it("ends the run when a worker cannot load the plugins the scan loaded", async () => {
-    await writeStubWorkspace(workspace.root, ["a-ok.stub", "b-ok.stub"])
-    await writeFileAt(
-      workspace.root,
-      "lang-stub.mjs",
-      `import { isMainThread } from "node:worker_threads"
-if (!isMainThread) throw new Error("this plugin keeps to the main thread")
-${STUB_PLUGIN}`,
-    )
-    const run = await scanned(["scan", "--concurrency", "2"])
-
-    expect(run.code).toBe(EXIT.RUNTIME)
-    expect(run.stderr.join("")).toMatch(
+  it.each<[string, string, RegExp]>([
+    [
+      "throws",
+      'throw new Error("this plugin keeps to the main thread")',
       /A parser worker failed: .*this plugin keeps to the main thread[\s\S]*Run with --concurrency 1/,
-    )
-  })
+    ],
+    [
+      "exits",
+      "process.exit(5)",
+      /A parser worker ended with exit code 5; a plugin may have called process\.exit\(\) before it had loaded the scan's plugins\.\nRun with --concurrency 1/,
+    ],
+  ])(
+    "ends the run when a worker %s as it loads the plugins the scan loaded",
+    async (_how, end, said) => {
+      await writeStubWorkspace(workspace.root, ["a-ok.stub", "b-ok.stub"])
+      await writeFileAt(
+        workspace.root,
+        "lang-stub.mjs",
+        `import { isMainThread } from "node:worker_threads"
+if (!isMainThread) ${end}
+${STUB_PLUGIN}`,
+      )
+      const { outcome } = await scanned(["scan", "--concurrency", "2"])
+
+      expect(outcome.code).toBe(EXIT.RUNTIME)
+      expect(outcome.stderr.join("")).toMatch(said)
+    },
+  )
 
   it.each(["0", "-1", "1.5", "two", "99999999999999999999"])(
     "refuses --concurrency %s before it scans",
     async (value) => {
       await writeStubWorkspace(workspace.root, ["a-ok.stub"])
-      const run = await scanned(["scan", "--concurrency", value])
+      const { outcome } = await scanned(["scan", "--concurrency", value])
 
-      expect(run.code).toBe(EXIT.INPUT_ERROR)
-      expect(run.stderr.join("")).toContain(
+      expect(outcome.code).toBe(EXIT.INPUT_ERROR)
+      expect(outcome.stderr.join("")).toContain(
         `--concurrency must be a positive integer (got "${value}")`,
       )
     },
@@ -226,6 +268,9 @@ ${STUB_PLUGIN}`,
 })
 
 describe("aburi scan --concurrency, with the language, framework and effects plugins", () => {
+  // Free memory may leave room for two of the three workers a language this hungry asks for.
+  const PLUGINS_WORKERS = "[23]"
+
   it.each<[string, Record<string, unknown> | null]>([
     [
       "nestjs-billing",
@@ -240,9 +285,11 @@ describe("aburi scan --concurrency, with the language, framework and effects plu
     await cp(fixtureRoot(project), workspace.root, { recursive: true })
     if (config !== null) await writeConfig(workspace.root, config)
     const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
+    const run = await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])
 
-    expect(alone.code).toBe(EXIT.SUCCESS)
-    expect(await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])).toEqual(alone)
+    expect(alone.outcome.code).toBe(EXIT.SUCCESS)
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(PLUGINS_WORKERS, "--concurrency 3")])
   })
 
   it("records the calls an effects plugin declines in the files each worker extracts", async () => {
@@ -258,32 +305,55 @@ describe("aburi scan --concurrency, with the language, framework and effects plu
       )
     }
     const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
-    const ir = JSON.parse(alone.written[IR_JSON_FILENAME] ?? "") as {
+    const run = await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])
+    const ir = JSON.parse(alone.outcome.written[IR_JSON_FILENAME] ?? "") as {
       stats: { declinedCalls?: { symbolId: string }[] }
     }
 
-    expect(alone.code).toBe(EXIT.SUCCESS)
+    expect(alone.outcome.code).toBe(EXIT.SUCCESS)
     expect(ir.stats.declinedCalls?.map((call) => call.symbolId)).toEqual([
       "ts:src/reports/revenue.ts#run",
       "ts:src/reports/vacuum.ts#run",
     ])
-    expect(await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])).toEqual(alone)
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(PLUGINS_WORKERS, "--concurrency 3")])
   })
 })
 
 describe("aburi diff --concurrency", () => {
-  it("reports what it reports with every file extracted on the main thread", async () => {
-    await writeStubRepository(workspace.root, {
-      base: ["a-ok.stub", "b-bad.stub", "c-ok.stub", "d-warn.stub"],
-      head: ["a-ok.stub", "c-ok.stub", "d-warn.stub", "e-boom.stub", "f-ok.stub"],
-    })
-    const argv = ["diff", "main..HEAD", "--format", "both"]
-    const read = [DIFF_JSON_FILENAME, DIFF_MD_FILENAME]
-    const alone = await scanned([...argv, "--concurrency", "1"], read)
+  it.each<[string, string]>([
+    ["--parallel-scans", "--concurrency 2, shared by 2 scans"],
+    ["--no-parallel-scans", "--concurrency 2"],
+  ])(
+    "reports with %s what it reports with every file extracted on the main thread",
+    async (together, asked) => {
+      await writeStubRepository(workspace.root, {
+        base: ["a-ok.stub", "b-bad.stub", "c-ok.stub", "d-warn.stub"],
+        head: ["a-ok.stub", "c-ok.stub", "d-warn.stub", "e-boom.stub", "f-ok.stub"],
+      })
+      const argv = ["diff", "main..HEAD", "--format", "both", together]
+      const read = [DIFF_JSON_FILENAME, DIFF_MD_FILENAME]
+      const alone = await scanned([...argv, "--concurrency", "1"], read)
+      const run = await scanned([...argv, "--concurrency", "2"], read)
 
-    expect(alone.code).toBe(EXIT.GATE)
-    for (const together of ["--parallel-scans", "--no-parallel-scans"]) {
-      expect(await scanned([...argv, together, "--concurrency", "2"], read)).toEqual(alone)
-    }
+      expect(alone.outcome.code).toBe(EXIT.GATE)
+      expect(run.outcome).toEqual(alone.outcome)
+      expect(run.extractedOn).toEqual([onWorkers(2, asked), onWorkers(2, asked)])
+    },
+  )
+})
+
+describe("aburi explain --concurrency", () => {
+  it("answers from the scan it runs as one thread does", async () => {
+    await writeStubWorkspace(workspace.root, ["a-ok.stub", "b-ok.stub", "c-ok.stub"], {
+      output: { dir: "out" },
+    })
+    const alone = await ran(["explain", "b_ok_stub", "--concurrency", "1"])
+    const run = await ran(["explain", "b_ok_stub", "--concurrency", "2"])
+
+    expect(alone.outcome.code).toBe(EXIT.SUCCESS)
+    expect(alone.outcome.stdout).toContain("b_ok_stub")
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(2, "--concurrency 2")])
   })
 })

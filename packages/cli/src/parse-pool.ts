@@ -7,10 +7,11 @@ import {
   type ExtractionJob,
   type FileExtraction,
   type FileExtractor,
+  type FileOutcome,
   type ParsePool,
 } from "@aburi/core"
 import type { Config } from "@aburi/types"
-import { CliError, errorMessage, internalFault } from "./errors"
+import { CliError, errorCode, errorMessage, internalFault } from "./errors"
 import { loadPlugins } from "./plugin-loader"
 import {
   describedForThread,
@@ -18,6 +19,7 @@ import {
   rebuiltFromThread,
   type ThreadThrown,
 } from "./thread-errors"
+import { WORKER_STACK_MB } from "./worker-stack"
 
 /** What a parser worker loads the scan's plugins from: what the scan itself loaded them from. */
 export interface ParserSetup {
@@ -39,15 +41,19 @@ interface ParserData {
 
 type ToWorker = { readonly kind: "extract"; readonly fileId: number }
 
+/** A file's outcome as it crosses: the error of a `fatal` one described, as a clone would lose it. */
+type WireOutcome =
+  | Exclude<FileOutcome, { readonly kind: "fatal" }>
+  | { readonly kind: "fatal"; readonly thrown: ThreadThrown }
+
+interface WireExtraction extends Omit<FileExtraction, "outcome"> {
+  readonly outcome: WireOutcome
+}
+
 type FromWorker =
   | { readonly kind: "ready" }
   | { readonly kind: "failed"; readonly thrown: ThreadThrown }
-  | {
-      readonly kind: "extracted"
-      readonly extraction: FileExtraction
-      /** The error of a `fatal` outcome, whose own `error` is left out. */
-      readonly thrown?: ThreadThrown
-    }
+  | { readonly kind: "extracted"; readonly extraction: WireExtraction }
 
 interface Pending {
   readonly fileId: number
@@ -60,16 +66,14 @@ interface Slot {
   readonly inFlight: Pending[]
   ready: boolean
   ended: boolean
+  /** What the worker's `error` said, for the `exit` that follows it. */
+  endedBecause: string | undefined
 }
 
 /** Two, so a worker has its next file before it answers for the one it has. */
 const IN_FLIGHT_PER_WORKER = 2
 
 const ENDS_BEFORE_ABORT = 3
-
-// V8's default stack on the main thread is 984 KiB, and Node keeps 192 KiB of a worker's for
-// itself: a file nested deep enough to exhaust one thread's stack exhausts the other's.
-const STACK_SIZE_MB = (984 + 192) / 1024
 
 const ON_THE_MAIN_THREAD = "Run with --concurrency 1 to extract every file on the main thread."
 
@@ -105,6 +109,7 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
       for (const [index, slot] of slots.entries()) {
         if (queue.length === 0) return
         const live = slot.ended ? spawn(index) : slot
+        if (live === null) return
         if (live.inFlight.length >= depth) continue
         const next = queue.shift()
         if (next === undefined) return
@@ -120,15 +125,17 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
       case "ready":
         slot.ready = true
         return
-      case "failed":
+      case "failed": {
+        const error = rebuiltFromThread(message.thrown)
         stop(
           new CliError(
-            `A parser worker failed: ${errorMessage(rebuiltFromThread(message.thrown))}\n${ON_THE_MAIN_THREAD}`,
+            `A parser worker failed: ${errorMessage(error)}\n${ON_THE_MAIN_THREAD}`,
             "runtime-error",
-            { cause: rebuiltFromThread(message.thrown) },
+            { cause: error },
           ),
         )
         return
+      }
       case "extracted": {
         const { extraction } = message
         const answered = slot.inFlight[0]
@@ -143,14 +150,7 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
           return
         }
         slot.inFlight.shift()
-        answered.resolve(
-          message.thrown === undefined
-            ? extraction
-            : {
-                ...extraction,
-                outcome: { kind: "fatal", error: rebuiltFromThread(message.thrown) },
-              },
-        )
+        answered.resolve(fromWire(extraction))
         dispatch()
         return
       }
@@ -203,22 +203,50 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
     dispatch()
   }
 
-  const spawn = (index: number): Slot => {
-    const worker = new Worker(path, {
-      workerData: data,
-      resourceLimits: { stackSizeMb: STACK_SIZE_MB },
-    })
-    const slot: Slot = { worker, inFlight: [], ready: false, ended: false }
+  const spawn = (index: number): Slot | null => {
+    let worker: Worker
+    try {
+      worker = new Worker(path, {
+        workerData: data,
+        resourceLimits: { stackSizeMb: WORKER_STACK_MB },
+      })
+    } catch (error) {
+      stop(
+        new CliError(
+          `A parser worker could not be started: ${errorMessage(error)}\n${ON_THE_MAIN_THREAD}`,
+          "runtime-error",
+          { cause: error },
+        ),
+      )
+      return null
+    }
+    const slot: Slot = { worker, inFlight: [], ready: false, ended: false, endedBecause: undefined }
     worker.on("message", (message: FromWorker) => received(slot, message))
-    worker.on("error", (error: Error) => endedUnder(slot, describeWorkerError(error)))
+    // The answer is dropped, and the worker, still running, would never send it again.
+    worker.on("messageerror", (error) =>
+      endedUnder(
+        slot,
+        `sent an answer that could not be read: ${errorMessage(error).replace(/\.$/, "")}`,
+      ),
+    )
+    // An `error` can overtake answers the worker sent before it; its `exit` comes after them all.
+    worker.on("error", (error: unknown) => {
+      slot.endedBecause ??= describeWorkerError(error)
+    })
     worker.on("exit", (code) =>
-      endedUnder(slot, `ended with exit code ${code}; a plugin may have called process.exit()`),
+      endedUnder(
+        slot,
+        slot.endedBecause ??
+          `ended with exit code ${code}; a plugin may have called process.exit()`,
+      ),
     )
     slots[index] = slot
     return slot
   }
 
-  for (let index = 0; index < options.size; index++) spawn(index)
+  for (let index = 0; index < options.size; index++) {
+    if (spawn(index) === null) break
+  }
 
   return {
     extract(fileId) {
@@ -274,7 +302,7 @@ export function serveParseRequests(): void {
 }
 
 /** The file's events, whose metadata `portable` has made cloneable, with its outcome withdrawn. */
-function uncloneable(extraction: FileExtraction, error: unknown): FromWorker {
+function uncloneable(extraction: WireExtraction, error: unknown): FromWorker {
   return {
     kind: "extracted",
     extraction: {
@@ -288,15 +316,30 @@ function uncloneable(extraction: FileExtraction, error: unknown): FromWorker {
   }
 }
 
-function portable(extraction: FileExtraction): Extract<FromWorker, { kind: "extracted" }> {
-  const events = extraction.events.map(withCloneableMeta)
-  if (extraction.outcome.kind !== "fatal") {
-    return { kind: "extracted", extraction: { ...extraction, events } }
-  }
+/** What a worker sends of a file's extraction, which a structured clone can carry whole. */
+export function portable(extraction: FileExtraction): Extract<FromWorker, { kind: "extracted" }> {
+  const { outcome } = extraction
   return {
     kind: "extracted",
-    extraction: { ...extraction, events, outcome: { kind: "fatal", error: undefined } },
-    thrown: describedForThread(extraction.outcome.error),
+    extraction: {
+      ...extraction,
+      events: extraction.events.map(withCloneableMeta),
+      outcome:
+        outcome.kind === "fatal"
+          ? { kind: "fatal", thrown: describedForThread(outcome.error) }
+          : outcome,
+    },
+  }
+}
+
+function fromWire(extraction: WireExtraction): FileExtraction {
+  const { outcome } = extraction
+  return {
+    ...extraction,
+    outcome:
+      outcome.kind === "fatal"
+        ? { kind: "fatal", error: rebuiltFromThread(outcome.thrown) }
+        : outcome,
   }
 }
 
@@ -308,11 +351,13 @@ function withCloneableMeta(event: ExtractionEvent): ExtractionEvent {
   return rest
 }
 
-function describeWorkerError(error: Error): string {
-  if ((error as { code?: unknown }).code === "ERR_WORKER_OUT_OF_MEMORY") {
-    return `ran out of memory: ${error.message}`
+/** What ended a worker, from its `error`, which is any value a plugin threw from a callback. */
+export function describeWorkerError(error: unknown): string {
+  if (errorCode(error) === "ERR_WORKER_OUT_OF_MEMORY") {
+    return `ran out of memory: ${errorMessage(error)}`
   }
-  return `threw outside the scan's own error handling: ${error.stack ?? error.message}`
+  const thrown = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  return `threw outside the scan's own error handling: ${thrown}`
 }
 
 function parserWorkerPath(): string {

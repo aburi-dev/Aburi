@@ -6,6 +6,7 @@ import { CliError, errorMessage, internalFault } from "../errors"
 import type { LogWrite } from "../logger"
 import { describedForThread, rebuiltFromThread, type ThreadThrown } from "../thread-errors"
 import type { WarnFn } from "../warn"
+import { WORKER_STACK_MB } from "../worker-stack"
 import { runScan, type ScanOptions } from "./scan"
 import type { ScanReport } from "./scan-report"
 
@@ -52,7 +53,11 @@ export function scanInThread(
 ): Promise<ScanReport> {
   return new Promise((resolve, reject) => {
     const data: ThreadData = { options, progress: scan.progress !== undefined }
-    const worker = new Worker(scanWorkerPath(scan.name), { workerData: data })
+    // Sized as a parser worker is, so the base nests no deeper than a scan on the main thread.
+    const worker = new Worker(scanWorkerPath(scan.name), {
+      workerData: data,
+      resourceLimits: { stackSizeMb: WORKER_STACK_MB },
+    })
     let settled = false
     const settle = (finish: () => void): void => {
       settled = true

@@ -15,7 +15,23 @@ export const STUB_PLUGIN = stubPluginSource({
   ...LANG_MANIFEST,
   name: "lang-stub",
   languageId: makeLanguageId("stub"),
+  // It holds no WASM memory, and the least a plugin may declare lets free memory start as many
+  // parser workers as a test asks for.
+  capabilities: { wasmHeapPerWorkerMB: 16 },
 })
+
+/** The stub language, except that on a parser worker it runs `end` on a file named `crash`. */
+export function workerEndingPlugin(end: string): string {
+  return STUB_PLUGIN.replace(
+    "  parseFile: async (file) => {\n",
+    `  parseFile: async (file) => {
+    const { isMainThread } = await import("node:worker_threads")
+    if (!isMainThread && file.path.includes("crash")) {
+${end}
+    }
+`,
+  )
+}
 
 /** The stub plugin's module source under another `manifest`, with `members` ahead of its own. */
 export function stubPluginSource(manifest: PluginManifest, members = ""): string {
