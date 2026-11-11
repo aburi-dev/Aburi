@@ -25,7 +25,8 @@ export type Block =
 
 /**
  * The block tree a CommonMark + GFM-table renderer builds from `markdown`. markdown-it stands in for
- * GitHub's cmark-gfm: it answers what the spec says, not what GitHub draws.
+ * GitHub's cmark-gfm: it answers what the spec says, not what GitHub draws, and of inline HTML it
+ * reads `<br>` alone, so a value inside a tag is out of its sight.
  */
 export function rendered(markdown: string): Block[] {
   const reader = new TokenReader(commonMark.parse(markdown, {}))
@@ -68,7 +69,8 @@ function everyBlock(blocks: readonly Block[]): Block[] {
 
 /**
  * The blocks after the paragraph whose last line reads `label`, up to the next paragraph or heading.
- * Labels on consecutive lines, as `**File**:` and `**Rules**:` are in diff.md, share one paragraph.
+ * Labels with no blank line between them, as `**File**:` … `**Rules**:` in diff.md, share one
+ * paragraph.
  */
 export function blocksUnder(blocks: readonly Block[], label: string): Block[] {
   const start = blocks.findIndex(
@@ -196,7 +198,7 @@ function inlineOf(token: Token): Inline {
         text += "\n"
         break
       case "html_inline":
-        // GitHub draws `<br>` as a break and drops a tag it does not know, such as `<T>`.
+        // Keeps only `<br>`, as a break: GitHub drops a tag it does not know, such as `<T>`.
         if (/^<br\s*\/?>$/i.test(child.content)) text += "\n"
         break
       default:

@@ -63,8 +63,7 @@ export function tableHeader(cells: readonly string[]): string[] {
 
 /**
  * Makes a cell that reads as `text` reads outside a table. GFM takes the backslash off every `\|` in
- * a row before it reads the cell, code spans included, so every pipe gets one, bar a pipe outside a
- * code span that the Markdown already escapes.
+ * a row before it reads the cell, code spans included, so every pipe gets one.
  */
 export function tableCell(text: string): string {
   let cell = ""
@@ -73,20 +72,23 @@ export function tableCell(text: string): string {
     cell += textInCell(text.slice(at, span.start)) + codeInCell(text.slice(span.start, span.end))
     at = span.end
   }
-  return cell + textInCell(text.slice(at))
+  return (cell + textInCell(text.slice(at))).replaceAll("|", "\\|")
 }
 
+/**
+ * A row ends at a line ending, so it becomes `<br>`. The backslash that makes one a hard break goes:
+ * `<br>` is a break already, and `\<` would show the tag as text.
+ */
 function textInCell(text: string): string {
-  return text
-    .replace(/(\\*)\|/g, (pipe: string, slashes: string) =>
-      slashes.length % 2 === 1 ? pipe : `${slashes}\\|`,
-    )
-    .replace(new RegExp(LINE_ENDING, "g"), "<br>")
+  return text.replace(
+    new RegExp(`(\\\\*)(?:${LINE_ENDING.source})`, "g"),
+    (_line: string, slashes: string) => `${slashes.slice(slashes.length % 2)}<br>`,
+  )
 }
 
-/** A row ends at a line ending, and CommonMark reads one inside a code span as a space anyway. */
+/** CommonMark reads a line ending inside a code span as a space. */
 function codeInCell(span: string): string {
-  return span.replaceAll("|", "\\|").replace(new RegExp(LINE_ENDING, "g"), " ")
+  return span.replace(new RegExp(LINE_ENDING, "g"), " ")
 }
 
 interface Span {
@@ -94,7 +96,11 @@ interface Span {
   end: number
 }
 
-/** Where CommonMark finds code spans in `text`, each from its opening backtick run past its closing one. */
+/**
+ * Where CommonMark finds code spans in `text`, each from its opening backtick run past its closing
+ * one. Raw HTML and autolinks, which take precedence over a backtick inside them, are not read: a
+ * span found there only writes a line ending as a space rather than `<br>`.
+ */
 function codeSpans(text: string): Span[] {
   const spans: Span[] = []
   // An escape pair is matched as one, so a backtick a backslash escapes opens nothing.
@@ -133,7 +139,8 @@ export function inlineCode(value: string): string {
   if (collapsed.length === 0) return EMPTY_VALUE
   const fence = "`".repeat(longestBacktickRun(collapsed) + 1)
   const edge = `${collapsed.at(0)}${collapsed.at(-1)}`
-  // CommonMark strips one space off each end unless the span is spaces alone, which it keeps whole.
+  // CommonMark strips a space off each end only when both ends have one and the span is not spaces
+  // alone, which it keeps whole.
   const pad = (edge.includes("`") || edge.includes(" ")) && !/^ +$/.test(collapsed) ? " " : ""
   return `${fence}${pad}${collapsed}${pad}${fence}`
 }

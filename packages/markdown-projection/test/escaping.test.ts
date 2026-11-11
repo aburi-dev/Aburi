@@ -118,8 +118,17 @@ describe("tableCell", () => {
     ...AWKWARD.map((value) => inlineCode(value)),
     "a\nb",
     "a\rb",
+    "a\r\nb",
+    "a\\\nb",
+    "a\\\\\nb",
+    "`a\nb|c`",
+    "x `a\r\nb` y",
     "p|q `c|d` r\\|s",
     "\\`a|b`",
+    "\\`x `a\nb`",
+    "\\\\`a\nb`",
+    "`a```\nb`",
+    "``x `a\nb`",
     "`unclosed|",
     "``a`|`b``",
   ])("reads %j in its own column, as it reads outside a table", (markdown) => {
@@ -132,25 +141,30 @@ describe("a projection's tables, as a renderer reads them", () => {
   // A Symbol id admits a pipe but no backslash.
   const CANDIDATES = [symbolId("ts:src/a|b.ts#f"), symbolId("ts:src/c.ts#g|h")]
 
-  function columns(md: string, header: readonly string[]) {
+  function rowsUnder(md: string, header: readonly string[]) {
     const table = rendered(md).find(
       (block) =>
         block.kind === "table" && block.head.map((cell) => cell.text).join() === header.join(),
     )
     if (table?.kind !== "table") throw new Error(`no table headed ${header.join(", ")}`)
-    for (const row of table.rows) expect(row).toHaveLength(header.length)
     return table.rows
   }
+  const plain = (text: string): Inline => ({ text, code: [] })
+  const spans = (values: readonly string[], between = ", "): Inline => ({
+    text: values.join(between),
+    code: [...values],
+  })
 
-  it("keeps every Components row to the header's columns, each root whole", () => {
+  it("reads each cell of a Components row in its own column, each root whole", () => {
     const md = projectWorkspace(
       makeIR({ components: [component({ id: "web", name: "Web", roots: VALUES })] }),
     )
-    const [row] = columns(md, ["id", "roots", "languages", "frameworks", "symbols"])
-    expect(row?.[1]?.code).toEqual(VALUES)
+    expect(rowsUnder(md, ["id", "roots", "languages", "frameworks", "symbols"])).toEqual([
+      [plain("web"), spans(VALUES), plain("ts"), plain("—"), plain("0")],
+    ])
   })
 
-  it("keeps every call resolution row to the header's columns, each target and candidate whole", () => {
+  it("reads each cell of a call resolution row in its own column, each target and candidate whole", () => {
     const calls = VALUES.map((target, i) => ({ target, line: i + 1, resolved: null }))
     const caller = makeSymbol({ id: "ts:src/ctl.ts#Ctl.route", name: "Ctl.route", calls })
     const md = projectSymbolExplain(caller, {
@@ -162,9 +176,15 @@ describe("a projection's tables, as a renderer reads them", () => {
         candidates: CANDIDATES,
       })),
     })
-    const rows = columns(md, ["line", "target", "resolved", "bucket", "candidates"])
-    expect(rows.map((row) => row[1]?.code)).toEqual(VALUES.map((value) => [value]))
-    for (const row of rows) expect(row[4]?.code).toEqual(CANDIDATES)
+    expect(rowsUnder(md, ["line", "target", "resolved", "bucket", "candidates"])).toEqual(
+      calls.map((c) => [
+        plain(`${c.line}`),
+        spans([c.target]),
+        plain("—"),
+        spans(["ambiguous"]),
+        spans(CANDIDATES, "\n"),
+      ]),
+    )
   })
 })
 
