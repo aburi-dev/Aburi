@@ -1,8 +1,9 @@
-import { recordingLogger } from "@aburi/test-support"
+import { noopRegistry, recordingLogger } from "@aburi/test-support"
 import type { EffectPlugin, FrameworkPlugin, LanguagePlugin, PluginContext } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CoreError } from "../../src"
 import {
+  extractorPool,
   oneSymbolPerFile,
   scanStubs,
   stubEffectsPlugin,
@@ -129,6 +130,25 @@ describe("the plugin lifecycle of a scan", () => {
     expect(logger.warnings).toContain(
       'Plugin "framework-stub" failed to clean up: the parser process would not exit',
     )
+  })
+
+  it("calls none of the plugins it was handed when a parse pool extracts on plugins of its own", async () => {
+    const handed = lineup()
+    const { languages, frameworks, effects, calls } = lineup()
+    const result = await scanStubs(workspace.root, {
+      languages: handed.languages,
+      frameworks: handed.frameworks,
+      effects: handed.effects,
+      parsePool: extractorPool(
+        1,
+        () => ({ languages, frameworks, effects, registry: noopRegistry }),
+        () => 0,
+      ),
+    })
+
+    expect(result.ir.stats.parsedFiles).toBe(3)
+    expect(handed.calls).toEqual([])
+    expect(calls).toEqual(["parse a.stub", "parse bad.stub", "parse c.stub"])
   })
 
   it("scans with a plugin written without init or cleanup", async () => {

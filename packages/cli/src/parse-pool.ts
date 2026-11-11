@@ -8,9 +8,12 @@ import {
   type FileExtraction,
   type FileExtractor,
   type FileOutcome,
+  initializePlugins,
+  isPluginSetFault,
   type ParsePool,
+  type PluginCleanup,
 } from "@aburi/core"
-import type { Config } from "@aburi/types"
+import type { Config, Logger } from "@aburi/types"
 import { CliError, errorCode, errorMessage, internalFault } from "./errors"
 import { loadPlugins } from "./plugin-loader"
 import {
@@ -32,6 +35,8 @@ export interface ParserSetup {
 export interface ParsePoolOptions {
   readonly size: number
   readonly setup: ParserSetup
+  /** Where what the workers' plugins log as they initialize and clean up is said. */
+  readonly logger: Logger
 }
 
 interface ParserData {
@@ -39,7 +44,17 @@ interface ParserData {
   readonly setup: ParserSetup
 }
 
-type ToWorker = { readonly kind: "extract"; readonly fileId: number }
+type ToWorker =
+  | { readonly kind: "extract"; readonly fileId: number }
+  /** Clean up the plugins once the file in hand is done, and begin no other. */
+  | { readonly kind: "close" }
+
+/** A line a worker's plugins logged initializing or cleaning up, outside any file. */
+interface PluginLine {
+  readonly level: keyof Logger
+  readonly message: string
+  readonly meta?: Record<string, unknown>
+}
 
 /** A file's outcome as it crosses: the error of a `fatal` one described, as a clone would lose it. */
 type WireOutcome =
@@ -51,12 +66,14 @@ interface WireExtraction extends Omit<FileExtraction, "outcome"> {
 }
 
 type FromWorker =
-  | { readonly kind: "ready" }
-  /** The plugins could not be loaded. */
-  | { readonly kind: "failed"; readonly thrown: ThreadThrown }
+  | { readonly kind: "ready"; readonly said: readonly PluginLine[] }
+  /** The plugins could not be loaded or initialized. */
+  | { readonly kind: "failed"; readonly thrown: ThreadThrown; readonly said: readonly PluginLine[] }
   | { readonly kind: "extracted"; readonly extraction: WireExtraction }
   /** Extracting the file rejected, which ends the run at that file as on one thread. */
   | { readonly kind: "rejected"; readonly fileId: number; readonly thrown: ThreadThrown }
+  /** The worker's plugins are cleaned up, or were never initialized. */
+  | { readonly kind: "closed"; readonly said: readonly PluginLine[] }
 
 interface Pending {
   readonly fileId: number
@@ -67,7 +84,9 @@ interface Pending {
 interface Slot {
   readonly worker: Worker
   readonly inFlight: Pending[]
+  /** Its plugins are loaded and initialized. */
   ready: boolean
+  /** The pool reads nothing more of it but `closed`: it has exited, or is cleaning up to. */
   ended: boolean
   /** What the worker's `error` said, for the `exit` that follows it. */
   endedBecause: string | undefined
@@ -81,13 +100,16 @@ const ENDS_BEFORE_ABORT = 3
 const ON_THE_MAIN_THREAD = "Run with --concurrency 1 to extract every file on the main thread."
 
 /**
- * Workers that each load the scan's plugins and extract the files they are handed, one at a
- * time and in the order they were asked for. A worker that ends under a file withdraws that file
- * and is replaced; the third that ends stops the pool.
+ * Workers that each load and initialize the scan's plugins and extract the files they are handed,
+ * one at a time and in the order they were asked for, cleaning the plugins up as they leave. A
+ * worker that ends under a file withdraws that file and is replaced; the third that ends stops the
+ * pool.
  */
 export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): ParsePool {
   const queue: Pending[] = []
   const slots: Slot[] = []
+  // A replaced worker may still be cleaning up, so the pool waits on every worker it started.
+  const exits: Promise<void>[] = []
   const ended: string[] = []
   let stopped: unknown = null
   const data: ParserData = { job, setup: options.setup }
@@ -95,15 +117,29 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
 
   const fileOf = (fileId: number): string => job.files[fileId]?.path ?? `file ${fileId}`
 
+  // Each worker's plugins say what one thread's would, so a line is said once however many say it.
+  const heard = new Set<string>()
+  const say = (lines: readonly PluginLine[]): void => {
+    for (const { level, message, meta } of lines) {
+      const key = `${level}\0${message}`
+      if (heard.has(key)) continue
+      heard.add(key)
+      options.logger[level](message, meta)
+    }
+  }
+
+  const retire = (slot: Slot): void => {
+    if (slot.ended) return
+    slot.ended = true
+    slot.worker.postMessage({ kind: "close" } satisfies ToWorker)
+  }
+
   const stop = (error: unknown): void => {
     if (stopped !== null) return
     stopped = error
     const pending = [...slots.flatMap((slot) => slot.inFlight.splice(0)), ...queue.splice(0)]
     for (const entry of pending) entry.reject(error)
-    for (const slot of slots) {
-      slot.ended = true
-      void slot.worker.terminate()
-    }
+    for (const slot of slots) retire(slot)
   }
 
   const dispatch = (): void => {
@@ -123,19 +159,29 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
   }
 
   const received = (slot: Slot, message: FromWorker): void => {
+    if (message.kind === "closed") {
+      say(message.said)
+      void slot.worker.terminate()
+      return
+    }
     if (slot.ended) return
     switch (message.kind) {
       case "ready":
+        say(message.said)
         slot.ready = true
         return
       case "failed": {
+        say(message.said)
         const error = rebuiltFromThread(message.thrown)
+        // A plugin whose `init` fails ends the run as it would on one thread.
         stop(
-          new CliError(
-            `A parser worker failed: ${errorMessage(error)}\n${ON_THE_MAIN_THREAD}`,
-            "runtime-error",
-            { cause: error },
-          ),
+          isPluginSetFault(error)
+            ? error
+            : new CliError(
+                `A parser worker failed: ${errorMessage(error)}\n${ON_THE_MAIN_THREAD}`,
+                "runtime-error",
+                { cause: error },
+              ),
         )
         return
       }
@@ -174,8 +220,8 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
 
   const endedUnder = (slot: Slot, how: string): void => {
     if (slot.ended || stopped !== null) return
-    slot.ended = true
-    void slot.worker.terminate()
+    // One that is still running, its answer unread, cleans up its plugins as it goes.
+    retire(slot)
     if (!slot.ready) {
       stop(
         new CliError(
@@ -228,6 +274,7 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
       return null
     }
     const slot: Slot = { worker, inFlight: [], ready: false, ended: false, endedBecause: undefined }
+    exits.push(new Promise((resolve) => worker.once("exit", () => resolve())))
     worker.on("message", (message: FromWorker) => received(slot, message))
     // The answer is dropped, and the worker, still running, would never send it again.
     worker.on("messageerror", (error) =>
@@ -268,7 +315,7 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
     },
     async close() {
       stop(new CliError("The parser workers were stopped before they finished.", "runtime-error"))
-      await Promise.all(slots.map((slot) => slot.worker.terminate()))
+      await Promise.all(exits)
     },
   }
 }
@@ -281,28 +328,83 @@ export function serveParseRequests(): void {
   }
   const send = (message: FromWorker): void => port.postMessage(message)
   const { job, setup } = workerData as ParserData
-  const extractor: Promise<FileExtractor> = loadPlugins({
+  const lines: PluginLine[] = []
+  const said = (): PluginLine[] => lines.splice(0)
+  const log = lineLogger(lines)
+  let closing = false
+  let initializing = false
+  const ready: Promise<{ extractor: FileExtractor; cleanUp: PluginCleanup } | null> = loadPlugins({
     config: setup.config,
     workspaceRoot: setup.workspaceRoot,
     pluginRefRoot: setup.pluginRefRoot,
     syntheticPlugins: frameworkHintPlugins(setup.config),
-  }).then((plugins) => {
-    send({ kind: "ready" })
-    return createFileExtractor(job, plugins)
+  }).then(async (plugins) => {
+    if (closing) return null
+    initializing = true
+    const cleanUp = await initializePlugins(plugins, job, log)
+    return { extractor: createFileExtractor(job, plugins), cleanUp }
   })
-  extractor.catch((error: unknown) => send({ kind: "failed", thrown: describedForThread(error) }))
-  port.on("message", (message: ToWorker) => {
-    const { fileId } = message
-    extractor.then(
-      (ready) =>
-        ready.extract(fileId).then(
-          (extraction) => sendExtraction(extraction, send),
-          (error: unknown) => send({ kind: "rejected", fileId, thrown: describedForThread(error) }),
-        ),
+  ready.then(
+    (set) => {
+      if (set !== null) send({ kind: "ready", said: said() })
+    },
+    (error: unknown) => send({ kind: "failed", thrown: describedForThread(error), said: said() }),
+  )
+  const running = new Set<Promise<unknown>>()
+  const extract = (fileId: number): void => {
+    const extraction = ready.then(
+      (set) =>
+        // The pool has handed a retired worker's files on, or stopped.
+        closing
+          ? undefined
+          : set?.extractor.extract(fileId).then(
+              (extraction) => sendExtraction(extraction, send),
+              (error: unknown) =>
+                send({ kind: "rejected", fileId, thrown: describedForThread(error) }),
+            ),
       // Said once, as `failed`, however many files were asked for.
       () => {},
     )
+    running.add(extraction)
+    void extraction.finally(() => running.delete(extraction))
+  }
+  const close = (): void => {
+    if (closing) return
+    closing = true
+    if (!initializing) {
+      send({ kind: "closed", said: [] })
+      return
+    }
+    ready
+      .then(
+        async (set) => {
+          await Promise.allSettled(running)
+          await set?.cleanUp()
+        },
+        // Whatever it had initialized was cleaned up as its `init` failed.
+        () => {},
+      )
+      .then(() => send({ kind: "closed", said: said() }))
+  }
+  port.on("message", (message: ToWorker) => {
+    if (message.kind === "close") close()
+    else if (!closing) extract(message.fileId)
   })
+}
+
+/** A logger that keeps each line, with only the metadata a clone can carry. */
+function lineLogger(lines: PluginLine[]): Logger {
+  const keep =
+    (level: keyof Logger) =>
+    (message: string, meta?: Record<string, unknown>): void => {
+      const cloneable = ifCloneable(meta) as Record<string, unknown> | undefined
+      lines.push({
+        level,
+        message: String(message),
+        ...(cloneable === undefined ? {} : { meta: cloneable }),
+      })
+    }
+  return { debug: keep("debug"), info: keep("info"), warn: keep("warn"), error: keep("error") }
 }
 
 /** Sends a file's extraction, or the file withdrawn, with what it said where that can be sent. */

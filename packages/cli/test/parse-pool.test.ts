@@ -1,13 +1,19 @@
 import { existsSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { Worker } from "node:worker_threads"
 import type { ExtractionJob, FileExtraction, ParsePool } from "@aburi/core"
-import { relativePath, useScratchWorkspace } from "@aburi/test-support"
+import { recordingLogger, relativePath, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { loadPinnedConfig, pinConfig } from "../src/config-load"
 import { errorMessage } from "../src/errors"
 import { createParsePool, describeWorkerError, sendExtraction } from "../src/parse-pool"
-import { STUB_PLUGIN, workerEndingPlugin, writeStubWorkspace } from "./stub-language"
+import {
+  STUB_PLUGIN,
+  stubPluginRunning,
+  workerEndingPlugin,
+  writeStubWorkspace,
+} from "./stub-language"
 import { writeFileAt } from "./workspace"
 
 /** What the pool's threads do beyond what a real one would, as each case sets it. */
@@ -95,6 +101,7 @@ async function poolOver(
   const pool = createParsePool(job, {
     size,
     setup: { config, workspaceRoot: workspace.root, pluginRefRoot: workspace.root },
+    logger: recordingLogger(),
   })
   pools.push(pool)
   return pool
@@ -203,9 +210,13 @@ describe("a parser worker that cannot be started", () => {
       const pool = await poolOver(files, plugin, size)
 
       expect(await answersOf(pool, files)).toEqual(answers)
-      await vi.waitFor(() => {
-        expect(threads.started.map((worker) => worker.threadId)).toEqual([-1])
-      })
+      // A worker still starting reads the request to end only once it listens for messages.
+      await vi.waitFor(
+        () => {
+          expect(threads.started.map((worker) => worker.threadId)).toEqual([-1])
+        },
+        { timeout: 10_000 },
+      )
     },
   )
 })
@@ -229,6 +240,54 @@ describe("a parser worker whose answer cannot be read", () => {
     ])
     expect(threads.started).toHaveLength(2)
   })
+})
+
+describe("the plugins of a parser worker", () => {
+  /** Code that appends `what`, a JavaScript expression, to the journal under the thread's id. */
+  const noting = (journal: string, what: string): string =>
+    `    const { appendFileSync } = await import("node:fs")
+    const { threadId } = await import("node:worker_threads")
+    appendFileSync(${JSON.stringify(journal)}, threadId + " " + ${what} + "\\n")`
+
+  it.each<[string, ((message: unknown) => boolean) | undefined, number]>([
+    ["started with the pool", undefined, 2],
+    [
+      "retired for an answer that could not be read, and the one in its place",
+      (message) => (message as { extraction?: { fileId?: number } }).extraction?.fileId === 1,
+      1,
+    ],
+  ])(
+    "are initialized before its first file and cleaned up as the pool closes, on each worker %s",
+    async (_case, unreadable, size) => {
+      threads.unreadable = unreadable
+      const journal = join(workspace.root, "journal")
+      const files = ["a-ok.stub", "b-ok.stub", "c-ok.stub", "d-ok.stub"]
+      const plugin = stubPluginRunning({
+        init: noting(journal, '"init"'),
+        cleanup: noting(journal, '"cleanup"'),
+        parse: noting(journal, "file.path"),
+      })
+      const pool = await poolOver(files, plugin, size)
+      await answersOf(pool, files)
+      await pool.close()
+
+      const entries = (await readFile(journal, "utf8"))
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.split(" ") as [string, string])
+      const byWorker = new Map<string, string[]>()
+      for (const [thread, what] of entries)
+        byWorker.set(thread, [...(byWorker.get(thread) ?? []), what])
+
+      expect([...byWorker.values()].map((said) => [said[0], said.at(-1)])).toEqual([
+        ["init", "cleanup"],
+        ["init", "cleanup"],
+      ])
+      expect(new Set(entries.map(([, what]) => what))).toEqual(
+        new Set(["init", "cleanup", ...files]),
+      )
+    },
+  )
 })
 
 describe("a parse pool without its worker script", () => {

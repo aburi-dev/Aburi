@@ -10,11 +10,11 @@ import { initializePlugins } from "./lifecycle"
 
 export type { ExtractedFiles, ExtractionFailure, ParseErrorRecord } from "./collate"
 
-/** Extracts a scan's files on threads of its own. */
+/** Extracts a scan's files on threads of its own, each bracketing its own plugins' lifecycle. */
 export interface ParsePool {
   /** The answers may settle in any order; the scan folds them in file order. */
   extract(fileId: number): Promise<FileExtraction>
-  /** Ends the pool; an extraction still pending rejects. */
+  /** Ends the pool once its threads have cleaned up their plugins; a pending extraction rejects. */
   close(): Promise<void>
 }
 

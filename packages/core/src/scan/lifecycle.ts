@@ -16,7 +16,7 @@ export type PluginCleanup = () => Promise<void>
 
 /**
  * Initializes the plugins one at a time — the languages, the frameworks, then the effects — each
- * object once. One whose `init` fails rejects, once the plugins initialized before it are cleaned up.
+ * object once. One whose `init` fails rejects, once those initialized before it are cleaned up.
  */
 export async function initializePlugins(
   plugins: ExtractionPlugins,

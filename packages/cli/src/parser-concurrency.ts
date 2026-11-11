@@ -85,7 +85,13 @@ export function parsePoolFor(concurrency: ParserConcurrency): ParsePoolFactory {
           `(${describeSizing(sizing)})`,
       )
     }
-    return workers === 1 ? null : createParsePool(job, { size: workers, setup: concurrency.setup })
+    return workers === 1
+      ? null
+      : createParsePool(job, {
+          size: workers,
+          setup: concurrency.setup,
+          logger: concurrency.logger,
+        })
   }
 }
 

@@ -217,7 +217,8 @@ you need is missing.
 
 That is what lets a plugin use a parser or type checker written in Python, Go or
 anything else. [`@aburi/plugin-process`](https://github.com/kage1020/Aburi/tree/main/packages/plugin-process)
-runs it as one process per scan and sends it JSON-RPC requests over stdio:
+runs it as one process per scan, or one per parser worker when the scan extracts on several, and
+sends it JSON-RPC requests over stdio:
 
 ```ts
 import { createPluginProcess, type PluginProcess } from "@aburi/plugin-process"

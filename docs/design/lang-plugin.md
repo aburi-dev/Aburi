@@ -84,6 +84,11 @@ it with, such as a parser running as a process of its own ([`plugin-process.md`]
   core called either still loads.
 - A plugin object serves one scan at a time. Two scans run one after the other with the same
   plugin objects call `init` and `cleanup` once each.
+- A scan that extracts on parser workers ([`performance.md`](./performance.md) Rule PF-9a) makes
+  every plugin call on the plugin objects each worker loaded, so each worker initializes its own,
+  in this order, before its first file and cleans them up once its last file is done. The objects
+  the scan was handed make no call, and are neither initialized nor cleaned up. A plugin holding a
+  process holds one on each worker.
 
 ## 4. Interface
 
@@ -989,6 +994,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP50 | A fault of the plugin set (`vocab-undeclared`) ends the scan mid-extraction | every plugin is cleaned up all the same |
 | LP51 | A `cleanup` that throws | a warning naming the plugin, the others cleaned up, the scan's result unchanged |
 | LP52 | A plugin written with neither `init` nor `cleanup` | scanned as one with empty ones |
+| LP53 | A scan whose parse pool extracts on plugin objects of its own | none of the objects the scan was handed is initialized, called or cleaned up |
 
 ### 9.11 Import resolution and origins (§4.8, §5.2.4)
 

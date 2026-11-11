@@ -1,7 +1,8 @@
 # @aburi/plugin-process
 
 Drives a parser or classifier written in another language from a JavaScript Aburi plugin: one
-long-lived process per scan, answering JSON-RPC requests over stdio. A plugin for Python or Go can
+long-lived process per scan (one per parser worker, when the scan extracts on several), answering
+JSON-RPC requests over stdio. A plugin for Python or Go can
 then use `go/packages` or a Python type checker instead of syntax alone, and stays an ordinary
 plugin to the core.
 

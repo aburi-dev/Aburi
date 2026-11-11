@@ -22,13 +22,36 @@ export const STUB_PLUGIN = stubPluginSource({
 
 /** The stub language, except that on a parser worker it runs `end` on a file named `crash`. */
 export function workerEndingPlugin(end: string): string {
-  return STUB_PLUGIN.replace(
-    "  parseFile: async (file) => {\n",
-    `  parseFile: async (file) => {
-    const { isMainThread } = await import("node:worker_threads")
+  return stubPluginRunning({
+    parse: `    const { isMainThread } = await import("node:worker_threads")
     if (!isMainThread && file.path.includes("crash")) {
 ${end}
-    }
+    }`,
+  })
+}
+
+/**
+ * The stub language, running `init` in its `init(ctx)`, `cleanup` in its `cleanup()`, and `parse`
+ * as its `parseFile(file)` starts.
+ */
+export function stubPluginRunning(code: {
+  init?: string
+  cleanup?: string
+  parse?: string
+}): string {
+  return STUB_PLUGIN.replace(
+    "  init: async () => {},\n",
+    `  init: async (ctx) => {
+${code.init ?? ""}
+  },
+  cleanup: async () => {
+${code.cleanup ?? ""}
+  },
+`,
+  ).replace(
+    "  parseFile: async (file) => {\n",
+    `  parseFile: async (file) => {
+${code.parse ?? ""}
 `,
   )
 }

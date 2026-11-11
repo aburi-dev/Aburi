@@ -11,6 +11,7 @@ import {
 } from "../../src"
 import {
   STUB_PLUGIN,
+  stubPluginRunning,
   workerEndingPlugin,
   writeStubRepository,
   writeStubWorkspace,
@@ -250,6 +251,37 @@ ${STUB_PLUGIN}`,
 
       expect(outcome.code).toBe(EXIT.RUNTIME)
       expect(outcome.stderr.join("")).toMatch(said)
+    },
+  )
+
+  it.each<[string, { init?: string; cleanup?: string }, number, string]>([
+    [
+      "logs as it initializes and fails to clean up",
+      {
+        init: '    ctx.log.info("parser started")',
+        cleanup: '    throw new Error("the parser process would not exit")',
+      },
+      EXIT.SUCCESS,
+      'Plugin "lang-stub" failed to clean up: the parser process would not exit',
+    ],
+    [
+      "fails to initialize",
+      { init: '    throw new Error("python3 is not on PATH")' },
+      EXIT.GATE,
+      'Plugin "lang-stub" failed to initialize: python3 is not on PATH',
+    ],
+  ])(
+    "says and exits as one thread does for a plugin that %s on every worker",
+    async (_case, lifecycle, code, said) => {
+      await writeStubWorkspace(workspace.root, ["a-ok.stub", "b-ok.stub", "c-ok.stub"])
+      await writeFileAt(workspace.root, "lang-stub.mjs", stubPluginRunning(lifecycle))
+      const alone = await scanned(["scan", "--concurrency", "1"])
+      const run = await scanned(["scan", "--concurrency", "2"])
+
+      expect(alone.outcome.code).toBe(code)
+      expect(alone.outcome.stderr.join("")).toContain(said)
+      expect(run.outcome).toEqual(alone.outcome)
+      expect(run.extractedOn).toEqual([onWorkers(2, "--concurrency 2")])
     },
   )
 

@@ -119,7 +119,8 @@ otherwise be started again for every file of a scan.
 Rule PP-4: **`close` ends every process the helper started**, the one running and any it is still
 ending, and resolves once they have exited. A request still waiting rejects with `closed`. A
 request after `close` starts a new process, so a plugin object scanned twice opens and closes one
-per scan through `init` and `cleanup`.
+per scan through `init` and `cleanup`. A scan extracting on parser workers loads the plugin on
+each, so it runs one process for each worker ([`lang-plugin.md`](./lang-plugin.md) §3).
 
 Rule PP-5: **an idle process does not keep its host alive.** The process and its pipes are
 detached from the host's event loop, and only a waiting request's timer holds it. A host that
