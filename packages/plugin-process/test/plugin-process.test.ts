@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { useScratchWorkspace } from "@aburi/test-support"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createPluginProcess,
   isPluginProcessError,
@@ -294,11 +294,22 @@ describe("a plugin process", () => {
   )
 
   it("merges its environment over the host's, leaving out a variable set to undefined", async () => {
-    const plugin = peer({ env: { PEER_PROBE: "set", PATH: undefined } })
+    vi.stubEnv("PEER_KEPT", "host")
+    vi.stubEnv("PEER_GONE", "host")
+    vi.stubEnv("Peer_Folded", "host")
+    try {
+      const plugin = peer({
+        env: { PEER_PROBE: "set", PEER_GONE: undefined, PEER_FOLDED: undefined },
+      })
+      const read = (name: string) => plugin.request("env", { name })
 
-    expect(await plugin.request("env", { name: "PEER_PROBE" })).toBe("set")
-    expect(await plugin.request("env", { name: "PATH" })).toBeNull()
-    expect(await plugin.request("env", { name: "HOME" })).toBe(process.env.HOME ?? null)
+      expect(await read("PEER_PROBE")).toBe("set")
+      expect(await read("PEER_KEPT")).toBe("host")
+      expect(await read("PEER_GONE")).toBeNull()
+      expect(await read("Peer_Folded")).toBe(process.platform === "win32" ? null : "host")
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("reads a timeoutMs too long for a timer as the longest one", async () => {
