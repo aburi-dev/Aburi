@@ -12,16 +12,20 @@ Recognised shapes:
 | `<client>.<model>.create / createMany / createManyAndReturn / update / updateMany / updateManyAndReturn / upsert / delete / deleteMany` | `db.write` |
 | `<client>.$transaction(...)` | `db.transaction` |
 
-Raw SQL (`$queryRaw` / `$executeRaw` / `$queryRawUnsafe` / `$executeRawUnsafe`)
-is intentionally **not** classified today — statically distinguishing a read
-raw query from a write raw query would require SQL parsing, which is out of the
-current scope. A future revision may add it under a `medium` confidence tier.
+Raw queries (`$queryRaw` / `$queryRawUnsafe` / `$queryRawTyped` / `$executeRaw` /
+`$executeRawUnsafe`, and MongoDB's `$runCommandRaw`) are intentionally **not**
+classified: whether a raw query reads or writes is in the SQL or the command it
+is handed, not in the call site.
+The plugin declines it instead, so the call stays in `calls[]` and the IR's
+`stats.declinedCalls` lists it under `effects-plugin:prisma:raw-query`, which
+`aburi explain` shows under the Symbol's `## Declined effects`.
 
 Layered gate: a file that imports `@prisma/client` (or a re-export chain that
-lands there) is a prerequisite, and the target must have at least three
-`.`-separated segments (`<client>.<model>.<verb>`) so a random `foo.findMany()`
-call in an unrelated file will not false-classify. Bare `$transaction()`
-without a client segment is also skipped.
+lands there) is a prerequisite. A delegate call needs at least three
+`.`-separated segments (`<client>.<model>.<verb>`), so a random `foo.findMany()`
+call in an unrelated file will not false-classify; `$transaction` and the
+raw-query methods need only a client segment (`<client>.$transaction`). A bare
+`$transaction()` or `$queryRaw` without a client segment is skipped.
 
 ### Receiver identification
 

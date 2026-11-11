@@ -1,6 +1,13 @@
 export type { PluginType, ReservedNamespace } from "./constants"
-export { deriveXPrefix, RESERVED_NAMESPACES, TYPE_NAMESPACE_RULES } from "./constants"
+export {
+  deriveXPrefix,
+  isUnderPrefix,
+  RESERVED_NAMESPACES,
+  TYPE_NAMESPACE_RULES,
+} from "./constants"
 export type { RegistryErrorCode, RegistryErrorDetail } from "./errors"
 export { RegistryError } from "./errors"
 export { loadPluginManifest, parsePluginManifest } from "./manifest"
+export type { PluginInputErrorCode } from "./plugin-input"
+export { PluginInputError } from "./plugin-input"
 export { VocabRegistry } from "./registry"

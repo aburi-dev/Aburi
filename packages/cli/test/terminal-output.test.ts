@@ -213,6 +213,19 @@ describe("colour", () => {
     expect(message).toContain("error: option '--format <format>' argument 'bogus'")
   })
 
+  it("colours aburi vocab's warning yellow and its line for a value nothing owns red", async () => {
+    const { code, stderr } = await runCliIn(workspace.root, ["vocab", "who-owns", "nope"], {
+      FORCE_COLOR: "1",
+    })
+
+    expect(code).toBe(EXIT.RUNTIME)
+    const [warning = "", error = ""] = stderr.trimEnd().split("\n")
+    expect(warning).toBe(YELLOW(withoutColor(warning)))
+    expect(withoutColor(warning)).toMatch(/^⚠ No aburi\.json or aburi\.jsonc was found/)
+    expect(error).toBe(RED(withoutColor(error)))
+    expect(withoutColor(error)).toMatch(/^No owner for "nope"/)
+  })
+
   it("colours each line of a gate that trips red", async () => {
     const gone = symbolFor("ts:src/gone.ts#gone")
     const paths = await writeIRs(

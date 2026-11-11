@@ -1,6 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { scanWith } from "@aburi/test-harness"
-import { symbolNamed, useScratchWorkspace } from "@aburi/test-support"
+import { irSchemaViolations, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
 import { beforeEach, describe, expect, it } from "vitest"
 import { drizzleEffectsPlugin } from "../src/index"
 
@@ -131,14 +131,56 @@ describe("scan — Drizzle calls in a service file", () => {
   })
 })
 
+describe("scan — raw SQL on a Drizzle client", () => {
+  it("names each statement it declines and keeps the call, inside a transaction too", async () => {
+    await workspace.writeSource(
+      "src/reports.ts",
+      [
+        'import { sql } from "drizzle-orm"',
+        'import { db } from "./db"',
+        "",
+        "export async function totals(id: string) {",
+        `  return db.execute(sql\`SELECT sum(amount) FROM invoice WHERE user_id = \${id}\`)`,
+        "}",
+        "",
+        "export async function purge() {",
+        "  await db.transaction(async (tx) => {",
+        "    await tx.execute(sql`DELETE FROM session`)",
+        "  })",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    const declined = (symbol: string, target: string, line: number) => ({
+      plugin: "effects-drizzle",
+      symbolId: `ts:src/reports.ts#${symbol}`,
+      target,
+      line,
+      reason: "effects-plugin:drizzle:raw-sql",
+    })
+    expect(result.ir.stats.declinedCalls).toEqual([
+      declined("purge", "tx.execute", 10),
+      declined("totals", "db.execute", 5),
+    ])
+    expect(symbolNamed(result, "totals").calls.map((c) => c.target)).toContain("db.execute")
+    expect(symbolNamed(result, "purge").calls.map((c) => c.target)).toContain("tx.execute")
+    expect(symbolNamed(result, "purge").effects.map((e) => e.target)).toEqual(["db.transaction"])
+    expect(irSchemaViolations(result.ir)).toEqual([])
+  })
+})
+
 describe("scan — a file that does not import drizzle-orm", () => {
   it("records nothing, though the calls are spelled like Drizzle's", async () => {
     await workspace.writeSource(
       "src/users.ts",
       [
-        'import { PrismaClient } from "@prisma/client"',
+        'import { Kysely } from "kysely"',
         "",
-        "export async function listUsers(db: PrismaClient) {",
+        "export async function listUsers(db: Kysely<unknown>) {",
+        "  await db.execute(statement)",
         "  return db.select().from(users)",
         "}",
         "",
@@ -148,6 +190,9 @@ describe("scan — a file that does not import drizzle-orm", () => {
     const result = await scanWorkspace()
 
     expect(result.ir.symbols.flatMap((s) => s.effects)).toEqual([])
-    expect(symbolNamed(result, "listUsers").calls.map((c) => c.target)).toContain("db.select")
+    expect(result.ir.stats.declinedCalls).toBeUndefined()
+    expect(symbolNamed(result, "listUsers").calls.map((c) => c.target)).toEqual(
+      expect.arrayContaining(["db.execute", "db.select"]),
+    )
   })
 })

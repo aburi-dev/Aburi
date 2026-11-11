@@ -1,4 +1,4 @@
-import { open, readFile, stat } from "node:fs/promises"
+import { open, readFile, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { stripUtf8Bom } from "./codepoints"
 import { CoreError } from "./errors"
@@ -27,26 +27,54 @@ type RootMarker =
 
 export interface DetectWorkspaceRootOptions {
   cwd?: string
+  /**
+   * The working tree git sees from the start when its repository is kept outside it, so that no
+   * `.git` marks the top. The caller asks git; nothing is spawned here.
+   */
+  workTree?: GitWorkTree
 }
+
+/**
+ * `{ top }` is the top `GIT_WORK_TREE` or `core.worktree` names, as `git rev-parse --show-toplevel`
+ * prints it (a relative one is resolved against the start). `"start"` is git taking the directory it
+ * runs in as the top, for want of either.
+ */
+export type GitWorkTree = { readonly top: string } | "start"
 
 export async function detectWorkspaceRoot(
   options: DetectWorkspaceRootOptions = {},
 ): Promise<string> {
   const startRaw = options.cwd ?? process.cwd()
   const start = isAbsolute(startRaw) ? startRaw : resolve(process.cwd(), startRaw)
+  const { workTree } = options
+  const top =
+    workTree === undefined || workTree === "start"
+      ? null
+      : await realDirectory(resolve(start, workTree.top))
 
   let dir = start
   let outermost: string | null = null
   let failure: MarkerFailure | null = null
+  let stoppedAtRepository = false
   while (true) {
     const probe = await probeDirectoryMarkers(dir)
     if (probe.marker !== null) outermost = dir
     if (failure === null && probe.failure !== null) failure = { dir, cause: probe.failure }
-    if (probe.marker === REPOSITORY_MARKER) break
+    if (probe.marker === REPOSITORY_MARKER) {
+      stoppedAtRepository = true
+      break
+    }
+    if (top !== null && (await realDirectory(dir)) === top) {
+      outermost = dir
+      break
+    }
     const parent = dirname(dir)
     if (parent === dir) break
     dir = parent
   }
+  // git took the start for want of a name, and a hook run from a package directory below its `.git`
+  // exports `GIT_DIR` too, so the start is the root only where no `.git` lies above it.
+  if (workTree === "start" && !stoppedAtRepository) outermost = start
   if (outermost === null) {
     throw new CoreError(
       `No workspace marker (.git, pnpm-workspace.yaml, turbo.json, nx.json, lerna.json, go.work, .aburi-workspace, or workspace-aware package.json/Cargo.toml/pyproject.toml) found at ${start} or any ancestor`,
@@ -55,6 +83,15 @@ export async function detectWorkspaceRoot(
   }
   if (failure !== null && isAtOrBelow(failure.dir, outermost)) throw failure.cause
   return outermost
+}
+
+async function realDirectory(path: string): Promise<string | null> {
+  try {
+    return await realpath(path)
+  } catch (cause) {
+    if (isVanishedFile(cause)) return null
+    throw cause
+  }
 }
 
 interface MarkerFailure {

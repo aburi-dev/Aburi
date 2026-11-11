@@ -40,6 +40,7 @@ export type {
   Component,
   ComponentId,
   Confidence,
+  DeclinedCall,
   Decorator,
   Dependency,
   DependencyEndpoint,
@@ -78,12 +79,14 @@ export type {
   PluginManifest,
   Provides,
 } from "./generated/plugin"
+export { LANGUAGE_ID_GRAMMAR, LANGUAGE_ID_PATTERN, RESERVED_LANGUAGE_IDS } from "./language-id"
 export type {
   BodyExtraction,
   CallCandidate,
   ClassifyContext,
   DropHint,
   EffectClassification,
+  EffectDecline,
   EffectPlugin,
   EffectsManifest,
   EffectVocab,
@@ -114,6 +117,7 @@ export type {
   SourceFile,
   SymbolCandidate,
   SymbolClassification,
+  ThisBinding,
   VocabRegistry,
   WalkContext,
   WrittenSourceRange,

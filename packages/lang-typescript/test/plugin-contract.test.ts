@@ -1,4 +1,5 @@
 import { extractFile } from "@aburi/test-harness"
+import { relativePath } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import {
   langTypescriptManifest,
@@ -8,12 +9,11 @@ import {
 } from "../src/index"
 import { idsOf } from "./fixtures/ctx"
 
-describe("langTypescriptPlugin.languageId", () => {
+describe("the manifest's languageId", () => {
   it("is the prefix the plugin writes onto every Symbol id, not the manifest name", async () => {
     const ids = await idsOf("export function alpha() {}\n")
 
-    expect(langTypescriptPlugin.languageId).toBe("ts")
-    expect(langTypescriptPlugin.languageId).not.toBe(langTypescriptPlugin.manifest.name)
+    expect(langTypescriptPlugin.manifest.languageId).toBe("ts")
     expect(ids).toEqual(["ts:src/a.ts#alpha"])
   })
 })
@@ -93,7 +93,7 @@ describe("the files this plugin claims and drops", () => {
 describe("langTypescriptPlugin.releaseTree", () => {
   it("frees the tree it is given", async () => {
     const { tree } = await langTypescriptPlugin.parseFile({
-      path: "src/a.ts",
+      path: relativePath("src/a.ts"),
       content: "export function f() { return 1 }\n",
     })
     if (tree === null) throw new Error("the parse built no tree")

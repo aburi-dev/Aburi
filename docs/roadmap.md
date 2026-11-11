@@ -28,7 +28,7 @@ not read), a `--fail-on` gate, and Slice View, which
 clusters changed symbols along the call graph so a feature cutting through
 controller, service, and repository reads as one section.
 
-**Output.** The JSON analysis, a workspace overview, per-component detail, the pull request diff, and per-symbol explain views.
+**Output.** The JSON analysis, a workspace overview, per-component detail, the pull request diff, and per-symbol explain views. `aburi vocab` lists the effect ids and extension kinds the configured plugins declare, and which plugin owns each.
 
 **Terminal.** Coloured warnings and errors and a progress line on an interactive terminal,
 honouring `NO_COLOR`, `FORCE_COLOR` and CI, with stdout left plain for pipes.
@@ -92,8 +92,6 @@ Nothing here is committed.
 - `aburi review`, feeding the diff to a model for automated review comments.
 - Name Slice View clusters automatically. The report heads each with the
   members its calls start from today.
-- `aburi vocab`, listing the effect ids and extension kinds the loaded plugins
-  declare, and which plugin owns each.
 - `--quiet` for `scan` and `diff`, and `aburi diff --filter`, narrowing the
   report to chosen statuses.
 - Browse the analysis in a web UI.

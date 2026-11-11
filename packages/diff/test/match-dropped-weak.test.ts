@@ -1,4 +1,4 @@
-import { symbolId } from "@aburi/test-support"
+import { relativePath, symbolId } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { matchStageDroppedWeak } from "../src"
 import { changesBetween, diffSymbols, dropped } from "./helpers"
@@ -164,7 +164,7 @@ describe("a dropped tree larger than one call can take as arguments", () => {
     const count = 130_000
     const template = dropped("gen/index.ts", "f")
     const tree = (dir: string) => {
-      const source = { ...template.source, file: `gen/${dir}/index.ts` }
+      const source = { ...template.source, file: relativePath(`gen/${dir}/index.ts`) }
       return Array.from({ length: count }, (_, i) => ({
         ...template,
         id: symbolId(`ts:${source.file}#f${i}`),
