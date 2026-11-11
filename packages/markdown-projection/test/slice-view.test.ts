@@ -4,6 +4,8 @@ import {
   errorFrom,
   makeDiff,
   movedChanged,
+  relativePath,
+  sectionOf,
   sliceId,
   sliceOf,
   symbolAt,
@@ -12,7 +14,6 @@ import {
 import type { Symbol as IRSymbol, SliceRecord, SymbolChange } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ProjectionInvariantError, projectDiff } from "../src"
-import { sectionOf } from "./markdown"
 
 const HEADING = "## 🧵 Slice View"
 
@@ -196,7 +197,7 @@ describe("projectDiff — the Slice View", () => {
     const a = chain("a", 8)
     const b = chain("b", 8).map((member) => ({
       ...member,
-      source: { ...member.source, file: "src/d.ts" },
+      source: { ...member.source, file: relativePath("src/d.ts") },
     }))
     const rows = treeRows(sliceView([...a, ...b].map(logicChange), [sliceOf(...a, ...b)]))
     expect(rows.filter((row) => !row.startsWith(" "))).toEqual([

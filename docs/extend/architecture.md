@@ -50,7 +50,7 @@ status and delta for each from there.
 | `@aburi/core` | Symbol ids, canonical JSON, IR invariants, autodetect, and the scan pipeline. |
 | `@aburi/diff` | The five-stage matcher, statuses, and deltas. |
 | `@aburi/markdown-projection` | Every Markdown view, and the `--fail-on` formatter. |
-| `@aburi/cli` | The four commands, git worktree handling, and exit codes. |
+| `@aburi/cli` | The five commands, git worktree handling, and exit codes. |
 | `@aburi/github-action` | A composite action wrapping the CLI, with marker-based comment upsert. |
 | `@aburi/plugin-process` | Runs a plugin's parser written in another language as a process of its own, over JSON-RPC on stdio. |
 | `@aburi/lang-*` | Language plugins. |

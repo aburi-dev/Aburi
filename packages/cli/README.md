@@ -4,7 +4,7 @@ The `aburi` command-line entry — wires
 [`@aburi/config`](../config) +
 [`@aburi/core`](../core) +
 [`@aburi/diff`](../diff) +
-[`@aburi/markdown-projection`](../markdown-projection) into the four subcommands
+[`@aburi/markdown-projection`](../markdown-projection) into the five subcommands
 defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
 
 ## Subcommands
@@ -18,8 +18,8 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
 - **`aburi scan`** — load config, resolve plugins, run `@aburi/core` scan,
   emit IR JSON + workspace / component Markdown. `--format json|md|both`,
   `--ignore <glob>` (repeatable),
-  `--respect-gitignore` / `--no-respect-gitignore`, `--compact`,
-  `--no-timestamp`, `--strict` / `--no-strict` / `--discover` (undeclared plugin
+  `--respect-gitignore` / `--no-respect-gitignore`, `--compact`, `--quiet` (the census
+  lines alone on stdout), `--no-timestamp`, `--strict` / `--no-strict` / `--discover` (undeclared plugin
   vocabulary: exit 3, or keep it and write `aburi-vocab-discovered.json`),
   `--lsp` / `--no-lsp` (override `lsp.enabled`). A config that loads no language
   plugin exits 2.
@@ -33,11 +33,17 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
     degrading `moved` to `removed + added`.
   - `--base <ir.json> --head <ir.json>` — file mode, skips git entirely.
   `--fail-on <spec>` supports the full grammar (see below) and returns
-  `EXIT.GATE = 3` when a clause trips.
+  `EXIT.GATE = 3` when a clause trips. `--filter <statuses>` lists only those statuses'
+  changes in `diff.md`, with a note saying how many it left out; `diff.json`, the glyph line
+  and `--fail-on` still read every change. `--quiet` prints the glyph line alone.
 - **`aburi explain`** — three-arm dispatch: full Symbol id (`ts:src/foo.ts#Foo.bar`),
   file path (all Symbols in the file, workspace-root-relative), or case-sensitive
   substring on `Symbol.name`. Ambiguous substring hits exit 2 with the candidate
   list. `--debug-resolution` rescans and appends the per-call resolution table.
+- **`aburi vocab`** — `list | effects | extkinds | plugins | who-owns <value>`: load the
+  configured plugins and `frameworkHints` without scanning, and list the core effect ids
+  beside what each manifest declares, or name what owns one value in each vocabulary it is
+  in (exit 1 when nothing does). `--json` writes one JSON object instead of the table.
 
 ## `--max-bytes`
 
@@ -71,6 +77,14 @@ Examples: `--fail-on removed`, `--fail-on changed:>5`, `--fail-on dropped-toggle
 A tripped clause prints `--fail-on <clause> tripped (observed: N <token>)` on stderr and names the
 Symbols it counted below it, one indented id per line, ten at most.
 
+## Terminal output
+
+stdout carries results and is never coloured. On a terminal, stderr colours warnings, errors and
+the log, and draws a progress line for each scan (`extracting 412/5002 files`), erased before
+the results are printed. `--no-color`, `NO_COLOR`, `FORCE_COLOR` (which wins over `NO_COLOR`)
+and CI mode (`CI` set, or `--ci`) decide the colour; the progress line is drawn only on a terminal
+outside CI mode. At `--log-level debug` an error that exits 1 or 3 is followed by its stack trace.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -88,7 +102,7 @@ pnpm exec aburi --version
 ```
 
 `@aburi/cli` also exports the same command handlers programmatically
-(`runInit`, `runScan`, `runDiff`, `runExplain`, `runCli`, `parseFailOn`,
+(`runInit`, `runScan`, `runDiff`, `runExplain`, `runVocab`, `runCli`, `parseFailOn`,
 `evaluateFailOn`, `DIFF_JSON_FILENAME`, `DIFF_MD_FILENAME`, …) so integration
 tests can drive the CLI without spawning a subprocess.
 

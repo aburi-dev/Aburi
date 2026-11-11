@@ -10,6 +10,7 @@ aburi <command> [flags]
 | [`scan`](#aburi-scan) | Analyse the workspace; write the JSON analysis and Markdown. |
 | [`diff`](#aburi-diff) | Compare two revisions; write the review report. |
 | [`explain`](#aburi-explain) | Print the detail for one symbol. |
+| [`vocab`](#aburi-vocab) | List the effect ids and extension kinds your plugins declare, and who owns each. |
 
 `-v` / `--version` and `-h` / `--help` work anywhere and exit `0`.
 
@@ -22,7 +23,14 @@ a line for every file extracted as well, and `error` shows none of it. Its lines
 name no scan; `aburi diff` writes the base's before the head's. At `debug`, `aburi diff` also
 writes a `diff/stage4:` line for each Symbol, or pair of Symbols, it would not pair by name,
 naming the rule that stopped it. The `⚠` warnings are printed
-whatever the level. Any other value exits `2`.
+whatever the level. Any other value exits `2`. At `debug`, an error that ends the run with exit `1`
+or `3` is followed by its stack trace and those of its causes.
+
+On a terminal, stderr is coloured (warnings yellow, errors red, the log dim) and a progress line
+names the phase of each scan — `extracting 412/5002 files` — redrawn in place and erased before
+the results are printed. stdout is never coloured, so piping it gives the same bytes wherever you
+run. `--no-color` turns the colour off, before the command or after it, and `--ci` behaves as
+the `CI` variable does (below) for a CI that does not set it.
 
 An option that takes a value takes one. Given twice (`--config a.json --config b.json`), the
 command exits `2` and names it rather than keep one and drop the other without a word.
@@ -36,9 +44,9 @@ working directory.
 | Code | Meaning |
 |---|---|
 | `0` | Success, no gate tripped. |
-| `1` | Runtime failure: an I/O error (a write the disk refused to an output file says which command and which output; one refused on stdout or stderr lets the run finish and clean up, then names the stream on the other: `aburi: could not write to stdout: EBADF: bad file descriptor, write`; a file or directory the scan may not read is named), an unexpected exception, or `explain` found no match. |
+| `1` | Runtime failure: an I/O error (a write the disk refused to an output file says which command and which output; one refused on stdout or stderr lets the run finish and clean up, then names the stream on the other: `aburi: could not write to stdout: EBADF: bad file descriptor, write`; a file or directory the scan may not read is named), an unexpected exception, `explain` found no match, or `vocab who-owns` found no owner. |
 | `2` | Bad invocation: an unknown flag, an option that takes one value given twice, an empty path, a missing input file, a malformed `--fail-on`, an ambiguous `explain` target, a ref `diff` cannot resolve, an output path a file already stands on, a config that loads no language plugin. |
-| `3` | **Gate.** A `--fail-on` clause tripped, a plugin failed, or the scan read too little of the workspace to be trusted. |
+| `3` | **Gate.** A `--fail-on` clause tripped, a plugin failed, or the scan read too little of the workspace to be trusted. `vocab` exits `3` for a plugin that fails to load too. |
 
 CI gates on `3`. A reader that stops early does not change the code:
 `aburi diff main..HEAD | head -1` exits `0` or `3` as it would without the pipe.
@@ -49,9 +57,9 @@ CI gates on `3`. A reader that stops early does not change the code:
 |---|---|
 | `ABURI_CONFIG` | Config file path. The `--config` flag wins over it. |
 | `ABURI_LOG_LEVEL` | The same as `--log-level`, which wins over it. A value other than the four levels is ignored. |
-| `CI` | The same as `aburi scan --no-timestamp`. |
-
-The CLI writes no colour, so `NO_COLOR` and `FORCE_COLOR` change nothing.
+| `CI` | CI mode: no progress line, no colour unless `FORCE_COLOR` is set, and `aburi scan` behaves as under `--no-timestamp`. The same as `--ci`. |
+| `NO_COLOR` | Set to anything but blanks, no colour. |
+| `FORCE_COLOR` | Empty, `1`, `true`, `2` or `3`: colour even when stderr is not a terminal, and in CI mode. Any other value, `0` and `false` among them, turns it off; the value is read as Node reads it, case and blanks included. It wins over `NO_COLOR`, and `--no-color` wins over it. It never brings the progress line, which is drawn only on a terminal outside CI mode. |
 
 ## Config discovery
 
@@ -101,7 +109,7 @@ aburi init --with-suggestions --output config/aburi.jsonc
 aburi scan [--output-dir <dir>] [--format json|md|both] [--no-md|--no-json]
            [--ignore <glob>]... [--respect-gitignore | --no-respect-gitignore]
            [--strict | --no-strict | --discover] [--lsp | --no-lsp]
-           [--compact] [--no-timestamp] [--config <path>]
+           [--compact] [--quiet] [--no-timestamp] [--config <path>]
 ```
 
 Analyses the workspace and writes `aburi.ir.json`, `workspace.md`, and
@@ -124,6 +132,7 @@ file removed.
 | `--discover` | The same as `--no-strict`. With `--strict`, exits `2`. |
 | `--lsp` / `--no-lsp` | Override `lsp.enabled` for this run. `--lsp` still needs a server under `lsp.servers` to talk to. |
 | `--compact` | JSON without indentation. |
+| `--quiet` | Print the two census lines alone on stdout, not the path of each file written. stderr is unchanged. |
 | `--no-timestamp` | Omit `discoveredAt` from `aburi-vocab-discovered.json`. Implicit when `CI` is set. `aburi.ir.json` carries no timestamp either way. |
 | `--config <path>` | Use a different config file. |
 
@@ -131,6 +140,7 @@ file removed.
 aburi scan
 aburi scan --format json --compact --output-dir dist/aburi
 aburi scan --ignore 'src/generated/**'
+aburi scan --quiet
 ```
 
 ### Files that produce nothing
@@ -225,6 +235,8 @@ whose two scans load the head's plugins.
 | `--output-dir <dir>` | Where to write. Falls back to `output.dir`, then `out`. Created if missing; a path a file already stands on exits `2` and names it. Any `diff.json`, `diff.md` or `diff.full.md` already there is removed before the comparison starts, so a run that fails leaves no earlier report to be mistaken for its own. |
 | `--format <fmt>` | `json`, `md`, or `both`. |
 | `--compact` | JSON without indentation. |
+| `--filter <statuses>` | List only these statuses' changes in `diff.md`. See below. |
+| `--quiet` | Print the glyph line (`+5 -3 ~12 ↔2 ⤴1`) alone on stdout. stderr, the files written and the exit code are unchanged. |
 | `--max-bytes <n>` | Cap `diff.md` at n bytes. See below. |
 | `--parallel-scans` / `--no-parallel-scans` | Whether the two scans run at once. By default they do on a machine with two or more CPUs, and run in turn on one. The output is the same either way; `--no-parallel-scans`, one at a time, uses less memory. |
 | `--config <path>` | Use a different config file. |
@@ -274,6 +286,40 @@ no flag at all.
 ```bash
 aburi diff main..HEAD --max-bytes 65507
 ```
+
+### `--filter`
+
+`--filter` narrows `diff.md` to the changes of the statuses you name, comma-separated:
+`added`, `removed`, `changed`, `moved`, `moved+changed`, `dropped-toggled`, `unknown`.
+
+```bash
+aburi diff main..HEAD --filter added,removed
+```
+
+It narrows that file and nothing else. The Summary line counts every change, and a note under it
+says how many the filter left out:
+
+```
+> ℹ **Only `added` and `removed` changes are listed.** 12 other Symbol changes are left out of this report; the Summary counts them.
+```
+
+A Slice that holds a change you kept is drawn whole, its other members included, so a call
+path is not cut in two. Component changes, dependency changes and Not compared are listed in
+full, except a dependency change made by test code whose change the filter left out: it leaves
+the report with that change, and the note counts it. `diff.json` keeps every change, and so does
+the glyph line on stdout.
+
+`--fail-on` counts every change too, whatever the filter: a display option does not decide
+whether the build fails. So `--filter added --fail-on removed` still exits `3` on a removal, and
+because `diff.md` does not list the removal, stderr says so ahead of the gate's lines:
+
+```
+⚠ --filter leaves out of diff.md every change that tripped --fail-on removed (1 removed).
+```
+
+An empty value, an empty segment (`added,`) and a word that is no status, `removed:duplicate`
+among them, exit `2`. Under `--format json` there is no `diff.md` to narrow, and `--filter`
+warns that it does nothing.
 
 ### `--fail-on` grammar
 
@@ -374,13 +420,64 @@ aburi explain submitOrder --output docs/submitOrder.md
 
 ---
 
+## `aburi vocab`
+
+```
+aburi vocab list | effects | extkinds | plugins | who-owns <value>  [--json] [--config <path>]
+```
+
+Lists what a scan holds your plugins to: the core effect ids, and every effect id, extension kind,
+framework name and `derivedBy` prefix the plugins in your config declare. It loads the plugins the
+way `aburi scan` does, `frameworkHints` included, but scans nothing and runs no plugin code beyond
+importing it, so it works in a workspace with no sources and with no language plugin configured.
+
+| Subcommand | Prints |
+|---|---|
+| `list` | The `plugins`, `effects` and `extkinds` lists, plus `Frameworks` and `derivedBy prefixes`. |
+| `effects` | The core effect ids, then each plugin's effect ids and the prefixes it owns. |
+| `extkinds` | Each plugin's extension kinds, with their base kind, and the prefixes it owns. |
+| `plugins` | Each loaded plugin's name, version, type, and the config entry that loaded it. |
+| `who-owns <value>` | What owns the value in each vocabulary it belongs to, and how: listed by id, covered by a prefix, or core. |
+
+```
+$ aburi vocab effects
+core            db.read                          Database read
+…
+effects-nest    x-nest:lifecycle.on-module-init  NestJS OnModuleInit hook
+effects-prisma  (prefix x-prisma)
+
+$ aburi vocab who-owns x-prisma:invoice.create
+Vocabulary:  effect
+Plugin:      effects-prisma (v0.6.0)
+Type:        effects
+Listed in:   effects "./plugins/effects-prisma.mjs"
+Declaration: prefix x-prisma (provides.effectPrefixes[])
+```
+
+Rows follow your config: language plugins, then framework plugins, then effect plugins, then the
+`frameworkHints` entries, each list in the order you wrote it. A value can belong to more than one
+vocabulary, such as an extension kind under a framework plugin's `derivedBy` prefix, and
+`who-owns` prints a block for each. A value nothing owns exits `1` and says so on stderr, with
+`--json` too.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print one JSON object instead: the lists the table shows, keyed as a plugin manifest names them (`effects`, `effectPrefixes`, `extKinds`, …), or `{ "value", "owners" }` for `who-owns`. A core effect id has `"owner": null`. |
+| `--config <path>` | Use a different config file. |
+
+Both flags can go before the subcommand or after it. With no config file found, no plugin loads:
+the lists hold the core effect ids alone, and stderr says so. A plugin that fails to load exits
+`3`, as it does for `aburi scan`.
+
+---
+
 ## Programmatic use
 
 `@aburi/cli` exports every command as a function, so your tests and tooling can
 drive it without spawning a process:
 
 ```ts
-import { runCli, runInit, runScan, runDiff, runExplain } from "@aburi/cli"
+import { runCli, runInit, runScan, runDiff, runExplain, runVocab } from "@aburi/cli"
 import { parseFailOn, evaluateFailOn, EXIT } from "@aburi/cli"
 
 const code = await runCli({ argv, stdout, stderr, env, cwd })

@@ -43,6 +43,22 @@ import type { UndeclaredVocabOccurrence } from "./vocab"
 
 export type { ExtractionFailure, ParseErrorRecord } from "./extract-files"
 
+/**
+ * Where a scan is, for a caller that shows it. The phases are entered in this order, each once:
+ * `discovering`; `extracting`, sent before each file and once more when the last one is done;
+ * then `resolving`, everything after extraction.
+ */
+export type ScanProgress =
+  | { readonly phase: "discovering" }
+  | {
+      readonly phase: "extracting"
+      /** Files extracted so far, counting up to `total`. */
+      readonly done: number
+      /** Files the scan will extract. */
+      readonly total: number
+    }
+  | { readonly phase: "resolving" }
+
 export interface ScanInput {
   workspaceRoot: string
   config: Config
@@ -57,6 +73,7 @@ export interface ScanInput {
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
+  onProgress?: (progress: ScanProgress) => void
 }
 
 export interface ScanResult {
@@ -77,6 +94,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   assertWorkspaceRootAbsolute(input.workspaceRoot)
   assertLanguageIdsDeclared(input.languages)
   const logger = input.logger ?? silentLogger
+  const progress = input.onProgress ?? (() => {})
 
   const router = buildLanguageRouter(input.languages)
   const langDropPatterns = languageFileDropPatterns(input.languages)
@@ -91,6 +109,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   if (input.config.maxFileSizeBytes !== undefined) {
     discoverOptions.maxFileSizeBytes = input.config.maxFileSizeBytes
   }
+  progress({ phase: "discovering" })
   const discovered = await discoverFiles(discoverOptions)
 
   const extracted = await withPluginLifecycle(
@@ -112,8 +131,10 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
         registry: input.registry,
         components: input.components ?? [],
         logger,
+        progress: (done, total) => progress({ phase: "extracting", done, total }),
       }),
   )
+  progress({ phase: "resolving" })
   const { symbols } = extracted
 
   symbols.sort(compareBy((symbol) => symbol.id))

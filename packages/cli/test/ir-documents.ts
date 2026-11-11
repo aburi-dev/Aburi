@@ -1,5 +1,12 @@
-import { makeIR, makeSymbol, recordingLogger } from "@aburi/test-support"
-import type { DeclinedCall, IR, Symbol as IRSymbol, SkippedFile } from "@aburi/types"
+import { call, makeIR, makeSymbol, recordingLogger } from "@aburi/test-support"
+import type {
+  CallResolutionStats,
+  DeclinedCall,
+  Dependency,
+  IR,
+  Symbol as IRSymbol,
+  SkippedFile,
+} from "@aburi/types"
 import { type DiffOptions, IR_JSON_FILENAME, runDiff } from "../src"
 import { writeFileAt, writeIRs, writePackageJson } from "./workspace"
 
@@ -16,6 +23,7 @@ export function symbolFor(id: string, file?: string): IRSymbol {
 
 export interface DocumentShape {
   symbols: readonly IRSymbol[]
+  dependencies?: readonly Dependency[]
   skipped?: readonly SkippedFile[]
   /** Files a document predating `stats.skippedFiles` lost without naming them. */
   unnamedLosses?: number
@@ -24,7 +32,10 @@ export interface DocumentShape {
 
 export function documentWith(shape: DocumentShape): IR {
   const lost = shape.skipped?.length ?? shape.unnamedLosses ?? 0
-  const document = makeIR({ symbols: [...shape.symbols].sort(byKey((s) => s.id)) })
+  const document = makeIR({
+    symbols: [...shape.symbols].sort(byKey((s) => s.id)),
+    dependencies: [...(shape.dependencies ?? [])],
+  })
   return {
     ...document,
     stats: {
@@ -37,6 +48,21 @@ export function documentWith(shape: DocumentShape): IR {
       ...(shape.declinedCalls === undefined ? {} : { declinedCalls: [...shape.declinedCalls] }),
     },
   }
+}
+
+/** `documentWith(shape)` carrying `callResolution`, its first Symbol making the calls left unresolved. */
+export function documentWithCensus(shape: DocumentShape, callResolution: CallResolutionStats): IR {
+  const [first, ...rest] = shape.symbols
+  if (first === undefined) throw new Error("documentWithCensus: a census needs a Symbol to call")
+  const unresolved = Array.from(
+    { length: callResolution.totalCalls - callResolution.resolvedCalls },
+    (_, i) => call({ target: `mystery${i}`, line: i + 2 }),
+  )
+  const document = documentWith({
+    ...shape,
+    symbols: [{ ...first, calls: [...first.calls, ...unresolved] }, ...rest],
+  })
+  return { ...document, stats: { ...document.stats, callResolution } }
 }
 
 /** A workspace root holding `document` where `aburi scan` would have written it. */

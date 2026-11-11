@@ -76,6 +76,25 @@ describe("aburi scan — a workspace that declares nothing", () => {
     expect(lines[0]).toMatch(/^0 kept · 0 dropped · \d+ files$/)
     expect(lines[1]).toBe("calls 0 · resolved 0 · unresolved 0")
   })
+
+  it.each(["both", "json", "md"])(
+    "prints the census lines alone under --quiet --format %s",
+    async (format) => {
+      const loud = await runCliIn(workspace.root, ["scan", "--format", format])
+      const quiet = await runCliIn(workspace.root, ["scan", "--format", format, "--quiet"])
+
+      expect(loud.stdout).toContain("→ ")
+      expect(quiet.code).toBe(EXIT.SUCCESS)
+      expect(quiet.stdout).toBe(
+        loud.stdout
+          .split("\n")
+          .slice(0, 2)
+          .map((line) => `${line}\n`)
+          .join(""),
+      )
+      expect(quiet.stderr).toBe(loud.stderr)
+    },
+  )
 })
 
 describe("aburi scan — what the caller and the config add", () => {
@@ -138,18 +157,38 @@ describe("aburi scan — what the caller and the config add", () => {
     expect(error.message).toContain(named)
   })
 
-  it("normalizes a component's publicApi patterns, as component detection does", async () => {
-    const decomposed = "café".normalize("NFD")
-    await workspace.writeSource("packages/shared/index.ts", "export const shared = 1\n")
-    await declaredComponent({ roots: ["packages/shared"], publicApi: [`src/${decomposed}.ts`] })
+  const decomposed = "café".normalize("NFD")
+  const composed = decomposed.normalize("NFC")
 
-    const report = await scan()
+  it.each<
+    [string, string, Record<string, unknown>, (c: IR["components"][number]) => unknown, string[]]
+  >([
+    [
+      "publicApi patterns",
+      "packages/shared",
+      { roots: ["packages/shared"], publicApi: [`src/${decomposed}.ts`] },
+      (c) => c.publicApi,
+      [`src/${composed}.ts`],
+    ],
+    [
+      "roots",
+      `packages/${decomposed}`,
+      { roots: [`packages/${decomposed}`] },
+      (c) => c.roots,
+      [`packages/${composed}`],
+    ],
+  ])(
+    "normalizes a component's %s, as component detection does",
+    async (_what, directory, component, read, expected) => {
+      await workspace.writeSource(`${directory}/index.ts`, "export const shared = 1\n")
+      await declaredComponent(component)
 
-    const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as {
-      components: { publicApi?: string[] }[]
-    }
-    expect(ir.components[0]?.publicApi).toEqual([`src/${decomposed.normalize("NFC")}.ts`])
-  })
+      const report = await scan()
+
+      const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as IR
+      expect(ir.components.map(read)).toEqual([expected])
+    },
+  )
 
   it("carries a publicApi glob or Symbol id the IR schema admits as written, wherever it points", async () => {
     const publicApi = ["../shared/**", "./src/**", "/abs/index.ts", "ts:src/a.ts#Invoice"]

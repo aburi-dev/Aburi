@@ -1,6 +1,6 @@
 import { resolve } from "node:path"
 import { fp, makeSymbol, useScratchWorkspace } from "@aburi/test-support"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { COMPONENTS_DIRNAME, EXIT, VOCAB_DISCOVERED_FILENAME, WORKSPACE_MD_FILENAME } from "../src"
 import { documentWith } from "./ir-documents"
 import { runCliIn } from "./run-cli"
@@ -16,14 +16,9 @@ const skipped = (file: string): string =>
 const extracted = (file: string): string => `debug: scan/pipeline: ${file} produced 1 symbols\n`
 
 async function loggedBy(argv: readonly string[], env: NodeJS.ProcessEnv) {
-  const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
-  try {
-    const { code } = await runCliIn(workspace.root, argv, env)
-    const lines = write.mock.calls.map(([chunk]) => String(chunk))
-    return { code, lines: lines.filter((line) => LOGGER_LINE.test(line)) }
-  } finally {
-    write.mockRestore()
-  }
+  const { code, stderr } = await runCliIn(workspace.root, argv, env)
+  const lines = stderr.split(/(?<=\n)/)
+  return { code, lines: lines.filter((line) => LOGGER_LINE.test(line)) }
 }
 
 type Shows = "warn" | "debug" | "none"
@@ -183,10 +178,10 @@ describe("aburi --log-level", () => {
     expect(code).toBe(EXIT.SUCCESS)
   })
 
-  it.each(["init", "scan", "diff", "explain"])(
+  it.each(["init", "scan", "diff", "explain", "vocab", "vocab who-owns"])(
     "is listed among the global options of `aburi %s --help`",
     async (command) => {
-      const { code, stdout } = await runCliIn(workspace.root, [command, "--help"])
+      const { code, stdout } = await runCliIn(workspace.root, [...command.split(" "), "--help"])
       expect(code).toBe(EXIT.SUCCESS)
       expect(stdout).toMatch(/Global Options:\n[\s\S]*--log-level <level>/)
     },

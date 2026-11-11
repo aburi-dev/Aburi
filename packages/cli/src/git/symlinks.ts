@@ -26,7 +26,7 @@ async function isRegularFile(path: string): Promise<boolean> {
 /** A link no Symbol came from puts nothing into a diff, whatever git wrote in its place. */
 export function linksReadAsSource(links: readonly string[], ir: IR): string[] {
   if (links.length === 0) return []
-  const files = new Set(ir.symbols.map((symbol) => symbol.source.file))
+  const files = new Set<string>(ir.symbols.map((symbol) => symbol.source.file))
   return links.filter((path) => files.has(path.normalize("NFC")))
 }
 
