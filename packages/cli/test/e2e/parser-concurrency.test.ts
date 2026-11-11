@@ -160,7 +160,7 @@ describe("aburi scan --concurrency", () => {
     [
       "whose extraction a worker cannot send back",
       UNCLONEABLE_PLUGIN,
-      /extraction threw — its extraction holds a value that cannot leave the parser worker: .*could not be cloned/,
+      /extraction threw — its extraction holds a value that cannot leave the parser worker: .*could not be cloned\. Run with --concurrency 1/,
     ],
   ])("withdraws the one file %s, and extracts the rest", async (_case, plugin, why) => {
     // The second worker is handed d-ok.stub before it reaches b-crash.stub.

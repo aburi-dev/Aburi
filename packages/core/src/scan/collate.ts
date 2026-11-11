@@ -218,7 +218,8 @@ export class ExtractionCollator {
 
   #ran(file: DiscoveredFile, { result, content, undeclaredVocab }: Ran): void {
     const out = this.#out
-    // An extractor remembers the edges of a file it extracted, so no later file reads them.
+    // One thread remembers a file's edges once it has extracted it, so what a later read says
+    // belongs to no file.
     if (result.kind !== "parse-timeout") this.#onceSeen.add(edgesReadOnce(file.path))
     if (result.parseErrors.length > 0) {
       out.parseErrors.push({ file: file.path, errors: result.parseErrors })

@@ -182,7 +182,7 @@ aburi scan [--output-dir <path>] [--format <json|md|both>] [--no-md|--no-json]
 | `--compact` | Compact the JSON to a single line |
 | `--no-timestamp` | Omit `discoveredAt` from `aburi-vocab-discovered.json`. Implied by CI mode (§12). The IR carries no timestamp to omit ([`ir-schema.md`](./ir-schema.md) §1.1) |
 | `--lsp` / `--no-lsp` | Override `config.lsp.enabled` ([`lsp-enrichment.md`](./lsp-enrichment.md)). `--lsp` with no `lsp.servers` entry for a loaded language starts no server, and says so on stderr |
-| `--concurrency <n>` | How many parser workers extract the files (§14.2), `1` extracting every file on the main thread. Default: one fewer than the processors, clamped by free memory and by the size of the source. What the run writes, prints and exits with is the same at any value. Anything but a positive integer is exit 2 before anything is read |
+| `--concurrency <n>` | How many parser workers extract the files (§14.2), `1` extracting every file on the main thread. Default: one fewer than the processors, clamped by free memory, by the size of the source and by the file count. What the run writes, prints and exits with is the same at any value. Anything but a positive integer is exit 2 before anything is read |
 | `--respect-gitignore` / `--no-respect-gitignore` | Override `config.respectGitignore`. A pair rather than the negative alone, so that a run which typed neither is distinguishable from one that asked for the default — an override the caller did not spell must leave the config alone |
 | `--ignore <glob>` | Append to `config.ignore[]` (repeatable) |
 | `--config <path>` | The config file to read (§13) |
@@ -1576,7 +1576,8 @@ cannot read — and it costs the file the worker was extracting rather than the 
 is ([`lang-plugin.md`](./lang-plugin.md) §7.2), with
 `Skipped <file>: the parser worker extracting it <what ended it>. Run with --concurrency 1 to extract every file on the main thread.`
 on stderr, and the scan exits `3`; the worker's next file is handed to another worker, and nothing already
-extracted is lost. A file whose extraction holds a value that cannot leave the worker is withdrawn the same way.
+extracted is lost. A file whose extraction holds a value that cannot leave the worker is withdrawn as a throw is, with
+the same hint.
 The third worker to end in one scan ends the run with exit `1`, naming the three files, and so does
 a worker that cannot load the scan's plugins, `A parser worker failed: <error>`, or that cannot be
 started, `A parser worker could not be started: <error>`; each names `--concurrency 1`, which never
@@ -1723,7 +1724,7 @@ a command's option, not a global one (§3).
 | CL80 | `aburi scan --concurrency 2` where a plugin on a worker calls `process.exit(7)`, or throws an `Error` or `null` from a microtask, while extracting one file, or leaves a function in that file's Symbol | exit 3; that file in `stats.skippedFiles` as `extraction-failed`, `Skipped <file>: ` and what happened on stderr, and every other file's Symbols in the IR (§14.2) |
 | CL81 | `aburi scan --concurrency 2` where workers end under three files | exit 1, stderr naming the three files and `--concurrency 1` |
 | CL82 | `aburi scan --concurrency 2` where a plugin throws, or calls `process.exit(5)`, when loaded on a worker | exit 1, `A parser worker failed: ` with the plugin's error, or `A parser worker ended with exit code 5; a plugin may have called process.exit() before it had loaded the scan's plugins.`, and `--concurrency 1` on stderr |
-| CL83 | `aburi scan --concurrency` 0, -1, 1.5, `two` or a value past the largest safe integer; `runScan`, `runDiff` or `runExplain` with `concurrency` 0, -1, 1.5, `NaN` or 2⁵³ | exit 2 and `--concurrency must be a positive integer (got "<value>")` on stderr; the functions reject with that error, code `input-error`, before reading the workspace or an IR |
+| CL83 | `aburi scan --concurrency` 0, -1, 1.5, `two` or a value past the largest safe integer; `runScan`, `runDiff` or `runExplain` with `concurrency` 0, -1, 1.5, `NaN` or 2⁵³ | exit 2 and `--concurrency must be a positive integer (got "<value>")` on stderr; the functions reject with `--concurrency must be a positive integer (got <value>).`, code `input-error`, before reading the workspace or an IR |
 
 ## 18. Design Decisions
 

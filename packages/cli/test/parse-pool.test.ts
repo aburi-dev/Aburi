@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Worker } from "node:worker_threads"
-import type { ExtractionJob, ParsePool } from "@aburi/core"
+import type { ExtractionJob, FileExtraction, ParsePool } from "@aburi/core"
 import { relativePath, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { loadPinnedConfig, pinConfig } from "../src/config-load"
 import { errorMessage } from "../src/errors"
-import { createParsePool, describeWorkerError, portable } from "../src/parse-pool"
+import { createParsePool, describeWorkerError, sendExtraction } from "../src/parse-pool"
 import { STUB_PLUGIN, workerEndingPlugin, writeStubWorkspace } from "./stub-language"
 import { writeFileAt } from "./workspace"
 
@@ -107,8 +107,13 @@ interface Answer {
   said?: string
 }
 
-async function answersOf(pool: ParsePool, files: readonly string[]): Promise<Answer[]> {
-  const answers = await Promise.allSettled(files.map((_, fileId) => pool.extract(fileId)))
+/** What the pool answers for each of `files`, or for the files numbered `fileIds`. */
+async function answersOf(
+  pool: ParsePool,
+  files: readonly string[],
+  fileIds = files.map((_, fileId) => fileId),
+): Promise<Answer[]> {
+  const answers = await Promise.allSettled(fileIds.map((fileId) => pool.extract(fileId)))
   return answers.map((answer): Answer => {
     if (answer.status === "rejected") return { kind: "refused", said: errorMessage(answer.reason) }
     const { outcome } = answer.value
@@ -263,31 +268,98 @@ describe("describeWorkerError", () => {
   })
 })
 
-describe("what a parser worker sends of a file", () => {
-  it("leaves out the metadata a clone refuses, and keeps the line it was logged with", () => {
-    const sent = portable({
-      fileId: 0,
-      outcome: { kind: "unroutable" },
-      events: [
-        {
-          kind: "resolver-log",
-          plugin: "lang-stub",
-          level: "warn",
-          message: "tsconfig.json extends ./missing.json",
-          meta: { read: () => "{}" },
-        },
-        { kind: "log", level: "debug", message: "kept whole", meta: { file: "a.stub" } },
-      ],
-    })
+describe("a file whose extraction rejects on a parser worker", () => {
+  it("rejects with the error one thread ends the run with, and the worker goes on", async () => {
+    const files = ["a-ok.stub", "b-ok.stub"]
+    const pool = await poolOver(files, STUB_PLUGIN, 1)
 
-    expect(structuredClone(sent).extraction.events).toEqual([
+    expect(await answersOf(pool, files, [0, 5, 1])).toEqual([
+      { kind: "ran" },
       {
-        kind: "resolver-log",
-        plugin: "lang-stub",
-        level: "warn",
-        message: "tsconfig.json extends ./missing.json",
+        kind: "refused",
+        said: expect.stringMatching(
+          /^Internal error: asked to extract file 5 of a scan that discovered 2\n/,
+        ),
       },
-      { kind: "log", level: "debug", message: "kept whole", meta: { file: "a.stub" } },
+      { kind: "ran" },
+    ])
+    expect(threads.started).toHaveLength(1)
+  })
+})
+
+describe("what a parser worker sends of a file", () => {
+  /** Each message as the main thread receives it, sent the way `postMessage` clones it. */
+  function sent(extraction: FileExtraction): unknown[] {
+    const received: unknown[] = []
+    sendExtraction(extraction, (message) => {
+      received.push(structuredClone(message))
+    })
+    return received
+  }
+
+  const WITHDRAWN = {
+    kind: "threw",
+    message: expect.stringMatching(
+      /^its extraction holds a value that cannot leave the parser worker: .*could not be cloned\. Run with --concurrency 1 to extract every file on the main thread\.$/,
+    ),
+    code: "extraction-uncloneable",
+  }
+  const READ = {
+    kind: "log",
+    level: "debug",
+    message: "read a.stub",
+    meta: { file: "a.stub" },
+  } as const
+  const reader = () => "{}"
+
+  it("leaves out the metadata a clone refuses, and keeps the line it was logged with", () => {
+    expect(
+      sent({
+        fileId: 0,
+        outcome: { kind: "unroutable" },
+        events: [
+          {
+            kind: "resolver-log",
+            plugin: "lang-stub",
+            level: "warn",
+            message: "tsconfig.json extends ./missing.json",
+            meta: { reader },
+          },
+          READ,
+        ],
+      }),
+    ).toEqual([
+      {
+        kind: "extracted",
+        extraction: {
+          fileId: 0,
+          outcome: { kind: "unroutable" },
+          events: [
+            {
+              kind: "resolver-log",
+              plugin: "lang-stub",
+              level: "warn",
+              message: "tsconfig.json extends ./missing.json",
+            },
+            READ,
+          ],
+        },
+      },
+    ])
+  })
+
+  it.each<[string, FileExtraction["events"], FileExtraction["events"]]>([
+    ["with what it said", [READ], [READ]],
+    [
+      "without what it said, where that cannot be cloned either",
+      [READ, { ...READ, message: reader as unknown as string }],
+      [],
+    ],
+  ])("withdraws a file whose outcome a clone refuses, %s", (_case, events, kept) => {
+    const outcome = { kind: "vanished", detail: reader } as unknown as FileExtraction["outcome"]
+
+    expect(sent({ fileId: 2, outcome, events })).toEqual([
+      { kind: "extracted", extraction: { fileId: 2, outcome: WITHDRAWN, events: kept } },
     ])
   })
 })

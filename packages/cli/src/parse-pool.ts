@@ -52,8 +52,11 @@ interface WireExtraction extends Omit<FileExtraction, "outcome"> {
 
 type FromWorker =
   | { readonly kind: "ready" }
+  /** The plugins could not be loaded. */
   | { readonly kind: "failed"; readonly thrown: ThreadThrown }
   | { readonly kind: "extracted"; readonly extraction: WireExtraction }
+  /** Extracting the file rejected, which ends the run at that file as on one thread. */
+  | { readonly kind: "rejected"; readonly fileId: number; readonly thrown: ThreadThrown }
 
 interface Pending {
   readonly fileId: number
@@ -136,24 +139,14 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
         )
         return
       }
-      case "extracted": {
-        const { extraction } = message
-        const answered = slot.inFlight[0]
-        if (answered?.fileId !== extraction.fileId) {
-          stop(
-            internalFault(
-              " while extracting files on parser workers",
-              `a worker answered for ${fileOf(extraction.fileId)} while ${answered === undefined ? "it had no file" : `${fileOf(answered.fileId)} was its next`}`,
-              null,
-            ),
-          )
-          return
-        }
-        slot.inFlight.shift()
-        answered.resolve(fromWire(extraction))
+      case "extracted":
+        answeredFor(slot, message.extraction.fileId)?.resolve(fromWire(message.extraction))
         dispatch()
         return
-      }
+      case "rejected":
+        answeredFor(slot, message.fileId)?.reject(rebuiltFromThread(message.thrown))
+        dispatch()
+        return
       default:
         stop(
           internalFault(
@@ -163,6 +156,20 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
           ),
         )
     }
+  }
+
+  /** The worker's next file, which an answer for `fileId` settles; none stops the pool. */
+  const answeredFor = (slot: Slot, fileId: number): Pending | undefined => {
+    const next = slot.inFlight[0]
+    if (next?.fileId === fileId) return slot.inFlight.shift()
+    stop(
+      internalFault(
+        " while extracting files on parser workers",
+        `a worker answered for ${fileOf(fileId)} while ${next === undefined ? "it had no file" : `${fileOf(next.fileId)} was its next`}`,
+        null,
+      ),
+    )
+    return undefined
   }
 
   const endedUnder = (slot: Slot, how: string): void => {
@@ -226,7 +233,7 @@ export function createParsePool(job: ExtractionJob, options: ParsePoolOptions): 
     worker.on("messageerror", (error) =>
       endedUnder(
         slot,
-        `sent an answer that could not be read: ${errorMessage(error).replace(/\.$/, "")}`,
+        `sent an answer that could not be read: ${withoutFullStop(errorMessage(error))}`,
       ),
     )
     // An `error` can overtake answers the worker sent before it; its `exit` comes after them all.
@@ -285,31 +292,52 @@ export function serveParseRequests(): void {
   })
   extractor.catch((error: unknown) => send({ kind: "failed", thrown: describedForThread(error) }))
   port.on("message", (message: ToWorker) => {
-    extractor
-      .then((ready) => ready.extract(message.fileId))
-      .then(
-        (extraction) => {
-          const answer = portable(extraction)
-          try {
-            send(answer)
-          } catch (error) {
-            send(uncloneable(answer.extraction, error))
-          }
-        },
-        (error: unknown) => send({ kind: "failed", thrown: describedForThread(error) }),
-      )
+    const { fileId } = message
+    extractor.then(
+      (ready) =>
+        ready.extract(fileId).then(
+          (extraction) => sendExtraction(extraction, send),
+          (error: unknown) => send({ kind: "rejected", fileId, thrown: describedForThread(error) }),
+        ),
+      // Said once, as `failed`, however many files were asked for.
+      () => {},
+    )
   })
 }
 
-/** The file's events, whose metadata `portable` has made cloneable, with its outcome withdrawn. */
-function uncloneable(extraction: WireExtraction, error: unknown): FromWorker {
+/** Sends a file's extraction, or the file withdrawn, with what it said where that can be sent. */
+export function sendExtraction(
+  extraction: FileExtraction,
+  send: (message: FromWorker) => void,
+): void {
+  const answer = portable(extraction)
+  try {
+    send(answer)
+  } catch (error) {
+    const withdrawn = uncloneable(answer.extraction, error)
+    try {
+      send(withdrawn)
+    } catch {
+      // What the file said cannot be cloned either, as a log line a plugin wrote as no string.
+      send({ ...withdrawn, extraction: { ...withdrawn.extraction, events: [] } })
+    }
+  }
+}
+
+function uncloneable(
+  extraction: WireExtraction,
+  error: unknown,
+): Extract<FromWorker, { kind: "extracted" }> {
   return {
     kind: "extracted",
     extraction: {
       fileId: extraction.fileId,
       outcome: {
         kind: "threw",
-        message: `its extraction holds a value that cannot leave the parser worker: ${errorMessage(error)}`,
+        message:
+          "its extraction holds a value that cannot leave the parser worker: " +
+          `${withoutFullStop(errorMessage(error))}. ${ON_THE_MAIN_THREAD}`,
+        code: "extraction-uncloneable",
       },
       events: extraction.events,
     },
@@ -317,7 +345,7 @@ function uncloneable(extraction: WireExtraction, error: unknown): FromWorker {
 }
 
 /** What a worker sends of a file's extraction, which a structured clone can carry whole. */
-export function portable(extraction: FileExtraction): Extract<FromWorker, { kind: "extracted" }> {
+function portable(extraction: FileExtraction): Extract<FromWorker, { kind: "extracted" }> {
   const { outcome } = extraction
   return {
     kind: "extracted",
@@ -358,6 +386,10 @@ export function describeWorkerError(error: unknown): string {
   }
   const thrown = error instanceof Error ? (error.stack ?? error.message) : String(error)
   return `threw outside the scan's own error handling: ${thrown}`
+}
+
+function withoutFullStop(text: string): string {
+  return text.endsWith(".") ? text.slice(0, -1) : text
 }
 
 function parserWorkerPath(): string {
