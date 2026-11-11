@@ -515,6 +515,8 @@ describe("scan — extracted by several extractors, each with plugins of its own
     "src/d.stub": importsDecorate("@app/bad"),
     "src/e.stub": importsDecorate("@broken/kit"),
     "src/f.stub": importsDecorate("@app/late"),
+    // Fails on the specifier src/e.stub fails on, which is a failure of its own.
+    "src/g.stub": importsDecorate("@broken/kit"),
     [LATE_BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
   }
   // Like a build config read once per resolver, which says what is wrong with it the first time.
@@ -529,17 +531,17 @@ describe("scan — extracted by several extractors, each with plugins of its own
       },
     }
   }
-  const language = (): LanguagePlugin =>
+  const language = (createResolver: typeof resolver): LanguagePlugin =>
     moduleLanguage({
-      createResolver: resolver,
+      createResolver,
       unparsable: UNPARSABLE,
       unreleasable: [BARREL, LATE_BARREL],
     })
 
-  async function scanned(parsePool?: ParsePoolFactory) {
+  async function scanned(createResolver: typeof resolver, parsePool?: ParsePoolFactory) {
     const logger = recordingLogger()
     const result = await scanStubs(workspace.root, {
-      languages: [language()],
+      languages: [language(createResolver)],
       frameworks: [stubFrameworkPlugin()],
       logger,
       ...(parsePool === undefined ? {} : { parsePool }),
@@ -557,12 +559,17 @@ describe("scan — extracted by several extractors, each with plugins of its own
 
   it("says each shared computation once, at the first file in the run that needed it", async () => {
     await writeModules(modules)
-    const alone = await scanned()
+    const alone = await scanned(resolver)
 
     expect(alone.warnings.filter((line) => line.startsWith("tsconfig.json"))).toHaveLength(1)
     expect(alone.warnings.filter((line) => line.includes('"@broken/inner"'))).toHaveLength(1)
+    expect(
+      alone.debugs
+        .filter((entry) => entry.message.includes('"@broken/kit"'))
+        .map((entry) => entry.message.split(" in ")[1]?.split(":")[0]),
+    ).toEqual(["src/e.stub", "src/g.stub"])
     expect(alone.warnings).toContain(
-      "Plugin lang-stub: its import resolver failed 2 times over this run.",
+      "Plugin lang-stub: its import resolver failed 3 times over this run.",
     )
     expect(alone.treeReleaseFailures.map((failure) => failure.file)).toEqual([
       LATE_BARREL,
@@ -574,24 +581,48 @@ describe("scan — extracted by several extractors, each with plugins of its own
     ).toHaveLength(1)
   })
 
-  it.each<[string, number, (fileId: number) => number]>([
-    ["two, taking turns", 2, (fileId) => fileId],
-    ["three, taking runs of two", 3, (fileId) => Math.floor(fileId / 2)],
-    ["one per file", Object.keys(modules).length, (fileId) => fileId],
-  ])("reports what one extractor does when %s share the files", async (_case, size, assign) => {
-    await writeModules(modules)
-    const alone = await scanned()
-    const pool = extractorPool(
-      size,
-      () => ({
-        languages: [language()],
-        frameworks: [stubFrameworkPlugin()],
-        effects: [],
-        registry: noopRegistry,
-      }),
-      assign,
-    )
+  const pools: [string, number, (fileId: number) => number][] = [
+    ["two extractors taking turns", 2, (fileId) => fileId],
+    ["three extractors taking runs of two", 3, (fileId) => Math.floor(fileId / 2)],
+    ["an extractor per file", Object.keys(modules).length, (fileId) => fileId],
+  ]
+  const resolvers: [string, typeof resolver][] = [
+    ["a resolver that warns once and throws on some specifiers", resolver],
+    [
+      "a resolver each extractor fails to create",
+      () => {
+        throw new Error("no tsconfig support")
+      },
+    ],
+  ]
 
-    expect(await scanned(pool)).toEqual(alone)
-  })
+  it.each(
+    pools.flatMap(([pooled, size, assign]) =>
+      resolvers.map(([created, createResolver]) => ({
+        pooled,
+        created,
+        size,
+        assign,
+        createResolver,
+      })),
+    ),
+  )(
+    "reports what one extractor does when $pooled share the files, with $created",
+    async ({ size, assign, createResolver }) => {
+      await writeModules(modules)
+      const alone = await scanned(createResolver)
+      const pool = extractorPool(
+        size,
+        () => ({
+          languages: [language(createResolver)],
+          frameworks: [stubFrameworkPlugin()],
+          effects: [],
+          registry: noopRegistry,
+        }),
+        assign,
+      )
+
+      expect(await scanned(createResolver, pool)).toEqual(alone)
+    },
+  )
 })

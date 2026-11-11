@@ -16,7 +16,13 @@ import {
 import { toNfc } from "../codepoints"
 import { decoratorReference, splitAliasedImportName } from "../import-edge"
 import type { DiscoveredFile } from "./discover"
-import { type ExtractionEvent, edgesReadOnce, eventLogger } from "./extraction-events"
+import {
+  type ExtractionEvent,
+  edgesReadOnce,
+  eventLogger,
+  resolverCreatedOnce,
+  targetResolvedOnce,
+} from "./extraction-events"
 import { describeJsonType, describeThrown } from "./faults"
 import { normalizeImportEdge } from "./normalize"
 import { releaseParsedTree, type TreeReleaseFailure } from "./pipeline"
@@ -90,7 +96,7 @@ export class ImportOrigins {
     for (;;) {
       const source = hop.source
       const key = `${from}\0${source}`
-      const target = await this.#targets.get(key, () => this.#resolveTarget(from, source, key))
+      const target = await this.#targets.get(key, () => this.#resolveTarget(from, source))
       if (target === "fault") return null
       if (target === "outside") return isRelativeSpecifier(hop.source) ? null : hop.source
       // A namespace of a workspace module: which member the decorator reads is not carried here.
@@ -109,7 +115,7 @@ export class ImportOrigins {
     }
   }
 
-  async #resolveTarget(fromFile: string, specifier: string, key: string): Promise<Target> {
+  async #resolveTarget(fromFile: string, specifier: string): Promise<Target> {
     if (isRelativeSpecifier(specifier)) return this.#fileOrOutside(dirname(fromFile), specifier)
     const language = this.#input.router.route(fromFile)
     if (language === null) return "outside"
@@ -126,7 +132,7 @@ export class ImportOrigins {
         language,
         `its import resolver threw on "${specifier}" in ${fromFile}`,
         error,
-        `target\0${key}`,
+        targetResolvedOnce(fromFile, specifier),
       )
       return "fault"
     }
@@ -150,7 +156,7 @@ export class ImportOrigins {
   #createResolver(language: Language): ImportResolver | "none" | "fault" {
     if (typeof language.createImportResolver !== "function") return "none"
     const plugin = language.manifest.name
-    const once = `resolver\0${plugin}`
+    const once = resolverCreatedOnce(plugin)
     let created: unknown
     try {
       created = language.createImportResolver({

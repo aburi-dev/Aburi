@@ -41,6 +41,16 @@ export function edgesReadOnce(path: string): string {
   return `edges\0${path}`
 }
 
+/** The `once` of what creating a language's import resolver said. */
+export function resolverCreatedOnce(plugin: string): string {
+  return `resolver\0${plugin}`
+}
+
+/** The `once` of what resolving a specifier written in a file said. */
+export function targetResolvedOnce(from: string, specifier: string): string {
+  return `target\0${from}\0${specifier}`
+}
+
 export function eventLogger(
   event: (level: ExtractionLogLevel, message: string, meta?: Record<string, unknown>) => void,
 ): Logger {
