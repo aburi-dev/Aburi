@@ -28,12 +28,13 @@ import {
 import { readGeneratorInfo } from "../generator-info"
 import type { GitRunner } from "../git/runner"
 import { readIR } from "../ir-io"
-import { createLogger } from "../logger"
+import { createLogger, type LogWrite, writeToStderr } from "../logger"
 import { createOutputDir, removeOutputFile, writeOutputFile } from "../output-file"
 import { parseFilter, unlistedTripped } from "../status-filter"
 import type { WarnFn } from "../warn"
 import { chooseInputs, type DiffInputs } from "./diff-inputs"
 import {
+  type DiffProgress,
   type DiffSide,
   type RevisionScanContext,
   type ScanPair,
@@ -71,6 +72,9 @@ export interface DiffOptions {
   filter?: string | readonly SymbolChangeStatus[]
   parallelScans?: boolean
   logLevel?: LogLevel
+  /** Where the scans' and the matcher's log lines go (default: stderr). */
+  log?: LogWrite
+  progress?: (progress: DiffProgress) => void
   git?: GitRunner
   warn?: WarnFn
 }
@@ -121,8 +125,11 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
     logLevel: options.logLevel,
     pinConfigOnce,
     warn,
+    log: options.log ?? writeToStderr,
+    progress: options.progress,
     parallelScans: options.parallelScans,
   })
+  options.progress?.({ kind: "comparing" })
 
   const generator = await readGeneratorInfo()
   let diff: BuiltDiff
@@ -136,7 +143,9 @@ export async function runDiff(options: DiffOptions): Promise<DiffReport> {
       ...(compared.gitRenames === null ? {} : { gitRenames: compared.gitRenames }),
       // The matcher writes only debug lines, and tracing them walks what it left unpaired, so a run
       // at any other level is spared the walk.
-      ...(options.logLevel === "debug" ? { logger: createLogger({ minimum: "debug" }) } : {}),
+      ...(options.logLevel === "debug"
+        ? { logger: createLogger({ minimum: "debug", write: options.log ?? writeToStderr }) }
+        : {}),
     })
   } catch (error) {
     if (error instanceof DiffError) throw classifyDiffError(error)

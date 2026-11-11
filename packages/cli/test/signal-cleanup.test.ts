@@ -81,6 +81,25 @@ describe("cleanUpOnFatalSignal", () => {
     }
   })
 
+  it("runs a cleanup asked to go first ahead of the listeners already there, and re-raises last", () => {
+    const events: string[] = []
+    releases.push(
+      cleanUpOnFatalSignal(
+        () => events.push("worktree removed"),
+        () => events.push("reraise"),
+      ),
+      cleanUpOnFatalSignal(
+        () => events.push("progress line erased"),
+        () => events.push("reraise too soon"),
+        { first: true },
+      ),
+    )
+
+    process.emit("SIGINT")
+
+    expect(events).toEqual(["progress line erased", "worktree removed", "reraise"])
+  })
+
   it.each(FATAL_SIGNALS)(
     "does nothing on %s once released, as after a run that finished on its own",
     (signal) => {
