@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
       # Moves with every 0.x release, breaking input changes included. Pin the full
       # `v<x.y.z>` instead to hold one — see Pinning below.
-      - uses: kage1020/Aburi/packages/github-action@v0
+      - uses: aburi-dev/Aburi/packages/github-action@v0
         with:
           version: latest
           fail-on: "removed,dropped-toggled:to-dropped:>10"
@@ -123,7 +123,7 @@ installed the workspace is the one that should run it.
     node-version: 24
     cache: pnpm
 - run: pnpm install --frozen-lockfile
-- uses: kage1020/Aburi/packages/github-action@v0
+- uses: aburi-dev/Aburi/packages/github-action@v0
   with:
     cli: workspace
     fail-on: "removed"
@@ -214,7 +214,7 @@ jobs:
             && github.actor != 'dependabot[bot]' }}
     steps:
       # …checkout, install, build…
-      - uses: kage1020/Aburi/packages/github-action@v0
+      - uses: aburi-dev/Aburi/packages/github-action@v0
         id: aburi
         with:
           cli: workspace
@@ -272,7 +272,7 @@ jobs:
       # commit SHA holds exact bytes instead — see Pinning above, the same trade as `uses:`.
       - uses: actions/checkout@v7
         with:
-          repository: kage1020/Aburi
+          repository: aburi-dev/Aburi
           ref: v0
           sparse-checkout: packages/github-action/scripts
           persist-credentials: false
@@ -322,7 +322,7 @@ Aburi-style diff comments without the full action:
 import { upsertPullRequestComment } from "@aburi/github-action"
 
 await upsertPullRequestComment({
-  ref: { owner: "kage1020", repo: "Aburi", pullNumber: 42 },
+  ref: { owner: "aburi-dev", repo: "Aburi", pullNumber: 42 },
   body: "…markdown produced by aburi diff…",
   token: process.env.GITHUB_TOKEN!,
 })

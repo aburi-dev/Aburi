@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: kage1020/Aburi/packages/github-action@v0
+      - uses: aburi-dev/Aburi/packages/github-action@v0
         with:
           version: latest
           fail-on: "removed,dropped-toggled:to-dropped:>10"
@@ -47,7 +47,7 @@ rewrites it in place instead of piling up a new one.
 | `cli` | How the binary is resolved: `dlx` (default) or `workspace`. See below. |
 | `max-bytes` | Size cap for the report, in bytes. Defaults to what a GitHub comment holds; see below. |
 
-[The action's README](https://github.com/kage1020/Aburi/blob/main/packages/github-action/README.md#inputs)
+[The action's README](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/README.md#inputs)
 lists the rest — `refspec`, `config`, `output-dir`, `format`, `working-directory`, `comment`,
 `token` — and the outputs. There is no input for the log level: set `ABURI_LOG_LEVEL` in the
 step's `env:` instead.
@@ -77,7 +77,7 @@ tag was never moved.
 
 Which refs exist, what each one costs you, and why the `@aburi/github-action@<x.y.z>` tag in
 this repository is not one of them, are in
-[the action's Pinning section](https://github.com/kage1020/Aburi/blob/main/packages/github-action/README.md#pinning).
+[the action's Pinning section](https://github.com/aburi-dev/Aburi/blob/main/packages/github-action/README.md#pinning).
 
 ### Running the CLI your project installed
 
@@ -104,7 +104,7 @@ lockfile already pinned it.
     node-version: 24
     cache: pnpm
 - run: pnpm install --frozen-lockfile
-- uses: kage1020/Aburi/packages/github-action@v0
+- uses: aburi-dev/Aburi/packages/github-action@v0
   with:
     cli: workspace
     fail-on: "removed"
@@ -116,7 +116,7 @@ Yarn PnP is the exception — it has no `node_modules`, and `.pnp.cjs` loads thr
 — so `cli: workspace` exits 2 there.
 
 Aburi analyses its own pull requests this way, with the CLI each pull request builds:
-[`.github/workflows/aburi.yml`](https://github.com/kage1020/Aburi/blob/main/.github/workflows/aburi.yml).
+[`.github/workflows/aburi.yml`](https://github.com/aburi-dev/Aburi/blob/main/.github/workflows/aburi.yml).
 
 ### Pull requests from a fork
 
@@ -139,7 +139,7 @@ jobs:
             && github.actor != 'dependabot[bot]' }}
     steps:
       # …checkout with fetch-depth: 0…
-      - uses: kage1020/Aburi/packages/github-action@v0
+      - uses: aburi-dev/Aburi/packages/github-action@v0
         with:
           comment: ${{ env.CAN_COMMENT }}
           fail-on: "removed"
@@ -170,10 +170,10 @@ permissions:
 
 Both halves in full — the upload, the marker that hands the comment over, and the companion's
 own steps — are in
-[the action's README](https://github.com/kage1020/Aburi/tree/main/packages/github-action#pull-requests-from-a-fork).
+[the action's README](https://github.com/aburi-dev/Aburi/tree/main/packages/github-action#pull-requests-from-a-fork).
 Aburi runs that pair on itself
-([`aburi.yml`](https://github.com/kage1020/Aburi/blob/main/.github/workflows/aburi.yml) and
-[`aburi-comment.yml`](https://github.com/kage1020/Aburi/blob/main/.github/workflows/aburi-comment.yml)),
+([`aburi.yml`](https://github.com/aburi-dev/Aburi/blob/main/.github/workflows/aburi.yml) and
+[`aburi-comment.yml`](https://github.com/aburi-dev/Aburi/blob/main/.github/workflows/aburi-comment.yml)),
 and [`docs/design/github-action.md`](../design/github-action.md) §5.1 walks through what makes
 it safe to give the second half a writable token.
 

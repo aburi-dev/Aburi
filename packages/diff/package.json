@@ -1,16 +1,16 @@
 {
   "name": "@aburi/diff",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "Aburi diff engine: 5-stage semantic matcher (id / git-rename / logic fingerprint / name+signature / dropped weak) followed by status classification and per-Symbol delta computation, emitting aburi.diff.v1-conformant output for PR-review workflows",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/diff#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/diff#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/diff"
   },
   "type": "module",

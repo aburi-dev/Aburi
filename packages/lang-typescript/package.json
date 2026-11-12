@@ -1,16 +1,16 @@
 {
   "name": "@aburi/lang-typescript",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "Aburi TypeScript / TSX language plugin: tree-sitter WASM-based parseFile / extractSymbols / walkBody / normalizeAst, JSDoc-aware Signature + throws extraction, decorator + drop-hint contract, Category B / C drop rules per the drop-list design",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/lang-typescript#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/lang-typescript#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/lang-typescript"
   },
   "type": "module",

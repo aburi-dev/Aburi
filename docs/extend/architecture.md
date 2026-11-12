@@ -52,6 +52,7 @@ status and delta for each from there.
 | `@aburi/markdown-projection` | Every Markdown view, and the `--fail-on` formatter. |
 | `@aburi/cli` | The five commands, git worktree handling, and exit codes. |
 | `@aburi/github-action` | A composite action wrapping the CLI, with marker-based comment upsert. |
+| `@aburi/mcp` | An MCP server whose tools answer from runs of the CLI. |
 | `@aburi/plugin-process` | Runs a plugin's parser written in another language as a process of its own, over JSON-RPC on stdio. |
 | `@aburi/lang-*` | Language plugins. |
 | `@aburi/framework-*` | Framework plugins. |
@@ -59,7 +60,7 @@ status and delta for each from there.
 
 ## Schemas
 
-Four JSON Schemas under [`schema/`](https://github.com/kage1020/Aburi/blob/main/schema/)
+Four JSON Schemas under [`schema/`](https://github.com/aburi-dev/Aburi/blob/main/schema/)
 define the contracts: `aburi.ir.v1` for the analysis, `aburi.diff.v1` for the
 diff, `aburi.config.v1` for the config, and `aburi.plugin.v1` for plugin
 manifests. The `v1` schemas are frozen, so you can add to them but not break

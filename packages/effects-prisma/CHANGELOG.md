@@ -1,5 +1,35 @@
 # @aburi/effects-prisma
 
+## 0.6.0
+
+### Minor Changes
+
+- f74ae9d: An effect plugin can now decline a call it recognises but cannot classify: `classify()` may return `{ declined: reason }` (`EffectDecline`) instead of `null`. A declined call that no later plugin classifies stays in `calls[]`, and the IR names it in the new `stats.declinedCalls` — plugin, owning Symbol, target, line and reason — so a call left unclassified on purpose can be told from one no plugin recognised. An empty or non-string reason, or an answer carrying both `effectId` and `declined`, fails the run with `scan-plugin-misconfigured`, and the integrity check refuses a `stats.declinedCalls` entry whose call its Symbol does not carry.
+  
+  `@aburi/effects-trpc` declines the `query` terminal in a file that imports `@trpc/server` (`effects-plugin:trpc:server-file-query`), `@aburi/effects-prisma` declines `$queryRaw`, `$executeRaw` and the other raw-query methods (`effects-plugin:prisma:raw-query`), and `@aburi/effects-drizzle` declines `.execute(statement)` on a Drizzle client (`effects-plugin:drizzle:raw-sql`). `aburi explain` lists a Symbol's declines under `## Declined effects`.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/plugin-registry@0.7.0`, `@aburi/types@0.8.0`
+
+## 0.5.0
+
+### Minor Changes
+
+- 3b3d306: Move the documentation site and the JSON Schemas to `aburi.dev`
+  
+  The four schemas now identify themselves as `https://aburi.dev/schema/...`, and that is the `$schema` an IR, a diff, an `aburi init` config and every bundled plugin manifest carries. The site, including the schemas under `/schema/`, is served from `https://aburi.dev`.
+  
+  Nothing written before has to change. Each schema's `$schema` now accepts the `aburi.kage1020.com` URL it carried until now beside the `aburi.dev` one, so an existing `aburi.json`, a plugin manifest naming the former host, and a committed IR all stay valid v1: `aburi diff` and `aburi explain` read such an IR, and a base and head that differ only in which host they name are diffed as one schema version. The former host keeps answering, so an editor resolving an old `$schema` line still finds the schema.
+  
+  `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
+  
+  An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/plugin-registry@0.6.0`, `@aburi/types@0.7.0`
+
 ## 0.4.2
 
 ### Patch Changes

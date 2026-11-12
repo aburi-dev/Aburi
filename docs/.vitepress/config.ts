@@ -49,6 +49,7 @@ export default defineConfig({
           { text: "Supported stacks", link: "/guide/supported-stacks" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "CI integration", link: "/guide/ci-integration" },
+          { text: "AI coding agents", link: "/guide/ai-agents" },
         ],
       },
       {
@@ -99,14 +100,15 @@ export default defineConfig({
           { text: "Parallel parsing", link: "/design/performance" },
           { text: "LSP enrichment", link: "/design/lsp-enrichment" },
           { text: "GitHub Action", link: "/design/github-action" },
+          { text: "MCP server", link: "/design/mcp-server" },
         ],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/kage1020/Aburi" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/aburi-dev/Aburi" }],
     search: { provider: "local" },
     outline: { level: [2, 3] },
     editLink: {
-      pattern: "https://github.com/kage1020/Aburi/edit/main/docs/:path",
+      pattern: "https://github.com/aburi-dev/Aburi/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     footer: {

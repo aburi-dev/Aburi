@@ -1,5 +1,37 @@
 # @aburi/plugin-registry
 
+## 0.7.0
+
+### Minor Changes
+
+- 68b9a7a: `aburi vocab list | effects | extkinds | plugins | who-owns <value>` lists the vocabulary a scan holds the configured plugins to: the core effect ids, and every effect id, extKind, framework name and derivedBy prefix the plugins and `frameworkHints` entries declare, each with the plugin that owns it; `plugins` and `who-owns` also name the config entry that loaded each plugin. It loads and registers the plugins as `aburi scan` does, but scans nothing and calls no plugin's `init`, so it needs no language plugin. `who-owns` answers for each vocabulary a value is in, as the registry resolves it during a scan, and exits 1 when nothing owns it; `--json` writes one JSON object keyed as a manifest's `provides` is. `runVocab` drives it programmatically, and `loadPlugins` now reports the config entry each plugin came from as `listedIn`.
+  
+  `@aburi/core` exports the core effect vocabulary with a description for each id as `CORE_EFFECTS`, its ids as the `CoreEffectId` union, and `isCoreEffectId` now narrows to it. `@aburi/plugin-registry` exports `isUnderPrefix`, the test a prefix declaration covers a value by, and refuses a manifest whose `version` is not a string, which used to register and print as `undefined`; `aburi scan` and `aburi vocab` exit 3 for it, naming the config entry.
+- eefcfb3: A language plugin's `LanguageId` is now its manifest's `languageId`, not a field of the plugin object: `LanguagePlugin.languageId` is removed, and `LangManifest` carries `languageId`. The plugin manifest schema adds it as an optional field that only a `lang` manifest may hold, and `VocabRegistry.register` requires it of every `lang` manifest. The registry refuses a token outside `[a-z][a-z0-9]*`, the reserved `slice`, and a token another registered plugin already declared (`duplicate-id`, naming both). The core refuses, with `scan-plugin-misconfigured`, a language plugin handed to `scan` whose manifest carries no string `languageId` (before any file is parsed) and a Symbol id whose prefix is not the minting plugin's `languageId`. `EffectsManifest` and `FrameworkManifest` no longer admit a `languageId`. `LANGUAGE_ID_PATTERN` and `RESERVED_LANGUAGE_IDS` move to `@aburi/types`, beside `LANGUAGE_ID_GRAMMAR`, the unanchored grammar, and `@aburi/core` no longer exports `RESERVED_LANGUAGE_IDS`.
+- 2410226: The shared input guards in `@aburi/plugin-registry/plugin-input` throw `PluginInputError` instead of a bare `Error`. Its `code` says what the language plugin emitted malformed (`unnormalized-callee`, `unnormalized-import-source`, `unnormalized-import-binding`, `unnormalized-namespace-binding`), and `plugin` and `filePath` say where, so a consumer branches on the code without reading the message. The scan keeps the code on the withdrawn file's `extractionFailures` entry. Messages are unchanged.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/types@0.8.0`
+
+## 0.6.0
+
+### Minor Changes
+
+- 3b3d306: Move the documentation site and the JSON Schemas to `aburi.dev`
+  
+  The four schemas now identify themselves as `https://aburi.dev/schema/...`, and that is the `$schema` an IR, a diff, an `aburi init` config and every bundled plugin manifest carries. The site, including the schemas under `/schema/`, is served from `https://aburi.dev`.
+  
+  Nothing written before has to change. Each schema's `$schema` now accepts the `aburi.kage1020.com` URL it carried until now beside the `aburi.dev` one, so an existing `aburi.json`, a plugin manifest naming the former host, and a committed IR all stay valid v1: `aburi diff` and `aburi explain` read such an IR, and a base and head that differ only in which host they name are diffed as one schema version. The former host keeps answering, so an editor resolving an old `$schema` line still finds the schema.
+  
+  `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
+  
+  An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/types@0.7.0`
+
 ## 0.5.1
 
 ### Patch Changes

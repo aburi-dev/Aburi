@@ -1,16 +1,16 @@
 {
   "name": "@aburi/framework-trpc",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Aburi tRPC framework plugin: recognizes the server side of tRPC — the initTRPC instance, routers and merged routers, query / mutation / subscription procedures, base procedures and middleware — emitting framework:trpc:* extKinds",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/framework-trpc#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/framework-trpc#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/framework-trpc"
   },
   "type": "module",

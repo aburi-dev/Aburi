@@ -1,5 +1,39 @@
 # @aburi/markdown-projection
 
+## 0.6.0
+
+### Minor Changes
+
+- ed8231e: Add `--quiet` to `aburi scan` and `aburi diff`, and `--filter` to `aburi diff`
+  
+  `aburi scan --quiet` prints the two census lines alone, and `aburi diff --quiet` the glyph line alone; stderr, the files written and the exit code are unchanged.
+  
+  `aburi diff --filter <statuses>` lists only the changes of the statuses named in `diff.md`, with a note under the Summary saying how many it left out. A Slice holding a kept change is drawn whole, and component changes, dependency changes and Not compared are listed in full, except a dependency change from test code whose caller the filter left out, which the note counts. `diff.json`, the glyph line and `--fail-on` still read every change, and when a tripped `--fail-on` clause counted changes the filter leaves out, stderr says how many and of which statuses. An empty value, an empty segment or a word that is no status exits 2. `runDiff` takes the filter as that string or as a list of statuses.
+  
+  `projectDiff` takes the filter as its `statuses` option, and `@aburi/types` exports every `SymbolChange` status as the frozen `SYMBOL_CHANGE_STATUSES`, with its type `SymbolChangeStatus` and the guard `isSymbolChangeStatus`.
+- f74ae9d: An effect plugin can now decline a call it recognises but cannot classify: `classify()` may return `{ declined: reason }` (`EffectDecline`) instead of `null`. A declined call that no later plugin classifies stays in `calls[]`, and the IR names it in the new `stats.declinedCalls` — plugin, owning Symbol, target, line and reason — so a call left unclassified on purpose can be told from one no plugin recognised. An empty or non-string reason, or an answer carrying both `effectId` and `declined`, fails the run with `scan-plugin-misconfigured`, and the integrity check refuses a `stats.declinedCalls` entry whose call its Symbol does not carry.
+  
+  `@aburi/effects-trpc` declines the `query` terminal in a file that imports `@trpc/server` (`effects-plugin:trpc:server-file-query`), `@aburi/effects-prisma` declines `$queryRaw`, `$executeRaw` and the other raw-query methods (`effects-plugin:prisma:raw-query`), and `@aburi/effects-drizzle` declines `.execute(statement)` on a Drizzle client (`effects-plugin:drizzle:raw-sql`). `aburi explain` lists a Symbol's declines under `## Declined effects`.
+- a61aa54: The diff report says when an owner was paired on its members. A `moved` or `moved+changed` entry carrying `throughMembers` ends its route ``(`name-signature` through 2 members)``, `1 member` for one, on its **Moved** line and on its folded row, which stays apart from the row its members moved along.
+
+### Patch Changes
+
+- 2b3bab3: Keep a backslash in front of a pipe as written inside a table's code spans, and a value of spaces alone whole in a code span
+  
+  A call target or a component root holding `\|` showed up in the `aburi explain` call-resolution table and the `workspace.md` Components table with one backslash too many: the cell doubled the backslash run in front of a pipe, as if GFM paired backslashes there, and GFM takes exactly one off every `\|` in a row, code spans included. `tableCell` now gives every pipe exactly one backslash, so a code span holds the value byte for byte and the text around it reads as it does outside a table. It finds a cell's code spans as CommonMark does, to write a line ending inside one as the space CommonMark reads it as rather than `<br>`, and it drops a backslash in front of a line ending, which made the cell show a literal `<br>`: the break is what that backslash asked for.
+  
+  `inlineCode` no longer pads a value made of spaces alone, which CommonMark keeps whole, so `" "` renders as one space rather than three.
+- Updated dependencies: `@aburi/types@0.8.0`
+
+## 0.5.1
+
+### Patch Changes
+
+- 7c14949: `@aburi/types` exports `lastSegment`, the last segment of a qualified Symbol name that the api fingerprint hashes (`InvoiceService.createInvoice` → `createInvoice`, `C::Inner.g` → `g`). The core's `lastQnameSegment`, the diff's name matchers and the Markdown report's name-row check each carried their own copy of it; they now read this one, so the report cannot call a name change explained while the fingerprint disagrees. No fingerprint, pairing or report line moves.
+  
+  `@aburi/diff` no longer exports `lastSegment`. Import it from `@aburi/types`, which answers the same for every qualified name a language plugin writes and gives `""` for an empty one, as the diff's copy did.
+- Updated dependencies: `@aburi/types@0.7.0`
+
 ## 0.5.0
 
 ### Minor Changes

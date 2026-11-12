@@ -12,7 +12,7 @@ effects. There are three kinds, and they plug into different stages of
 | **Effects** | `classify` | An effect for a call: `db.write`, `network.rpc`, and so on |
 
 Type signatures live in
-[`@aburi/types`](https://github.com/kage1020/Aburi/blob/main/packages/types/src/plugins.ts);
+[`@aburi/types`](https://github.com/aburi-dev/Aburi/blob/main/packages/types/src/plugins.ts);
 the full contracts are in the [design docs](../design/overview.md).
 
 ::: tip Before writing one
@@ -320,7 +320,7 @@ class MyFrameworkPlugin implements FrameworkPlugin {
 ```
 
 `framework-nestjs` is the same shape with the duplicate-binding rule and the per-file
-memo filled in; read [`packages/framework-nestjs/src/imports.ts`](https://github.com/kage1020/Aburi/tree/main/packages/framework-nestjs/src/imports.ts)
+memo filled in; read [`packages/framework-nestjs/src/imports.ts`](https://github.com/aburi-dev/Aburi/tree/main/packages/framework-nestjs/src/imports.ts)
 before shipping a plugin that matches names against a package's vocabulary.
 
 Contracts:
@@ -383,7 +383,7 @@ Contracts:
   classification. Leave a Symbol with a boundary decorator alone.
 
 Decorator-free classification (name / shape / body signals) is also supported:
-see [`packages/framework-react`](https://github.com/kage1020/Aburi/tree/main/packages/framework-react)
+see [`packages/framework-react`](https://github.com/aburi-dev/Aburi/tree/main/packages/framework-react)
 for a reference plugin that keys off PascalCase naming, `use[A-Z]` naming, JSX
 return detection, and `createContext(...)` / `forwardRef(...)` / `memo(...)`
 call-shape recognition, with no decorators involved.
@@ -573,9 +573,9 @@ instead of recording the same failure against every file.
 ## Testing
 
 - Unit-test your plugin in isolation. See
-  [`packages/framework-nestjs/test`](https://github.com/kage1020/Aburi/tree/main/packages/framework-nestjs/test)
+  [`packages/framework-nestjs/test`](https://github.com/aburi-dev/Aburi/tree/main/packages/framework-nestjs/test)
   and
-  [`packages/framework-react/test`](https://github.com/kage1020/Aburi/tree/main/packages/framework-react/test)
+  [`packages/framework-react/test`](https://github.com/aburi-dev/Aburi/tree/main/packages/framework-react/test)
   for the pattern (fake `ExtractionContext`, hand-authored `SymbolCandidate`s;
   the React tests also drive the real `@aburi/lang-typescript` parser for
   JSX-body walkers).

@@ -1,5 +1,33 @@
 # @aburi/github-action
 
+## 0.6.0
+
+### Minor Changes
+
+- 7cc013b: Write to `.aburi/` by default instead of `out/`
+  
+  With neither `--output-dir` nor `output.dir` in the config, `aburi scan`, `aburi diff` and `aburi explain` now write their artefacts to `.aburi/`, and that is where `aburi explain` looks for an IR. `out/` is where tsc, Next.js, Electron Forge and VS Code extensions put build output, so Aburi's files landed beside theirs and went with a `clean` step.
+  
+  When a run creates `.aburi/` directly in the working directory, it writes a `.gitignore` into it that ignores everything there, so the run that creates it leaves `git status` clean with nothing added to your own `.gitignore`. What decides is the place, not the spelling: `--output-dir .aburi`, its absolute path, a path to it through a link and `output.dir: ".aburi"` get the same file. If that `.gitignore` cannot be written, the run fails and removes the directory it created, so the next run starts afresh. A `.aburi/` that was already there is left as it is, as is any other output directory, which may be one you commit.
+  
+  The GitHub Action's `output-dir` input now defaults to `.aburi` too, and the config schema's `output.dir` default reads `".aburi"`.
+  
+  To keep the old place, set `"output": { "dir": "out" }` in `aburi.json`, and `output-dir: out` on the action. A workflow that reads `out/diff.md` or uploads `out/` as an artifact has to read `.aburi/` instead, and `actions/upload-artifact` needs `include-hidden-files: true` to upload a dot-directory.
+
+## 0.5.1
+
+### Patch Changes
+
+- 3b3d306: Move the documentation site and the JSON Schemas to `aburi.dev`
+  
+  The four schemas now identify themselves as `https://aburi.dev/schema/...`, and that is the `$schema` an IR, a diff, an `aburi init` config and every bundled plugin manifest carries. The site, including the schemas under `/schema/`, is served from `https://aburi.dev`.
+  
+  Nothing written before has to change. Each schema's `$schema` now accepts the `aburi.kage1020.com` URL it carried until now beside the `aburi.dev` one, so an existing `aburi.json`, a plugin manifest naming the former host, and a committed IR all stay valid v1: `aburi diff` and `aburi explain` read such an IR, and a base and head that differ only in which host they name are diffed as one schema version. The former host keeps answering, so an editor resolving an old `$schema` line still finds the schema.
+  
+  `@aburi/types` exports the URLs Aburi writes — `IR_SCHEMA_URL`, `DIFF_SCHEMA_URL`, `CONFIG_SCHEMA_URL`, `PLUGIN_SCHEMA_URL` — and `isIRSchemaURL`, which accepts every `$schema` the IR schema does. The generated `$schema` types widen to the two values each schema accepts.
+  
+  An earlier `@aburi/cli` accepts only the former host, so it refuses everything this release writes: the `aburi.json` that `aburi init` writes (or one whose `$schema` line follows the docs) fails with `config-invalid` at exit 2, an IR from `aburi scan` is refused by `aburi diff <files>` and `aburi explain`, and a plugin from this release fails to load. Upgrade the CLI first — including a GitHub Action `version:` pinned to an earlier one — and then the configs and plugins.
+
 ## 0.5.0
 
 ### Minor Changes
