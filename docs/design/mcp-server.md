@@ -7,7 +7,7 @@ makes.
 
 See: [`cli-spec.md`](./cli-spec.md) §5 (`aburi scan`), §6 (`aburi diff`), §7 (`aburi explain`),
 §9 (exit codes); [`slice-view.md`](./slice-view.md) (the clusters `diff` can narrow to)
-Implementation: [`packages/mcp`](https://github.com/kage1020/Aburi/tree/main/packages/mcp)
+Implementation: [`packages/mcp`](https://github.com/aburi-dev/Aburi/tree/main/packages/mcp)
 
 ---
 
