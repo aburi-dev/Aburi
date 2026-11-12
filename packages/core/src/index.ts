@@ -137,6 +137,7 @@ export {
 export type { ParsePool, ParsePoolFactory } from "./scan/extract-files"
 export type { ExtractionEvent, ExtractionLogLevel } from "./scan/extraction-events"
 export { describeJsonType, describeThrown, errorCode, isPluginSetFault } from "./scan/faults"
+export { initializePlugins, type PluginCleanup } from "./scan/lifecycle"
 export {
   type ExtractedFile,
   type FilePipelineInput,

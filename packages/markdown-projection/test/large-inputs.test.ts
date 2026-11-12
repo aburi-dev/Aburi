@@ -24,7 +24,9 @@ function expectPastSpreadLimit(lines: readonly string[]): void {
   }).toThrow(RangeError)
 }
 
-describe("projections of workspace-sized lists", () => {
+// Each case is sized to pass the spread limit, not timed: a macOS runner that shares its cores with the
+// other packages' suites runs them tens of times slower than they run alone.
+describe("projections of workspace-sized lists", { timeout: 120_000 }, () => {
   it("renders a component page of 40,000 Symbols", () => {
     const symbols = Array.from({ length: 40_000 }, (_, i) =>
       makeSymbol({ id: `ts:src/d${i % 30}/m${i}.ts#f${i}`, name: `f${i}` }),
@@ -40,7 +42,7 @@ describe("projections of workspace-sized lists", () => {
     expectPastSpreadLimit(sectionOf(md, "## Symbols"))
   })
 
-  it("renders a boundary effect surface of 200,000 Symbols", { timeout: 30_000 }, () => {
+  it("renders a boundary effect surface of 200,000 Symbols", () => {
     const reads = [effect({ id: "db.read", target: "db.user.find", plugin: "effects-prisma" })]
     const symbols = Array.from({ length: LARGE }, (_, i) =>
       makeSymbol({
@@ -108,7 +110,7 @@ describe("projections of workspace-sized lists", () => {
   it.each<[string, (i: number) => number | null]>([
     ["no calls between them", () => null],
     ["each calling the next", (i) => (i + 1 < LARGE ? i + 1 : null)],
-  ])("renders a Slice of 200,000 members with %s", { timeout: 30_000 }, (_, callee) => {
+  ])("renders a Slice of 200,000 members with %s", (_, callee) => {
     const id = (i: number) => symbolId(`ts:src/a.ts#f${i}`)
     const changes: SymbolChange[] = Array.from({ length: LARGE }, (_, i) => {
       const next = callee(i)

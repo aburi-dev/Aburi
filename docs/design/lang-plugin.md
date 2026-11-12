@@ -47,7 +47,7 @@ Keeping the responsibilities narrow lets a new language addition focus solely on
 
 ```
 1. The registry validates the manifest and loads the plugin
-2. plugin.init() is called with ctx (registry/config)
+2. plugin.init(ctx) is called, once per scan, before the scan's first plugin call
 3. For each file matching the language:
      a. plugin.parseFile(file) → ParseResult { tree, errors, imports }
      b. plugin.extractSymbols(tree, ctx) → SymbolCandidate[]
@@ -57,10 +57,40 @@ Keeping the responsibilities narrow lets a new language addition focus solely on
      d. plugin.releaseTree?(tree) — on every way out of a–c, including a throw
    plugin.createImportResolver?() runs at most once, the first time the core
    follows a decorator's import through a non-relative specifier (§4.8, §5.2.4)
-4. After all files, plugin.cleanup?() is called
+4. After the scan's last plugin call, plugin.cleanup?() is called
 ```
 
 The core then performs effect classification, drop-list application, and fingerprint computation.
+
+`init` and `cleanup` bracket one scan, for every plugin it loads: language, framework and effects
+plugins alike. They are what a plugin holding something for the length of a scan opens and closes
+it with, such as a parser running as a process of its own ([`plugin-process.md`](./plugin-process.md)).
+
+- **Order.** Every `init` is awaited, one at a time, before the scan's first file is read: the
+  language plugins, then the framework plugins, then the effects plugins, each in the order its
+  config list names them. The `cleanup` calls run newest first, so a plugin is cleaned up before
+  any plugin initialized ahead of it. A plugin object listed twice is initialized once.
+- **A failed `init` ends the scan.** The scan reads no file, the plugins already initialized are
+  cleaned up, and the error carries `code: "plugin-init-failed"`, names the plugin in `value`, and
+  reads `Plugin "<name>" failed to initialize: <reason>`. It is a fault of the plugin set rather
+  than of a file (§7.2), so `aburi scan` exits `3`. A plugin after the one that failed is not
+  initialized, and the one that failed is not cleaned up: an `init` that throws releases whatever
+  it opened before it throws.
+- **`cleanup` always runs** for every plugin whose `init` resolved, whether extraction finished or
+  a fault of the plugin set ended it. One that throws is logged as the warning
+  `Plugin "<name>" failed to clean up: <reason>`, the remaining plugins are still cleaned up, and
+  the scan's result stands, since every plugin call is over by then.
+- A plugin without an `init` function is taken to have nothing to set up, and one without
+  `cleanup` nothing to release. Plugins arrive as plain JavaScript, and one written before the
+  core called either still loads. One that sets either to anything but a function ends the scan
+  with `scan-plugin-misconfigured`, naming the plugin, before any plugin is initialized.
+- A plugin object serves one scan at a time. Two scans run one after the other with the same
+  plugin objects call `init` and `cleanup` once each.
+- A scan that extracts on parser workers ([`performance.md`](./performance.md) Rule PF-9a) makes
+  every plugin call on the plugin objects each worker loaded, so each worker initializes its own,
+  in this order, before its first file and cleans them up once its last file is done. The objects
+  the scan was handed make no call, and are neither initialized nor cleaned up. A plugin holding a
+  process holds one on each worker.
 
 ## 4. Interface
 
@@ -79,7 +109,7 @@ interface LanguagePlugin {
   capabilities: LanguageCapabilities
 
   // lifecycle
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   // extraction
@@ -685,7 +715,7 @@ A file being skipped on wall clock does mean the IR can differ between a fast ma
 - **A file a parser worker ended under is withdrawn on the same terms**: a plugin that calls `process.exit()` or throws outside the core's handling, from a timer say, ends the worker thread rather than the call, and the file it was extracting goes, with `code: "extraction-thread-ended"` and what ended the thread in `detail` ([performance.md](./performance.md) §8). On the main thread, under `--concurrency 1`, either ends the process instead. A file whose extraction holds a value that cannot be sent back from a worker, such as a function left in a Symbol, is withdrawn there as a throw is, with `code: "extraction-uncloneable"` (performance.md Rule PF-7).
 - The withdrawn file is named in `ScanResult.skipped` with `reason: "extraction-failed"`, and the thrown message is kept beside it in `ScanResult.extractionFailures`, with the error's string `code` when it has one, whatever its class. That code is how a consumer tells a shared guard's refusal (§4.4) from the plugin's own bug without reading the message. The core logs a warning per file; `aburi scan` exits `3` when the list is non-empty, so a run that dropped a file is not green.
 - A file withdrawn because a plugin *threw* loses its recoverable parse errors, unlike one abandoned for its `parseTimeoutMs` budget: the pipeline result never materialized, so the thrown message is the diagnostic in their place. A file withdrawn for one of the three faults above keeps them, on the same reasoning read the other way — its extraction ran to a result, so those errors are observations the parse really made about the file, and dropping them would hide a genuine parse fault behind a fault in its Symbols that may well be its consequence.
-- **Some are not absorbed.** An error whose code names a fault in the plugin *set* rather than in the file propagates and ends the run, because it repeats for every file and withdrawing them one at a time would report the workspace as broken instead of the plugin. Today that is `scan-plugin-misconfigured` (an effect plugin returning a Promise from `classify`, a language plugin emitting Symbol ids with no language prefix or with a prefix other than its manifest's `languageId`, or a plugin refusing its own `pluginOptions` value), `invalid-language-id` (the prefix is present but is not a legal `LanguageId`), and `vocab-undeclared` (an id the emitting plugin's manifest does not claim — `effect-plugin.md` EP1 — or one a plugin refused through the registry's own `assertEffectDeclared` / `assertExtKindDeclared`, which raise the registry's error under that code). The code decides, not the class, and `aburi scan` exits `3` for each (`cli-spec.md` §5.4). Everything else describes the file — `anonymous-symbol-id-attempted` from a qualified name the grammar refuses, `non-posix-path` from a file whose path a Symbol id cannot hold (a `:` or `#` in it) — and is absorbed. So are the shared guards' `unnormalized-*` codes (§4.4). An unnormalized value is a language-plugin bug, but one that a construct in the file triggers, so it repeats only in the files that contain that construct. Withdrawing those names exactly them (`effect-plugin.md` EP3a), where ending the run would hide every file the plugin extracted correctly.
+- **Some are not absorbed.** An error whose code names a fault in the plugin *set* rather than in the file propagates and ends the run, because it repeats for every file and withdrawing them one at a time would report the workspace as broken instead of the plugin. Today that is `scan-plugin-misconfigured` (an effect plugin returning a Promise from `classify`, a language plugin emitting Symbol ids with no language prefix or with a prefix other than its manifest's `languageId`, or a plugin refusing its own `pluginOptions` value, or setting `init` or `cleanup` to something other than a function), `invalid-language-id` (the prefix is present but is not a legal `LanguageId`), `plugin-init-failed` (a plugin's `init` threw, §3), and `vocab-undeclared` (an id the emitting plugin's manifest does not claim — `effect-plugin.md` EP1 — or one a plugin refused through the registry's own `assertEffectDeclared` / `assertExtKindDeclared`, which raise the registry's error under that code). The code decides, not the class, and `aburi scan` exits `3` for each (`cli-spec.md` §5.4). Everything else describes the file — `anonymous-symbol-id-attempted` from a qualified name the grammar refuses, `non-posix-path` from a file whose path a Symbol id cannot hold (a `:` or `#` in it) — and is absorbed. So are the shared guards' `unnormalized-*` codes (§4.4). An unnormalized value is a language-plugin bug, but one that a construct in the file triggers, so it repeats only in the files that contain that construct. Withdrawing those names exactly them (`effect-plugin.md` EP3a), where ending the run would hide every file the plugin extracted correctly.
 - A plugin-wide bug that carries none of those codes still presents as one failure per file rather than one crash. That is the intended shape — every file named, the messages identical, the count the whole workspace — but it is a weaker diagnostic than a code that says outright what is wrong.
 - The behaviour above is unconditional: there is no "stop at the first extraction exception" mode. (`config.strict` is about something else: whether the core's own vocabulary check ends the run, which it does through `vocab-undeclared` above. A refusal a plugin asks for through `ctx.registry` ends it either way.)
 
@@ -722,6 +752,13 @@ Representative options:
 | syn | Rust | proc-macro only, heavy for standalone CLI use |
 
 The official `@aburi/lang-typescript` plugin adopts **tree-sitter WASM** for its initial implementation (proven in a PoC; zero-build on Windows is an advantage). Replacement with oxc-parser is under consideration for a later version.
+
+A parser written in another language — `go/parser` or `go/packages`, a Python type checker — runs
+as a process of its own, which the plugin starts in `init`, sends each file to from `parseFile`, and
+ends in `cleanup`. The tree `parseFile` returns is the plugin's own type (§4.2), so it can be the
+JSON the process answered with, and `extractSymbols`, `walkBody` and `normalizeAst` read it in the
+plugin's process as they would any tree. [`plugin-process.md`](./plugin-process.md) specifies the
+helper that drives such a process.
 
 ### 8.1 Memory-management convention for WASM parsers
 
@@ -950,7 +987,20 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP33 | A file whose `extractSymbols` / `walkBody` / `normalizeAst` throws, is withdrawn, or overruns `parseTimeoutMs` | its tree is released all the same; the diagnostic the file was already carrying is what the caller sees |
 | LP34 | A `releaseTree` that throws | the file keeps its Symbols and its exit code; the plugin, the file and the message are on `ScanResult.treeReleaseFailures` |
 
-### 9.10 Import resolution and origins (§4.8, §5.2.4)
+### 9.10 Lifecycle (§3)
+
+| ID | Input | Expected |
+|---|---|---|
+| LP48 | A language, a framework and an effects plugin, each recording its calls | every `init`, in that order, before the first `parseFile`; every `cleanup`, newest first, after the last plugin call |
+| LP49 | The framework plugin's `init` throws | the scan fails with `plugin-init-failed` naming it; the language plugin is cleaned up, the effects plugin never initialized, no file parsed; `aburi scan` exits `3` with the message |
+| LP50 | A fault of the plugin set (`vocab-undeclared`) ends the scan mid-extraction | every plugin is cleaned up all the same |
+| LP51 | A `cleanup` that throws | a warning naming the plugin, the others cleaned up, the scan's result unchanged |
+| LP52 | A plugin written with neither `init` nor `cleanup` | scanned as one with empty ones |
+| LP53 | A scan whose parse pool extracts on plugin objects of its own | none of the objects the scan was handed is initialized, called or cleaned up |
+| LP54 | One effects plugin object listed twice | its `init` and its `cleanup` called once each |
+| LP55 | A plugin whose `init` is `true`, or whose `cleanup` is `null` | the scan fails with `scan-plugin-misconfigured` naming the plugin, and no plugin is initialized |
+
+### 9.11 Import resolution and origins (§4.8, §5.2.4)
 
 | ID | Input | Expected |
 |---|---|---|

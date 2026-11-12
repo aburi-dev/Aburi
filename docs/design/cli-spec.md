@@ -220,9 +220,9 @@ it is a config error (exit `2`) naming the entry, since the fix is in `aburi.jso
 
 A fault in the plugin set is an error whose code says the plugin set, not the file, is at fault, so
 the core lets it end the run instead of withdrawing one file after another
-([`lang-plugin.md`](./lang-plugin.md) §7.2): `vocab-undeclared`, `scan-plugin-misconfigured` and
-`invalid-language-id`. The CLI recognises it by that code, as the core does, and never by the class
-carrying it. A plugin that refuses a value through the registry it is handed
+([`lang-plugin.md`](./lang-plugin.md) §7.2): `vocab-undeclared`, `scan-plugin-misconfigured`,
+`invalid-language-id` and `plugin-init-failed`. The CLI recognises it by that code, as the core
+does, and never by the class carrying it. A plugin that refuses a value through the registry it is handed
 (`assertEffectDeclared` / `assertExtKindDeclared`, [`extension-vocab.md`](./extension-vocab.md) §7)
 raises the registry's error, the core's own vocabulary check raises the core's, and both are the same
 refusal.

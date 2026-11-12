@@ -1,4 +1,5 @@
 import { makeLanguageId } from "@aburi/core"
+import { NO_LANGUAGE_CAPABILITIES } from "@aburi/test-support"
 import {
   type EffectPlugin,
   type EffectsManifest,
@@ -55,19 +56,7 @@ ${members}
 export const FAKE_LANGUAGE_PLUGIN: LanguagePlugin = {
   manifest: LANG_MANIFEST,
   fileExtensions: [".fake"],
-  capabilities: {
-    hasDecorators: false,
-    hasGenerics: false,
-    hasAsync: false,
-    hasMacros: false,
-    hasPatternMatching: false,
-    hasAbstractTypes: false,
-    hasModules: false,
-    hasNamespaces: false,
-    hasTypeParameters: false,
-    hasExplicitVisibility: false,
-    hasJsDoc: false,
-  },
+  capabilities: NO_LANGUAGE_CAPABILITIES,
   init: async () => {},
   parseFile: async () => ({ tree: {}, errors: [], imports: [] }),
   extractSymbols: () => [],

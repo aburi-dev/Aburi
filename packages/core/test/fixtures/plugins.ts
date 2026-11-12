@@ -1,6 +1,7 @@
 import {
   type CandidateOverrides,
   makeCandidate,
+  NO_LANGUAGE_CAPABILITIES,
   noopRegistry,
   relativePath,
   type ScratchWorkspace,
@@ -16,7 +17,6 @@ import {
   type FrameworkPlugin,
   type ImportEdge,
   type LangManifest,
-  type LanguageCapabilities,
   type LanguagePlugin,
   type ParsedTree,
   type ParseError,
@@ -70,20 +70,6 @@ export function langManifest(name = "lang-stub", languageId = "stub"): LangManif
   return { ...manifest("lang", name), languageId: makeLanguageId(languageId) }
 }
 
-const NO_CAPABILITIES: LanguageCapabilities = {
-  hasDecorators: false,
-  hasGenerics: false,
-  hasAsync: false,
-  hasMacros: false,
-  hasPatternMatching: false,
-  hasAbstractTypes: false,
-  hasModules: false,
-  hasNamespaces: false,
-  hasTypeParameters: false,
-  hasExplicitVisibility: false,
-  hasJsDoc: false,
-}
-
 const EMPTY_BODY: BodyExtraction = { rules: [], calls: [] }
 
 /** The one file a `.stub` plugin is handed when the test is not about the file. */
@@ -93,7 +79,7 @@ export function stubLanguagePlugin(overrides: Partial<LanguagePlugin> = {}): Lan
   return {
     manifest: langManifest(),
     fileExtensions: [".stub"],
-    capabilities: NO_CAPABILITIES,
+    capabilities: NO_LANGUAGE_CAPABILITIES,
     init: async () => {},
     parseFile: async (): Promise<ParseResult> => ({ tree: {}, errors: [], imports: [] }),
     extractSymbols: () => [],
@@ -179,7 +165,7 @@ export interface Script {
 export class ScriptedLanguagePlugin implements LanguagePlugin {
   readonly manifest = langManifest()
   readonly fileExtensions = [".stub"]
-  readonly capabilities = NO_CAPABILITIES
+  readonly capabilities = NO_LANGUAGE_CAPABILITIES
   readonly released: ParsedTree[] = []
   readonly order: string[] = []
   handedOut: ParsedTree | null = null

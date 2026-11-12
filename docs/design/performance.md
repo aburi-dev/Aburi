@@ -118,7 +118,9 @@ interface ParserData {                         // workerData, at spawn
   setup: { config: Config; workspaceRoot: string; pluginRefRoot: string };
 }
 
-type ToWorker = { kind: "extract"; fileId: number };
+type ToWorker =
+  | { kind: "extract"; fileId: number }
+  | { kind: "close" };                         // clean up the plugins after the file in hand (Rule PF-9a)
 ```
 
 No source text crosses the boundary. The worker reads the file from disk itself. Rationale: the main thread already enumerated the file list (needs the paths); reading the source there too would double the FS I/O.
@@ -127,10 +129,17 @@ No source text crosses the boundary. The worker reads the file from disk itself.
 
 ```ts
 type FromWorker =
-  | { kind: "ready" }                          // the plugins are loaded
-  | { kind: "failed"; thrown: ThreadThrown }   // they could not be (Rule PF-15a)
+  | { kind: "ready"; said: PluginLine[] }      // the plugins are loaded and initialized
+  | { kind: "failed"; thrown: ThreadThrown; said: PluginLine[] }  // they could not be (Rule PF-15a)
   | { kind: "extracted"; extraction: WireExtraction }
-  | { kind: "rejected"; fileId: number; thrown: ThreadThrown };  // extracting it rejected
+  | { kind: "rejected"; fileId: number; thrown: ThreadThrown }   // extracting it rejected
+  | { kind: "closed"; said: PluginLine[] };    // the plugins are cleaned up (Rule PF-9a)
+
+interface PluginLine {                         // logged by a plugin's init or cleanup
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  meta?: Record<string, unknown>;
+}
 
 interface WireExtraction {
   fileId: number;
@@ -145,7 +154,7 @@ interface WireExtraction {
 }
 ```
 
-A worker answers for its files in the order it was handed them. The events are what the file's extraction would have logged on one thread — its per-file log lines, its import resolver's lines and failures, the trees whose release failed — recorded instead of logged, so that the main thread says them in file order (§7.2). An error that ends the run crosses as a described copy, and only as one: the main thread rebuilds it with the class name, message and code of it and of each error it was caused by, so it ends the run as it would have on one thread. A file whose extraction rejects rather than answering — which on one thread ends the run with that error — crosses as `rejected` with its error described the same way, and the main thread rejects that file's extraction with the error rebuilt, so the fold ends the run at that file (§7.2 step 3) with the error one thread ends it with. The worker goes on to its next file: `failed` says only that the plugins could not be loaded.
+A worker answers for its files in the order it was handed them. The events are what the file's extraction would have logged on one thread — its per-file log lines, its import resolver's lines and failures, the trees whose release failed — recorded instead of logged, so that the main thread says them in file order (§7.2). An error that ends the run crosses as a described copy, and only as one: the main thread rebuilds it with the class name, message and code of it and of each error it was caused by, so it ends the run as it would have on one thread. A file whose extraction rejects rather than answering — which on one thread ends the run with that error — crosses as `rejected` with its error described the same way, and the main thread rejects that file's extraction with the error rebuilt, so the fold ends the run at that file (§7.2 step 3) with the error one thread ends it with. The worker goes on to its next file: `failed` says only that the plugins could not be loaded or initialized.
 
 Rule PF-7: what a worker returns is data. The file's pipeline result holds its Symbols — the fully-normalized shape of [lang-plugin.md](./lang-plugin.md) §4.3 — its imports and its parse errors: strings and ranges read out of the tree, never a `bodyNode`, `fullNode` or any other handle into WASM memory, since a node is valid only as long as its tree, which is freed when the file's pipeline run ends (lang-plugin §8.1). An answer that structured clone refuses — a function a plugin left in a Symbol's `source`, say — withdraws its file as a throw does (lang-plugin §7.2), with the code `extraction-uncloneable`: `extraction threw — its extraction holds a value that cannot leave the parser worker: <why>. Run with --concurrency 1 to extract every file on the main thread.` What the file's extraction said is still said, and where it cannot be cloned either — a log line a plugin wrote as something other than a string — the file is withdrawn without it. A log line whose metadata cannot be cloned loses the metadata and is still said.
 
@@ -172,6 +181,8 @@ The main thread keeps at most two files in flight on each worker: the one it is 
 The rule from [lang-plugin.md](./lang-plugin.md) §8.1 stands, on both sides of it: `parseFile()` creates a fresh `Parser` and calls `parser.delete()` after obtaining the result, while the tree it hands over is freed by whoever ran the pipeline for that file, through the plugin's `releaseTree`. Node references drawn out of the tree live as long as the tree does — the file's pipeline run — and no longer. This document does NOT change that rule; the plugin API surface is unchanged by the worker pool.
 
 Rule PF-9 (worker follows plugin lifecycle): each worker invokes the plugin's `parseFile()` per file, which owns the parser lifecycle end-to-end per [lang-plugin.md](./lang-plugin.md) §8.1. No parser handle is retained across `parseFile()` calls. Rationale: reusing a parser across files would require a new API surface between the worker runtime and the plugin (parser injection), which is a change to `lang-plugin.md` §4 out of scope for this document. Parser-construction cost is real (5–15 ms per file on the reference corpus) but sits within the 30 s budget with headroom given file count and per-file work.
+
+Rule PF-9a (each worker brackets its own plugins): a worker initializes the plugins it loaded, in the order and with the context of [lang-plugin.md](./lang-plugin.md) §3, before it extracts its first file, and cleans them up, newest first, when the pool closes or retires it, once the file it is extracting is done; it begins no other. The pool closes at the end of the scan's extraction, whether it finished or a fault ended it, and waits for every worker it started, a replaced one among them, to have cleaned up and exited. A worker retired because an answer of its could not be read cleans up as it goes; one that exited cannot. What a worker's plugins log as they initialize or clean up crosses with `ready`, `failed` and `closed`, and the main thread says each distinct line once, however many workers log it, so the log is the single thread's (Rule PF-11). The plugin objects the scan itself loaded make no call while a pool extracts, and are not initialized.
 
 Rule PF-10 (parser-reuse is a future optimization): a future refinement of `lang-plugin.md` MAY introduce a `capabilities.parserInjection: true` opt-in through which the worker runtime supplies a long-lived parser. When and if that lands, this document will be revised to specify the injection contract. Until then the per-file lifecycle above is the only supported shape.
 
@@ -226,7 +237,7 @@ A worker that ends with no file in flight withdraws none, and still counts towar
 
 Rule PF-15: the third worker to end in one scan, on any slot, ends the run with exit `1`, a runtime failure ([cli-spec.md](./cli-spec.md) §9): `Parser workers ended 3 times (extracting <F1>; extracting <F2>; between files), so the plugins, not one file, are ending them. Run with --concurrency 1 to extract every file on the main thread.` Rationale: a repeated end indicates a systemic issue — heap exhaustion under a common file shape, a plugin that exits — that will not resolve by continuing, and a new worker in a slot is just another worker, so counting per slot would let a pool of eight withdraw sixteen files before giving up.
 
-Rule PF-15a: a worker that cannot load the scan's plugins, or ends before it has, ends the run with exit `1` — `A parser worker failed: <error>`, or `A parser worker <how it ended> before it had loaded the scan's plugins.` — naming `--concurrency 1`. No file is to blame, and every worker would fail the same way. So does a worker that cannot be started, at the pool's start or in place of one that ended — `A parser worker could not be started: <error>` — once the workers already started are ended, and a worker script that cannot be found, as when a bundle inlines `@aburi/cli` and leaves the script behind.
+Rule PF-15a: a plugin whose `init` fails on a worker ends the run as it would on one thread — exit `3`, `Plugin "<name>" failed to initialize: <reason>` ([lang-plugin.md](./lang-plugin.md) §3) — since every worker initializes the same plugins. Otherwise a worker that cannot load the scan's plugins, or ends before it has, ends the run with exit `1` — `A parser worker failed: <error>`, or `A parser worker <how it ended> before it had loaded the scan's plugins.` — naming `--concurrency 1`. No file is to blame, and every worker would fail the same way. So does a worker that cannot be started, at the pool's start or in place of one that ended — `A parser worker could not be started: <error>` — once the workers already started are ended, and a worker script that cannot be found, as when a bundle inlines `@aburi/cli` and leaves the script behind.
 
 Rule PF-16: a withdrawn file is reported as any skipped file is — in `stats.skippedFiles` and on stderr — and the IR holds no Symbol for it; downstream (call resolution, effect propagation) sees a file with no Symbols, which is already a valid input.
 
@@ -290,6 +301,8 @@ Rows are prefixed `PT` (performance test) to avoid collision with the rules abov
 | PT5 | Workers end under three files, on two slots | exit 1, stderr naming the three files and `--concurrency 1` (Rule PF-15) |
 | PT5a | A plugin that throws, or calls `process.exit()`, when loaded on a worker | exit 1, `A parser worker failed: <error>`, or `A parser worker ended with exit code N; … before it had loaded the scan's plugins.`, and `--concurrency 1` on stderr (Rule PF-15a) |
 | PT5b | A worker that cannot be started as the pool starts, or in place of one that ended; no worker script to start | Every file not yet extracted refused with `A parser worker could not be started: <error>` and `--concurrency 1`, and the workers already started ended; the pool refused before it starts a worker, naming `--concurrency 1` (Rule PF-15a) |
+| PT5c | A plugin that logs from `init` and whose `cleanup` throws, and one whose `init` throws, at `--concurrency 1` and `2` | The same stderr and exit code: the line and the warning said once, or exit 3 with `Plugin "<name>" failed to initialize` (Rules PF-9a, PF-15a) |
+| PT5d | A pool of two workers, and a pool of one whose worker is retired for an answer it could not read | Each worker that extracted a file initialized its plugins before its first and cleaned them up as the pool closed, the retired one among them (Rule PF-9a) |
 | PT6 | The core's extraction run on one extractor per file, on two taking turns, and on three taking runs of two, each holding plugins of its own, over barrels read before and after they are extracted and an import resolver that warns once per instance and throws on some specifiers, one of them written in two files; and over a resolver that no extractor can create | The IR and every log line of the same scan on one extractor: the resolver's warning once, its first failure a warning, a failure for each file the failing specifier is written in, and the rest counted at the end; the failure to create the resolver once; and the trees that failed to release as one extractor reports them (Rule PF-19, §7.2.1) |
 | PT7 | Pool size clamped by available memory | `--concurrency 8` with 512 MiB a worker: 8 workers on 4 GiB available, 4 on 2 GiB; with 256 MiB a worker, 3 on 1000 MiB and the main thread on 100 MiB; half the memory each when two scans run at once (Rule PF-2) |
 | PT7a | Default pool size | One fewer than the processors; the main thread on one processor or under 256 KiB of source; one worker for each 256 KiB below that; half the spare processors each when two scans run at once. `--concurrency` holds however little the source; both are capped at the file count (Rule PF-2) |

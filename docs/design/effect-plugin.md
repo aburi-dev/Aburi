@@ -46,13 +46,16 @@ The responsibility is confined to a pure function "callee → effect classificat
 
 ```
 1. The registry validates the manifest and loads the plugin
-2. plugin.init() is called with ctx (registry/config)
+2. plugin.init(ctx) is called, once per scan, before the scan's first plugin call
 3. Each time a language plugin extracts CallCandidate[] in walkBody:
      for each call, the enabled effect plugins are invoked in config order
        plugin.classify(call, ctx) → EffectClassification | EffectDecline | null
      the first classification is adopted; a call none classifies keeps its declines (§5)
-4. After all files, plugin.cleanup?() is called
+4. After the scan's last plugin call, plugin.cleanup?() is called
 ```
+
+The order of the calls, and what a failing `init` or `cleanup` does, are the language plugin's
+([`lang-plugin.md`](./lang-plugin.md) §3).
 
 ## 4. Interface
 
@@ -63,7 +66,7 @@ The actual types are defined in the `types` package of `@aburi/core`. This docum
 ```ts
 interface EffectPlugin {
   manifest: PluginManifest                   // type: "effects"
-  init(ctx: PluginContext): Promise<void>
+  init?(ctx: PluginContext): Promise<void>
   cleanup?(): Promise<void>
 
   // effect classification (ideally implemented as a pure function)

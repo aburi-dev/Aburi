@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { makeLanguageId } from "@aburi/core"
-import { commitAll, initRepository } from "@aburi/test-support"
+import { commitAll, initRepository, NO_LANGUAGE_CAPABILITIES } from "@aburi/test-support"
 import type { PluginManifest } from "@aburi/types"
 import { LANG_MANIFEST, pluginModuleSource } from "./plugin-fakes"
 import { writeConfig, writeFileAt, writePackageJson } from "./workspace"
@@ -22,13 +22,36 @@ export const STUB_PLUGIN = stubPluginSource({
 
 /** The stub language, except that on a parser worker it runs `end` on a file named `crash`. */
 export function workerEndingPlugin(end: string): string {
-  return STUB_PLUGIN.replace(
-    "  parseFile: async (file) => {\n",
-    `  parseFile: async (file) => {
-    const { isMainThread } = await import("node:worker_threads")
+  return stubPluginRunning({
+    parse: `    const { isMainThread } = await import("node:worker_threads")
     if (!isMainThread && file.path.includes("crash")) {
 ${end}
-    }
+    }`,
+  })
+}
+
+/**
+ * The stub language, running `init` in its `init(ctx)`, `cleanup` in its `cleanup()`, and `parse`
+ * as its `parseFile(file)` starts.
+ */
+export function stubPluginRunning(code: {
+  init?: string
+  cleanup?: string
+  parse?: string
+}): string {
+  return STUB_PLUGIN.replace(
+    "  init: async () => {},\n",
+    `  init: async (ctx) => {
+${code.init ?? ""}
+  },
+  cleanup: async () => {
+${code.cleanup ?? ""}
+  },
+`,
+  ).replace(
+    "  parseFile: async (file) => {\n",
+    `  parseFile: async (file) => {
+${code.parse ?? ""}
 `,
   )
 }
@@ -38,19 +61,7 @@ export function stubPluginSource(manifest: PluginManifest, members = ""): string
   return pluginModuleSource(
     manifest,
     `${members}  fileExtensions: [".stub"],
-  capabilities: {
-    hasDecorators: false,
-    hasGenerics: false,
-    hasAsync: false,
-    hasMacros: false,
-    hasPatternMatching: false,
-    hasAbstractTypes: false,
-    hasModules: false,
-    hasNamespaces: false,
-    hasTypeParameters: false,
-    hasExplicitVisibility: false,
-    hasJsDoc: false,
-  },
+  capabilities: ${JSON.stringify(NO_LANGUAGE_CAPABILITIES)},
   init: async () => {},
   parseFile: async (file) => {
     const tree = { path: file.path }

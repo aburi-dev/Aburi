@@ -23,6 +23,7 @@ export type CoreErrorCode =
   | "scan-extraction-out-of-order"
   | "receiver-hint-key-malformed"
   | "vocab-undeclared"
+  | "plugin-init-failed"
 
 export interface IntegrityViolation {
   invariant: number
