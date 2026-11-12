@@ -1,5 +1,11 @@
 # @aburi/types
 
+## 0.9.0
+
+### Minor Changes
+
+- 6940062: Make `init(ctx)` optional on language, framework and effects plugins, as `cleanup()` already was: a plugin with nothing to open before the scan leaves it out.
+
 ## 0.8.0
 
 ### Minor Changes

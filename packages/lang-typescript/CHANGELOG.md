@@ -1,5 +1,11 @@
 # @aburi/lang-typescript
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.8.0
 
 ### Minor Changes

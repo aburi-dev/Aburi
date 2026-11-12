@@ -1,6 +1,6 @@
 {
   "name": "@aburi/mcp",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Aburi MCP server: answers an AI coding agent's questions about a workspace — what a change did, a component's API and effects, one Symbol's detail — over the Model Context Protocol, from the runs of the aburi CLI it makes",
   "license": "Apache-2.0",
   "author": "kage1020",

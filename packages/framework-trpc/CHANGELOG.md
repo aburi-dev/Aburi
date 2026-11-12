@@ -1,5 +1,11 @@
 # @aburi/framework-trpc
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.2.1
 
 ### Patch Changes
