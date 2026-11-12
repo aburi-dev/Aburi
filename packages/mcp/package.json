@@ -4,13 +4,13 @@
   "description": "Aburi MCP server: answers an AI coding agent's questions about a workspace — what a change did, a component's API and effects, one Symbol's detail — over the Model Context Protocol, from the runs of the aburi CLI it makes",
   "license": "Apache-2.0",
   "author": "kage1020",
-  "homepage": "https://github.com/kage1020/Aburi/tree/main/packages/mcp#readme",
+  "homepage": "https://github.com/aburi-dev/Aburi/tree/main/packages/mcp#readme",
   "bugs": {
-    "url": "https://github.com/kage1020/Aburi/issues"
+    "url": "https://github.com/aburi-dev/Aburi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kage1020/Aburi.git",
+    "url": "git+https://github.com/aburi-dev/Aburi.git",
     "directory": "packages/mcp"
   },
   "type": "module",
