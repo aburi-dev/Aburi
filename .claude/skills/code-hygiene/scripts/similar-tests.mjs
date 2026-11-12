@@ -5,11 +5,9 @@
 //   node .claude/skills/code-hygiene/scripts/similar-tests.mjs [--threshold 0.9] [--min-lines 4] [pathspecs…]
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-
-const ts = createRequire(join(process.cwd(), "package.json"))("typescript")
+import { parseSync, Visitor } from "oxc-parser"
 
 const args = process.argv.slice(2)
 const option = (name, fallback) => {
@@ -31,29 +29,29 @@ const titles = new Map()
 let count = 0
 
 function calleeName(node) {
-  let callee = node.expression
-  while (ts.isCallExpression(callee)) callee = callee.expression
-  while (ts.isPropertyAccessExpression(callee)) callee = callee.expression
-  return ts.isIdentifier(callee) ? callee.text : null
+  let callee = node.callee
+  while (callee.type === "CallExpression") callee = callee.callee
+  while (callee.type === "MemberExpression") callee = callee.object
+  return callee.type === "Identifier" ? callee.name : null
 }
 
 for (const file of files) {
-  const sf = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
+  const text = readFileSync(file, "utf8")
   const out = []
-  const visit = (node) => {
-    if (ts.isCallExpression(node) && ["it", "test"].includes(calleeName(node))) {
-      const fn = node.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a))
-      if (fn && ts.isBlock(fn.body)) {
-        const name = `t${++count}`
-        const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
-        titles.set(name, `${file}:${line} ${node.arguments[0]?.getText(sf).slice(0, 110) ?? ""}`)
-        out.push(`async function ${name}() ${fn.body.getText(sf)}\n`)
-        return
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(sf)
+  new Visitor({
+    CallExpression(node) {
+      if (!["it", "test"].includes(calleeName(node))) return
+      const fn = node.arguments.find(
+        (a) => a.type === "ArrowFunctionExpression" || a.type === "FunctionExpression",
+      )
+      if (fn?.body.type !== "BlockStatement") return
+      const name = `t${++count}`
+      const line = text.slice(0, node.start).split("\n").length
+      const title = node.arguments[0]
+      titles.set(name, `${file}:${line} ${text.slice(title.start, title.end).slice(0, 110)}`)
+      out.push(`async function ${name}() ${text.slice(fn.body.start, fn.body.end)}\n`)
+    },
+  }).visit(parseSync(file, text).program)
   if (out.length > 0) {
     mkdirSync(mirror, { recursive: true })
     writeFileSync(join(mirror, file.replaceAll("/", "__")), out.join("\n"))

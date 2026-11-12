@@ -14,9 +14,9 @@ catalog:
   ajv: ^8.20.0
   json-schema-to-typescript: ^16.0.0
   jsonc-parser: ^3.3.1
-  tsdown: ^0.23.2
+  tsdown: ^0.23.7
   tsx: ^4.23.15
-  typescript: ^6.0.3
+  typescript: ^7.0.2
   vitest: ^5.0.5
 
 overrides:

@@ -6,10 +6,7 @@
 //   node scripts/check-references.mjs [pathspecs…]
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { createRequire } from "node:module"
-import { join } from "node:path"
-
-const ts = createRequire(join(process.cwd(), "package.json"))("typescript")
+import { parseSync, Visitor } from "oxc-parser"
 
 const DOCUMENTS = execFileSync("git", ["ls-files", "docs/*.md", "CONTRIBUTING.md", "CLAUDE.md"], {
   encoding: "utf8",
@@ -105,42 +102,31 @@ function scanSchema(file, text) {
 }
 
 function scanScript(file, text) {
-  const kind = file.endsWith(".tsx")
-    ? ts.ScriptKind.TSX
-    : /\.(m|c)?js$/.test(file)
-      ? ts.ScriptKind.JS
-      : ts.ScriptKind.TS
-  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind)
-  const lineOf = (pos) => sf.getLineAndCharacterOfPosition(pos).line + 1
-  const seen = new Set()
-  const visit = (node) => {
-    if (node.kind === ts.SyntaxKind.JsxText) return
-    for (const range of [
-      ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
-      ...(ts.getTrailingCommentRanges(text, node.end) ?? []),
-    ]) {
-      if (seen.has(range.pos)) continue
-      seen.add(range.pos)
-      const body = text.slice(range.pos, range.end)
-      if (REFERENCE.test(body)) report(file, lineOf(range.pos), "comment", body)
-    }
-    if (ts.isCallExpression(node) && isTitled(node)) {
-      const title = node.arguments[0]
-      const body =
-        title && (ts.isStringLiteralLike(title) || ts.isTemplateExpression(title))
-          ? title.getText(sf)
-          : null
-      if (body !== null && REFERENCE.test(body))
-        report(file, lineOf(title.getStart(sf)), "title", body)
-    }
-    for (const child of node.getChildren(sf)) visit(child)
+  const { program, comments } = parseSync(file, text)
+  const lineOf = (offset) => text.slice(0, offset).split("\n").length
+  for (const { start, end } of comments) {
+    const body = text.slice(start, end)
+    if (REFERENCE.test(body)) report(file, lineOf(start), "comment", body)
   }
-  visit(sf)
+  new Visitor({
+    CallExpression(node) {
+      const title = node.arguments[0]
+      if (!isTitled(node) || !isTitleText(title)) return
+      const body = text.slice(title.start, title.end)
+      if (REFERENCE.test(body)) report(file, lineOf(title.start), "title", body)
+    },
+  }).visit(program)
 }
 
 function isTitled(node) {
-  let callee = node.expression
-  while (ts.isCallExpression(callee)) callee = callee.expression
-  while (ts.isPropertyAccessExpression(callee)) callee = callee.expression
-  return ts.isIdentifier(callee) && ["describe", "it", "test"].includes(callee.text)
+  let callee = node.callee
+  while (callee.type === "CallExpression") callee = callee.callee
+  while (callee.type === "MemberExpression") callee = callee.object
+  return callee.type === "Identifier" && ["describe", "it", "test"].includes(callee.name)
+}
+
+function isTitleText(node) {
+  return (
+    node?.type === "TemplateLiteral" || (node?.type === "Literal" && typeof node.value === "string")
+  )
 }

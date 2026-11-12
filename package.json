@@ -34,6 +34,7 @@
     "@changesets/cli": "catalog:",
     "ajv": "catalog:",
     "json-schema-to-typescript": "catalog:",
+    "oxc-parser": "^0.158.0",
     "tsdown": "catalog:",
     "tsx": "catalog:",
     "turbo": "^2.11.10",
