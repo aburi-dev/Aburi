@@ -1,5 +1,11 @@
 # @aburi/framework-express
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.5.1
 
 ### Patch Changes
