@@ -34,8 +34,9 @@ controller, service, and repository reads as one section.
 **Terminal.** Coloured warnings and errors and a progress line on an interactive terminal,
 honouring `NO_COLOR`, `FORCE_COLOR` and CI, with stdout left plain for pipes.
 
-**Delivery.** `@aburi/cli` on npm, and `@aburi/github-action` for pull request
-comments.
+**Delivery.** `@aburi/cli` on npm, `@aburi/github-action` for pull request
+comments, and `@aburi/mcp`, an MCP server through which an AI coding agent asks
+what its edits did, what a component exposes, or what one symbol reaches.
 
 **Performance.** Measured monthly against nine public repositories at pinned
 commits, from `zustand`'s 49 files to `cal-com`'s 5,002. On a 4-core runner a
@@ -57,7 +58,7 @@ file on the main thread.
 | TypeScript and JavaScript only | Other languages planned below |
 | Call resolution is syntactic unless a language server is configured — 6–29% of call sites resolve on public repositories | Opt-in [LSP enrichment](./design/lsp-enrichment.md) (`lsp.enabled` with `lsp.servers.ts`) resolves `this.` / `super.` calls; interface-typed receivers are not resolved yet |
 | No graph visualisation beyond the workspace overview and Slice View | No design yet |
-| No LLM integration | Deliberate. Aburi produces the facts, and interpreting them belongs to a separate tool. |
+| No LLM integration | Deliberate. Aburi produces the facts, and interpreting them belongs to a separate tool, which the [MCP server](./guide/ai-agents.md) hands them to. |
 
 ## Next
 
@@ -90,7 +91,6 @@ Nothing here is committed.
 - A merge-base ref form, `aburi diff main...HEAD`, comparing the head against
   the point it branched from the way a GitHub compare URL reads. Today the
   three-dot spelling is rejected with a message pointing at `git merge-base`.
-- Expose Aburi as an MCP server, callable from AI coding agents.
 - `aburi review`, feeding the diff to a model for automated review comments.
 - Name Slice View clusters automatically. The report heads each with the
   members its calls start from today.
