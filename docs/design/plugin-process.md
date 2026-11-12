@@ -6,7 +6,7 @@ requests over stdio.
 
 See: [`lang-plugin.md`](./lang-plugin.md) §3 (the lifecycle that opens and closes it), §4.2 (the
 opaque tree), §7 (what a failed file costs), §8 (parser options)
-Implementation: [`packages/plugin-process`](https://github.com/kage1020/Aburi/tree/main/packages/plugin-process)
+Implementation: [`packages/plugin-process`](https://github.com/aburi-dev/Aburi/tree/main/packages/plugin-process)
 
 ---
 

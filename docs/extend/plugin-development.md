@@ -216,7 +216,7 @@ scan with exit `3`, naming your plugin, so it is the place to fail when a tool
 you need is missing.
 
 That is what lets a plugin use a parser or type checker written in Python, Go or
-anything else. [`@aburi/plugin-process`](https://github.com/kage1020/Aburi/tree/main/packages/plugin-process)
+anything else. [`@aburi/plugin-process`](https://github.com/aburi-dev/Aburi/tree/main/packages/plugin-process)
 runs it as one process per scan, or one per parser worker when the scan extracts on several, and
 sends it JSON-RPC requests over stdio:
 
