@@ -8,16 +8,28 @@ import {
   type Visibility,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild, hasChildOfType, hasExportModifier, statementParent } from "./ast-helpers"
+import { findChild, hasChildOfType, statementParent } from "./ast-helpers"
 import { hasPrivateName } from "./class-members"
 
 export function exportEvidence(node: Node): string[] {
-  if (isDefaultExport(node)) return [EXPORT_DEFAULT_DERIVED_BY]
-  return hasExportModifier(node) ? [EXPORT_KEYWORD_DERIVED_BY] : []
+  return statementExportEvidence(statementParent(node))
+}
+
+// A default export's value read through a wrapper has the wrapper for a parent, so its reader is
+// handed the statement.
+export function statementExportEvidence(statement: Node | null): string[] {
+  if (statement?.type !== "export_statement") return []
+  return [
+    hasChildOfType(statement, "default") ? EXPORT_DEFAULT_DERIVED_BY : EXPORT_KEYWORD_DERIVED_BY,
+  ]
 }
 
 export function topLevelVisibility(node: Node): Visibility {
-  return exportEvidence(node).length > 0 ? "public" : "internal"
+  return exportVisibility(exportEvidence(node))
+}
+
+export function exportVisibility(evidence: readonly string[]): Visibility {
+  return evidence.length > 0 ? "public" : "internal"
 }
 
 export function memberVisibility(member: Node): Visibility {
