@@ -65,6 +65,8 @@ export function parseArgs(argv) {
     warmup: 1,
     diff: true,
     workDir: DEFAULT_WORK_DIR,
+    baseline: null,
+    previous: null,
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -73,9 +75,28 @@ export function parseArgs(argv) {
     else if (arg === "--warmup") options.warmup = requireCount(argv, ++i, "--warmup", 0)
     else if (arg === "--no-diff") options.diff = false
     else if (arg === "--work-dir") options.workDir = resolve(requireValue(argv, ++i, "--work-dir"))
+    else if (arg === "--baseline") options.baseline = resolve(requireValue(argv, ++i, "--baseline"))
+    else if (arg === "--previous") options.previous = resolve(requireValue(argv, ++i, "--previous"))
     else throw new Error(`Unknown flag: ${arg}`)
   }
   return options
+}
+
+/** The previous sweep's numbers for `repo`, or null where it failed or measured other pins. */
+export function previousResultFor(previous, repo) {
+  const result = previous?.results.find((entry) => entry.id === repo.id)
+  if (result === undefined || result.failed || result.head !== repo.head) return null
+  return {
+    scanWallMsMedian: result.scan.wallMsMedian,
+    diffWallMs: result.base === repo.base ? (result.diff?.wallMs ?? null) : null,
+    irHashes: result.scan.irHashes ?? [result.scan.irHash],
+  }
+}
+
+/** Whether the baseline build wrote, at every run, the one IR the previous sweep recorded. */
+export function reproducesPrevious(baselineScan, previousResult) {
+  if (previousResult === null || baselineScan.failed) return null
+  return new Set([...baselineScan.irHashes, ...previousResult.irHashes]).size === 1
 }
 
 function formatMiB(kb) {
@@ -101,6 +122,17 @@ function row(cells) {
 
 function dashes(count) {
   return Array.from({ length: count }, () => "—")
+}
+
+function formatChange(beforeMs, afterMs) {
+  if (beforeMs == null || afterMs == null) return "—"
+  const percent = ((afterMs - beforeMs) / beforeMs) * 100
+  const sign = percent < 0 ? "−" : "+"
+  return `${formatSeconds(beforeMs)} → ${formatSeconds(afterMs)} s (${sign}${Math.abs(percent).toFixed(0)}%)`
+}
+
+function formatRun(environment) {
+  return `${environment.cpus}× ${environment.cpuModel} · Node ${environment.node}`
 }
 
 function formatExitCodes(scan) {
@@ -255,6 +287,63 @@ export function renderReport(report) {
       )
     }
   }
+  if (report.previous || report.baseline) lines.push(...renderComparison(report))
   lines.push("")
   return `${lines.join("\n")}\n`
+}
+
+function renderComparison(report) {
+  const { previous, baseline, environment, results } = report
+  const lines = ["", "## Against the previous run", ""]
+  if (baseline) {
+    lines.push(
+      `**Same runner**: \`${baseline.commit.slice(0, 8)}\`${baseline.dirty ? " + uncommitted changes" : ""} ` +
+        "was rebuilt on this runner and measured interleaved with this build, scan by scan, with " +
+        "the same runs and warmup. **Previous IRs** says whether it wrote, at every run, the IR the " +
+        "previous run recorded for the repository (n/a where the pins differ).",
+    )
+    lines.push("")
+  }
+  if (previous) {
+    lines.push(
+      `**Across runners**: the ${previous.startedAt.slice(0, 10)} run measured ` +
+        `${previous.commit ? `\`${previous.commit.slice(0, 8)}\`` : "an unrecorded commit"}` +
+        `${previous.dirty ? " + uncommitted changes" : ""} on ${formatRun(previous.environment)}; ` +
+        `this run is on ${formatRun(environment)}. A wall time that moved here may have moved with the runner.`,
+    )
+    lines.push("")
+  }
+  const sameRunner = baseline ? ["Scan, same runner", "Diff, same runner", "Previous IRs"] : []
+  const acrossRunners = previous ? ["Scan, across runners", "Diff, across runners"] : []
+  lines.push(row(["Repo", ...sameRunner, ...acrossRunners]))
+  lines.push(`|---|${baseline ? "---:|---:|:--:|" : ""}${previous ? "---:|---:|" : ""}`)
+  for (const result of results) {
+    if (result.failed) {
+      lines.push(row([`\`${result.id}\``, ...dashes(sameRunner.length + acrossRunners.length)]))
+      continue
+    }
+    lines.push(
+      row([
+        `\`${result.id}\``,
+        ...(baseline ? sameRunnerCells(result) : []),
+        ...(previous
+          ? [
+              formatChange(result.previous?.scanWallMsMedian, result.scan.wallMsMedian),
+              formatChange(result.previous?.diffWallMs, result.diff?.wallMs),
+            ]
+          : []),
+      ]),
+    )
+  }
+  return lines
+}
+
+function sameRunnerCells({ baseline, scan, diff }) {
+  if (baseline === undefined) return dashes(3)
+  if (baseline.failed) return [`✗ ${baseline.failed}`, "—", "—"]
+  return [
+    formatChange(baseline.scan.wallMsMedian, scan.wallMsMedian),
+    formatChange(baseline.diff?.wallMs, diff?.wallMs),
+    baseline.reproduced == null ? "n/a" : baseline.reproduced ? "✓" : "✗",
+  ]
 }

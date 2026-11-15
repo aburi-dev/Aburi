@@ -1,8 +1,11 @@
+import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   countRecoverableParseErrors,
   parseArgs,
+  previousResultFor,
   renderReport,
+  reproducesPrevious,
   scanRunFault,
   scrubPaths,
   summariseScans,
@@ -115,6 +118,78 @@ describe("parseArgs", () => {
     expect(parseArgs(["--no-diff"]).diff).toBe(false)
     expect(parseArgs(["--only", "zod,nest"]).only).toEqual(["zod", "nest"])
   })
+
+  it("compares against nothing unless told, and resolves what it is told to compare against", () => {
+    expect(parseArgs([])).toMatchObject({ baseline: null, previous: null })
+    expect(
+      parseArgs(["--baseline", "prev", "--previous", "results/2026-11-01.json"]),
+    ).toMatchObject({
+      baseline: resolve("prev"),
+      previous: resolve("results/2026-11-01.json"),
+    })
+    expect(() => parseArgs(["--baseline"])).toThrow(/--baseline/)
+    expect(() => parseArgs(["--previous"])).toThrow(/--previous/)
+  })
+})
+
+describe("previousResultFor", () => {
+  const repo = { id: "zod", head: "h1", base: "b1" }
+  const sweep = (...results) => ({ results })
+  const measured = (overrides = {}) => ({
+    id: "zod",
+    head: "h1",
+    base: "b1",
+    scan: { wallMsMedian: 2650, irHashes: ["x", "x"] },
+    diff: { wallMs: 4080 },
+    ...overrides,
+  })
+
+  it("takes the previous sweep's medians and hashes for the repository at the same pins", () => {
+    expect(previousResultFor(sweep(measured()), repo)).toEqual({
+      scanWallMsMedian: 2650,
+      diffWallMs: 4080,
+      irHashes: ["x", "x"],
+    })
+  })
+
+  it("reads a sweep recorded before every hash was kept by its one hash", () => {
+    const earlier = measured({ scan: { wallMsMedian: 2650, irHash: "x" } })
+    expect(previousResultFor(sweep(earlier), repo)?.irHashes).toEqual(["x"])
+  })
+
+  it.each([
+    ["no previous sweep", null],
+    ["a sweep that left the repository out", sweep(measured({ id: "nest" }))],
+    ["a sweep where it failed", sweep(measured({ failed: "scan" }))],
+    ["a sweep at another head", sweep(measured({ head: "h0" }))],
+  ])("has nothing to compare with %s", (_, previous) => {
+    expect(previousResultFor(previous, repo)).toBeNull()
+  })
+
+  it("compares the scan but not the diff across another base", () => {
+    expect(previousResultFor(sweep(measured({ base: "b0" })), repo)).toMatchObject({
+      scanWallMsMedian: 2650,
+      diffWallMs: null,
+    })
+  })
+})
+
+describe("reproducesPrevious", () => {
+  const previous = { irHashes: ["x", "x", "x"] }
+
+  it("holds when every run wrote the IR the previous sweep recorded", () => {
+    expect(reproducesPrevious({ irHashes: ["x", "x"] }, previous)).toBe(true)
+  })
+
+  it("fails when any run wrote another", () => {
+    expect(reproducesPrevious({ irHashes: ["x", "y"] }, previous)).toBe(false)
+    expect(reproducesPrevious({ irHashes: ["y", "y"] }, previous)).toBe(false)
+  })
+
+  it("says nothing without a previous sweep at these pins, or a baseline scan", () => {
+    expect(reproducesPrevious({ irHashes: ["x"] }, null)).toBeNull()
+    expect(reproducesPrevious({ failed: "scan" }, previous)).toBeNull()
+  })
 })
 
 describe("renderReport — the Diff table", () => {
@@ -165,5 +240,114 @@ describe("renderReport — the Diff table", () => {
       "|---|---:|---:|---:|---:|---:|---:|---:|",
     ])
     expect(table.join("\n")).not.toContain("size cap")
+  })
+})
+
+describe("renderReport — against the previous run", () => {
+  const environment = { node: "v24.22.1", cpus: 4, cpuModel: "XEON", totalMemGiB: 16 }
+  const measured = (id, overrides = {}) => ({
+    id,
+    scan: { wallMsMedian: 2390, peakRssKb: 120_000, exitCode: 0, warnings: "" },
+    metrics: { totalCalls: 0, skippedByReason: {} },
+    diff: { wallMs: 5400, peakRssKb: 150_000, exitCode: 0, summary: {} },
+    ...overrides,
+  })
+  const sweep = (extra, ...results) => ({
+    startedAt: "2026-12-01T03:00:00.000Z",
+    generator: "0.6.0",
+    commit: "ceaa9240aaaa",
+    dirty: false,
+    options: { runs: 3, warmup: 1, diff: true },
+    environment,
+    ...extra,
+    results,
+  })
+  const previous = {
+    startedAt: "2026-11-01T03:05:43.655Z",
+    commit: "3b917f21bbbb",
+    dirty: false,
+    environment: { node: "v24.21.0", cpus: 4, cpuModel: "EPYC", totalMemGiB: 16 },
+  }
+  const baseline = { commit: "3b917f21bbbb", dirty: false }
+
+  function comparison(report) {
+    const text = renderReport(report)
+    const at = text.indexOf("## Against the previous run")
+    return at === -1 ? null : text.slice(at).trimEnd().split("\n")
+  }
+
+  it("puts the same-runner change beside the change across runners, naming both runners", () => {
+    const lines = comparison(
+      sweep(
+        { previous, baseline },
+        measured("zod", {
+          previous: { scanWallMsMedian: 2650, diffWallMs: 4080 },
+          baseline: {
+            scan: { wallMsMedian: 1990 },
+            diff: { wallMs: 4080 },
+            reproduced: true,
+          },
+        }),
+        measured("nest", {
+          previous: null,
+          baseline: { scan: { wallMsMedian: 2390 }, reproduced: null },
+        }),
+        measured("hono", { previous: null, baseline: { failed: "init", fault: "exit 2" } }),
+        { id: "cal-com", failed: "scan" },
+      ),
+    )
+
+    expect(lines[2]).toMatch(/^\*\*Same runner\*\*: `3b917f21` was rebuilt on this runner/)
+    expect(lines[4]).toBe(
+      "**Across runners**: the 2026-11-01 run measured `3b917f21` on 4× EPYC · Node v24.21.0; " +
+        "this run is on 4× XEON · Node v24.22.1. A wall time that moved here may have moved with the runner.",
+    )
+    expect(lines.slice(6)).toEqual([
+      "| Repo | Scan, same runner | Diff, same runner | Previous IRs | Scan, across runners | Diff, across runners |",
+      "|---|---:|---:|:--:|---:|---:|",
+      "| `zod` | 1.99 → 2.39 s (+20%) | 4.08 → 5.40 s (+32%) | ✓ | 2.65 → 2.39 s (−10%) | 4.08 → 5.40 s (+32%) |",
+      "| `nest` | 2.39 → 2.39 s (+0%) | — | n/a | — | — |",
+      "| `hono` | ✗ init | — | — | — | — |",
+      "| `cal-com` | — | — | — | — | — |",
+    ])
+  })
+
+  it("gives only the columns it has a measurement for", () => {
+    const acrossOnly = comparison(
+      sweep(
+        { previous },
+        measured("zod", { previous: { scanWallMsMedian: 2650, diffWallMs: null } }),
+      ),
+    )
+    expect(acrossOnly.slice(4)).toEqual([
+      "| Repo | Scan, across runners | Diff, across runners |",
+      "|---|---:|---:|",
+      "| `zod` | 2.65 → 2.39 s (−10%) | — |",
+    ])
+
+    const sameOnly = comparison(
+      sweep(
+        { baseline },
+        measured("zod", { baseline: { scan: { wallMsMedian: 2390 }, reproduced: false } }),
+      ),
+    )
+    expect(sameOnly.slice(4)).toEqual([
+      "| Repo | Scan, same runner | Diff, same runner | Previous IRs |",
+      "|---|---:|---:|:--:|",
+      "| `zod` | 2.39 → 2.39 s (+0%) | — | ✗ |",
+    ])
+  })
+
+  it("names a previous run with uncommitted changes, or with no commit recorded", () => {
+    const dirty = comparison(sweep({ previous: { ...previous, dirty: true } }, measured("zod")))
+    expect(dirty[2]).toContain("measured `3b917f21` + uncommitted changes on")
+    const unrecorded = comparison(
+      sweep({ previous: { ...previous, commit: null } }, measured("zod")),
+    )
+    expect(unrecorded[2]).toContain("measured an unrecorded commit on")
+  })
+
+  it("leaves the section out of a sweep that compared against nothing", () => {
+    expect(comparison(sweep({}, measured("zod")))).toBeNull()
   })
 })

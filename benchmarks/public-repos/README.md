@@ -33,6 +33,8 @@ node benchmarks/public-repos/run.mjs        # every repo, 1 warmup + 3 measured 
 | `--warmup <n>` | Discarded runs before measuring (default 1 — the first run pays the page-cache miss) |
 | `--no-diff` | Skip the `aburi diff base..head` measurement |
 | `--work-dir <path>` | Where clones live (default `$TMPDIR/aburi-bench-work`) |
+| `--previous <results.json>` | A previous sweep's results file, whose medians the report compares with across runners |
+| `--baseline <aburi checkout>` | Another built Aburi checkout, measured beside this one on this machine (see below) |
 
 Every flag value is checked before the build and the clones are paid for, and an
 `--only` id `repos.json` does not carry is an error rather than a filter: a sweep
@@ -56,16 +58,19 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
 
 ## What the harness does per repo
 
-1. Check the clone out at the pinned `head`, and `git clean -xfd` it — keeping
-   `.aburi/` and `aburi.json`, which are the harness's own and have to outlive the
-   checkout.
+1. Check the clone out at the pinned `base` and then at `head`, and `git clean -xfd`
+   it — keeping `.aburi/` and `aburi.json`, which are the harness's own and have to
+   outlive the checkout. Checking the base out first fetches its blobs into the
+   partial clone, so the measured diff never waits on the network.
 2. Run `aburi init` (measured) and keep what it detected.
 3. Rewrite the detected plugin refs to `file://` URLs for this checkout's built
    plugins. A benchmark clone has no `node_modules`, and installing the workspace
    into nine unrelated repositories would cost more than the measurement and risk
    measuring a published version instead of the working tree.
-4. Run `aburi scan --no-timestamp` `--warmup` + `--runs` times, removing the IR
-   before each run and hashing the one each measured run wrote.
+4. Run `aburi scan --no-timestamp --output-dir .aburi` `--warmup` + `--runs` times,
+   removing the IR before each run and hashing the one each measured run wrote. The
+   directory is named because a build from before `.aburi` became the default writes
+   to `out/`.
 5. Read the IR for the outcome counters.
 6. Run `aburi diff <base>..<head>` once, with `--config` pointing at the
    rewritten config — the base ref is scanned inside a throwaway `git worktree`
@@ -74,6 +79,15 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
    the `diff.md` it writes, which has no size cap, goes in the Diff table: a report
    over the 65,507 bytes the GitHub Action posts by default reaches a pull request
    shortened, and the timing columns cannot show a report that grew.
+
+With `--baseline`, the baseline build runs `aburi init` first, into a config of
+its own beside the clone (`<work-dir>/<repo>.baseline.json`) pointing at its own
+plugins, and every scan of step 4 runs once with each build in turn — baseline,
+this build, baseline, this build — after the same warmup, so a page cache that
+warms or a neighbour that wakes falls on both alike. Step 6 runs once with each.
+The baseline's IR hashes are then checked against the ones `--previous` recorded
+for the repository at the same pins, which says whether that commit still writes
+the IR its own run wrote.
 
 Each measurement runs in its own process (`bench-child.mjs`) so
 `process.resourceUsage().maxRSS` reports the peak RSS of that run alone. The
@@ -132,8 +146,20 @@ from the commit it runs on, keeps its work directory in the runner's temporary
 space, uploads `results/` as an artifact, and opens a pull request holding the new
 `results/<date>.{json,md}` with the rendered tables as its body.
 
-The pull request is where the reading happens. A wall time that moved may mean the
-code moved or may mean the runner did — the counters are what carry across runners,
-and the workflow deliberately does not decide which one it was. Fixing the runner to
+GitHub assigns whatever hardware `ubuntu-latest` has that day, and two monthly
+runs have landed on different CPUs and Node patch releases, so a month-over-month
+wall time moves with the runner as well as the code. The workflow therefore reads
+the newest `results/*.json`, checks the commit it recorded out into a worktree,
+builds it, and passes both to the sweep (`--previous`, `--baseline`). The report's
+**Against the previous run** section then gives two changes per repository: the
+same-runner one, previous commit → this commit on this runner, which is the code's;
+and the across-runners one, last month's median → this one, labelled as crossing
+runners and naming both CPUs and Node versions. A previous results file that
+records no commit, or a baseline that fails to build, leaves the sweep comparing
+across runners only.
+
+The pull request is where the reading happens. The counters are what carry across
+runners, and the same-runner column is what separates the code from the hardware;
+the workflow does not decide what a move means. Fixing the runner to
 `ubuntu-latest` and the commits to `repos.json` is what keeps the comparison honest;
 neither changes without a reason written down.
