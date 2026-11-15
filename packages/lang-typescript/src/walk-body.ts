@@ -107,6 +107,15 @@ function parametersOf(body: Node): Node | null {
   return body.parent?.childForFieldName("parameters") ?? null
 }
 
+export function parameterDefaultsRecordAnything(body: Node): boolean {
+  const parameters = parametersOf(body)
+  if (parameters === null) return false
+  const rules: Rule[] = []
+  const calls: CallCandidate[] = []
+  visitParameterDefaults(parameters, rules, calls)
+  return rules.length > 0 || calls.length > 0
+}
+
 function visitParameterDefaults(parameters: Node, rules: Rule[], calls: CallCandidate[]): void {
   for (const parameter of parameters.namedChildren) {
     if (parameter === null) continue

@@ -113,7 +113,7 @@ Excluded from the Markdown projection; shown only via `aburi explain <symbol>`.
 | class with only field declarations, no methods or static blocks, no boundary decorator | `"pure DTO"` | the language plugin |
 | interface declaration | `"interface (data model)"` | the core |
 | type alias declaration | `"type alias"` | the core |
-| empty function/method (body is `{}`) | `"empty body"` | the core |
+| empty function/method (no body, or a body of `{}` beside no parameter default that holds a call or a rule) | `"empty body"` | the core (no body); the language plugin (`{}`) |
 | re-export only (`export { X } from './y'`) | `"re-export"` | the core |
 | single-literal class (only `static` / `readonly` constant fields) | `"pure constants"` | the language plugin |
 
@@ -371,6 +371,7 @@ Properties the extraction pipeline must satisfy.
 | B4 | `export { x } from './y'` | `dropped: true, dropReason: "re-export"` |
 | B5 | class with a boundary decorator (`@Controller`), even without methods | `dropped: false` |
 | B6 | a file whose top level is `i18n.init({ lng: "en" })`, with and without `suppress: ["i18n"]` | its `<module>` is `dropped: false` either way, with the call `i18n.init` without the suppression and none under it (§10.9) |
+| B7 | `export function g(x = f()) {}`, `class C { m(x = f()) {} }`, `class C { handle = withAuth((x = count()) => {}) }`, `export function g({ a = f() } = {}) {}` | `dropped: false`, with `f` (or `count`) in the function's or member's `calls`. A parameter default runs on every call that omits its argument and is walked on the function's own Symbol (`lang-plugin.md` LP20d), so a body of `{}` beside one is not empty: dropping it took the default's calls and effects with it, and no diagnostic said so. A default that gives the walk nothing (`g(x = 1) {}`, `g({ a } = {}) {}`) leaves the hint as it was, and so does a parameter's decorator (`m(@Inject(t()) x) {}`), which runs with the class and stays on it |
 
 ### 8.3 Node-level (Category C)
 
