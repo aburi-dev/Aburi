@@ -916,6 +916,53 @@ describe("a changed Symbol's middleware rows", () => {
   })
 })
 
+describe("a changed Symbol's effects reordered row", () => {
+  const save = effect({ id: "db.write", target: "a.save", plugin: "effects-prisma", line: 2 })
+  const log = effect({ id: "log.write", target: "b.log", plugin: "effects-pino", line: 3 })
+  const viaCallee = effect({
+    id: "db.read",
+    target: "repo.find",
+    plugin: "effects-prisma",
+    propagated: true,
+    derivedFrom: ["ts:src/b.ts#b"],
+  })
+
+  it("names each side's locally detected effects in order, after the effect buckets, as the logic change's detail", () => {
+    const md = renderDelta(
+      {
+        apiChanged: false,
+        logicChanged: true,
+        effectsReordered: true,
+        effects: { ...none(), removed: [viaCallee] },
+        calls: { ...none(), added: [call({ target: "go", line: 9 })] },
+      },
+      { effects: [save, log, viaCallee] },
+      { effects: [log, save] },
+    )
+
+    expect(md).toContain(
+      "\n- effects reordered: db.write `a.save`, log.write `b.log` → log.write `b.log`, db.write `a.save`\n- calls added:",
+    )
+    expect(md).toContain("- effects removed:\n")
+    expect(md.indexOf("- effects removed:")).toBeLessThan(md.indexOf("- effects reordered:"))
+    expect(md).not.toContain("no field-level detail")
+  })
+
+  it.each([
+    ["false", { effectsReordered: false }],
+    ["absent, as a diff written before the flag left it", {}],
+  ])("writes no row when the flag is %s", (_label, flags) => {
+    const md = renderDelta(
+      { apiChanged: false, logicChanged: true, ...flags },
+      { effects: [save, log] },
+      { effects: [log, save] },
+    )
+
+    expect(md).not.toContain("reordered")
+    expect(md).toContain("logic fingerprint changed; no field-level detail was recorded")
+  })
+})
+
 describe("a changed Symbol's component, visibility and confidence rows", () => {
   it("sets each base value before the head one, the confidence row last", () => {
     const md = projectChanges([

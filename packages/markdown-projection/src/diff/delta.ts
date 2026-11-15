@@ -2,6 +2,7 @@ import {
   type ArrayDelta,
   type ComponentId,
   type Confidence,
+  type Effect,
   lastSegment,
   type MiddlewareDelta,
   type Signature,
@@ -41,6 +42,11 @@ export function renderDeltaBody(change: ChangedEntry): string[] {
   appendMiddlewareDelta(rows, delta.middleware, [before.middleware ?? [], after.middleware ?? []])
   appendArrayGroup(rows, "rules", delta.rules, RULES, [before.rules, after.rules])
   appendArrayGroup(rows, "effects", delta.effects, EFFECTS, [before.effects, after.effects])
+  if (delta.effectsReordered === true) {
+    rows.push(
+      `- effects reordered: ${localEffectOrder(before.effects)} → ${localEffectOrder(after.effects)}`,
+    )
+  }
   appendArrayGroup(rows, "calls", delta.calls, CALLS, [before.calls, after.calls])
   const explained = rows.length > nameRows || shortNameChanged || delta.visibilityChanged
   if (delta.componentChanged) {
@@ -158,6 +164,13 @@ function appendMiddlewareDelta(
   if (delta.reordered) {
     rows.push(`- middleware reordered: ${joinCode(before)} → ${joinCode(after)}`)
   }
+}
+
+function localEffectOrder(effects: readonly Effect[]): string {
+  return effects
+    .filter((effect) => effect.propagated !== true)
+    .map((effect) => `${effect.id} ${inlineCode(effect.target)}`)
+    .join(", ")
 }
 
 function qualifiedName(d: DecoratorLike): string {

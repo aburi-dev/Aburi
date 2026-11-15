@@ -46,6 +46,10 @@ export function computeSymbolDelta(
     confidenceChanged: base.confidence !== head.confidence,
     rules: diffRules(base.rules, head.rules, origins, fuzz),
     effects: diffEffects(base.effects, head.effects, origins),
+    effectsReordered: runsInAnotherOrder(
+      localEffectKeys(base.effects),
+      localEffectKeys(head.effects),
+    ),
     calls: diffCalls(base.calls, head.calls, origins, fuzz),
     decorators: diffDecorators(base.decorators, head.decorators, origins, fuzz),
     exportedAs: diffStringSet(exportNames(base), exportNames(head)),
@@ -256,10 +260,18 @@ function diffEffects(
 ): ArrayDelta {
   const [b, h] = identifyEach(base, head, origins, (effect, origin) => ({
     item: effect,
-    key: `${effect.id}::${effect.target}`,
+    key: effectKey(effect),
     line: effect.line === undefined ? 0 : effect.line - origin,
   }))
   return classifyArrayDelta(b, h, effectsEqual, Number.POSITIVE_INFINITY)
+}
+
+function localEffectKeys(effects: readonly Effect[]): string[] {
+  return effects.filter((effect) => effect.propagated !== true).map(effectKey)
+}
+
+function effectKey(effect: Effect): string {
+  return `${effect.id}::${effect.target}`
 }
 
 function effectsEqual(a: Effect, b: Effect): boolean {
@@ -368,10 +380,17 @@ function oneSidedSignatureDelta(present: Signature, bucket: "added" | "removed")
 }
 
 function diffMiddleware(base: readonly string[], head: readonly string[]): MiddlewareDelta {
-  const added = beyondCounts(head, base)
-  const removed = beyondCounts(base, head)
-  const shared = base.length - removed.length
-  return { added, removed, reordered: longestCommonSubsequence(base, head) < shared }
+  return {
+    added: beyondCounts(head, base),
+    removed: beyondCounts(base, head),
+    reordered: runsInAnotherOrder(base, head),
+  }
+}
+
+/** Whether the entries both lists hold, paired as multisets, appear in a different order. */
+function runsInAnotherOrder(base: readonly string[], head: readonly string[]): boolean {
+  const shared = base.length - beyondCounts(base, head).length
+  return longestCommonSubsequence(base, head) < shared
 }
 
 /** The occurrences in `side` that `other` holds no counterpart for, the earlier ones paired first. */

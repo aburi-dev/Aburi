@@ -240,6 +240,61 @@ describe("effects", () => {
   })
 })
 
+describe("effects run in another order", () => {
+  const save = effect({ id: "db.write", target: "a.save", plugin: "effects-prisma", line: 2 })
+  const log = effect({ id: "log.write", target: "b.log", plugin: "effects-pino", line: 3 })
+  const audit = effect({
+    id: "db.write",
+    target: "audit.create",
+    plugin: "effects-prisma",
+    line: 4,
+  })
+  const viaCallee = (target: string) =>
+    effect({
+      id: "db.read",
+      target,
+      plugin: "effects-prisma",
+      propagated: true,
+      derivedFrom: ["ts:src/b.ts#b"],
+    })
+  const effectsOf = (base: Effect[], head: Effect[]) => {
+    const delta = computeSymbolDelta(
+      symbolWith({ effects: base }, "a"),
+      symbolWith({ effects: head }, "b"),
+    )
+    return { reordered: delta.effectsReordered, effects: delta.effects }
+  }
+
+  it("flags a swap that pairs every entry, so the logic change has something to name", () => {
+    expect(effectsOf([save, log], [log, save])).toEqual({ reordered: true, effects: NOTHING })
+  })
+
+  it.each([
+    ["an effect moved past a repeat of another", [save, log, save], [save, save, log]],
+    [
+      "the entries both sides hold, past one added and one removed",
+      [audit, save, log],
+      [log, save, viaCallee("x")],
+    ],
+  ])("flags %s", (_label, base, head) => {
+    expect(effectsOf(base, head).reordered).toBe(true)
+  })
+
+  it.each([
+    ["the same order", [save, log], [save, log]],
+    ["an effect added between them", [save, log], [save, audit, log]],
+    ["the first of three removed", [save, log, audit], [log, audit]],
+    [
+      "propagated effects in another order",
+      [viaCallee("x"), viaCallee("y")],
+      [viaCallee("y"), viaCallee("x")],
+    ],
+    ["a local effect moved past a propagated one", [save, viaCallee("x")], [viaCallee("x"), save]],
+  ])("does not flag %s", (_label, base, head) => {
+    expect(effectsOf(base, head).reordered).toBe(false)
+  })
+})
+
 describe("calls", () => {
   const callDelta = (base: IRSymbol["calls"], head: IRSymbol["calls"]) =>
     computeSymbolDelta(symbolWith({ calls: base }, "a"), symbolWith({ calls: head }, "b"), {
