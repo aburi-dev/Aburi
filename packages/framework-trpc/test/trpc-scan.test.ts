@@ -112,6 +112,7 @@ describe("scan — a tRPC server laid out as create-t3-app writes it", () => {
     expect(byId.calls.map((call) => call.target)).toEqual([
       "publicProcedure.input.query",
       "publicProcedure.input",
+      "publicProcedure",
       "z.object",
       "z.string",
       "ctx.db.user.findUnique",
@@ -426,6 +427,95 @@ describe("scan — the middleware a procedure runs", () => {
     )
 
     expect(wrapped).toEqual([`requireRole("admin")`, "auth.required"])
+  })
+})
+
+describe("scan — the calls a procedure makes through what it is built on", () => {
+  const HEADER = [
+    SERVER_IMPORT,
+    `import * as auth from "./auth"`,
+    `import { createProcedure, isAdmin, protectedProcedure, requireRole } from "./trpc"`,
+  ]
+
+  /** `"<target> L<line> → <id>"` per call of `subject` that resolves, in `calls[]` order. */
+  async function resolvedCallsOf(initializer: string): Promise<string[]> {
+    await workspace.writeSource(
+      "src/trpc.ts",
+      [
+        SERVER_IMPORT,
+        "const t = initTRPC.create()",
+        "export const protectedProcedure = t.procedure.use(({ next }) => next())",
+        "export const isAdmin = t.middleware(({ next }) => next())",
+        "export function requireRole(role: string) { return isAdmin }",
+        "export function createProcedure(permission: string) { return protectedProcedure }",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/auth.ts",
+      [
+        SERVER_IMPORT,
+        "export const required = initTRPC.create().middleware(({ next }) => next())",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/server.ts",
+      [...HEADER, `export const subject = ${initializer}`].join("\n"),
+    )
+    return symbolNamed({ ir: await scanWorkspace() }, "subject").calls.flatMap((call) =>
+      call.resolved === null ? [] : [`${call.target} L${call.line} → ${call.resolved}`],
+    )
+  }
+
+  it.each([
+    [
+      "the base procedure a procedure is built on",
+      "protectedProcedure.query(list)",
+      ["protectedProcedure L4 → ts:src/trpc.ts#protectedProcedure"],
+    ],
+    [
+      "the base procedure a base procedure extends, then the middleware it adds",
+      "protectedProcedure.use(isAdmin)",
+      [
+        "protectedProcedure L4 → ts:src/trpc.ts#protectedProcedure",
+        "isAdmin L4 → ts:src/trpc.ts#isAdmin",
+      ],
+    ],
+    [
+      "a member path, written with a dot or a string key",
+      `t.procedure.use(auth.required).use(auth["required"]).query(list)`,
+      ["auth.required L4 → ts:src/auth.ts#required", "auth.required L4 → ts:src/auth.ts#required"],
+    ],
+    [
+      "a middleware factory once, as the call the body makes",
+      `t.procedure.use(requireRole("admin")).query(list)`,
+      ["requireRole L4 → ts:src/trpc.ts#requireRole"],
+    ],
+    [
+      "a base procedure factory once, as the call the body makes",
+      `createProcedure("read").query(list)`,
+      ["createProcedure L4 → ts:src/trpc.ts#createProcedure"],
+    ],
+    [
+      "nothing for the instance's procedure, an inline middleware, a spread or a computed member",
+      "t.procedure.use(({ next }) => next()).use(...isAdmin).use(auth[isAdmin]).query(list)",
+      [],
+    ],
+  ])("records %s", async (_label, initializer, calls) => {
+    expect(await resolvedCallsOf(initializer)).toEqual(calls)
+  })
+
+  it("records each at the line it is written on, among the body's calls by line", async () => {
+    const calls = await resolvedCallsOf(
+      ["protectedProcedure", "  .use(isAdmin)", '  .mutation(() => requireRole("admin"))'].join(
+        "\n",
+      ),
+    )
+
+    expect(calls).toEqual([
+      "protectedProcedure L4 → ts:src/trpc.ts#protectedProcedure",
+      "isAdmin L5 → ts:src/trpc.ts#isAdmin",
+      "requireRole L6 → ts:src/trpc.ts#requireRole",
+    ])
   })
 })
 

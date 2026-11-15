@@ -252,6 +252,7 @@ Some call shapes cannot be resolved statically — with or without LSP. The spec
 | `factory().method(...)` — receiver is an expression | `null` (untyped); LSP may resolve when return type is a concrete class | `medium` / `high` |
 | `arr.map(fn)` where `fn` is a locally-declared function passed by reference | The **outer** call (`arr.map`) is resolved as usual; the **passed** `fn` produces no edge from the caller Symbol (the reference itself is not a call). If `fn` is invoked later inside `arr.map`, that invocation lives in the library's implementation, not in workspace source. | n/a |
 | `await Promise.all([fn1(), fn2()])` | Each element `fn1()` / `fn2()` is a normal call and is resolved separately. `Promise.all` itself resolves to the external global. | as usual |
+| a reference a framework runs on the Symbol's behalf, added as a call by its framework plugin ([`lang-plugin.md`](./lang-plugin.md) §5.2.6): `protectedProcedure` and `isAdmin` in `protectedProcedure.use(isAdmin).mutation(fn)` | Resolved as a call written at the reference's line. Unlike the `fn` above, the framework runs it on every invocation of the Symbol, which is what the edge says. | as usual |
 | decorator invocation (`@Post('/x')`) | Not a call from `walkBody`'s point of view — decorators live in `Symbol.decorators[]`, not `Symbol.calls[]`. Framework plugins handle them separately. | n/a |
 
 Rule of thumb: **when the receiver is not a name, we do not fabricate a name for it**. A `null` `resolved` with an explicit reason is more useful downstream than a plausible but wrong id.

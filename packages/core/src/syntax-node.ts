@@ -4,6 +4,8 @@ import { DEFAULT_EXPORT_QNAME } from "./id"
 export interface SyntaxNode extends ChainNode<SyntaxNode> {
   readonly text: string
   readonly children: readonly (SyntaxNode | null)[]
+  /** `row` is 0-based, as tree-sitter counts it. */
+  readonly startPosition: { readonly row: number }
 }
 
 interface ValueNode<N> {
@@ -22,6 +24,7 @@ export function asSyntaxNode(value: unknown): SyntaxNode | null {
   if (typeof candidate.text !== "string") return null
   if (!Array.isArray(candidate.children) || !Array.isArray(candidate.namedChildren)) return null
   if (typeof candidate.childForFieldName !== "function") return null
+  if (typeof candidate.startPosition?.row !== "number") return null
   return candidate as SyntaxNode
 }
 

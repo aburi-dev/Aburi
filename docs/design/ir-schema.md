@@ -105,7 +105,7 @@ Normalization therefore happens **where a string enters the process**, not where
 | `toRelativePosix` (workspace detection) | the separator conversion and NFC of a found package directory, before `toDocumentPath` mints it as a `components[].roots` / `workspace.managers[].roots` entry |
 | `resolveComponents` (CLI config load) | `components[].roots` when they come from `aburi.json` rather than from detection |
 | `normalizePackagePath` (component detection) | `components[].publicApi` |
-| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target`, `effects[].target` or `stats.declinedCalls[].target`, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
+| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target`, `effects[].target` or `stats.declinedCalls[].target`, a framework plugin's added calls included, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
 | `buildDropCFilter` | the `suppress` / `keep` / `dropCallees` prefixes those call targets are matched against |
 
 Normalization is all these entry points do to a path. None of them converts a native path into a POSIX one, because the conversion is not decidable from the string: `\` is a separator on Windows and an ordinary filename character on POSIX, so a rewrite applied to every path silently renames any file whose name holds one. A caller that knows it holds a native path converts it — `toRelativePosix` does, on the platform separator, which is a separator exactly where a filename cannot hold one — and everything else hands over a path that is already POSIX and is validated as it stands.
@@ -574,6 +574,8 @@ A call that does not qualify as an effect.
 ```
 
 `resolved` is filled in by the call-resolution feature (separate document). The key is always present, `null` while unresolved.
+
+A framework plugin may add a call for a Symbol the framework runs on the Symbol's behalf by reference, which its body does not call: the base procedure a tRPC procedure is built on, and the middleware its `.use(isAdmin)` names ([`lang-plugin.md`](./lang-plugin.md) §5.2.6). It is recorded at the line the reference is written on and resolved as any call is, so the callee's effects propagate to the Symbol.
 
 `target` is the callee as the language plugin normalized it ([`lang-plugin.md`](./lang-plugin.md)
 §4.4), and one segment spelling is reserved: **`<computed>`** — exported as
