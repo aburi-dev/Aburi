@@ -69,12 +69,21 @@ describe("a class with no method is data", () => {
 
   it.each([
     [
-      "constants",
+      "a class of constants is merged with an interface",
       "export class P { static readonly A = 1 }\nexport interface P { b: string }",
       B("pure constants"),
     ],
-    ["a DTO", "export class P { a: string = '' }\nexport interface P { m(): void }", B("pure DTO")],
-  ])("reads only the class bodies of %s merged with an interface", async (_label, source, hint) => {
+    [
+      "a DTO is merged with an interface",
+      "export class P { a: string = '' }\nexport interface P { m(): void }",
+      B("pure DTO"),
+    ],
+    [
+      "an interface is merged with a DTO written after it",
+      "export interface P { m(): void }\nexport class P { a: string = '' }",
+      B("pure DTO"),
+    ],
+  ])("reads only the class bodies where %s", async (_label, source, hint) => {
     expect(await hintOf(source, "ts:src/a.ts#P")).toEqual(hint)
   })
 })
