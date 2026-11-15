@@ -104,7 +104,8 @@ whole pipeline, and its tests run against its own built bin.
   type wherever it is not a literal.
 - The docs deploy runs Wrangler through `pnpm dlx`. `cloudflare/wrangler-action` installs it with npm,
   which fails on the docs package's `workspace:` dependencies.
-- The docs site ships with a release, not a merge (`release.yml` calls `docs.yml`).
+- The docs site ships with a release, not a merge (`release.yml` calls `docs.yml`). Pull requests get
+  a preview version from `docs-preview.yml`, never a deploy.
 - `aburi diff <base>..<head>` scans the base on a worker thread that runs cli's built
   `dist/scan-worker.mjs`, and a scan whose parser pool is sized above 1 extracts on workers that run
   `dist/parse-worker.mjs`, even under a direct vitest run of `src`. Rebuild cli before that run, or

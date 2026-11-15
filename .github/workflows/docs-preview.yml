@@ -1,0 +1,101 @@
+name: Docs preview
+
+on:
+  pull_request:
+
+# Per pull request: a newer push supersedes the upload still building, and the alias serves whichever
+# upload finished last.
+concurrency:
+  group: docs-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: Upload
+    # Fork and Dependabot runs get no repository secrets, so there is no token to upload with.
+    if: >-
+      github.repository == 'aburi-dev/Aburi'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.upload.outputs.url }}
+    steps:
+      # Full history: VitePress' lastUpdated reads each page's date from the git log.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the site
+        run: pnpm --filter @aburi/docs build
+
+      # A version, not a deployment: aburi.dev keeps serving the release until docs.yml deploys the next one.
+      - name: Upload a preview version
+        id: upload
+        working-directory: docs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+          PREVIEW_ALIAS: pr-${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          pnpm dlx wrangler@4 versions upload --preview-alias "$PREVIEW_ALIAS" --message "Preview of $HEAD_SHA"
+          url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")
+          if [ -z "$url" ]; then
+            echo "::error::Wrangler uploaded the version but reported no alias URL. preview_urls in docs/wrangler.jsonc has to stay true for previews to be served." >&2
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Docs preview: $url" >> "$GITHUB_STEP_SUMMARY"
+
+  comment:
+    name: Link the preview
+    needs: upload
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Upsert the preview comment
+        uses: actions/github-script@v9
+        env:
+          PREVIEW_URL: ${{ needs.upload.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- aburi:docs-preview -->'
+            const { owner, repo } = context.repo
+            const pr = context.payload.pull_request
+            const body = [
+              marker,
+              `**Docs preview:** ${process.env.PREVIEW_URL}`,
+              '',
+              `Built from ${pr.head.sha} merged into \`${pr.base.ref}\`. Each push replaces it at the same URL.`,
+            ].join('\n')
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100,
+            })
+            const existing = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker),
+            )
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body })
+            }
