@@ -389,8 +389,9 @@ Grouped by file; within a file, ascending by source.startLine:
 A Symbol whose `confidence` is not `high` carries the badge (§3.5) at the end of its heading, as
 `#### \`XController\` *(class)* ⚠ medium`.
 
-A framework registration that names middleware ([`ir-schema.md`](./ir-schema.md) §5.8) carries a
-**Middleware** line after the Signature line, the names in the order they run:
+A Symbol that names middleware ([`ir-schema.md`](./ir-schema.md) §5.8), a framework registration or
+a tRPC procedure or base procedure, carries a **Middleware** line after the Signature line, the names
+in the order they run:
 ``**Middleware**: `requireAdmin`, `validate(query)` ``.
 
 A target called from more than one line is one **Calls** row that lists each line,
@@ -626,7 +627,7 @@ Entries with `delta.logicChanged: true`.
   - db.write: `prisma.audit.create` (L75) [effects-prisma]
 ```
 
-A registration whose middleware moved ([`diff-algorithm.md`](./diff-algorithm.md) §5.6) gets a row per bucket, after the export name rows and before the rule rows, the names inline: ``- middleware added: `rateLimit(…)` ``, ``- middleware removed: `requireAdmin` ``, and, when the names both sides hold run in another order, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, the base's whole list before the head's. A `delta.middleware` with nothing in either bucket and `reordered: false` writes no row. These rows explain the logic flag, so an entry whose only logic change is its middleware gets no "no field-level detail" row.
+An entry whose middleware moved ([`diff-algorithm.md`](./diff-algorithm.md) §5.6) gets a row per bucket, after the export name rows and before the rule rows, the names inline: ``- middleware added: `rateLimit(…)` ``, ``- middleware removed: `requireAdmin` ``, and, when the names both sides hold run in another order, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, the base's whole list before the head's. A `delta.middleware` with nothing in either bucket and `reordered: false` writes no row. These rows explain the logic flag, so an entry whose only logic change is its middleware gets no "no field-level detail" row.
 
 #### Delta rows
 
@@ -1107,7 +1108,7 @@ Renders L2 standalone. Printed to `stdout`, or written to the path `--output` na
 
 The title carries the confidence badge when the Symbol's `confidence` is not `high` (§3.5), as every Symbol heading does.
 
-A framework registration that names middleware gets a `## Middleware` section between Signature and Rules, holding the names in the order they run on one line, as the component page's **Middleware** line does (§5.2).
+A Symbol that names middleware gets a `## Middleware` section between Signature and Rules, holding the names in the order they run on one line, as the component page's **Middleware** line does (§5.2).
 
 A Symbol that makes a call an effect plugin declined to classify ([`effect-plugin.md`](./effect-plugin.md) §4.5) gets a `## Declined effects` section between Effects and Calls. It has one line for each `stats.declinedCalls` entry that names the Symbol, ordered by line, then target, then plugin: `` - `client.user.byId.query` (L12) [effects-trpc]: `effects-plugin:trpc:server-file-query` ``. The call is also listed under Calls, because a declined call is still a call. The section is the Symbol's view of the IR's record, so `aburi explain --no-rescan` shows it as well.
 
@@ -1214,7 +1215,7 @@ All Markdown projection output is **English, with fixed wording**.
 | MP21b | diff with a Slice of two test Symbols, a test singleton, and a Slice from a test Symbol into code under test | No Slice View for the first two; the third drawn with its test member |
 | MP21c | diff with one change outside test files and ten inside, projected with a budget that holds the first and the note but not the fold | The note names `🧪 Test files` as the one section omitted |
 | MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
-| MP22 | Symbol block, and `aburi explain` page, of a registration whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
+| MP22 | Symbol block, and `aburi explain` page, of a Symbol whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
 | MP23 | diff entry whose `delta.middleware` removed `requireAdmin`, added `rateLimit(…)`, or reordered `requireAdmin`, `audit` into `audit`, `requireAdmin` | ``- middleware removed: `requireAdmin` ``, ``- middleware added: `rateLimit(…)` ``, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, and no "no field-level detail" row; an unmoved `delta.middleware` writes no row |
 | MP24 | A table cell holding a pipe, a pipe behind one or two backslashes, a lone or a trailing backslash, or a line ending (LF, CR or CRLF, and behind one or two backslashes), written bare and in a code span; a cell where finding the spans is the question: an escaped backtick or backslash before a span, an unclosed run, a run that closes on another length, a lone backtick inside a double-backtick span, and text mixed with spans; the Components table with roots, and the call resolution table with targets and candidates, holding such values | Rendered, each cell reads as the same Markdown reads outside a table, and every row's cells are the ones it was written with, none spilling into the next: a code span holds the value byte for byte (§3.4.1) |
 | MP25 | A code span of a value holding backticks inside or at either end, a leading or trailing space, spaces alone, or a template literal; a fenced block whose source holds a run of three or four backticks, a `~~~` line, or a fence line indented two spaces; a rule's list item fencing a run of three backticks | Rendered, the span holds the value byte for byte and the block's content is the source (§3.4) |

@@ -1,7 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { diffIRs, diffOfEditWith, scanWith } from "@aburi/test-harness"
-import { changeLines, soleChange, useScratchWorkspace } from "@aburi/test-support"
-import type { DiffResult, SymbolChanged } from "@aburi/types"
+import { changeLines, onlyChange, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { expressFrameworkPlugin } from "../src/index"
 
@@ -24,11 +23,6 @@ const usersRoute = (...middleware: string[]) =>
   routes(
     `router.get("/users", ${[...middleware, "async (_req, res) => {\n  res.json([])\n}"].join(", ")})`,
   )
-
-function onlyChange(diff: DiffResult): SymbolChanged {
-  expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
-  return soleChange(diff.symbols, "changed")
-}
 
 describe("diff — a route's middleware", () => {
   it.each([

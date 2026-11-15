@@ -220,7 +220,7 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 - Reordering **locally detected effects** → changes (side-effect occurrence order carries meaning). The order of propagated effects is not read (§4.1)
 - Changing the expression of `rules[].condition` / `what` / `expr` itself → changes
 - Adding / removing an effect, or changing its `target` → changes, except that a propagated effect on a target another effect of the Symbol already names adds or removes nothing (§4.1)
-- Adding, removing, reordering or renaming a registration's **middleware** → changes. A route that loses `requireAdmin` runs a different request path, and before the field it moved only `syntax`, so the report filed it as a reformat
+- Adding, removing, reordering or renaming a Symbol's **middleware** → changes. A route that loses `requireAdmin` runs a different request path, and before the field it moved only `syntax`, so the report filed it as a reformat
 
 ### 4.5 Guaranteed invariance conditions (plugin-configuration robustness)
 
