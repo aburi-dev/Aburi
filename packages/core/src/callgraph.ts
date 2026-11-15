@@ -22,6 +22,7 @@ import {
 import { buildSymbolTable } from "./callgraph-index"
 import {
   collectParameterNames,
+  mappedTargetOf,
   newTrace,
   type ResolutionHit,
   type ResolutionRun,
@@ -51,6 +52,11 @@ export interface ResolveCallGraphInput {
   dynamicCallSites?: ReadonlySet<string>
   /** By `makeSymbolCallKey`: the named type each call's receiver is declared with. */
   receiverTypes?: ReceiverTypes
+  /**
+   * By importing file, then by bare specifier: the workspace-relative paths the language's import
+   * resolver maps the specifier to, probed in order as a relative specifier's path is.
+   */
+  specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
 }
 
 export interface ResolveCallGraphResult {
@@ -70,6 +76,8 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     table: buildSymbolTable(input.symbols),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
+    specifierPaths: input.specifierPaths ?? new Map(),
+    mappedTargets: new Map(),
   }
 
   const nextSymbols: IRSymbol[] = []
@@ -120,6 +128,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
               imports,
               trace,
               dynamicReceiver: dynamicCallSites.has(callSiteKey),
+              reachesWorkspace: (specifier) => mappedTargetOf(run, symbol, specifier) !== null,
             }),
           )
           return call
