@@ -626,3 +626,50 @@ describe("scan — extracted by several extractors, each with plugins of its own
     },
   )
 })
+
+describe("scan — the context a language's import resolver is created with", () => {
+  const INSTALLED = "/checkouts/head"
+  const modules: Modules = {
+    [CONSUMER]: importsDecorate("@app/common"),
+    "src/second.stub": importsDecorate("@app/common"),
+    [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+  }
+
+  async function installedRootsSeen(
+    input: { installedRoot?: string },
+    pooled: boolean,
+  ): Promise<(string | undefined)[]> {
+    await writeModules(modules)
+    const seen: (string | undefined)[] = []
+    const language = () =>
+      moduleLanguage({
+        createResolver: (ctx) => {
+          seen.push(ctx.installedRoot)
+          return { resolve: async (specifier) => ALIASES[specifier] ?? [] }
+        },
+      })
+    const plugins = () => ({
+      languages: [language()],
+      frameworks: [stubFrameworkPlugin()],
+      effects: [],
+      registry: noopRegistry,
+    })
+    await scanStubs(workspace.root, {
+      ...plugins(),
+      ...input,
+      ...(pooled ? { parsePool: extractorPool(2, plugins, (fileId) => fileId) } : {}),
+    })
+    return seen
+  }
+
+  it.each([
+    ["on the scan's own thread", false, [INSTALLED]],
+    ["on each extractor of a pool", true, [INSTALLED, INSTALLED]],
+  ])("carries the scan's installed root %s", async (_case, pooled, expected) => {
+    expect(await installedRootsSeen({ installedRoot: INSTALLED }, pooled)).toEqual(expected)
+  })
+
+  it("carries none when the scan has none", async () => {
+    expect(await installedRootsSeen({}, false)).toEqual([undefined])
+  })
+})

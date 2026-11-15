@@ -72,7 +72,7 @@ export interface ScanOptions {
   configPath?: string
   pinnedConfig?: PinnedConfig
   pluginRefRoot?: string
-  /** Absolute: the checkout whose installed dependencies stand in for the workspace's, which has none. */
+  /** Handed to the scan as its `installedRoot`. */
   installedRoot?: string
   outputDir?: string
   format?: "json" | "md" | "both"

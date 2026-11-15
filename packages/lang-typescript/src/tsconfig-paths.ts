@@ -1,14 +1,16 @@
 import { readFile, realpath } from "node:fs/promises"
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { AsyncMemo, describeJsonType, describeThrown, errorCode, stripUtf8Bom } from "@aburi/core"
-import type { ImportResolver, ImportResolverContext } from "@aburi/types"
+import type { ImportResolver, ImportResolverContext, Logger } from "@aburi/types"
 import { type ParseError, parse, printParseErrorCode } from "jsonc-parser"
 
 const CONFIG_FILE_NAMES = ["tsconfig.json", "jsconfig.json"]
 const CONFIG_DIR = `\${configDir}`
 const NODE_MODULES = "node_modules"
-// EISDIR is what a `node_modules/<package>` candidate of `locateExtended` gives.
+// EISDIR is what a `node_modules/<package>` candidate of `packageCandidates` gives.
 const ABSENT_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR", "EISDIR"])
+// A path `realpath` cannot follow for one of these is read as written, and the read reports it.
+const UNFOLLOWED_CODES: ReadonlySet<string> = new Set([...ABSENT_CODES, "ELOOP"])
 
 interface Declared<T> {
   readonly value: T
@@ -45,37 +47,40 @@ interface PathMapping {
 }
 
 interface ConfigReader {
+  /** The config at `path` in the workspace, or null where there is none. */
   read(path: string): Promise<RawConfig | null>
+  /** Where the package config found at `path` sits once its links are followed. */
+  linkTarget(path: string): Promise<string>
   warn(message: string): void
   display(path: string): string
-  readonly root: string
-  /** The checkout whose installed dependencies stand in for the workspace's, when it has none. */
-  readonly installedRoot: string | null
 }
 
+type Resolve = ImportResolver["resolve"]
+
 export function createTsconfigResolver(ctx: ImportResolverContext): ImportResolver {
-  const root = resolve(ctx.workspaceRoot)
-  const reads = new AsyncMemo<string, RawConfig | null>()
+  let opened: Promise<Resolve> | undefined
+  return {
+    resolve(specifier, fromFile) {
+      opened ??= openResolver(ctx)
+      return opened.then((resolve) => resolve(specifier, fromFile))
+    },
+  }
+}
+
+// The roots are compared with paths whose links are followed, so their own are followed first.
+async function openResolver(ctx: ImportResolverContext): Promise<Resolve> {
+  const warned = new Set<string>()
+  const warn = (message: string): void => {
+    if (warned.has(message)) return
+    warned.add(message)
+    ctx.log.warn(message)
+  }
+  const realRoot = (path: string) => realPathOf(resolve(path), path, warn)
+  const root = await realRoot(ctx.workspaceRoot)
+  const installedRoot = ctx.installedRoot === undefined ? null : await realRoot(ctx.installedRoot)
+  const reader = new ConfigFiles(root, installedRoot, ctx.log, warn)
   const scopes = new AsyncMemo<string, string | null>()
   const mappings = new AsyncMemo<string, PathMapping>()
-  const warned = new Set<string>()
-
-  const reader: ConfigReader = {
-    root,
-    installedRoot: ctx.installedRoot === undefined ? null : resolve(ctx.installedRoot),
-    // Keyed by where links lead, so a config reached both through a link and by its own path is
-    // read, and warned about, once.
-    async read(path) {
-      const real = await realConfigPath(path)
-      return reads.get(real, () => readConfig(real, reader))
-    },
-    warn(message) {
-      if (warned.has(message)) return
-      warned.add(message)
-      ctx.log.warn(message)
-    },
-    display: (path) => (isInside(root, path) ? relative(root, path).split(sep).join("/") : path),
-  }
 
   const nearestConfig = (directory: string): Promise<string | null> =>
     scopes.get(directory, async () => {
@@ -92,22 +97,142 @@ export function createTsconfigResolver(ctx: ImportResolverContext): ImportResolv
       buildMapping(await compilerPaths(configPath, [], reader), dirname(configPath)),
     )
 
-  return {
-    async resolve(specifier, fromFile) {
-      const directory = dirname(join(root, fromFile))
-      if (!isInside(root, directory)) return []
-      const configPath = await nearestConfig(directory)
-      if (configPath === null) return []
-      return mappedPaths(await mappingOf(configPath), specifier)
-        .filter((path) => isInside(root, path))
-        .map((path) => relative(root, path).split(sep).join("/"))
-    },
+  return async (specifier, fromFile) => {
+    const directory = dirname(join(root, fromFile))
+    if (!isInside(root, directory)) return []
+    const configPath = await nearestConfig(directory)
+    if (configPath === null) return []
+    return mappedPaths(await mappingOf(configPath), specifier)
+      .filter((path) => isInside(root, path))
+      .map((path) => posixRelative(root, path))
+  }
+}
+
+/**
+ * The workspace's config files, as `tsc` would find them there. A workspace with an installed root
+ * has none of its dependencies: a path through its `node_modules` it lacks is read at the same place
+ * in the installed checkout, and one whose links lead to that checkout's own sources is read from
+ * the workspace's copy, whose revision is the one being scanned.
+ */
+class ConfigFiles implements ConfigReader {
+  readonly #root: string
+  readonly #installedRoot: string | null
+  readonly #log: Logger
+  readonly #warn: (message: string) => void
+  readonly #reals = new AsyncMemo<string, string>()
+  readonly #reads = new AsyncMemo<string, RawConfig | null>()
+  readonly #sources = new AsyncMemo<string, string | null>()
+  readonly #ownCopies = new AsyncMemo<string, string | null>()
+
+  constructor(
+    root: string,
+    installedRoot: string | null,
+    log: Logger,
+    warn: (message: string) => void,
+  ) {
+    this.#root = root
+    this.#installedRoot = installedRoot
+    this.#log = log
+    this.#warn = warn
+  }
+
+  async read(path: string): Promise<RawConfig | null> {
+    const source = await this.#source(path)
+    return source === null ? null : this.#readAt(source)
+  }
+
+  // A package config is read where its links lead, as `tsc` reads it, so a workspace package linked
+  // into `node_modules` resolves its relative values among its own sources.
+  async linkTarget(path: string): Promise<string> {
+    const real = await this.#real((await this.#source(path)) ?? path)
+    return (await this.#ownCopy(real)) ?? real
+  }
+
+  warn(message: string): void {
+    this.#warn(message)
+  }
+
+  // The installed checkout's files are named as the workspace's are, so a warning reads alike from
+  // either checkout.
+  display(path: string): string {
+    if (isInside(this.#root, path)) return posixRelative(this.#root, path)
+    const installedRoot = this.#installedRoot
+    return installedRoot !== null && isInside(installedRoot, path)
+      ? posixRelative(installedRoot, path)
+      : path
+  }
+
+  #source(path: string): Promise<string | null> {
+    return this.#sources.get(path, async () => {
+      if ((await this.#readAt(path)) !== null) return path
+      const installed = this.#installedDependency(path)
+      if (installed === null || (await this.#readAt(installed)) === null) return null
+      const real = await this.#real(installed)
+      return (await this.#ownCopy(real)) ?? real
+    })
+  }
+
+  #installedDependency(path: string): string | null {
+    const installedRoot = this.#installedRoot
+    if (installedRoot === null || !isInside(this.#root, path)) return null
+    const rel = relative(this.#root, path)
+    return throughNodeModules(rel) ? resolve(installedRoot, rel) : null
+  }
+
+  #ownCopy(real: string): Promise<string | null> {
+    return this.#ownCopies.get(real, async () => {
+      const installedRoot = this.#installedRoot
+      if (installedRoot === null || !isInside(installedRoot, real)) return null
+      const own = relative(installedRoot, real)
+      if (throughNodeModules(own)) return null
+      const copy = resolve(this.#root, own)
+      if ((await this.#readAt(copy)) !== null) return copy
+      this.#log.debug(
+        `${posixRelative(installedRoot, real)} is not in the workspace, so the installed ` +
+          `checkout's copy, ${real}, is read in its place.`,
+      )
+      return null
+    })
+  }
+
+  // Keyed by where links lead, so a config reached both through a link and by its own path is read,
+  // and warned about, once.
+  async #readAt(path: string): Promise<RawConfig | null> {
+    const real = await this.#real(path)
+    return this.#reads.get(real, () => readConfig(real, this))
+  }
+
+  #real(path: string): Promise<string> {
+    return this.#reals.get(path, () => realPathOf(path, this.display(path), this.#warn))
+  }
+}
+
+// `realpath` fails on a missing file too; the read that follows tells absent from unreadable.
+async function realPathOf(
+  path: string,
+  name: string,
+  warn: (message: string) => void,
+): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch (error) {
+    if (!UNFOLLOWED_CODES.has(errorCode(error) ?? "")) {
+      warn(
+        `${name} could not be followed to where its links lead (${describeThrown(error)}), ` +
+          "so it is read where it is written.",
+      )
+    }
+    return path
   }
 }
 
 function isInside(root: string, path: string): boolean {
   const rel = relative(root, path)
   return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+function posixRelative(root: string, path: string): string {
+  return relative(root, path).split(sep).join("/")
 }
 
 async function readConfig(path: string, reader: ConfigReader): Promise<RawConfig | null> {
@@ -227,8 +352,7 @@ async function compilerPaths(
 }
 
 // A package's `package.json` `exports` and `tsconfig` fields are not read, so a package that
-// exposes its config only through them is not found. A package's config is read where its links
-// lead, as `tsc` reads it, so a workspace package linked into `node_modules` is read as its sources.
+// exposes its config only through them is not found.
 async function locateExtended(
   entry: string,
   dir: string,
@@ -236,22 +360,10 @@ async function locateExtended(
 ): Promise<string | null> {
   if (entry.startsWith("./") || entry.startsWith("../") || isAbsolute(entry)) {
     const path = resolve(dir, entry)
-    const candidates = extname(path) === ".json" ? [path] : [path, `${path}.json`]
-    const found = await firstConfig(candidates, reader)
-    const { installedRoot } = reader
-    if (found !== null || installedRoot === null) return found
-    const dependencies = candidates
-      .map((candidate) => relative(reader.root, candidate))
-      .filter(throughNodeModules)
-      .map((rel) => resolve(installedRoot, rel))
-    return installedConfig(await firstConfig(dependencies, reader), reader, false)
+    return firstConfig(extname(path) === ".json" ? [path] : [path, `${path}.json`], reader)
   }
   const found = await firstConfig(packageCandidates(entry, dir), reader)
-  if (found !== null) return realConfigPath(found)
-  if (reader.installedRoot === null) return null
-  const installedDir = resolve(reader.installedRoot, relative(reader.root, dir))
-  const installed = await firstConfig(packageCandidates(entry, installedDir), reader)
-  return installedConfig(installed, reader, true)
+  return found === null ? null : reader.linkTarget(found)
 }
 
 function packageCandidates(entry: string, dir: string): string[] {
@@ -271,28 +383,6 @@ async function firstConfig(
     if ((await reader.read(candidate)) !== null) return candidate
   }
   return null
-}
-
-// A file of the installed checkout's own sources is read in the workspace, whose revision of it is
-// the one being scanned; a dependency the workspace has no copy of is read as installed.
-async function installedConfig(
-  found: string | null,
-  reader: ConfigReader,
-  followLinks: boolean,
-): Promise<string | null> {
-  if (found === null || reader.installedRoot === null) return null
-  const real = await realConfigPath(found)
-  const own = relative(reader.installedRoot, real)
-  if (!throughNodeModules(own)) {
-    const copy = resolve(reader.root, own)
-    if ((await reader.read(copy)) !== null) return copy
-  }
-  return followLinks ? real : found
-}
-
-// A path that does not resolve is read as it stands, which says why.
-function realConfigPath(path: string): Promise<string> {
-  return realpath(path).catch(() => path)
 }
 
 function throughNodeModules(relativePath: string): boolean {

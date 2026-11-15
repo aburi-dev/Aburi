@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
   commitAll,
+  editFile,
   gitTestEnv,
   initRepository,
   linkDirectory,
@@ -17,7 +18,7 @@ const workspace = useScratchWorkspace("shared-tsconfig")
 useBuiltBin()
 
 // The path alias lives in a workspace package's config, which only an install links into
-// `node_modules`; the base revision is checked out without one.
+// `node_modules`; the base revision is checked out without `node_modules`.
 beforeEach(async () => {
   const files: Record<string, string> = {
     "package.json": '{"name":"api","private":true}\n',
@@ -51,19 +52,51 @@ beforeEach(async () => {
   return () => removeWorktreeTempDirs(workspace.root)
 })
 
-describe("aburi diff <base>..<head> — a path alias from a workspace package's config", () => {
-  it("grades a decorator imported through it alike on both sides", async () => {
-    const run = await runBin(workspace.root, ["diff", "HEAD~1..HEAD"], gitTestEnv(workspace.root))
-    expect(run.code, run.stderr).toBe(0)
-    expect(run.stderr).not.toContain("no config file was found")
+async function diffOfLastCommit(...flags: string[]): Promise<DiffResult> {
+  const run = await runBin(
+    workspace.root,
+    ["diff", "HEAD~1..HEAD", ...flags],
+    gitTestEnv(workspace.root),
+  )
+  expect(run.code, run.stderr).toBe(0)
+  expect(run.stderr).not.toContain("no config file was found")
+  return JSON.parse(
+    await readFile(defaultOutput(workspace.root, "diff.json"), "utf8"),
+  ) as DiffResult
+}
 
-    const diff = JSON.parse(
-      await readFile(defaultOutput(workspace.root, "diff.json"), "utf8"),
-    ) as DiffResult
-    expect(diff.symbols).toEqual([
+describe("aburi diff <base>..<head> — a path alias from a workspace package's config", () => {
+  it.each([
+    ["on the main thread", []],
+    ["on parser workers", ["--concurrency", "2"]],
+  ])("grades a decorator imported through it alike on both sides, %s", async (_case, flags) => {
+    expect((await diffOfLastCommit(...flags)).symbols).toEqual([
       {
         status: "added",
         symbol: expect.objectContaining({ id: "ts:src/other.ts#other" }),
+      },
+    ])
+  })
+
+  it("is read as the base's own revision declares it", async () => {
+    await editFile(
+      join(workspace.root, "packages/tsconfig/base.json"),
+      "/libs/*/src",
+      "/vendor/*/src",
+    )
+    await commitAll(workspace.root, "c3")
+
+    const controller = "ts:src/users.controller.ts#UsersController"
+    expect((await diffOfLastCommit()).symbols).toMatchObject([
+      {
+        status: "changed",
+        before: { id: controller, confidence: "high" },
+        after: { confidence: "medium" },
+      },
+      {
+        status: "changed",
+        before: { id: `${controller}.list`, confidence: "high" },
+        after: { confidence: "medium" },
       },
     ])
   })
