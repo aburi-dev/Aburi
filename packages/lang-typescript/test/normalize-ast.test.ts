@@ -15,6 +15,7 @@ describe("normalizeAst — what a formatter or a reviewer's eye would not call a
     ["a comment in the body", fn("return 1"), fn("/* note */ return 1")],
     ["an HTML-like comment in the body", fn("return 1"), fn("\n<!-- note\nreturn 1")],
     ["a stray token error recovery skips", fn("save(a); return 1"), fn("save(a); ) return 1")],
+    ["a comment beside text recovery skips", fn("save(a b)"), fn("save(a /* c */ b)")],
     [
       "whitespace and indentation",
       "export function f(){return 1}",
@@ -146,6 +147,9 @@ describe("normalizeAst — what changes the string", () => {
       "export const pick = y => use",
     ],
     ["a hole between elements", fn("save([1, , 3])"), fn("save([1, 3])")],
+    ["a name recovery skips in a union", "export type T = | A B", "export type T = | X B"],
+    ["a name recovery skips in a call", fn("save(a b)"), fn("save(a c)")],
+    ["a character recovery cannot place", fn("save(a # b)"), fn("save(a ## b)")],
     ["a hole before a trailing comma", fn("save([x, ,])"), fn("save([x,])")],
   ])("tells %s", async (_label, before, after) => {
     expect(await normalizeFirstSymbol(after)).not.toBe(await normalizeFirstSymbol(before))

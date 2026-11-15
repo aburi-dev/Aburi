@@ -272,6 +272,7 @@ The language plugin generates a **normalized AST string** per Symbol and compute
 4. Is an S-expression representing node kinds and child-node structure, plus every unnamed token except the punctuation a formatter adds, drops or swaps without changing the program: string delimiters, an optional `;`, a trailing `,`, a union's or an intersection's leading `|` or `&` (`| A | B` reads as `A | B`, without the extra level the parser gives the leading form), the parentheses around an arrow function's lone parameter (`x => …` reads as `(x) => …`, with the levels the parser gives the parenthesised form), and brackets the structure already implies. Punctuation that is the only record of something is not a formatter's, and stays in: the commas that make a hole in a JavaScript array (`[, x]` against `[x]`)
 5. Includes identifier and literal values (concrete values, not structure alone)
 6. Contains nothing the parser inserted: a MISSING node, the parser's repair of a broken file, is treated as unwritten
+7. Contains what the parser skipped: an ERROR node, the text of a broken file the parser could not place, is serialized with its tokens wherever it sits, including where the parser marks it an extra as it marks a comment, and with its text when it holds no token. Comments are the only extras left out. An ERROR that holds nothing but the punctuation item 4 leaves out (a stray `)`) contributes nothing, as that punctuation does anywhere else. A leading `|` or `&` keeps its level when an ERROR sits beside it, since reducing the level to its operand would drop the ERROR
 
 Item 4 is what keeps `a + b` and `a - b` apart. Most parsers hold an operator or a `let` / `const` keyword as an unnamed token rather than a node, so a string built from node kinds alone reads either edit as no change — and because an operator outside a rule's text reaches neither `api` nor `logic`, the Symbol would be reported as unchanged on every axis.
 
@@ -454,6 +455,7 @@ The reference implementation and every language plugin must pass the following t
 | S5 | Change a literal | syntax changes |
 | S5a | Change an operator, a declaration keyword, a modifier or a primitive type (`a + b` → `a - b`, `let` → `const`, `private` → `public`, `number` → `string`) | syntax changes |
 | S5b | Change a destructuring parameter's pattern (`{ a: b }` → `{ c: b }`, `[, b]` → `[b]`) or a parameter's default value (`limit = 20` → `limit = 10`) | syntax changes; api unchanged (A1, A23) |
+| S5c | In a file with a syntax error, change the text the parser could not place (`type T = \| A B` → `\| X B`, `save(a b)` → `save(a c)`) | syntax changes; a comment added there or a stray `)` does not (§5.1 item 7) |
 
 ### 7.7.1 syntax test criteria every language plugin must satisfy
 

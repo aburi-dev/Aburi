@@ -61,7 +61,7 @@ function describedNode(declaration: Pick<MergedDeclaration<Node>, "bodyNode" | "
 }
 
 function serialize(node: Node): string {
-  if (node.isExtra) return ""
+  if (node.isExtra && node.type !== ERROR_TYPE) return ""
   const cursor = node.walk()
   try {
     return serializeAt(cursor, node.type, grammarOf(node.tree.language))
@@ -76,19 +76,20 @@ function serialize(node: Node): string {
 function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string {
   if (SKIPPED_NODE_TYPES.has(type)) return ""
   if (hasLeadingOperator(type)) {
-    const operand = leadingOperatorOperand(cursor.currentNode)
+    const operand = reducibleOperand(cursor.currentNode)
     if (operand !== null) return serialize(operand)
   }
 
   const children: string[] = []
-  if (cursor.gotoFirstChild()) {
+  const hasChildren = cursor.gotoFirstChild()
+  if (hasChildren) {
     let previousType: string | null = null
     const parameterField = type === "arrow_function" ? grammar.parameterField : null
     do {
       if (cursor.nodeIsMissing) continue
       const typeId = cursor.nodeTypeId
       const childType = grammar.typeName(typeId)
-      if (grammar.mayBeExtra.has(childType) && cursor.currentNode.isExtra) continue
+      if (isSkippedExtra(childType, cursor, grammar)) continue
       if (grammar.isNamed(typeId)) {
         const lone = parameterField !== null && cursor.currentFieldId === parameterField
         const rendered = serializeAt(cursor, childType, grammar)
@@ -108,11 +109,28 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
     cursor.gotoParent()
   }
 
-  const leafText = LEAF_TEXT_TYPES.has(type) ? leafPayload(cursor.nodeText) : null
+  // Punctuation alone is what a formatter owns, wherever recovery parked it.
+  if (type === ERROR_TYPE && hasChildren && children.length === 0) return ""
+  const isLeaf = LEAF_TEXT_TYPES.has(type) || (type === ERROR_TYPE && !hasChildren)
+  const leafText = isLeaf ? leafPayload(cursor.nodeText) : null
   if (children.length === 0 && leafText === null) return `(${type})`
   if (children.length === 0 && leafText !== null) return `(${type} ${leafText})`
   return `(${type} ${children.join(" ")})`
 }
+
+// Reduced to its operand, the level would lose the text recovery parked beside it.
+function reducibleOperand(node: Node): Node | null {
+  const parked = node.children.some((child) => child?.isExtra && child.type === ERROR_TYPE)
+  return parked ? null : leadingOperatorOperand(node)
+}
+
+// Recovery parks the text it cannot place in an `ERROR` extra, which is still what the file says;
+// a comment is the only extra that is not.
+function isSkippedExtra(type: string, cursor: TreeCursor, grammar: Grammar): boolean {
+  return type !== ERROR_TYPE && grammar.mayBeExtra.has(type) && cursor.currentNode.isExtra
+}
+
+const ERROR_TYPE = "ERROR"
 
 interface Grammar {
   typeName(typeId: number): string
@@ -129,7 +147,7 @@ function grammarOf(language: Language): Grammar {
   const named: boolean[] = []
   const grammar: Grammar = {
     // Falls back as `Node.type` does: the grammar has no name for the `ERROR` id.
-    typeName: (typeId) => language.types[typeId] || "ERROR",
+    typeName: (typeId) => language.types[typeId] || ERROR_TYPE,
     isNamed: (typeId) => (named[typeId] ??= language.nodeTypeIsNamed(typeId)),
     parameterField: language.fieldIdForName("parameter"),
     mayBeExtra: extraTypes(language),
@@ -141,7 +159,7 @@ function grammarOf(language: Language): Grammar {
 // An extra may appear in any state and is shifted without leaving it, so the start state's table
 // names each one. Error recovery also inserts `ERROR` nodes as extras.
 function extraTypes(language: Language): ReadonlySet<string> {
-  const types = new Set(["ERROR"])
+  const types = new Set([ERROR_TYPE])
   for (let typeId = 0; typeId < language.nodeTypeCount; typeId++) {
     const name = language.types[typeId]
     if (name && language.nextState(START_STATE, typeId) === START_STATE) types.add(name)

@@ -355,6 +355,27 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
   })
 })
 
+describe("an edit inside a part the parser recovered is a syntax-only change", () => {
+  it.each([
+    [
+      "a name in a broken call",
+      FILE,
+      "export function f() {\n  save(a b)\n}\n",
+      "export function f() {\n  save(a c)\n}\n",
+    ],
+    [
+      "the text after a bare `&` in JSX",
+      "src/a.tsx",
+      "export function F() {\n  render(<p>Subscription & Billing</p>)\n}\n",
+      "export function F() {\n  render(<p>Subscription & Invoices</p>)\n}\n",
+    ],
+  ])("reports %s", async (_label, file, before, after) => {
+    const diff = await diffOfEdit(workspace, file, before, after)
+
+    expect(changedSymbols(diff)).toMatchObject([SYNTAX_ONLY])
+  })
+})
+
 describe("a formatting edit is no change", () => {
   it.each([
     [
