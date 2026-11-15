@@ -78,6 +78,10 @@ export function leadingOperatorOperand(node: Node): Node | null {
   return operand
 }
 
+export function hasLeadingOperator(type: string): boolean {
+  return LEADING_OPERATORS.has(type)
+}
+
 const LEADING_OPERATORS: ReadonlyMap<string, string> = new Map([
   ["union_type", "|"],
   ["intersection_type", "&"],
