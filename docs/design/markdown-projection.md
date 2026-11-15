@@ -549,6 +549,7 @@ The output of `aburi diff`. Its primary use case is pasting into PR comments.
 ## 🎚 Confidence changes
 ## 🎨 Syntax-only changes
 ## 🧪 Test files
+## ⚙ Generated files
 ```
 
 Each ref of the title is in a span (§3.4.2), unless it is a commit SHA, which is written bare: hex
@@ -574,11 +575,20 @@ caller's calls change, so an added or removed one whose `from` is the Symbol of 
 files** — either id, for a pair — is listed there and not in Dependency changes. Every other edge,
 and every Component change, stays where the diff puts it.
 
+A change whose Symbol carries `inGeneratedFile` ([`ir-schema.md`](./ir-schema.md) §5.9), judged the
+same way, is in **Generated files** instead, and in no other section, **Test files** included: a
+program wrote it, so what a reviewer needs is that it changed, and where, not the changes one by
+one — a pull request that regenerates a registry would otherwise fill every section above with
+entries nobody reads. The added or removed edges of those changes go with them, as a test change's
+do.
+
 The `· ?N unknown` suffix on the Summary line appears only when `summary.unknown` is non-zero, so the line a reviewer skims on every PR does not carry a permanent `?0`. It qualifies the counts beside it: added and removed are both smaller than the truth by that much.
 
 The line ends `· N in test files` when N of the diff's Symbol changes, dropped changes included, are
 test code. The counts before it still count every change, test code too, and the fold's
-`<summary>` counts the same N; a diff with none carries no `· 0 in test files`.
+`<summary>` counts the same N; a diff with none carries no `· 0 in test files`. `· M in generated
+files` follows it on the same terms, and a change in a generated test file is counted there and
+not in N, as it is listed there.
 
 `-N removed` reads `-N removed (M duplicates)` when `summary.removedDuplicates` is non-zero, `(1 duplicate)` for one: M of the N removals duplicated a head Symbol that holds their body ([`diff-algorithm.md`](./diff-algorithm.md) §3.5.2), and `--fail-on removed` counts only the other N−M. The CLI's glyph line (`+A -R ~C ↔M ⤴MC`) is left as it is: it is read by scripts, and `-R` stays the count of `removed` entries.
 
@@ -812,7 +822,8 @@ A Symbol end is written by its name and file, the way a moved Symbol's route is,
 id: the id repeats the language on every end, and an edge between two Symbols of one file, the
 common case for a call, wrote the same path twice. Such an edge names the file once, after both
 names. A Component end is written by its id. An added or removed edge whose caller is a change of
-test code is listed in **Test files** instead (§6.1).
+test code is listed in **Test files** instead, and one whose caller is a change of a generated file
+is counted in **Generated files** (§6.1).
 
 The Unknown group is not split by level the way the added and removed groups are: what a reviewer acts on is the file each line names, not the level. A symbol-level edge names the file of an endpoint, and a Component-level one every file of the Component it leaves that the other revision skipped ([`diff-algorithm.md`](./diff-algorithm.md) §6.2.1). Each line names the file and the reason after the edge, because that is what decides the reviewer's next move — `parse-timeout` says re-run, `parse-failed` and `extraction-failed` say fix something.
 
@@ -890,6 +901,28 @@ Symbol, so a fixture that calls a fixture draws no call tree. A Slice that reach
 into the code under test is drawn whole, test members included: the slice is about the code it
 reaches, and its calls are the reason it is one.
 
+The size cap (§6.4) omits it before any other section but Generated files.
+
+#### ⚙ Generated files
+
+One line: how many changes the generated files hold, and each file, with the number of its
+changes:
+
+```md
+## ⚙ Generated files
+
+2052 Symbol changes and 3 dependency changes in 3 generated files: `apps/v4/examples/__components__/base.tsx` (2040), `apps/v4/examples/__components__/radix.tsx` (11), `apps/v4/registry/__index__.tsx` (1)
+```
+
+A file is named by its Symbol's `source.file`, the head's for a pair, in code-unit order, and each
+is counted once whatever its changes are; the dependency changes, the edges of those changes
+(§6.1), are counted for the whole and left out when there are none. The changes themselves are
+not listed: names alone would still be one row per Symbol, and a generated file's Symbols are as
+many as its generator chose to write. `diff.json` keeps every one of them.
+
+The Slice View leaves out a Slice whose members are all in generated files, as it does one of
+test code, and draws one that reaches beyond them whole.
+
 The section is the last, so the size cap (§6.4) omits it before any other.
 
 ### 6.3 One-line summary (CLI stdout)
@@ -915,7 +948,7 @@ hold everything, and `diff.json` always does.
 The cap is honoured **section by section**, never by cutting the string. A cut at 65536 bytes
 lands inside a `<details>` block or a code fence as often as not, and what GitHub then renders is
 an open fence swallowing the rest of the report. Sections give way in ascending order of
-importance, which is the §6.1 order read from the bottom: Test files first, then Syntax-only, API changes last.
+importance, which is the §6.1 order read from the bottom: Generated files first, then Test files, then Syntax-only, API changes last.
 
 A section can give way in two steps. The sections whose entries are whole Symbols — API changes,
 Logic changes, Added, Removed, Unknown, Moved + Changed, Confidence changes — have a **names-only form**: the same
@@ -1027,10 +1060,11 @@ prepends ([`github-action.md`](./github-action.md) §5.2).
 list, or a value that is no status, is refused (`RangeError`): a report filtered to nothing would
 read as a diff that found nothing. Absent, every change is listed.
 
-- **The sections of Symbol changes** — API changes through Syntax-only changes, and Test files —
+- **The sections of Symbol changes** — API changes through Syntax-only changes, Test files and
+  Generated files —
   are built from the kept changes alone, so a section none of them reaches is left out as an
   empty section always is.
-- **The Slice View** keeps a Slice when one of its members is a kept change outside test code,
+- **The Slice View** keeps a Slice when one of its members is a kept change outside test code and generated files,
   and draws it whole: a Slice is the feature a change cuts through, and its other members are
   how the kept one is reached. It is the rule test code already follows (§6.1), applied to the
   filter as well. A Slice naming a member no change holds is refused as it is without a filter
@@ -1038,9 +1072,10 @@ read as a diff that found nothing. Absent, every change is listed.
 - **Component changes, Dependency changes and Not compared** are not Symbol changes, and are
   listed in full. An edge from a test caller goes with its caller, as §6.1 has it: into Test files
   when the filter keeps the caller's change, and out of the report when it does not, rather than
-  into Dependency changes. The note counts the edges that leave this way.
-- **The Summary line** counts every change, and so does its `· N in test files`: it is the diff's
-  account, and the filter is the reader's view of it.
+  into Dependency changes. An edge from a caller in a generated file does the same with Generated
+  files. The note counts the edges that leave this way.
+- **The Summary line** counts every change, and so do its `· N in test files` and `· M in generated
+  files`: it is the diff's account, and the filter is the reader's view of it.
 
 When the filter leaves a change out, a note directly under the Summary says what is listed and how
 much is not, ahead of the size cap's note when there is one:
@@ -1050,7 +1085,8 @@ much is not, ahead of the size cap's note when there is one:
 ```
 
 When it also took out edges from test code, the note counts them beside the Symbol changes, which
-are what the Summary counts:
+are what the Summary counts, and says where they came from — `from test code`, `from generated
+files`, or `from test code and generated files`:
 
 ```md
 > ℹ **Only `removed` changes are listed.** 3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.
@@ -1215,6 +1251,8 @@ All Markdown projection output is **English, with fixed wording**.
 | MP21b | diff with a Slice of two test Symbols, a test singleton, and a Slice from a test Symbol into code under test | No Slice View for the first two; the third drawn with its test member |
 | MP21c | diff with one change outside test files and ten inside, projected with a budget that holds the first and the note but not the fold | The note names `🧪 Test files` as the one section omitted |
 | MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
+| MP21e | diff with a change outside generated files and, in two generated files, three changes — one a pair whose base is in an authored file, one in a generated test file — and an added edge from one of them | `## ⚙ Generated files` is last, reading ``3 Symbol changes and 1 dependency change in 2 generated files: `a.ts` (2), `b.test.ts` (1)``; no other section lists the three or the edge, `## 🧪 Test files` included; the Summary line ends `· 3 in generated files`, with no `in test files` |
+| MP21f | diff with a Slice whose members are all in generated files, and one from a generated Symbol into authored code; the first diff projected with a budget that holds everything but the generated files' line | No Slice View for the first Slice, the second drawn whole; the note names `⚙ Generated files` as the one section omitted |
 | MP22 | Symbol block, and `aburi explain` page, of a Symbol whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
 | MP23 | diff entry whose `delta.middleware` removed `requireAdmin`, added `rateLimit(…)`, or reordered `requireAdmin`, `audit` into `audit`, `requireAdmin` | ``- middleware removed: `requireAdmin` ``, ``- middleware added: `rateLimit(…)` ``, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, and no "no field-level detail" row; an unmoved `delta.middleware` writes no row |
 | MP24 | A table cell holding a pipe, a pipe behind one or two backslashes, a lone or a trailing backslash, or a line ending (LF, CR or CRLF, and behind one or two backslashes), written bare and in a code span; a cell where finding the spans is the question: an escaped backtick or backslash before a span, an unclosed run, a run that closes on another length, a lone backtick inside a double-backtick span, and text mixed with spans; the Components table with roots, and the call resolution table with targets and candidates, holding such values | Rendered, each cell reads as the same Markdown reads outside a table, and every row's cells are the ones it was written with, none spilling into the next: a code span holds the value byte for byte (§3.4.1) |
@@ -1223,6 +1261,7 @@ All Markdown projection output is **English, with fixed wording**.
 | MP27 | diff with an added Symbol joined by a Slice to a changed one, a removed one, and in test files an added Symbol whose call edge was added and a removed one, projected with `statuses: ["added"]` | The sections list the two added Symbols alone, the test one in `## 🧪 Test files` under `1 symbol in a test file` with its edge, and the Slice is drawn whole; the Summary line counts every change, `· 2 in test files` included, and the note under it reads ``> ℹ **Only `added` changes are listed.** 3 other Symbol changes are left out of this report; the Summary counts them.`` `## 🔗 Dependency changes` lists every edge not from test code |
 | MP27a | the same diff projected with `statuses: ["removed"]` | The added test Symbol's edge is in neither `## 🧪 Test files` nor `## 🔗 Dependency changes`, and the note reads ``… 3 other Symbol changes and 1 dependency change from test code are left out of this report; the Summary counts the Symbol changes.`` |
 | MP27b | `statuses` naming every status the diff holds; `statuses` empty, or holding a value that is no status; a Slice naming a member no change holds, under a filter that lists none of its other members | The document written without `statuses`; `RangeError`; `ProjectionInvariantError`, as without a filter |
+| MP27c | diff with a removed change, and an added change in a generated file whose call edge was added, projected with `statuses: ["removed"]`; the same with a test change's edge added beside it | The note reads ``… 1 other Symbol change and 1 dependency change from generated files are left out of this report; the Summary counts the Symbol change.``; for the second, ``… 2 other Symbol changes and 2 dependency changes from test code and generated files …`` |
 
 ## 12. Design decisions
 

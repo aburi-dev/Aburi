@@ -128,6 +128,7 @@ const SYMBOL: RecordSpec = {
   dropped: bool,
   dropReason: nullable(str),
   inTestFile: optional(bool),
+  inGeneratedFile: optional(bool),
 }
 
 const DEPENDENCY: RecordSpec = {
@@ -184,10 +185,15 @@ const UNRESOLVED_CALL_BUCKETS: RecordSpec = {
   noMatch: num,
 }
 
-const CALL_RESOLUTION_STATS: RecordSpec = {
+const GENERATED_CALL_RESOLUTION_STATS: RecordSpec = {
   totalCalls: num,
   resolvedCalls: num,
   unresolved: record(UNRESOLVED_CALL_BUCKETS),
+}
+
+const CALL_RESOLUTION_STATS: RecordSpec = {
+  ...GENERATED_CALL_RESOLUTION_STATS,
+  generated: optional(record(GENERATED_CALL_RESOLUTION_STATS)),
 }
 
 const SKIPPED_FILE: RecordSpec = {

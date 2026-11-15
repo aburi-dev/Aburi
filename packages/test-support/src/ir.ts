@@ -95,6 +95,9 @@ export function makeSymbol(
     dropped: overrides.dropped ?? false,
     dropReason: overrides.dropReason ?? null,
     ...(overrides.inTestFile === undefined ? {} : { inTestFile: overrides.inTestFile }),
+    ...(overrides.inGeneratedFile === undefined
+      ? {}
+      : { inGeneratedFile: overrides.inGeneratedFile }),
   }
 }
 

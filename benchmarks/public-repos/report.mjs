@@ -109,6 +109,26 @@ function formatExitCodes(scan) {
   return codes.join("/")
 }
 
+/**
+ * The census of the code a repository's authors wrote: a build script's output can hold more
+ * calls than the code around it, and its calls are counted apart so they do not set the rate.
+ */
+export function authoredCalls(census) {
+  if (census === null) return null
+  const generated = census.generated
+  if (generated === undefined) return { ...census, generatedCalls: 0 }
+  const unresolved = {}
+  for (const [bucket, count] of Object.entries(census.unresolved)) {
+    unresolved[bucket] = count - generated.unresolved[bucket]
+  }
+  return {
+    totalCalls: census.totalCalls - generated.totalCalls,
+    resolvedCalls: census.resolvedCalls - generated.resolvedCalls,
+    unresolved,
+    generatedCalls: generated.totalCalls,
+  }
+}
+
 export function renderReport(report) {
   const lines = []
   const { environment, results } = report
@@ -164,6 +184,8 @@ export function renderReport(report) {
     )
   }
   lines.push("")
+  // A sample recorded before generated files were counted apart renders as it always did.
+  const generatedCounted = results.some((result) => result.metrics?.generatedCalls != null)
   lines.push("## Call resolution and losses")
   lines.push("")
   lines.push(
@@ -173,16 +195,19 @@ export function renderReport(report) {
       "Calls",
       "Resolved",
       "Resolved %",
+      ...(generatedCounted ? ["Generated calls"] : []),
       "Deps",
       "Parse errors",
       "Files lost",
       "Reasons",
     ]),
   )
-  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|---|")
+  lines.push(`|---|---:|---:|---:|---:|${generatedCounted ? "---:|" : ""}---:|---:|---:|---|`)
   for (const result of results) {
     if (result.failed) {
-      lines.push(row([`\`${result.id}\``, ...dashes(7), `✗ ${result.failed}`]))
+      lines.push(
+        row([`\`${result.id}\``, ...dashes(generatedCounted ? 8 : 7), `✗ ${result.failed}`]),
+      )
       continue
     }
     const metrics = result.metrics
@@ -201,6 +226,7 @@ export function renderReport(report) {
         formatCount(metrics.totalCalls),
         formatCount(metrics.resolvedCalls),
         share,
+        ...(generatedCounted ? [formatCount(metrics.generatedCalls)] : []),
         formatCount(metrics.dependencies),
         String(countRecoverableParseErrors(result.scan.warnings ?? "")),
         formatCount(metrics.skippedFiles),

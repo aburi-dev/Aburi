@@ -66,7 +66,11 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
    measuring a published version instead of the working tree.
 4. Run `aburi scan --no-timestamp` `--warmup` + `--runs` times, removing the IR
    before each run and hashing the one each measured run wrote.
-5. Read the IR for the outcome counters.
+5. Read the IR for the outcome counters. Calls, Resolved and Resolved % count the
+   code the repository's authors wrote: the calls of a file the scan marks generated
+   ([`ir-schema.md`](../../docs/design/ir-schema.md) §5.9), such as a committed
+   registry a build script writes, are counted under Generated calls instead, since
+   one such file can hold more calls than the code around it.
 6. Run `aburi diff <base>..<head>` once, with `--config` pointing at the
    rewritten config — the base ref is scanned inside a throwaway `git worktree`
    where the harness's untracked `aburi.json` does not exist, and without it the

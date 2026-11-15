@@ -795,6 +795,14 @@ The glyphs are added, removed, changed, moved and moved+changed, in that order.
 
 The second line is the head IR's `stats.callResolution` ([`call-resolution.md`](./call-resolution.md) §8.1). It answers "is the Slice View below missing edges?" without a second command. Buckets with a count of zero are omitted; when nothing is unresolved the line reads `calls N · resolved N · unresolved 0`.
 
+When the census holds a `generated` block ([`ir-schema.md`](./ir-schema.md) §5.9), the line counts the authored code — each number, buckets included, less the block's — and ends with the generated files' calls:
+
+```
+calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambiguous 3 · no-match 14); generated files: calls 15485 · resolved 0
+```
+
+The line is read as the health of the call graph a reviewer is looking at, and a build script's output, which nobody reviews, would otherwise set it. The generated count stays on the line so the calls it leaves out are still accounted for.
+
 A head IR produced before the counter existed cannot be back-filled, so the line is omitted rather than printed as zeroes — zeroes would assert a clean call graph the run never observed. Omitting it silently would be its own failure, though: the reviewer would read the Slice View without knowing the signal that explains a suspicious singleton is absent. A one-line note therefore goes to **stderr** (§18.2 — stdout carries result data only), naming the cause and pointing at a re-scan of the head revision.
 
 The `unknown` count is appended to the first line when there is one — `+5 -3 ~12 ↔2 ⤴1 · ?2 unknown` — and omitted otherwise, so the line a reviewer skims on every PR does not grow a permanent `?0`. It qualifies the counts beside it: the added and removed totals are smaller than the truth by that much.

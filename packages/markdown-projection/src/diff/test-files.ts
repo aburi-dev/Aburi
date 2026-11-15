@@ -1,12 +1,7 @@
-import {
-  type Dependency,
-  type DependencyEndpoint,
-  type DiffResult,
-  representativeSymbol,
-  type SymbolChange,
-} from "@aburi/types"
+import { representativeSymbol, type SymbolChange } from "@aburi/types"
 import { counted } from "../format"
 import { dependencyRow } from "./dependency-changes"
+import type { FoldedDependencies } from "./folded-dependencies"
 import {
   indexChanged,
   indexConfidence,
@@ -22,50 +17,9 @@ export function inTestFile(change: SymbolChange): boolean {
   return representativeSymbol(change).inTestFile === true
 }
 
-export interface TestDependencies {
-  readonly added: readonly Dependency[]
-  readonly removed: readonly Dependency[]
-}
-
-/**
- * An edge carries no mark, but a call edge that comes or goes moves its caller's calls, so the
- * caller is one of the changes the fold lists, and the edge goes with it.
- */
-export function splitDependencies(
-  dependencies: DiffResult["dependencies"],
-  testChanges: readonly SymbolChange[],
-  listedTestChanges: readonly SymbolChange[],
-): { kept: DiffResult["dependencies"]; inTests: TestDependencies; leftOut: number } {
-  const fromTest = calledFrom(testChanges)
-  const fromListed = calledFrom(listedTestChanges)
-  const inTests = {
-    added: dependencies.added.filter(fromListed),
-    removed: dependencies.removed.filter(fromListed),
-  }
-  const fromTestCount = [...dependencies.added, ...dependencies.removed].filter(fromTest).length
-  return {
-    kept: {
-      ...dependencies,
-      added: dependencies.added.filter((d) => !fromTest(d)),
-      removed: dependencies.removed.filter((d) => !fromTest(d)),
-    },
-    inTests,
-    leftOut: fromTestCount - inTests.added.length - inTests.removed.length,
-  }
-}
-
-function calledFrom(changes: readonly SymbolChange[]): (dependency: Dependency) => boolean {
-  const callers = new Set<DependencyEndpoint>()
-  for (const change of changes) {
-    callers.add(representativeSymbol(change).id)
-    if ("before" in change) callers.add(change.before.id)
-  }
-  return (dependency) => callers.has(dependency.from)
-}
-
 export function renderTestFiles(
   changes: readonly SymbolChange[],
-  dependencies: TestDependencies,
+  dependencies: FoldedDependencies,
 ): string[] {
   const buckets = partition(changes)
   // Moved + Changed lists a moved pair whole, so the delta groups take only what stayed put.

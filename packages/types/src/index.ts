@@ -50,6 +50,7 @@ export type {
   EffectPropagationStats,
   ExtKind,
   Fingerprint,
+  GeneratedCallResolutionStats,
   Generator,
   IR,
   LanguageId,

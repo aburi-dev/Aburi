@@ -16,7 +16,7 @@ import {
   REPO_ROOT,
   run,
 } from "./checkout.mjs"
-import { parseArgs, renderReport, scrubPaths, summariseScans } from "./report.mjs"
+import { authoredCalls, parseArgs, renderReport, scrubPaths, summariseScans } from "./report.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CHILD = resolve(HERE, "bench-child.mjs")
@@ -56,7 +56,7 @@ async function hashFile(path) {
 
 function readIrMetrics(ir, irBytes) {
   const stats = ir.stats ?? {}
-  const calls = stats.callResolution ?? null
+  const calls = authoredCalls(stats.callResolution ?? null)
   const skipped = stats.skippedFiles ?? []
   const skippedByReason = {}
   for (const entry of skipped) {
@@ -73,6 +73,7 @@ function readIrMetrics(ir, irBytes) {
     totalCalls: calls?.totalCalls ?? null,
     resolvedCalls: calls?.resolvedCalls ?? null,
     unresolved: calls?.unresolved ?? null,
+    generatedCalls: calls?.generatedCalls ?? null,
     skippedFiles: skipped.length,
     skippedByReason,
     skippedSample: skipped.slice(0, 5),

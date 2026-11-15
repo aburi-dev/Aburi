@@ -45,4 +45,19 @@ describe("formatCallResolutionLine", () => {
       }),
     ).toBe("calls 0 · resolved 0 · unresolved 0")
   })
+
+  it("counts the authored code, bucket by bucket, and the generated files' calls after it", () => {
+    expect(
+      formatCallResolutionLine({
+        ...stats({ external: 30, dynamic: 60, noMatch: 20 }),
+        generated: {
+          totalCalls: 17,
+          resolvedCalls: 2,
+          unresolved: { localScope: 0, external: 0, dynamic: 9, ambiguous: 0, noMatch: 6 },
+        },
+      }),
+    ).toBe(
+      "calls 103 · resolved 8 · unresolved 95 (external 30 · dynamic 51 · no-match 14); generated files: calls 17 · resolved 2",
+    )
+  })
 })

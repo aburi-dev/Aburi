@@ -20,6 +20,8 @@ import {
   renderSyntaxOnly,
   renderUnknown,
 } from "./entries"
+import { splitDependencies } from "./folded-dependencies"
+import { inGeneratedFile, renderGeneratedFiles } from "./generated-files"
 import {
   indexChanged,
   indexConfidence,
@@ -31,7 +33,7 @@ import {
 import { partition } from "./partition"
 import { assemble, foldedSection, plainSection, type Section } from "./size-cap"
 import { renderSliceView } from "./slice-view"
-import { inTestFile, renderTestFiles, splitDependencies } from "./test-files"
+import { inTestFile, renderTestFiles } from "./test-files"
 
 export interface ProjectDiffOptions {
   readonly maxBytes?: number
@@ -53,19 +55,25 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     )
   }
   const listed = listedChanges(diff.symbols, options.statuses)
-  const everyTestChange = diff.symbols.filter(inTestFile)
-  const testChanges = listed.filter(inTestFile)
-  const dependencies = splitDependencies(diff.dependencies, everyTestChange, testChanges)
+  const everyGeneratedChange = diff.symbols.filter(inGeneratedFile)
+  const generatedChanges = listed.filter(inGeneratedFile)
+  const everyTestChange = diff.symbols.filter(inTestCode)
+  const testChanges = listed.filter(inTestCode)
+  const fromGenerated = splitDependencies(diff.dependencies, everyGeneratedChange, generatedChanges)
+  const fromTests = splitDependencies(fromGenerated.kept, everyTestChange, testChanges)
   const heading = [
     `# Aburi diff: ${titleRef(diff.base.ref)}..${titleRef(diff.head.ref)}`,
     "",
-    `**Summary**: ${summaryLine(diff, everyTestChange.length)}`,
+    `**Summary**: ${summaryLine(diff, everyTestChange.length, everyGeneratedChange.length)}`,
     "",
-    ...filterNote(options.statuses, diff.symbols.length - listed.length, dependencies.leftOut),
+    ...filterNote(options.statuses, diff.symbols.length - listed.length, {
+      tests: fromTests.leftOut,
+      generated: fromGenerated.leftOut,
+    }),
   ]
-  const outsideTests = listed.filter((change) => !inTestFile(change))
-  const buckets = partition(outsideTests)
-  const shown = new Set(outsideTests)
+  const authored = listed.filter((change) => !inTestFile(change) && !inGeneratedFile(change))
+  const buckets = partition(authored)
+  const shown = new Set(authored)
   const hiddenIds = new Set(
     diff.symbols
       .filter((change) => !shown.has(change))
@@ -102,7 +110,7 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
       `${buckets.moved.length} moved (no semantic change)`,
     ),
     plainSection("## 🧱 Component changes", renderComponentChanges(diff)),
-    plainSection("## 🔗 Dependency changes", renderDependencyChanges(dependencies.kept)),
+    plainSection("## 🔗 Dependency changes", renderDependencyChanges(fromTests.kept)),
     foldedSection(
       "## 💧 Dropped changes",
       renderDroppedToggled(buckets.droppedToggled),
@@ -120,12 +128,21 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     ),
     foldedSection(
       "## 🧪 Test files",
-      renderTestFiles(testChanges, dependencies.inTests),
+      renderTestFiles(testChanges, fromTests.folded),
       counted(testChanges.length, "symbol in a test file", "symbols in test files"),
+    ),
+    plainSection(
+      "## ⚙ Generated files",
+      renderGeneratedFiles(generatedChanges, fromGenerated.folded),
     ),
   ].filter((entry): entry is Section => entry !== null)
 
   return assemble(heading, sections, maxBytes, fullReportLocation)
+}
+
+/** A generated test file is generated code first: its changes are not read one by one either. */
+function inTestCode(change: SymbolChange): boolean {
+  return inTestFile(change) && !inGeneratedFile(change)
 }
 
 function listedChanges(
@@ -151,17 +168,22 @@ function listedChanges(
 function filterNote(
   statuses: readonly SymbolChangeStatus[] | undefined,
   leftOut: number,
-  edgesLeftOut: number,
+  edgesLeftOut: { readonly tests: number; readonly generated: number },
 ): string[] {
   if (statuses === undefined || leftOut === 0) return []
   const names = SYMBOL_CHANGE_STATUSES.filter((status) => statuses.includes(status)).map(inlineCode)
   const listed =
     names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
   const changes = counted(leftOut, "other Symbol change", "other Symbol changes")
+  const edges = edgesLeftOut.tests + edgesLeftOut.generated
+  const origin = [
+    ...(edgesLeftOut.tests === 0 ? [] : ["test code"]),
+    ...(edgesLeftOut.generated === 0 ? [] : ["generated files"]),
+  ].join(" and ")
   const omitted =
-    edgesLeftOut === 0
+    edges === 0
       ? `${changes} ${leftOut === 1 ? "is" : "are"} left out of this report; the Summary counts ${leftOut === 1 ? "it" : "them"}.`
-      : `${changes} and ${counted(edgesLeftOut, "dependency change", "dependency changes")} from test code are left out of this report; the Summary counts the Symbol ${leftOut === 1 ? "change" : "changes"}.`
+      : `${changes} and ${counted(edges, "dependency change", "dependency changes")} from ${origin} are left out of this report; the Summary counts the Symbol ${leftOut === 1 ? "change" : "changes"}.`
   return [`> ℹ **Only ${listed} changes are listed.** ${omitted}`, ""]
 }
 
@@ -180,7 +202,7 @@ function titleRef(ref: string): string {
   return COMMIT_SHA.test(ref) ? ref : inlineCode(ref)
 }
 
-function summaryLine(diff: DiffResult, inTests: number): string {
+function summaryLine(diff: DiffResult, inTests: number, inGenerated: number): string {
   const summary = diff.summary
   const duplicates = summary.removedDuplicates ?? 0
   const removed =
@@ -189,7 +211,9 @@ function summaryLine(diff: DiffResult, inTests: number): string {
     `+${summary.added} added · -${summary.removed} ${removed} · ~${summary.changed} changed · ${summary.moved} moved · ${summary.movedChanged} moved+changed`,
     diff,
   )
-  return inTests === 0 ? line : `${line} · ${inTests} in test files`
+  const tests = inTests === 0 ? "" : ` · ${inTests} in test files`
+  const generated = inGenerated === 0 ? "" : ` · ${inGenerated} in generated files`
+  return `${line}${tests}${generated}`
 }
 
 function withUnknown(line: string, diff: DiffResult): string {
