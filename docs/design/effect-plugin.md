@@ -234,6 +234,8 @@ A plugin that matches on shared vocabulary therefore weighs three more things be
 
 2. **Receiver name.** The segment holding the client (`prisma` in `this.prisma.user.create`, `db` in `db.select`) is matched word-wise against the plugin's own vocabulary of client binding names — `identifierWords` / `identifierMentions` in the same module, so `prismaClient` and `readReplicaDb` match while `feedback` does not match `db`. Keep the vocabulary to words that actually separate a client from everything else sharing the verbs: `client` matches `apiClient` and `httpClient`, whose `<client>.<resource>.<verb>` shape is a Prisma delegate's exactly, so an entry like that hands the collision the top tier instead of catching it.
 
+   A client word is also evidence about the segment it does not hold. Drizzle's `this.db.delete(table)` has a Prisma delegate's shape, `<client>.<model>.<verb>` with `this` as the client and `db` as the model, but a Prisma model is named after a table, so a model segment that is exactly one of the client words (`prisma`, `db`, `database`, `orm`, `tx`, `trx`) is `null` from `effects-prisma`. Plugins are asked in config order and the first claim wins (EP4), so the wrong plugin's `medium` claim would otherwise hide the right one's `high`. The match is exact rather than word-wise: `txLog` and `ormMapping` are models a schema can declare, and a real write left unclassified is the failure with no trace (item 3).
+
 3. **Argument count.** Read the arity off the library's own vocabulary table rather than flattening it to a constant — Postgres' `selectDistinctOn(columns, projection)` and `transaction(callback, config)` take two — and treat an overflow as evidence, not proof. `CallCandidate.argumentCount` is a syntactic count, and a classifier reading it as a signature is reading it for more than it promises; a miscount that drops the call erases a real effect and logs nothing, which is the one failure mode with no trace.
 
 The last two set the **tier**, they do not gate the classification:
@@ -367,6 +369,9 @@ export const plugin: EffectPlugin = {
     // No delegate takes a bare literal, so `map.delete("id")` is another API.
     if (hasLiteralFirstArgument(call)) return null
 
+    // A model is named after a table: `this.db.delete(table)` is another ORM's client (§5.4).
+    if (PRISMA_CLIENT_WORDS.has(parts[parts.length - 2])) return null
+
     const confidence = tier(parts[parts.length - 3], call, 1)
 
     if (READ_METHODS.test(method)) {
@@ -459,6 +464,7 @@ export const plugin: EffectPlugin = {
 | EP10 | classify returns `confidence: 'low'` | Symbol.effects[].confidence = "low" goes into the IR as-is |
 | EP11 | a call matching a plugin's shared-vocabulary shape on a receiver the plugin cannot identify (§5.4) | the effect is still recorded, at `confidence: "medium"` — not `high`, and not dropped |
 | EP12 | a call whose shape no signature in the plugin's vocabulary takes: a literal first argument, or no argument to a method that requires one (§5.4 item 1) | `null` (EP5), whatever the receiver: the call stays in `Symbol.calls[]` and the file keeps its Symbols. Not EP3a — the candidate is well formed, so this is a classification decision, not an input-contract violation |
+| EP12a | `this.db.delete(auditLog)` in a file that imports both `@prisma/client` and `drizzle-orm`, with `effects-prisma` listed first (§5.4 item 2) | `effects-prisma` answers `null`, so `effects-drizzle` records `db.write` at `high`; `prisma.txLog.create(…)` is still Prisma's |
 | EP13 | classify returns after running past `classifyTimeoutMs` (§5.1.1) | its answer is used as if it had been fast — EP6 for a classification, EP5 for `null`, EP14 for a decline, and EP4 still decides the order — and the overrun is one `stats.effectClassifyTimeouts` entry. `effects[]`, `calls[]` and the fingerprints do not depend on whether this classification overran its budget |
 | EP14 | classify returns `{ declined: reason }` (§4.5) and no later plugin classifies the call | the call stays in `Symbol.calls[]` (EP5), and `stats.declinedCalls[]` gains one entry: `plugin`, `symbolId`, `target`, `line`, and the reason. Neither `effects[]`, `calls[]` nor any fingerprint differs from a `null` |
 | EP14a | a plugin declines a call and a later plugin classifies it | the later plugin's classification is used (EP6), and no `stats.declinedCalls[]` entry is written for that call |

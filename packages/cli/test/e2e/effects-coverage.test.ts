@@ -52,9 +52,9 @@ describe("aburi scan — a project that calls into every shipped effects plugin"
     expect(report.exitCode).toBe(EXIT.SUCCESS)
     expect(log.warnings).toEqual([])
     expect(attributed(await readIR(report.irPath ?? ""))).toEqual([
-      "AuditRepository.forget: db.write `this.db.delete` (L19) [effects-drizzle] high effects-plugin:drizzle:write",
-      "AuditRepository.history: db.read `this.db.select` (L15) [effects-drizzle] high effects-plugin:drizzle:read",
-      "AuditRepository.record: db.write `this.db.insert` (L11) [effects-drizzle] high effects-plugin:drizzle:write",
+      "AuditRepository.forget: db.write `this.db.delete` (L22) [effects-drizzle] high effects-plugin:drizzle:write",
+      "AuditRepository.history: db.read `this.db.select` (L18) [effects-drizzle] high effects-plugin:drizzle:read",
+      "AuditRepository.record: db.write `this.db.insert` (L14) [effects-drizzle] high effects-plugin:drizzle:write",
       "expiredEntries: db.read `gateway.select` (L6) [effects-drizzle] medium effects-plugin:drizzle:read",
       "OrdersService.cancel: db.read `prisma.order.findUniqueOrThrow` (L37) [effects-prisma] high effects-plugin:prisma:read",
       "OrdersService.cancel: db.transaction `prisma.$transaction` (L39) [effects-prisma] high effects-plugin:prisma:tx",
@@ -119,8 +119,8 @@ describe("aburi diff — one edited call per effects plugin", () => {
     expect(log.warnings).toEqual([])
     expect(effectRows(await readFile(report.diffMdPath ?? "", "utf8"))).toEqual({
       "AuditRepository.forget": [
-        "effects added: db.write: `this.db.update` (L19) [effects-drizzle]",
-        "effects removed: db.write: `this.db.delete` (L19) [effects-drizzle]",
+        "effects added: db.write: `this.db.update` (L22) [effects-drizzle]",
+        "effects removed: db.write: `this.db.delete` (L22) [effects-drizzle]",
       ],
       "OrdersService.cancel": [
         "effects removed: event.publish: `this.eventBus.emit` (L44) [effects-nest]",

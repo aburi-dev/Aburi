@@ -20,6 +20,7 @@ import {
 } from "./methods"
 import {
   classificationConfidence,
+  isPrismaClientWord,
   namesPrismaClient,
   PRISMA_DELEGATE_MAX_ARGUMENTS,
   PRISMA_TRANSACTION_MAX_ARGUMENTS,
@@ -57,11 +58,15 @@ export function classifyPrismaCall(
   // A delegate takes an options object or nothing, so `map.delete("id")` is another API.
   if (hasLiteralFirstArgument(call)) return null
 
+  // A model is named after a table, so `this.db.delete(table)` is another ORM's `<client>.<verb>`.
+  const modelSegment = segments.at(-2)
+  if (modelSegment !== undefined && isPrismaClientWord(modelSegment)) return null
+
   // The client sits immediately before the model, whatever precedes it.
   const clientSegment = segments.at(-3)
 
   // A computed model says nothing about the shape, so the receiver alone must name a client.
-  if (clientSegment !== undefined && segments.at(-2) === COMPUTED_TARGET_SEGMENT) {
+  if (clientSegment !== undefined && modelSegment === COMPUTED_TARGET_SEGMENT) {
     if (!namesPrismaClient(clientSegment)) return null
   }
 

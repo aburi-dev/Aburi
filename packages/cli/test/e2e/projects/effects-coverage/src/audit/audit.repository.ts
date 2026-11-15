@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common"
+import type { PrismaClient } from "@prisma/client"
 import { eq } from "drizzle-orm"
 import { type Database, database } from "../db/drizzle"
 import { auditLog } from "../db/schema"
@@ -6,6 +7,8 @@ import { auditLog } from "../db/schema"
 @Injectable()
 export class AuditRepository {
   private readonly db: Database = database
+
+  constructor(private readonly prisma: PrismaClient) {}
 
   async record(orderId: string, action: string) {
     await this.db.insert(auditLog).values({ orderId, action })

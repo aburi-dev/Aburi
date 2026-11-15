@@ -35,7 +35,7 @@ answer yes to while most of its calls belong to something else. `delete`,
 every HTTP router, and `this.<x>.<y>.delete(...)` is everyday TypeScript — so
 the shape plus the gate is not evidence that the receiver is a database client.
 
-Three further checks decide what is recorded:
+Four further checks decide what is recorded:
 
 - **Literal first argument.** A Prisma method takes an options object, an array
   or a callback — never a bare literal. `this.cache.items.delete("session")` is
@@ -48,12 +48,18 @@ Three further checks decide what is recorded:
   absent: a resource SDK's `<client>.<resource>.<verb>` is a delegate call's
   shape exactly, so the entry would hand `apiClient.users.update(payload)` the
   top tier.
+- **Model name.** A Prisma model is named after a table, so a model segment
+  that is exactly a client word is not one: `this.db.delete(auditLog)` is
+  Drizzle's `<client>.<verb>` with `this` in front, and is not classified at
+  all, which leaves it to `effects-drizzle` in a file that imports both. The
+  match is exact, so a `txLog` or `ormMapping` model still counts.
 - **Argument count.** A delegate takes at most one argument, `$transaction`
   two. More than that is evidence against — but only evidence: `argumentCount`
   is a syntactic count, and a drop would erase a real write without logging
   anything, so an overflow costs the tier instead.
 
-A match on all three gives `confidence: "high"`; anything short of that still
+A call past the two gates whose receiver names a client and whose arguments fit
+gets `confidence: "high"`; anything short of that still
 records the effect, at `confidence: "medium"`.
 
 The `medium` tier is deliberate. Without the AST — which effect plugins never
