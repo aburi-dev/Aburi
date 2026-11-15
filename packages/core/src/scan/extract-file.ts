@@ -23,6 +23,7 @@ import { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./vocab"
 /** What extracting any file of a scan reads beside the plugins: plain data, so a thread can hold it. */
 export interface ExtractionJob {
   readonly workspaceRoot: string
+  readonly installedRoot?: string
   /** A file is named by its index here. */
   readonly files: readonly DiscoveredFile[]
   readonly config: Config
@@ -83,6 +84,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
   )
   const origins = new ImportOrigins({
     workspaceRoot: job.workspaceRoot,
+    ...(job.installedRoot === undefined ? {} : { installedRoot: job.installedRoot }),
     files: job.files,
     router,
     loadSource: (file) => loadSourceFile(job.workspaceRoot, file),
