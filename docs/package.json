@@ -6,7 +6,7 @@
   "description": "Documentation site for Aburi, deployed to https://aburi.dev",
   "scripts": {
     "dev": "turbo run build \"--filter=@aburi/docs^...\" && node scripts/copy-schema.mjs && vitepress dev",
-    "build": "turbo run build \"--filter=@aburi/docs^...\" && node scripts/copy-schema.mjs && vitepress build",
+    "build": "turbo run build \"--filter=@aburi/docs^...\" && node scripts/copy-schema.mjs && vitepress build && node scripts/check-markdown-twins.mjs",
     "preview": "vitepress preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

@@ -18,6 +18,10 @@ export default defineConfig({
       llmstxt({
         domain: SITE,
         customLLMsTxtTemplate: LLMS_TXT,
+        // The reports' collapsed sections are `<details>` blocks, part of the Markdown Aburi prints.
+        stripHTML: false,
+        // The design notes alone would make the bundle larger than most agents' context.
+        ignoreFilesPerOutput: { llmsFullTxt: ["design/**"] },
       }),
     ],
   },
@@ -60,7 +64,7 @@ export default defineConfig({
           { text: "Supported stacks", link: "/guide/supported-stacks" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "CI integration", link: "/guide/ci-integration" },
-          { text: "MCP server for AI agents", link: "/guide/ai-agents" },
+          { text: "MCP server for AI coding agents", link: "/guide/ai-agents" },
         ],
       },
       {
