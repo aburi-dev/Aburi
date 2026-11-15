@@ -7,7 +7,6 @@ import {
   asFunctionValue,
   findChild,
   firstNonCommentChild,
-  hasChildOfType,
   inAmbientContext,
   makeSourceRange,
   nameFieldText,
@@ -27,6 +26,7 @@ import {
   exportEvidence,
   exportVisibility,
   isDefaultExport,
+  isDefaultExportStatement,
   promoteDetachedExports,
   statementExportEvidence,
   topLevelVisibility,
@@ -226,11 +226,9 @@ function functionCandidate(
   }
 }
 
-// `export default (() => …)` or `export default (async () => …) satisfies H`: the function or class
-// the wrappers hold is the anonymous default export, whatever name a function expression carries,
-// since that name binds nothing in the module.
+// A function or class expression's own name binds nothing in the module.
 function wrappedDefaultValue(statement: Node, value: Node): Node | null {
-  if (!hasChildOfType(statement, "default")) return null
+  if (!isDefaultExportStatement(statement)) return null
   const unwrapped = unwrapValue(value)
   if (unwrapped.id === value.id) return null
   return asFunctionValue(unwrapped) ?? asClassValue(unwrapped)

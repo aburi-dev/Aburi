@@ -75,6 +75,17 @@ describe("scan — App Router special files", () => {
     expect([page.kind, page.extKind]).toEqual(["const", "framework:next:page"])
   })
 
+  it("classifies a page whose default function is written in parentheses", async () => {
+    await workspace.writeSource(
+      "app/dashboard/page.tsx",
+      ["export default (function Page() {", "  return <main />", "})", ""].join("\n"),
+    )
+
+    const page = symbolById(await scanWorkspace(), "ts:app/dashboard/page.tsx#<default>")
+
+    expect([page.kind, page.extKind]).toEqual(["function", "framework:next:page"])
+  })
+
   it.each<[string, string[], Record<string, string[]>]>([
     [
       "functions declared with the export keyword",

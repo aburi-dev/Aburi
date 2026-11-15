@@ -153,8 +153,3 @@ export function statementParent(node: Node): Node | null {
   if (parent !== null && parent.type === AMBIENT_DECLARATION_TYPE) return parent.parent
   return parent
 }
-
-export function hasExportModifier(node: Node): boolean {
-  const parent = statementParent(node)
-  return parent !== null && parent.type === "export_statement"
-}

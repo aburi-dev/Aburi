@@ -46,22 +46,32 @@ describe("a default export whose function is written behind a wrapper", () => {
     )
   })
 
-  it("is the anonymous default class in parentheses", async () => {
-    const source = "export default (class { m() { q() } })"
-    const symbol = await symbolOf(source, DEFAULT)
+  it.each([
+    ["an anonymous class", "export default (class { m() { q() } })"],
+    ["a named class expression", "export default (class Foo { m() { q() } })"],
+  ])(
+    "is the anonymous default class, holding its members' calls, for %s",
+    async (_label, source) => {
+      const symbol = await symbolOf(source, DEFAULT)
 
-    expect(await idsOf(source)).toEqual(await idsOf("export default class { m() { q() } }"))
-    expect([symbol.kind, symbol.visibility, symbol.derivedBy]).toEqual([
-      "class",
-      "public",
-      ["export-default"],
-    ])
-  })
+      expect(await idsOf(source)).toEqual([DEFAULT])
+      expect([symbol.kind, symbol.visibility, symbol.derivedBy]).toEqual([
+        "class",
+        "public",
+        ["export-default"],
+      ])
+      expect(await callsOf(source, DEFAULT)).toEqual(["q"])
+    },
+  )
 
   it.each([
-    ["a call in parentheses", "export default (withAuth(() => { q() }))", "const"],
-    ["a function invoked in place", "export default (async () => { await q() })()", "const"],
-  ])("leaves %s a default `const`", async (_label, source, kind) => {
-    expect((await symbolOf(source, DEFAULT)).kind).toBe(kind)
+    ["a call in parentheses", "export default (withAuth(() => { q() }))"],
+    ["a function invoked in place", "export default (async () => { await q() })()"],
+  ])("leaves %s a default `const` that holds the call's body", async (_label, source) => {
+    const symbol = await symbolOf(source, DEFAULT)
+
+    expect(symbol.kind).toBe("const")
+    expect(symbol.derivedBy).toContain("export-default")
+    expect(await callsOf(source, DEFAULT)).toContain("q")
   })
 })
