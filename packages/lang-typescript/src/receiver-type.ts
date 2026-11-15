@@ -1,6 +1,6 @@
 import type { ThisBinding } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { firstNonCommentChild, hasChildOfType } from "./ast-helpers"
+import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
 
 const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "function_expression",
@@ -28,7 +28,9 @@ export function receiverTypeOf(callee: Node): string | null {
   const field = receiver.childForFieldName("property")
   if (field === null) return null
   const scope = thisScope(receiver)
-  return scope === null ? null : declaredType(scope, field.text)
+  if (scope === null) return null
+  const type = declaredType(scope, field.text)
+  return type === null || isShadowed(scope.classBody, headOf(type)) ? null : type
 }
 
 export function thisBindingAt(node: Node): ThisBinding | null {
@@ -89,6 +91,56 @@ function declaredType(scope: ThisScope, name: string): string | null {
     }
   }
   return null
+}
+
+// A reader binds the type's name where the module binds it, so a name a scope between the class
+// and the module declares is another type there.
+function isShadowed(classBody: Node, name: string): boolean {
+  for (let node = classBody.parent; node !== null; node = node.parent) {
+    const parameters = node.childForFieldName("type_parameters")?.namedChildren ?? []
+    if (parameters.some((parameter) => parameter?.childForFieldName("name")?.text === name)) {
+      return true
+    }
+    if (node.type === "class" && nameFieldText(node) === name) return true
+    if (!SCOPE_BLOCKS.has(node.type)) continue
+    if (node.namedChildren.some((child) => child !== null && declaredTypeName(child) === name)) {
+      return true
+    }
+  }
+  return false
+}
+
+const SCOPE_BLOCKS: ReadonlySet<string> = new Set(["statement_block", "switch_case"])
+
+const TYPE_DECLARATIONS: ReadonlySet<string> = new Set([
+  "class_declaration",
+  "abstract_class_declaration",
+  "interface_declaration",
+  "type_alias_declaration",
+  "enum_declaration",
+  "internal_module",
+  "module",
+])
+
+const DECLARATION_WRAPPERS: ReadonlySet<string> = new Set([
+  "export_statement",
+  "ambient_declaration",
+])
+
+function declaredTypeName(statement: Node): string | null {
+  const declaration = DECLARATION_WRAPPERS.has(statement.type)
+    ? (statement.childForFieldName("declaration") ?? firstNonCommentChild(statement))
+    : statement
+  if (declaration === null) return null
+  if (declaration.type === "import_alias") return firstNonCommentChild(declaration)?.text ?? null
+  if (!TYPE_DECLARATIONS.has(declaration.type)) return null
+  const name = dottedName(declaration.childForFieldName("name"))
+  return name === null ? null : headOf(name)
+}
+
+function headOf(dotted: string): string {
+  const dot = dotted.indexOf(".")
+  return dot < 0 ? dotted : dotted.slice(0, dot)
 }
 
 function isConstructor(member: Node): boolean {

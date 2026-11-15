@@ -162,7 +162,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     receiverHints: enrichment.receiverHints,
     implementerHints: enrichment.implementerHints,
     dynamicCallSites: extracted.dynamicCallSites,
-    receiverTypes: extracted.receiverTypes,
+    declaredReceiverTypes: extracted.declaredReceiverTypes,
     specifierPaths: extracted.specifierPaths,
   })
   const symbolEdges = projectSymbolEdges(callGraph.edges)

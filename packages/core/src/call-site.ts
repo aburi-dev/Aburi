@@ -14,19 +14,19 @@ export function makeCallSiteKey(file: string, line: number, target: string): str
   return [file, line, target].join(CALL_SITE_KEY_SEPARATOR)
 }
 
-// A key within the calling Symbol, where `this` and every field it holds are one.
+// By the calling Symbol rather than the file, so two classes written on one line stay apart.
 export function makeSymbolCallKey(symbol: string, line: number, target: string): string {
   return [symbol, line, target].join(CALL_SITE_KEY_SEPARATOR)
 }
 
 /** A call's `makeSymbolCallKey` and the named type its receiver is declared with. */
-export type CallReceiverType = readonly [key: string, type: string]
+export type DeclaredReceiverType = readonly [key: string, type: string]
 
 /**
- * The declared type of each call's receiver, by `makeSymbolCallKey`. A key whose calls name
- * different types gets `null`: which call each type was written for is lost.
+ * By `makeSymbolCallKey`: the named type each call's receiver is declared with. A key whose calls
+ * do not all name one type is left out, since which call a type was written for is lost.
  */
-export type ReceiverTypes = ReadonlyMap<string, string | null>
+export type DeclaredReceiverTypes = ReadonlyMap<string, string>
 
 export function receiverHead(target: string): string | undefined {
   return target.split(".").find((segment) => segment.length > 0)

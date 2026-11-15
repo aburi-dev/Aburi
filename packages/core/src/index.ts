@@ -1,5 +1,11 @@
 export { AsyncMemo } from "./async-memo"
-export { makeCallSiteKey, receiverHead, type ThisBindingSites } from "./call-site"
+export {
+  type DeclaredReceiverTypes,
+  makeCallSiteKey,
+  makeSymbolCallKey,
+  receiverHead,
+  type ThisBindingSites,
+} from "./call-site"
 export {
   type CallEdge,
   type ResolveCallGraphInput,

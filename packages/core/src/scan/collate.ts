@@ -6,7 +6,7 @@ import type {
   ParseError,
   ThisBinding,
 } from "@aburi/types"
-import type { ReceiverTypes, ThisBindingSites } from "../call-site"
+import type { DeclaredReceiverTypes, ThisBindingSites } from "../call-site"
 import { countBy } from "../collections"
 import { CoreError, REPORT_BUG } from "../errors"
 import { symbolIdFile } from "../id"
@@ -43,7 +43,7 @@ export interface ExtractedFiles {
   dynamicCallSites: Set<string>
   declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
-  receiverTypes: ReceiverTypes
+  declaredReceiverTypes: DeclaredReceiverTypes
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
@@ -61,7 +61,7 @@ export class ExtractionCollator {
     class: new Set(),
     instance: new Set(),
   }
-  readonly #receiverTypes = new Map<string, string | null>()
+  readonly #declaredReceiverTypes = new Map<string, string>()
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -76,7 +76,7 @@ export class ExtractionCollator {
     dynamicCallSites: new Set(),
     declinedCalls: [],
     thisBindings: this.#thisBindings,
-    receiverTypes: this.#receiverTypes,
+    declaredReceiverTypes: this.#declaredReceiverTypes,
     specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
@@ -270,9 +270,9 @@ export class ExtractionCollator {
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
         out.declinedCalls.push(...result.declinedCalls)
         for (const [key, binding] of result.thisBindings) this.#thisBindings[binding].add(key)
-        for (const [key, type] of result.receiverTypes) {
-          const seen = this.#receiverTypes.get(key)
-          this.#receiverTypes.set(key, seen === undefined || seen === type ? type : null)
+        // A key names its Symbol, and a file two Symbols share an id in is withdrawn above.
+        for (const [key, type] of result.declaredReceiverTypes) {
+          this.#declaredReceiverTypes.set(key, type)
         }
         if (result.specifierPaths.length > 0) {
           out.specifierPaths.set(result.path, new Map(result.specifierPaths))

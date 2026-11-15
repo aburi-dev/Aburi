@@ -18,7 +18,7 @@ import type {
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import type { CallReceiverType, CallSiteBinding } from "../call-site"
+import type { CallSiteBinding, DeclaredReceiverType } from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
@@ -42,7 +42,7 @@ export interface ExtractedFile extends FileOutcomeCommon {
   dynamicCallSites: readonly string[]
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
-  receiverTypes: readonly CallReceiverType[]
+  declaredReceiverTypes: readonly DeclaredReceiverType[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -142,7 +142,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         dynamicCallSites: [],
         declinedCalls: [],
         thisBindings: [],
-        receiverTypes: [],
+        declaredReceiverTypes: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -163,7 +163,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
-    const receiverTypes: CallReceiverType[] = []
+    const declaredReceiverTypes: DeclaredReceiverType[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
@@ -226,12 +226,12 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         dynamicCallSites: fileDynamicCallSites,
         declinedCalls: fileDeclinedCalls,
         thisBindings: fileThisBindings,
-        receiverTypes: fileReceiverTypes,
+        declaredReceiverTypes: fileDeclaredReceiverTypes,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
-      receiverTypes.push(...fileReceiverTypes)
+      declaredReceiverTypes.push(...fileDeclaredReceiverTypes)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -265,7 +265,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       dynamicCallSites,
       declinedCalls,
       thisBindings,
-      receiverTypes,
+      declaredReceiverTypes,
       specifierPaths,
       fault: null,
     }

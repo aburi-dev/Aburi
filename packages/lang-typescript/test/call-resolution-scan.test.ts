@@ -285,6 +285,79 @@ describe("scan — a call through a field of a declared type", () => {
       ["this.store.find", null],
     ])
   })
+
+  /** Write two repositories and `service`, which imports them through `specifier`, and scan. */
+  async function callsByMember(service: readonly string[], specifier = "./repo") {
+    await workspace.writeSource(
+      "src/repo.ts",
+      [
+        "export class UserRepository { find(id: string) { return id } }",
+        "export class AdminRepository { find(id: string) { return id } }",
+        "",
+      ].join("\n"),
+    )
+    const imports = `import { AdminRepository, UserRepository } from "${specifier}"`
+    await workspace.writeSource("src/service.ts", [imports, ...service, ""].join("\n"))
+    const { ir } = await scanTypeScript(workspace.root)
+    return Object.fromEntries(
+      ir.symbols
+        .filter((s) => s.source.file === "src/service.ts" && s.calls.length > 0)
+        .map((s) => [s.id.slice(s.id.indexOf("#") + 1), s.calls.map((call) => call.resolved)]),
+    )
+  }
+
+  const USER_FIND = "ts:src/repo.ts#UserRepository.find"
+  const ADMIN_FIND = "ts:src/repo.ts#AdminRepository.find"
+
+  it("resolves the calls one line holds alike, and none where their types differ", async () => {
+    const calls = await callsByMember([
+      "export class S {",
+      "  constructor(private readonly repo: UserRepository) {}",
+      '  twice() { return this.repo.find("a") ?? this.repo.find("b") }',
+      '  nested() { return [this.repo.find("a"), class { repo!: AdminRepository; n() { this.repo.find("b") } }] }',
+      '  untyped() { return [this.repo.find("a"), function (this: any) { this.repo.find("b") }] }',
+      "}",
+    ])
+    expect(calls).toEqual({
+      "S.twice": [USER_FIND, USER_FIND],
+      "S.nested": [null, null],
+      "S.untyped": [null, null],
+    })
+  })
+
+  it("keeps apart two classes written on one line", async () => {
+    const calls = await callsByMember([
+      'export class A { constructor(private r: UserRepository) {} m() { this.r.find("a") } }; export class B { constructor(private r: AdminRepository) {} m() { this.r.find("b") } }',
+    ])
+    expect(calls).toEqual({ "A.m": [USER_FIND], "B.m": [ADMIN_FIND] })
+  })
+
+  it("leaves a type parameter to its class, though a class of its name is imported", async () => {
+    const calls = await callsByMember([
+      "export class Box<UserRepository> {",
+      "  constructor(private readonly item: UserRepository) {}",
+      '  put() { this.item.find("a") }',
+      "}",
+    ])
+    expect(calls).toEqual({ "Box.put": [null] })
+  })
+
+  it("reaches a class imported through a tsconfig path alias", async () => {
+    await workspace.writeSource(
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@repo/*": ["src/*"] } } }),
+    )
+    const calls = await callsByMember(
+      [
+        "export class S {",
+        "  constructor(private readonly repo: UserRepository) {}",
+        '  m() { this.repo.find("a") }',
+        "}",
+      ],
+      "@repo/repo",
+    )
+    expect(calls).toEqual({ "S.m": [USER_FIND] })
+  })
 })
 
 describe("scan — a call through a tsconfig path alias", () => {

@@ -85,17 +85,17 @@ export function resolveTarget(
   return resolveInComponentScope(ctx, trace) ?? resolveInWorkspaceScope(ctx, trace)
 }
 
-// The value may be a subclass's, as a provider registered with another class or a test double is,
-// and its override is then the member that runs.
 export function resolveThroughDeclaredType(
   ctx: ResolveTargetContext,
-  type: string,
+  type: string | undefined,
 ): ResolutionHit | null {
+  if (type === undefined) return null
   const segments = splitTargetSegments(ctx.target)
   const member = segments.at(-1)
   const [head, ...tail] = splitTargetSegments(type)
   if (segments.length < 2 || member === undefined || head === undefined) return null
   const typeCtx = { ...ctx, target: type }
+  // Not component or workspace scope: matching a type by its spelling could only find a namesake.
   const trace = newTrace()
   const bound =
     resolveInFileScope(typeCtx, head, tail, trace) ??
@@ -107,7 +107,9 @@ export function resolveThroughDeclaredType(
     file: owner.source.file,
     qualifiedName: `${owner.name}.${member}`,
   })
-  return id !== null && ctx.run.table.keptSymbolIds.has(id) ? { id, confidence: "medium" } : null
+  if (id === null || !ctx.run.table.keptSymbolIds.has(id)) return null
+  // The value may be a subclass's, whose override then runs.
+  return { id, confidence: "medium" }
 }
 
 interface BoundHead {
