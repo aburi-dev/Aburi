@@ -28,6 +28,8 @@ export interface ExtractionJob {
   readonly files: readonly DiscoveredFile[]
   readonly config: Config
   readonly components: readonly Component[]
+  /** The `package.json#name` of each workspace package. */
+  readonly workspacePackageNames: readonly string[]
 }
 
 export interface ExtractionPlugins {
@@ -86,6 +88,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
     workspaceRoot: job.workspaceRoot,
     ...(job.installedRoot === undefined ? {} : { installedRoot: job.installedRoot }),
     files: job.files,
+    workspacePackageNames: job.workspacePackageNames,
     router,
     loadSource: (file) => loadSourceFile(job.workspaceRoot, file),
     record,

@@ -68,6 +68,15 @@ export interface WorkspacePackage {
   root: string
 }
 
+/** The package a bare specifier imports: `@scope/name` for a scoped one, otherwise its first segment. */
+export function packageName(specifier: string): string | null {
+  const [first, second] = specifier.split("/")
+  if (first === undefined || first.length === 0) return null
+  if (!first.startsWith("@")) return first
+  if (second === undefined || second.length === 0) return null
+  return `${first}/${second}`
+}
+
 export async function readWorkspacePackages(
   workspaceRoot: string,
   roots: readonly string[],

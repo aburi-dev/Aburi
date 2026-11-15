@@ -18,6 +18,7 @@ const LIBRARIES: Readonly<Record<string, string>> = {
   "libs/layered/src/index.ts": `export { Controller } from "./nest"\n`,
   "libs/layered/src/nest.ts": `export { Controller } from "@nestjs/common"\n`,
   "libs/foreign/src/index.ts": `export { Controller } from "routing-controllers"\n`,
+  "libs/linked/src/index.ts": `export { Controller } from "@acme/shared"\n`,
   "libs/star/src/index.ts": `export * from "@nestjs/common"\n`,
   "libs/own/src/index.ts": OWN_CONTROLLER,
   "libs/renamed-first/src/index.ts": `export { Controller as NestController } from "@nestjs/common"\nexport { Controller } from "../../own/src"\n`,
@@ -33,10 +34,12 @@ const LIBRARIES: Readonly<Record<string, string>> = {
 }
 
 const scanWorkspace = () =>
-  scanWith(workspace.root, {
-    languages: [langTypescriptPlugin],
-    frameworks: [nestjsFrameworkPlugin],
-  })
+  scanWith(
+    workspace.root,
+    { languages: [langTypescriptPlugin], frameworks: [nestjsFrameworkPlugin] },
+    {},
+    { workspacePackages: [{ name: "@acme/shared", root: "packages/shared" }] },
+  )
 
 describe("scan — a NestJS decorator re-exported through a workspace barrel", () => {
   beforeEach(async () => {
@@ -102,8 +105,8 @@ describe("scan — a NestJS decorator re-exported through a workspace barrel", (
       "high",
     ],
     [
-      "a barrel re-exporting a competing library",
-      `import { Controller } from "@app/foreign"`,
+      "a barrel re-exporting a workspace package's decorator",
+      `import { Controller } from "@app/linked"`,
       "Controller",
       "medium",
     ],
@@ -149,12 +152,6 @@ describe("scan — a NestJS decorator re-exported through a workspace barrel", (
       "Controller",
       "medium",
     ],
-    [
-      "an alias to no file in the workspace",
-      `import { Controller } from "@app/missing"`,
-      "Controller",
-      "medium",
-    ],
   ])("rates a controller imported from %s", async (_case, importLine, written, confidence) => {
     await workspace.writeSource(
       "src/x.controller.ts",
@@ -166,6 +163,31 @@ describe("scan — a NestJS decorator re-exported through a workspace barrel", (
       "framework:nestjs:controller",
       confidence,
     ])
+  })
+
+  it.each([
+    [
+      "a barrel re-exporting a competing library",
+      `import { Controller } from "@app/foreign"`,
+      "Controller",
+    ],
+    [
+      "that barrel through a namespace import",
+      `import * as foreign from "@app/foreign"`,
+      "foreign.Controller",
+    ],
+    [
+      "an alias to no file in the workspace, which resolves outside it",
+      `import { Controller } from "@app/missing"`,
+      "Controller",
+    ],
+  ])("refuses a controller imported from %s", async (_case, importLine, written) => {
+    await workspace.writeSource(
+      "src/x.controller.ts",
+      `${importLine}\n\n@${written}("/x")\nexport class XController {}\n`,
+    )
+
+    expect(symbolNamed(await scanWorkspace(), "XController").extKind).toBeNull()
   })
 
   it("rates a route decorator re-exported through the barrel alongside its controller", async () => {

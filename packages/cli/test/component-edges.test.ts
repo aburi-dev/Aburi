@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises"
-import { dependency, errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import { dependency, errorFrom, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
 import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CliError, runScan } from "../src"
@@ -77,7 +77,7 @@ describe("aburi scan — Component edges from imports between workspace packages
     )
   })
 
-  it("does not read a workspace package.json that no Component holds", async () => {
+  it("passes over a workspace package.json that no Component holds and that it cannot parse", async () => {
     await writeFileAt(workspace.root, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n")
     await writeFileAt(workspace.root, "packages/legacy/package.json", "{ name: ")
     await writeFileAt(workspace.root, "apps/web/src/index.ts", "export const page = 1\n")
@@ -85,5 +85,35 @@ describe("aburi scan — Component edges from imports between workspace packages
     const { edges } = await scan({ components: [{ id: "web", roots: ["apps/web"] }] })
 
     expect(edges).toEqual([])
+  })
+})
+
+describe("aburi scan — a workspace package no Component holds", () => {
+  it("is still a workspace package to a decorator imported from it by name", async () => {
+    await writeFileAt(workspace.root, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n")
+    await writePackage(
+      "packages/shared",
+      "@acme/shared",
+      'export { Controller } from "@nestjs/common"\n',
+    )
+    await writeFileAt(
+      workspace.root,
+      "apps/api/src/x.controller.ts",
+      'import { Controller } from "@acme/shared"\n\n@Controller("/x")\nexport class XController {}\n',
+    )
+    await writeConfig(workspace.root, {
+      ...TYPESCRIPT,
+      frameworks: ["framework-nestjs"],
+      components: [{ id: "api", roots: ["apps/api"] }],
+    })
+
+    const report = await runScan({ cwd: workspace.root, outputDir: "out" })
+    const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as IR
+    const controller = symbolNamed({ ir }, "XController")
+
+    expect([controller.extKind, controller.confidence]).toEqual([
+      "framework:nestjs:controller",
+      "medium",
+    ])
   })
 })

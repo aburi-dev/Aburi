@@ -68,17 +68,29 @@ export async function resolveWorkspacePackages(
   managers: DetectManagersResult,
   components: readonly Component[],
 ): Promise<WorkspacePackage[]> {
-  // A package no Component holds can be the end of no edge, so its manifest is not read.
   const attribute = buildComponentAttribution(components)
   const roots = [
     ...managers.workspaces.map((candidate) => candidate.relativeRoot),
     ...components.flatMap((component) => component.roots),
-  ].filter((root) => attribute(`${root}/${NPM_MANIFEST}`) !== null)
+  ]
+  const held = new Set<string>()
+  const unheld = new Set<string>()
+  for (const root of roots) {
+    if (attribute(`${root}/${NPM_MANIFEST}`) === null) unheld.add(root)
+    else held.add(root)
+  }
+  let packages: WorkspacePackage[]
   try {
-    return await readWorkspacePackages(workspaceRoot, roots)
+    packages = await readWorkspacePackages(workspaceRoot, [...held])
   } catch (error) {
     throw componentResolutionFailure(error)
   }
+  // A package no Component holds is the end of no edge, so only its name is wanted, and a manifest
+  // that cannot be read names a package no install could have linked.
+  const named = await Promise.all(
+    [...unheld].map((root) => readWorkspacePackages(workspaceRoot, [root]).catch(() => [])),
+  )
+  return [...packages, ...named.flat()]
 }
 
 function componentFromConfig(entry: NonNullable<Config["components"]>[number]): Component {

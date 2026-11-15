@@ -1,6 +1,11 @@
-import type { SymbolClassification } from "@aburi/types"
+import type { ImportEdge, SymbolClassification } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { classifyDecorated, makeImport, NEST, reexported } from "./fixtures/symbol"
+
+/** An import of `name` from `source`, as the scan hands it over once it traced `source` outside the workspace. */
+function foreign(source: string, line = 1, name = "Controller"): ImportEdge {
+  return reexported(makeImport(source, [name], line), { [name]: source })
+}
 
 /** The extKind and the confidence, an omitted one read as the `high` it means. */
 function rated(result: SymbolClassification | null): [string | null, string] | null {
@@ -11,7 +16,7 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
   it.each([
     ["imported from @nestjs/common", "high", [makeImport(NEST, ["Controller"])]],
     [
-      "imported from a competing library",
+      "imported from a module the scan did not place outside the workspace",
       "medium",
       [makeImport("routing-controllers", ["Controller"])],
     ],
@@ -24,15 +29,6 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       "imported through a barrel that re-exports it from @nestjs/common",
       "high",
       [reexported(makeImport("@app/common", ["Controller"]), { Controller: NEST })],
-    ],
-    [
-      "imported through a barrel that re-exports it from a competing library",
-      "medium",
-      [
-        reexported(makeImport("@app/common", ["Controller"]), {
-          Controller: "routing-controllers",
-        }),
-      ],
     ],
     [
       "imported through a barrel that re-exports only other names from @nestjs/common",
@@ -58,11 +54,51 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
         reexported(makeImport("@app/common", ["Controller"], 2), { Controller: NEST }),
       ],
     ],
+    [
+      "bound twice, the edge traced to a competing library first",
+      "medium",
+      [foreign("routing-controllers", 1), makeImport("./x", ["Controller"], 2)],
+    ],
+    [
+      "bound twice, the edge traced to a competing library second",
+      "medium",
+      [makeImport("./x", ["Controller"], 1), foreign("routing-controllers", 2)],
+    ],
   ])("rates @Controller %s at %s", (_label, confidence, imports) => {
     expect(rated(classifyDecorated("class", ["Controller"], imports))).toEqual([
       "framework:nestjs:controller",
       confidence,
     ])
+  })
+
+  it.each([
+    ["imported from it directly", [foreign("routing-controllers")]],
+    [
+      "imported through a barrel that re-exports it",
+      [
+        reexported(makeImport("@app/common", ["Controller"]), {
+          Controller: "routing-controllers",
+        }),
+      ],
+    ],
+    [
+      "bound by a default import",
+      [
+        reexported(makeImport("routing-controllers", ["default as Controller"]), {
+          default: "routing-controllers",
+        }),
+      ],
+    ],
+  ])("refuses @Controller the scan traced to a competing library, %s", (_label, imports) => {
+    expect(classifyDecorated("class", ["Controller"], imports)).toBeNull()
+  })
+
+  it("keeps a method's route when the scan refuses only its other decorator", () => {
+    const imports = [makeImport(NEST, ["Get"], 1), foreign("routing-controllers", 2, "UseGuards")]
+    const result = classifyDecorated("method", ["UseGuards", "Get"], imports)
+
+    expect(rated(result)).toEqual(["framework:nestjs:route", "high"])
+    expect(result?.decoratorBoundaries).toEqual({ Get: true })
   })
 
   it.each([

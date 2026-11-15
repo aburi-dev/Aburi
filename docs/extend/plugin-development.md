@@ -284,10 +284,12 @@ import type {
   SymbolClassification,
 } from "@aburi/types"
 
-/** Written identifier → the exported name it resolves to, and whether you own the module. */
+type From = "mine" | "unknown" | "outside"
+
+/** Written identifier → the exported name it resolves to, and where its module is. */
 function importedNames(imports: readonly ImportEdge[], filePath: string) {
   const origin = { plugin: "framework-mytool", filePath }
-  const names = new Map<string, { imported: string; mine: boolean }>()
+  const names = new Map<string, { imported: string; from: From }>()
   for (const edge of imports) {
     // Validate every edge before answering, or the throw depends on import order.
     assertImportEdgeSource(edge, origin)
@@ -295,9 +297,15 @@ function importedNames(imports: readonly ImportEdge[], filePath: string) {
     for (const raw of edge.symbols) {
       const binding = splitAliasedImportName(raw)
       assertImportBinding(binding, raw, edge, origin)
-      // A workspace barrel's re-export is traced to the module that declares the name.
-      const declaredIn = edge.origins?.get(binding.imported) ?? edge.source
-      names.set(binding.local, { imported: binding.imported, mine: declaredIn.startsWith("@mytool/") })
+      // The scan keys a name it traced outside the workspace, through any barrels, to the package
+      // it ends at. A name without a key may sit in a barrel it could not follow.
+      const outside = edge.origins?.get(binding.imported)
+      const from: From = (outside ?? edge.source).startsWith("@mytool/")
+        ? "mine"
+        : outside === undefined
+          ? "unknown"
+          : "outside"
+      names.set(binding.local, { imported: binding.imported, from })
     }
   }
   return names
@@ -323,9 +331,10 @@ class MyFrameworkPlugin implements FrameworkPlugin {
       // A default import arrives as `"default as Widget"`: `default` is in no vocabulary, so
       // the written name is the only evidence of which decorator it is.
       const exported = origin.imported === DEFAULT_EXPORT_NAME ? d.name : origin.imported
-      if (exported !== "Widget") return false
-      // Same name, someone else's module. Classify, but say you are less sure.
-      confidence = origin.mine ? "high" : "medium"
+      // Same name, someone else's package: not yours.
+      if (exported !== "Widget" || origin.from === "outside") return false
+      // Same name, a module that may re-export yours. Classify, but say you are less sure.
+      confidence = origin.from === "mine" ? "high" : "medium"
       return true
     })
     // Return null to abstain; the next framework plugin gets a turn.

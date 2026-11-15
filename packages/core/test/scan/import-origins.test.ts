@@ -40,6 +40,8 @@ const ALIASES: Aliases = {
   "@app/common": [BARREL],
   "@app/fallback": ["libs/missing.stub", BARREL],
 }
+const SHARED = "@acme/shared"
+const WORKSPACE_PACKAGES = [{ name: SHARED, root: "packages/shared" }]
 const decorated = [decorator({ name: "Decorate" })]
 const importsDecorate = (source: string): Module => ({
   imports: [named(source, "Decorate")],
@@ -137,7 +139,12 @@ async function importsSeen(
       return null
     },
   })
-  await scanStubs(workspace.root, { languages: [language], frameworks: [framework], logger })
+  await scanStubs(workspace.root, {
+    languages: [language],
+    frameworks: [framework],
+    logger,
+    workspacePackages: WORKSPACE_PACKAGES,
+  })
   return seen
 }
 
@@ -238,6 +245,26 @@ describe("scan — where a decorator's imported name is declared", () => {
       [["@app/common", { kit: "@vendor/kit" }]],
     ],
     [
+      "a package imported directly, which is its own origin",
+      { [CONSUMER]: importsDecorate("@vendor/kit") },
+      [["@vendor/kit", { Decorate: "@vendor/kit" }]],
+    ],
+    [
+      "a package a qualified decorator reads through a namespace import",
+      {
+        [CONSUMER]: {
+          imports: [importEdge({ source: "@vendor/kit", symbols: "*", namespaceBinding: "kit" })],
+          decorators: [decorator({ name: "Decorate", qualifier: "kit" })],
+        },
+      },
+      [["@vendor/kit", { Decorate: "@vendor/kit" }]],
+    ],
+    [
+      "a package a scope away from a workspace package",
+      { [CONSUMER]: importsDecorate("@acme/shared-kit") },
+      [["@acme/shared-kit", { Decorate: "@acme/shared-kit" }]],
+    ],
+    [
       "the first path the resolver gives that the workspace holds",
       {
         [CONSUMER]: importsDecorate("@app/fallback"),
@@ -305,12 +332,20 @@ describe("scan — where a decorator's imported name is declared", () => {
         "src/b.stub": { imports: [reexporting("./a.stub", "Decorate")] },
       },
     ],
-    ["a specifier the language maps nowhere", { [CONSUMER]: importsDecorate("@vendor/kit") }],
+    ["a workspace package's name", { [CONSUMER]: importsDecorate(SHARED) }],
+    ["a path under a workspace package", { [CONSUMER]: importsDecorate(`${SHARED}/decorators`) }],
+    [
+      "a barrel that re-exports the name from a workspace package",
+      {
+        [CONSUMER]: importsDecorate("@app/common"),
+        [BARREL]: { imports: [reexporting(SHARED, "Decorate")] },
+      },
+    ],
     [
       "an `origins` the language plugin wrote, which only the scan sets",
       {
         [CONSUMER]: {
-          imports: [{ ...named("@vendor/kit", "Decorate"), origins: { Decorate: "@forged/kit" } }],
+          imports: [{ ...named(SHARED, "Decorate"), origins: { Decorate: "@forged/kit" } }],
           decorators: decorated,
         } as unknown as Module,
       },
@@ -329,7 +364,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       [BARREL]: { imports: [reexporting("@vendor/util", "helper")] },
     })
     expect(originsOf(seen.get(CONSUMER))).toEqual([
-      ["@vendor/kit", null],
+      ["@vendor/kit", { Decorate: "@vendor/kit" }],
       ["@app/common", null],
     ])
   })
