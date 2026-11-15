@@ -6,46 +6,50 @@ export interface Env {
   ASSETS: Assets
 }
 
-const SITE = "https://aburi.dev"
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8"
+const MARKDOWN_RANGES = ["text/markdown", "text/x-markdown"]
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== "GET" && request.method !== "HEAD") return env.ASSETS.fetch(request)
     const url = new URL(request.url)
-    const twin = markdownTwin(url.pathname)
-    if (twin === undefined) return env.ASSETS.fetch(request)
+    if (!isPage(url.pathname)) return env.ASSETS.fetch(request)
     if (!prefersMarkdown(request.headers.get("Accept"))) {
       return varyOnAccept(await env.ASSETS.fetch(request))
     }
 
-    const markdown = await env.ASSETS.fetch(new Request(new URL(twin, url), request))
-    if (markdown.ok || markdown.status === 304) {
-      const headers = new Headers(markdown.headers)
-      headers.set("Content-Type", MARKDOWN_TYPE)
-      return varyOnAccept(new Response(markdown.body, { status: markdown.status, headers }))
-    }
-    await markdown.body?.cancel()
-
-    const page = await env.ASSETS.fetch(request)
-    if (page.status !== 404) return varyOnAccept(page)
+    // Asked first as HTML would be, so a spelling the asset server redirects is redirected here too
+    // instead of answered with a twin whose relative links would resolve against the wrong path.
+    const page = await env.ASSETS.fetch(new Request(url, { method: "HEAD", redirect: "manual" }))
     await page.body?.cancel()
-    return varyOnAccept(
-      new Response(request.method === "HEAD" ? null : notFound(url.pathname), {
-        status: 404,
-        headers: { "Content-Type": MARKDOWN_TYPE },
-      }),
-    )
+    if (page.status === 404) return notFound(request, url)
+    if (!page.ok) return varyOnAccept(await env.ASSETS.fetch(request))
+
+    const twinUrl = new URL(url)
+    twinUrl.pathname = markdownTwin(url.pathname)
+    twinUrl.search = ""
+    const twin = await env.ASSETS.fetch(new Request(twinUrl, request))
+    if (twin.status === 404) {
+      await twin.body?.cancel()
+      return varyOnAccept(await env.ASSETS.fetch(request))
+    }
+    if (!twin.ok && twin.status !== 304) return varyOnAccept(twin)
+    const headers = new Headers(twin.headers)
+    headers.set("Content-Type", MARKDOWN_TYPE)
+    return varyOnAccept(new Response(twin.body, { status: twin.status, headers }))
   },
 }
 
-// Built pages are published beside a Markdown copy: `/a/b` and `/a/` as `/a/b.md` and `/a.md`.
-// Any other file is served as it is, so a path with an extension of its own has no twin.
-function markdownTwin(pathname: string): string | undefined {
+// A path with any extension other than `.html` names a file, not a page, so it is never negotiated.
+function isPage(pathname: string): boolean {
+  const name = pathname.slice(pathname.lastIndexOf("/") + 1)
+  return !name.includes(".") || name.endsWith(".html")
+}
+
+// The build writes each page's Markdown copy beside it, a section index `/a/` as `/a.md`.
+function markdownTwin(pathname: string): string {
   if (pathname === "/") return "/llms.txt"
-  const page = pathname.replace(/\/$/, "").replace(/\.html$/, "")
-  if (/\.[^/]*$/.test(page)) return undefined
-  return `${page}.md`
+  return `${pathname.replace(/\/$/, "")}.md`
 }
 
 // Markdown is chosen only when it is named outright and ranked no lower than HTML, so browsers and
@@ -55,8 +59,10 @@ function prefersMarkdown(accept: string | null): boolean {
   const ranges = accept.split(",").flatMap((entry) => {
     const [range, ...params] = entry.split(";").map((part) => part.trim().toLowerCase())
     if (!range) return []
-    const q = params.find((param) => param.startsWith("q="))
-    return [{ range, q: q === undefined ? 1 : Number(q.slice(2)) || 0 }]
+    const q = params
+      .map((param) => param.split("=").map((part) => part.trim()))
+      .find(([name]) => name === "q")?.[1]
+    return [{ range, q: q === undefined ? 1 : Number(q) || 0 }]
   })
   const quality = (type: string) => {
     const [major] = type.split("/")
@@ -66,7 +72,10 @@ function prefersMarkdown(accept: string | null): boolean {
       ranges.find(({ range }) => range === "*/*")
     return match?.q ?? 0
   }
-  const markdown = ranges.find(({ range }) => range === "text/markdown")?.q ?? 0
+  const markdown = Math.max(
+    0,
+    ...ranges.filter(({ range }) => MARKDOWN_RANGES.includes(range)).map(({ q }) => q),
+  )
   return markdown > 0 && markdown >= quality("text/html")
 }
 
@@ -78,12 +87,18 @@ function varyOnAccept(response: Response): Response {
   return varied
 }
 
-function notFound(pathname: string): string {
-  return `# Page not found
+function notFound(request: Request, url: URL): Response {
+  const body = `# Page not found
 
-Nothing is published at \`${pathname}\` on ${SITE}.
+Nothing is published at \`${url.pathname}\` on ${url.origin}.
 
-- [llms.txt](${SITE}/llms.txt) lists every page of the documentation, each as Markdown.
-- [sitemap.xml](${SITE}/sitemap.xml) lists every page as HTML.
+- [llms.txt](${url.origin}/llms.txt) lists every page of the documentation, each as Markdown.
+- [sitemap.xml](${url.origin}/sitemap.xml) lists every page as HTML.
 `
+  return varyOnAccept(
+    new Response(request.method === "HEAD" ? null : body, {
+      status: 404,
+      headers: { "Content-Type": MARKDOWN_TYPE },
+    }),
+  )
 }

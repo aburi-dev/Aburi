@@ -8,9 +8,12 @@
     "directory": "./.vitepress/dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    // Pages are negotiated between HTML and Markdown; hashed bundles, images and schemas never are.
+    // The Worker picks HTML or Markdown for a page and passes any other file through, so the
+    // directories that hold no page skip it.
     "run_worker_first": ["/*", "!/assets/*", "!/brand/*", "!/schema/*"]
   },
+  // Every page request runs the Worker, so a throw from it would fail the whole site.
+  "observability": { "enabled": true },
   "routes": [
     {
       "pattern": "aburi.dev",
