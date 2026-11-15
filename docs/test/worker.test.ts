@@ -28,6 +28,8 @@ const FILES: Record<string, File> = {
   "/varied.html": html("<h1>Varied</h1>", { headers: { Vary: "Accept-Encoding" } }),
   "/lower-varied.html": html("<h1>Lower</h1>", { headers: { Vary: "accept" } }),
   "/brand/og.png": { body: "png", type: "image/png" },
+  "//doubled/page.html": html("<h1>Doubled</h1>"),
+  "//doubled/page.md": markdown("# Doubled"),
 }
 
 const NOT_FOUND_PAGE = "<h1>404 page</h1>"
@@ -163,12 +165,19 @@ describe("a request that asks for Markdown", () => {
     expect(body).toContain("https://preview.example.dev/sitemap.xml")
   })
 
-  it("for a path starting with // never reaches past the site's own host", async () => {
-    const { response, site } = get("//guide/page", { accept: MARKDOWN })
-    expect((await response).status).toBe(404)
+  it("for a path starting with // asks for its twin on the site's own host", async () => {
+    const { response, site } = get("//doubled/page", { accept: MARKDOWN })
+    expect(await (await response).text()).toBe("# Doubled")
     expect(site.requests.map(({ url }) => new URL(url).host)).toEqual(
       site.requests.map(() => "aburi.dev"),
     )
+  })
+
+  it("asks for the twin without the page's query", async () => {
+    const { response, site } = get("/guide/page?tab=1", { accept: MARKDOWN })
+    await response
+    const twin = site.requests.find(({ url }) => new URL(url).pathname === "/guide/page.md")
+    expect(twin && new URL(twin.url).search).toBe("")
   })
 
   it("by HEAD carries the Markdown headers and no body", async () => {
