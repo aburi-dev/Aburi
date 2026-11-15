@@ -6,7 +6,10 @@ export function spend(ms: number): void {
 export interface CostGrowthOptions {
   /** Rounds to take the median of. */
   readonly rounds?: number
-  /** Each side repeats until this much time has passed, so a call far below the clock's grain still times. */
+  /**
+   * How long each side is timed for, in batches long enough that a call far below the clock's grain
+   * still times.
+   */
   readonly sampleMs?: number
   /** A round at or above this ratio is timed once more, in case a stall landed in it. */
   readonly retryAt?: number
@@ -19,22 +22,24 @@ export interface CostGrowth {
 
 /**
  * How many times longer a call of `large` takes than a call of `small`. Each round times both in
- * turn, alternating which goes first, so a slower runner slows both sides alike and a scheduling
- * stall spoils one round rather than the median.
+ * turn, alternating which goes first, so a slower runner slows both sides alike. A side costs what
+ * its fastest batch did, since a stall only ever adds time: a runner that shares its cores, and so
+ * takes them away for a while at a steady beat, would otherwise slow whichever side is timed first
+ * in every round alike.
  */
 export function costGrowth(
   small: () => void,
   large: () => void,
   { rounds = 5, sampleMs = 5, retryAt = Number.POSITIVE_INFINITY }: CostGrowthOptions = {},
 ): CostGrowth {
-  meanCost(small, sampleMs)
+  leastCost(small, sampleMs)
   const measure = (largeFirst: boolean): number => {
     if (largeFirst) {
-      const largeCost = meanCost(large, sampleMs)
-      return largeCost / meanCost(small, sampleMs)
+      const largeCost = leastCost(large, sampleMs)
+      return largeCost / leastCost(small, sampleMs)
     }
-    const smallCost = meanCost(small, sampleMs)
-    return meanCost(large, sampleMs) / smallCost
+    const smallCost = leastCost(small, sampleMs)
+    return leastCost(large, sampleMs) / smallCost
   }
   const ratios: number[] = []
   for (let round = 0; round < rounds; round++) {
@@ -44,16 +49,29 @@ export function costGrowth(
   return { median: median(ratios), ratios }
 }
 
-function meanCost(run: () => void, sampleMs: number): number {
-  let calls = 0
+const BATCHES = 10
+const MIN_BATCHES = 2
+
+// A side runs for `sampleMs` and over at least `MIN_BATCHES` batches, so a stall that outlasts the
+// sample spoils one batch of it rather than all.
+function leastCost(run: () => void, sampleMs: number): number {
+  const batchMs = sampleMs / BATCHES
   const started = performance.now()
-  let elapsed = 0
+  let least = Number.POSITIVE_INFINITY
+  let batches = 0
   do {
-    run()
-    calls++
-    elapsed = performance.now() - started
-  } while (elapsed < sampleMs)
-  return elapsed / calls
+    const batchStarted = performance.now()
+    let calls = 0
+    let elapsed = 0
+    do {
+      run()
+      calls++
+      elapsed = performance.now() - batchStarted
+    } while (elapsed < batchMs)
+    least = Math.min(least, elapsed / calls)
+    batches++
+  } while (batches < MIN_BATCHES || performance.now() - started < sampleMs)
+  return least
 }
 
 function median(values: readonly number[]): number {
