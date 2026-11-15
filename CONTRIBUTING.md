@@ -185,8 +185,9 @@ need a hand before they merge:
   write the catalog, each in a style the next check would flag.
 - The workflow examples in the READMEs and under `docs/` use the same action
   majors as `.github/workflows/`; move them in the same pull request when a
-  major lands. Dependabot moves `.github/workflows/actions.lock` with the
-  `uses:` lines, so the lockfile check stays green without a rerun. A bump
+  major lands. Dependabot is meant to move `.github/workflows/actions.lock`
+  with the `uses:` lines; when CI's `actions lockfile` job is red on its pull
+  request, run `gh actions-lock` on the branch and push the lockfile. A bump
   that reaches [`packages/github-action/action.yml`](packages/github-action/action.yml)
   changes what the action's users run and needs a changeset for
   `@aburi/github-action`.
