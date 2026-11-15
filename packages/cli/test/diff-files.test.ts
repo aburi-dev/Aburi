@@ -207,6 +207,8 @@ describe("aburi diff --base/--head over IRs made with different plugins", () => 
   })
   const pluginLines = (said: string) =>
     said.split("\n").filter((line) => line.includes("different plugins"))
+  const GRAMMAR =
+    "Under another grammar, every Symbol of that language can read as a syntax-only change. "
 
   it.each([
     [
@@ -214,48 +216,62 @@ describe("aburi diff --base/--head over IRs made with different plugins", () => 
       [TS, PRISMA],
       [TS],
       "effects-prisma 0.6.0 (effects) only in base",
+      "",
     ],
     [
       "a plugin only the head loaded",
       [TS],
       [TS, PRISMA],
       "effects-prisma 0.6.0 (effects) only in head",
+      "",
+    ],
+    [
+      "another version of one plugin",
+      [TS],
+      [{ ...TS, version: "0.7.0" }],
+      "lang-typescript version 0.6.0 → 0.7.0",
+      "",
     ],
     [
       "another version and grammar of one plugin",
       [TS],
       [{ ...TS, version: "0.7.0", grammarRevision: "tree-sitter-typescript@0.24.0" }],
       "lang-typescript version 0.6.0 → 0.7.0, grammar tree-sitter-typescript@0.23.2 → tree-sitter-typescript@0.24.0",
+      GRAMMAR,
     ],
-  ])("names %s once, and diffs as it would without it", async (_, base, head, difference) => {
-    const gate = { failOn: "added" }
-    const differing = await diffDocuments(
-      workspace.root,
-      madeWith(EMPTY, ...base),
-      madeWith(ADDED_FOO, ...head),
-      gate,
-    )
-    const differingJson = await readFile(differing.report.diffJsonPath ?? "", "utf8")
-    const equal = await diffDocuments(
-      workspace.root,
-      madeWith(EMPTY, ...head),
-      madeWith(ADDED_FOO, ...head),
-      gate,
-    )
+  ])(
+    "names %s once, and diffs as it would without it",
+    async (_, base, head, difference, grammar) => {
+      const gate = { failOn: "added" }
+      const differing = await diffDocuments(
+        workspace.root,
+        madeWith(EMPTY, ...base),
+        madeWith(ADDED_FOO, ...head),
+        gate,
+      )
+      const differingJson = await readFile(differing.report.diffJsonPath ?? "", "utf8")
+      const equal = await diffDocuments(
+        workspace.root,
+        madeWith(EMPTY, ...head),
+        madeWith(ADDED_FOO, ...head),
+        gate,
+      )
 
-    expect(equal.report).toMatchObject({ summaryLine: "+1 -0 ~0 ↔0 ⤴0", exitCode: EXIT.GATE })
-    expect(pluginLines(equal.said)).toEqual([])
-    expect(differing.report).toMatchObject({
-      summaryLine: equal.report.summaryLine,
-      exitCode: equal.report.exitCode,
-    })
-    expect(differingJson).toBe(await readFile(equal.report.diffJsonPath ?? "", "utf8"))
-    expect(pluginLines(differing.said)).toEqual([
-      `⚠ The base and head IRs were made with different plugins: ${difference}. ` +
-        "A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. " +
-        "Rescan both sides with one plugin set, or diff the two revisions (`aburi diff <base>..<head>`), which scans both with the head's plugins.",
-    ])
-  })
+      expect(equal.report).toMatchObject({ summaryLine: "+1 -0 ~0 ↔0 ⤴0", exitCode: EXIT.GATE })
+      expect(pluginLines(equal.said)).toEqual([])
+      expect(differing.report).toMatchObject({
+        summaryLine: equal.report.summaryLine,
+        exitCode: equal.report.exitCode,
+      })
+      expect(differingJson).toBe(await readFile(equal.report.diffJsonPath ?? "", "utf8"))
+      expect(pluginLines(differing.said)).toEqual([
+        `⚠ The base and head IRs were made with different plugins: ${difference}. ` +
+          "A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. " +
+          grammar +
+          "Rescan both sides with one plugin set, or diff the two revisions (`aburi diff <base>..<head>`), which scans both with the head's plugins.",
+      ])
+    },
+  )
 
   it("lists every difference in one line, by plugin name", async () => {
     const NEST = {

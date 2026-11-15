@@ -333,19 +333,18 @@ tree-sitter grammars routinely rename nodes (`property_identifier` → `member_p
 To prevent this:
 
 1. **Language plugins record `grammarRevision` in the IR**:
-   On each IR emission, the exact grammar version is recorded in `generator.plugins[type=lang].grammarRevision`.
+   A lang plugin declares the exact grammar it parses with in its manifest's `grammarRevision` ([`extension-vocab.md`](./extension-vocab.md) §3.1), and each scan records it in `generator.plugins[type=lang].grammarRevision`.
    **The format is strictly fixed**: `^[\w./@-]+@\d+\.\d+\.\d+(?:[-+][\w.-]+)?$` (e.g. `tree-sitter-typescript@0.23.2`, `@oxc-project/parser@2.1.0+sha.abc123`).
-   The manifest schema validates the format. This prevents "incomparable" results caused by plugin authors' notation drift.
+   The manifest schema and the registry validate the format, and the scan refuses a plugin handed to it with a malformed one (`scan-plugin-misconfigured`). This prevents "incomparable" results caused by plugin authors' notation drift.
+   `lang-typescript` declares `@vscode/tree-sitter-wasm@<version>`: its build copies the `.wasm` grammars from that package, so the package's release identifies them exactly. A lang plugin that declares none is recorded as `<name>@<version>` with any build metadata dropped (the form takes one suffix): its own release stands for its grammar.
 
-2. **Diff computation verifies grammar revision equality**:
-   The `grammarRevision` of the same-language plugin in base and head is compared by **string equality**. If they do not match, the `syntax` fingerprint differences for that language are treated as **meaningless**.
-   However, api/logic fingerprints go through the plugin's extraction logic, so on grammar version mismatch a warning is shown at the top of the diff report: "**all fingerprint differences may originate from plugin version differences**" (api/logic differences themselves are still emitted normally).
-   - Affected Symbols are not shown in the `syntax-only changed` section of the diff report
-   - Symbols with `apiChanged: true` / `logicChanged: true` are shown as usual
-   - The grammar revision mismatch is shown as a single warning line at the top of the diff report
+2. **The diff never compares two grammars by accident, and says so when it is handed two**:
+   `aburi diff <base>..<head>` scans both revisions with the head's plugins ([`cli-spec.md`](./cli-spec.md) §6.4 step 3), so its two IRs share one grammar by construction, and a `pnpm update` that moves the grammar moves the syntax fingerprint of both sides at once: nothing reads as changed for it.
+   Two stored IRs (`aburi diff --base <ir> --head <ir>`) can disagree. The CLI compares the `grammarRevision` of each plugin both record by **string equality**, and names a mismatch on its plugin-set warning line, which then says that every Symbol of that language can read as a syntax-only change ([`cli-spec.md`](./cli-spec.md) §6.6, CL62).
+   The diff itself reports what the two documents say ([`diff-algorithm.md`](./diff-algorithm.md) §11.8): it does not discount the syntax differences, and `diff.json` records nothing of the mismatch. Syntax-only changes already sit in the report's folded, lowest-priority section, so a grammar wave lands there; a gate on `changed` still counts it, which is why the line tells the caller to rescan both sides with one plugin set or diff the two revisions. The api/logic fingerprints are reported as usual.
 
-3. **Enforce the grammar version via peerDependencies in package.json**:
-   Each language plugin pins its supported grammar version in peerDependencies, so an inconsistent install is detectable at install time.
+3. **The grammar is pinned by the plugin's own release**:
+   `lang-typescript` vendors its grammars at build time from a devDependency, so an installed release always parses with the grammar it was built with, and moves to another only with a new release of the plugin. A plugin that loads a grammar package the user installs instead pins the version it supports in peerDependencies, so an inconsistent install is detectable at install time.
 
 The `api` / `logic` fingerprints are defined by plugin-independent computation conventions (§3, §4) and are therefore unaffected by grammar versions. Only `syntax` is subject to this consideration.
 

@@ -111,6 +111,11 @@ export const myLangManifest: LangManifest = {
   // run. The manifest name ("lang-mylang") is a plugin ref and cannot be used
   // here. `makeLanguageId` checks the grammar and brands the string.
   languageId: makeLanguageId("my"),
+  // The exact grammar you parse with, as `<package>@<MAJOR.MINOR.PATCH>`. The
+  // IR records it, and `aburi diff` over two stored IRs warns when it differs,
+  // since every syntax fingerprint moves with the grammar. Leave it out and the
+  // IR records "lang-mylang@0.1.0": your own release stands for the grammar.
+  grammarRevision: "tree-sitter-mylang@0.21.0",
   engines: { aburi: "*" },
   provides: {
     effects: [],

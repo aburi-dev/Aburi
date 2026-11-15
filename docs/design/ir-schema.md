@@ -136,7 +136,7 @@ Normalizing at the comparator instead would fix an ordering and leave the two sp
     "name": "aburi",
     "version": "1.0.0",
     "plugins": [                               // required; records ALL plugins (lang/framework/effects)
-      { "name": "lang-typescript",  "type": "lang",      "version": "1.0.0", "grammarRevision": "tree-sitter-typescript@0.23.2" },
+      { "name": "lang-typescript",  "type": "lang",      "version": "1.0.0", "grammarRevision": "@vscode/tree-sitter-wasm@0.3.1" },  // the manifest's, or <name>@<version>
       { "name": "framework-nestjs", "type": "framework", "version": "1.0.0", "grammarRevision": null },
       { "name": "effects-prisma",   "type": "effects",   "version": "1.0.0", "grammarRevision": null }
     ]

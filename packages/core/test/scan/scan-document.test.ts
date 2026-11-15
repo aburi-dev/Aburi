@@ -3,6 +3,7 @@ import { join } from "node:path"
 import {
   component,
   errorFrom,
+  irSchemaViolations,
   makeCall,
   recordingLogger,
   relativePath,
@@ -95,12 +96,45 @@ describe("scan — what it refuses", () => {
       expect(parsed).toEqual([])
     },
   )
+
+  it.each([
+    ["with no version", "tree-sitter-stub"],
+    ["with a version range", "tree-sitter-stub@^1.0.0"],
+    ["that is not a string", 1],
+  ])(
+    "refuses a language plugin whose grammarRevision is one %s, before parsing anything",
+    async (_, grammarRevision) => {
+      await workspace.writeSource("a.stub", "a")
+      const parsed: string[] = []
+      const language = stubLanguagePlugin({
+        parseFile: async (file) => {
+          parsed.push(file.path)
+          return { tree: {}, errors: [], imports: [] }
+        },
+      })
+      Reflect.set(language.manifest, "grammarRevision", grammarRevision)
+
+      const error = await errorFrom(CoreError, () =>
+        scanStubs(workspace.root, { languages: [language] }),
+      )
+
+      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "lang-stub" })
+      expect(error.message).toBe(
+        `Language plugin "lang-stub" declares grammarRevision ${JSON.stringify(grammarRevision)} in its manifest, but a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".`,
+      )
+      expect(parsed).toEqual([])
+    },
+  )
 })
 
 describe("scan — the Document it assembles", () => {
-  it("names the generator, and every plugin sorted by name with a grammar revision for a language", async () => {
+  it("names the generator, and every plugin sorted by name with the grammar a language declares", async () => {
     const { ir } = await scanStubs(workspace.root, {
-      languages: [stubLanguagePlugin({ manifest: langManifest("lang-zeta") })],
+      languages: [
+        stubLanguagePlugin({
+          manifest: { ...langManifest("lang-zeta"), grammarRevision: "tree-sitter-zeta@0.4.1" },
+        }),
+      ],
       frameworks: [stubFrameworkPlugin("framework-mid")],
       effects: [stubEffectsPlugin("effects-alpha", () => null)],
     })
@@ -111,10 +145,34 @@ describe("scan — the Document it assembles", () => {
       plugins: [
         { name: "effects-alpha", type: "effects", version: "0.0.0", grammarRevision: null },
         { name: "framework-mid", type: "framework", version: "0.0.0", grammarRevision: null },
-        { name: "lang-zeta", type: "lang", version: "0.0.0", grammarRevision: "pending@0.0.0" },
+        {
+          name: "lang-zeta",
+          type: "lang",
+          version: "0.0.0",
+          grammarRevision: "tree-sitter-zeta@0.4.1",
+        },
       ],
     })
   })
+
+  it.each([
+    ["0.6.0", "lang-zeta@0.6.0"],
+    ["2.0.0-rc.1", "lang-zeta@2.0.0-rc.1"],
+    ["2.0.0-rc.1+build.7", "lang-zeta@2.0.0-rc.1"],
+    ["1.4.0+exp", "lang-zeta@1.4.0"],
+  ])(
+    "records a language that declares no grammar, at version %s, as its own release %s",
+    async (version, grammarRevision) => {
+      const { ir } = await scanStubs(workspace.root, {
+        languages: [stubLanguagePlugin({ manifest: { ...langManifest("lang-zeta"), version } })],
+      })
+
+      expect(ir.generator.plugins).toEqual([
+        { name: "lang-zeta", type: "lang", version, grammarRevision },
+      ])
+      expect(irSchemaViolations(ir)).toEqual([])
+    },
+  )
 
   it("takes the generator's name and version from the caller", async () => {
     const { ir } = await scanStubs(workspace.root, {

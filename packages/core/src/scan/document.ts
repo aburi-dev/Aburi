@@ -9,6 +9,7 @@ import type {
   IR,
   LanguagePlugin,
   LspEnrichmentStats,
+  PluginManifest,
   PluginRef,
   Stats,
 } from "@aburi/types"
@@ -103,24 +104,26 @@ export interface PluginSet {
 }
 
 export function buildPluginRefs(input: PluginSet): PluginRef[] {
-  const refs: PluginRef[] = []
-  for (const plugin of input.languages)
-    refs.push(buildPluginRef(plugin.manifest.name, "lang", plugin.manifest.version))
-  for (const plugin of input.frameworks)
-    refs.push(buildPluginRef(plugin.manifest.name, "framework", plugin.manifest.version))
-  for (const plugin of input.effects)
-    refs.push(buildPluginRef(plugin.manifest.name, "effects", plugin.manifest.version))
+  const refs: PluginRef[] = [
+    ...input.languages.map(({ manifest }) =>
+      pluginRef(manifest, "lang", grammarRevision(manifest)),
+    ),
+    ...input.frameworks.map(({ manifest }) => pluginRef(manifest, "framework", null)),
+    ...input.effects.map(({ manifest }) => pluginRef(manifest, "effects", null)),
+  ]
   refs.sort(compareBy((ref) => ref.name))
   return refs
 }
 
-const PENDING_GRAMMAR_REVISION = "pending@0.0.0"
+function pluginRef(
+  { name, version }: PluginManifest,
+  type: PluginRef["type"],
+  grammarRevision: string | null,
+): PluginRef {
+  return { name, type, version, grammarRevision }
+}
 
-function buildPluginRef(name: string, type: PluginRef["type"], version: string): PluginRef {
-  return {
-    name,
-    type,
-    version,
-    grammarRevision: type === "lang" ? PENDING_GRAMMAR_REVISION : null,
-  }
+// Build metadata names a build of one release, and the revision form takes one suffix, not two.
+function grammarRevision(manifest: PluginManifest): string {
+  return manifest.grammarRevision ?? `${manifest.name}@${manifest.version.replace(/\+.*$/, "")}`
 }

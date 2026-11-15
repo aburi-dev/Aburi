@@ -85,29 +85,48 @@ function describeScanFault(report: ScanReport): string {
 function warnOnPluginSetDifference(baseIR: IR, headIR: IR, warn: WarnFn): void {
   const differences = pluginSetDifferences(baseIR.generator.plugins, headIR.generator.plugins)
   if (differences.length === 0) return
+  const grammar = differences.some((difference) => difference.grammarChanged)
+    ? "Under another grammar, every Symbol of that language can read as a syntax-only change. "
+    : ""
   warn(
-    `⚠ The base and head IRs were made with different plugins: ${differences.join("; ")}. ` +
-      `A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. ` +
+    `⚠ The base and head IRs were made with different plugins: ${differences.map((difference) => difference.said).join("; ")}. ` +
+      `A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. ${grammar}` +
       `Rescan both sides with one plugin set, or diff the two revisions (\`aburi diff <base>..<head>\`), which scans both with the head's plugins.`,
   )
 }
 
-function pluginSetDifferences(base: readonly PluginRef[], head: readonly PluginRef[]): string[] {
+interface PluginDifference {
+  said: string
+  grammarChanged: boolean
+}
+
+function pluginSetDifferences(
+  base: readonly PluginRef[],
+  head: readonly PluginRef[],
+): PluginDifference[] {
   const baseByName = new Map(base.map((plugin) => [plugin.name, plugin]))
   const headByName = new Map(head.map((plugin) => [plugin.name, plugin]))
   const names = [...new Set([...baseByName.keys(), ...headByName.keys()])].sort(compareCodeUnit)
   return names.flatMap((name) => {
     const before = baseByName.get(name)
     const after = headByName.get(name)
-    if (after === undefined)
-      return before === undefined ? [] : [`${describePlugin(before)} only in base`]
-    if (before === undefined) return [`${describePlugin(after)} only in head`]
+    if (after === undefined) {
+      return before === undefined
+        ? []
+        : [{ said: `${describePlugin(before)} only in base`, grammarChanged: false }]
+    }
+    if (before === undefined) {
+      return [{ said: `${describePlugin(after)} only in head`, grammarChanged: false }]
+    }
+    const grammar = fieldChange("grammar", before.grammarRevision, after.grammarRevision)
     const changes = [
       fieldChange("type", before.type, after.type),
       fieldChange("version", before.version, after.version),
-      fieldChange("grammar", before.grammarRevision, after.grammarRevision),
+      grammar,
     ].filter((change) => change !== null)
-    return changes.length === 0 ? [] : [`${name} ${changes.join(", ")}`]
+    return changes.length === 0
+      ? []
+      : [{ said: `${name} ${changes.join(", ")}`, grammarChanged: grammar !== null }]
   })
 }
 

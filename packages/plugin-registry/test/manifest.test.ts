@@ -67,6 +67,11 @@ describe("parsePluginManifest", () => {
     ["a languageId outside the token grammar", langManifest({ languageId: "TS" })],
     ["an effects plugin declaring a languageId", { ...effectsManifest(), languageId: "ts" }],
     ["a framework plugin declaring a languageId", { ...frameworkManifest(), languageId: "ts" }],
+    ["a grammarRevision with no version", langManifest({ grammarRevision: "tree-sitter-ts" })],
+    [
+      "an effects plugin declaring a grammarRevision",
+      { ...effectsManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+    ],
   ])("refuses %s against the schema, naming the plugin and carrying ajv's errors", async (_, m) => {
     const caught = await refusalOf(JSON.stringify(m))
     expect(caught).toMatchObject({ code: "manifest-invalid", plugins: [m.name] })
