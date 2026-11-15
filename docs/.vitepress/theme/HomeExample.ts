@@ -1,4 +1,4 @@
-import { h } from "vue"
+import { h, type VNode } from "vue"
 
 type Line = { kind: string; text: string }
 
@@ -56,7 +56,7 @@ const pane = (opts: {
     h("p", { class: "pane-foot" }, opts.foot),
   ])
 
-export default () =>
+export default (): VNode =>
   h("section", { class: "home-example" }, [
     h("div", { class: "panes" }, [
       pane({

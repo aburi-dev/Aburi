@@ -3,10 +3,17 @@
   "name": "aburi",
   "compatibility_date": "2026-07-01",
   "preview_urls": true,
+  "main": "./worker/index.ts",
   "assets": {
     "directory": "./.vitepress/dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    // The Worker picks HTML or Markdown for a page and passes any other file through, so the
+    // directories that hold no page skip it.
+    "run_worker_first": ["/*", "!/assets/*", "!/brand/*", "!/schema/*"]
   },
+  // Every page request runs the Worker, so a throw from it would fail the whole site.
+  "observability": { "enabled": true },
   "routes": [
     {
       "pattern": "aburi.dev",
