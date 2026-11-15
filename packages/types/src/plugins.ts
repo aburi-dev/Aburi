@@ -244,7 +244,7 @@ export interface SymbolClassification {
   /** Plugin-defined rationale. */
   derivedBy: string
   confidence?: Confidence
-  /** The middleware the registration hands its handler to, in the order they run. */
+  /** The middleware the Symbol runs ahead of its handler, in the order they run. */
   middleware?: readonly string[]
 }
 

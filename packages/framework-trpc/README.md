@@ -61,6 +61,47 @@ written in it are the procedure's: with
 [`@aburi/effects-prisma`](../effects-prisma/README.md), a mutation whose
 resolver calls `prisma.user.create(…)` carries `db.write`.
 
+A procedure or base procedure also names its middleware, which `@aburi/core`
+writes to the Symbol's `middleware` and the logic fingerprint reads, so a
+procedure that loses `.use(isAuthed)` is a logic change the report names
+(`- middleware removed: isAuthed`) rather than a reformat, and two `.use` calls
+swapped are one with `reordered: true`. The names are, in the order they run,
+the base procedure the chain starts from, what each `.use(…)` on the
+declaration's own chain is handed, and the builder each `.concat(…)` joins:
+`t.procedure.use(timing).use(isAuthed).query(fn)` names `timing` and
+`isAuthed`, and `protectedProcedure.use(isAdmin).mutation(fn)` names
+`protectedProcedure` and `isAdmin`. A base procedure runs its middleware ahead
+of what is built on it, as the builder a `.concat(…)` joins runs its own where
+the call is written, so a mutation moved from `protectedProcedure` to
+`publicProcedure` is a logic change too. The instance's `t.procedure` adds
+nothing and is not named. An inline middleware is left out, since its body is
+the Symbol's own and already read. Each entry is named from the syntax tree as
+[`@aburi/framework-express`](../framework-express/README.md) names its
+middleware, so line breaks, comments and quote style do not reach it:
+`isAuthed`, `auth.required`, `requireRole("admin")` for `requireRole('admin')`,
+`rateLimit(…)` for `rateLimit({ max: 10 })`, and `<computed>` for anything no
+name spells.
+
+What a base procedure adds is named on the base procedure itself: removing
+`.use(isAuthed)` from `protectedProcedure = t.procedure.use(isAuthed)` is a
+logic change to `protectedProcedure` alone. The plugin reads one declaration at
+a time, so it cannot follow `protectedProcedure` to the chain that built it,
+and what is built on it names `protectedProcedure` as before.
+
+Not named today:
+
+- The body of a middleware made in the `.use(…)` that hands it over
+  (`t.procedure.use(t.middleware(async ({ ctx, next }) => { … }))`). The entry
+  is named `t.middleware(…)`, but `@aburi/lang-typescript` reads only the
+  functions handed straight to a call on the chain, so an edit inside that
+  body is syntax-only and two such middleware read alike. Declare it as a
+  `const` (`const isAuthed = t.middleware(…)`), a middleware Symbol whose body
+  is read, and hand that name to `.use(isAuthed)`.
+- Where a `.use(…)` sits against `.input(…)` and `.meta(…)`. A middleware
+  ahead of `.input(…)` runs without the parsed input, and one that reads `meta`
+  sees what `.meta(…)` set, but the list holds middleware alone, so moving a
+  `.use` across either leaves it as it was.
+
 Not classified today:
 
 - A procedure written inside a router's object literal

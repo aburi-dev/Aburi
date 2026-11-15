@@ -11,6 +11,7 @@ import {
   type SymbolMoved,
   type SymbolMovedChanged,
 } from "@aburi/types"
+import { expect } from "vitest"
 import { sliceId } from "./ir"
 
 /** The Slice of `members` in the order given, under an id made from the first. */
@@ -98,6 +99,12 @@ export function changeLines(changes: readonly SymbolChange[]): string[] {
       ? `${change.status} ${change.before.id} -> ${change.after.id}`
       : `${change.status} ${change.symbol.id}`,
   )
+}
+
+/** The one Symbol `diff` changed in place, when it adds and removes none. */
+export function onlyChange(diff: DiffResult): SymbolChanged {
+  expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
+  return soleChange(diff.symbols, "changed")
 }
 
 export function soleChange<S extends SymbolChange["status"]>(
