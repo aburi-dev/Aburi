@@ -1,6 +1,6 @@
 import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Language, Node, TreeCursor } from "web-tree-sitter"
-import { firstNonCommentChild, leadingOperatorOperand } from "./ast-helpers"
+import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
 
 export function normalizeAst(symbol: SymbolCandidate<Node>): string {
   if (symbol.kind === "call") return serialize(symbol.fullNode)
@@ -27,19 +27,11 @@ function parameterList(fullNode: Node): string {
   const list = fullNode.childForFieldName("parameters")
   if (list !== null) return firstNonCommentChild(list) === null ? "" : serialize(list)
   const lone = fullNode.childForFieldName("parameter")
-  return lone === null ? "" : loneParameter(lone)
+  return lone === null ? "" : wrapLoneParameter(serialize(lone))
 }
 
 // A formatter adds the parentheses a lone arrow parameter may go without (`x => …` → `(x) => …`),
 // so it is described as the parenthesised spelling parses.
-function loneParameter(parameter: Node): string {
-  return wrapLoneParameter(serialize(parameter))
-}
-
-function loneParameterAt(cursor: TreeCursor, type: string, grammar: Grammar): string {
-  return wrapLoneParameter(serializeAt(cursor, type, grammar))
-}
-
 function wrapLoneParameter(parameter: string): string {
   return `(formal_parameters (required_parameter ${parameter}))`
 }
@@ -83,7 +75,7 @@ function serialize(node: Node): string {
 // materialised to ask.
 function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string {
   if (SKIPPED_NODE_TYPES.has(type)) return ""
-  if (LEADING_OPERATOR_TYPES.has(type)) {
+  if (hasLeadingOperator(type)) {
     const operand = leadingOperatorOperand(cursor.currentNode)
     if (operand !== null) return serialize(operand)
   }
@@ -96,13 +88,12 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
       if (cursor.nodeIsMissing) continue
       const typeId = cursor.nodeTypeId
       const childType = grammar.typeName(typeId)
-      if (MAYBE_EXTRA_TYPES.has(childType) && cursor.currentNode.isExtra) continue
+      if (grammar.mayBeExtra.has(childType) && cursor.currentNode.isExtra) continue
       if (grammar.isNamed(typeId)) {
-        const rendered =
-          parameterField !== null && cursor.currentFieldId === parameterField
-            ? loneParameterAt(cursor, childType, grammar)
-            : serializeAt(cursor, childType, grammar)
-        if (rendered.length > 0) children.push(rendered)
+        const lone = parameterField !== null && cursor.currentFieldId === parameterField
+        const rendered = serializeAt(cursor, childType, grammar)
+        if (lone) children.push(wrapLoneParameter(rendered))
+        else if (rendered.length > 0) children.push(rendered)
       } else if (
         childType === "," &&
         ELIDING_TYPES.has(type) &&
@@ -127,6 +118,7 @@ interface Grammar {
   typeName(typeId: number): string
   isNamed(typeId: number): boolean
   readonly parameterField: number | null
+  readonly mayBeExtra: ReadonlySet<string>
 }
 
 const grammars = new WeakMap<Language, Grammar>()
@@ -136,19 +128,28 @@ function grammarOf(language: Language): Grammar {
   if (known !== undefined) return known
   const named: boolean[] = []
   const grammar: Grammar = {
-    // As `Node.type` names a type id the grammar has no name for.
+    // Falls back as `Node.type` does: the grammar has no name for the `ERROR` id.
     typeName: (typeId) => language.types[typeId] || "ERROR",
     isNamed: (typeId) => (named[typeId] ??= language.nodeTypeIsNamed(typeId)),
     parameterField: language.fieldIdForName("parameter"),
+    mayBeExtra: extraTypes(language),
   }
   grammars.set(language, grammar)
   return grammar
 }
 
-// The grammar's extras, and the ERROR nodes error recovery inserts as extras.
-const MAYBE_EXTRA_TYPES: ReadonlySet<string> = new Set(["comment", "html_comment", "ERROR"])
+// An extra may appear in any state and is shifted without leaving it, so the start state's table
+// names each one. Error recovery also inserts `ERROR` nodes as extras.
+function extraTypes(language: Language): ReadonlySet<string> {
+  const types = new Set(["ERROR"])
+  for (let typeId = 0; typeId < language.nodeTypeCount; typeId++) {
+    const name = language.types[typeId]
+    if (name && language.nextState(START_STATE, typeId) === START_STATE) types.add(name)
+  }
+  return types
+}
 
-const LEADING_OPERATOR_TYPES: ReadonlySet<string> = new Set(["union_type", "intersection_type"])
+const START_STATE = 1
 
 const ELIDING_TYPES: ReadonlySet<string> = new Set(["array", "array_pattern"])
 
