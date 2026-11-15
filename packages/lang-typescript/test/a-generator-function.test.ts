@@ -88,10 +88,13 @@ describe("a generator function is a function wherever one is read", () => {
       "inline-handler",
       ["fetchPage"],
     ],
-  ])("walks a generator %s as its body", async (_site, source, id, evidence, calls) => {
-    const symbol = await symbolOf(source, id)
+  ])(
+    "walks a generator %s as a function of its own",
+    async (_site, source, id, evidence, calls) => {
+      const symbol = await symbolOf(source, id)
 
-    expect(symbol.derivedBy).toContain(evidence)
-    expect(await callsOf(source, id)).toEqual(calls)
-  })
+      expect(symbol.derivedBy).toContain(evidence)
+      expect(await callsOf(source, id)).toEqual(calls)
+    },
+  )
 })

@@ -68,7 +68,7 @@ Not classified today:
   gives an object handed to a call no member Symbols, so there is no Symbol to
   classify. The router is classified, and it walks its whole call, so the
   procedure's resolver is the router's: its calls, rules and effects are on the
-  router, and an edit to it is a logic change to the router. Declare the
+  router, and an edit to its rules or effects is a logic change to the router. Declare the
   procedure as a `const` and name it in the router to give it a Symbol of its
   own.
 - What is built on a base procedure whose name is neither `procedure` nor ends

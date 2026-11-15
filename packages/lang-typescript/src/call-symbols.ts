@@ -85,24 +85,22 @@ export function wrappedFunctions(value: Node): Node[] {
   return call.type === "call_expression" ? inlineHandlers(call) : []
 }
 
-export interface CallFunctions {
+export interface CallBodies {
   bodies: Node[]
   evidence: string[]
 }
 
-/**
- * The bodies of a declaration whose value is a call, `holder` being the node that holds the value:
- * the holder first, since the call runs where it is written, then the functions it is handed or
- * invokes, which the walk reads in place as functions of their own.
- */
-export function callFunctions(value: Node, holder: Node): CallFunctions {
+// The holder leads because the call runs where it is written; the functions follow so each is
+// walked as a function of its own.
+export function callBodies(value: Node, holder: Node): CallBodies {
   const unwrapped = unwrapValue(value)
   const awaited = unwrapped.type === "await_expression"
   const operand = awaited ? firstNonCommentChild(unwrapped) : unwrapped
   const call = operand === null ? null : unwrapValue(operand)
   if (call?.type !== "call_expression") return { bodies: [], evidence: [] }
   // An invoked function runs whether or not its result is awaited. An awaited call's value is what
-  // it resolves to, not a function wrapping the ones it is handed.
+  // it resolves to, not a function wrapping the ones it is handed, so the functions it is handed are
+  // walked with the call, not as functions of their own.
   const invoked = invokedBody(call)
   const handed = awaited ? [] : inlineHandlers(call)
   return {

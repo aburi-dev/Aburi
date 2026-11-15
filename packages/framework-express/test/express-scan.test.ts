@@ -414,6 +414,17 @@ describe("scan — a call's derivedBy", () => {
       `framework:express:router high framework:express:router:${callee}`,
     ])
   })
+
+  it("classifies a Router a default export makes", async () => {
+    await workspace.writeSource(
+      "src/app.ts",
+      [`import express from "express"`, "export default express.Router()"].join("\n"),
+    )
+
+    expect(classifiedIn(await scanWorkspace(), "src/app.ts")).toEqual([
+      "framework:express:router high framework:express:router:express.Router",
+    ])
+  })
 })
 
 describe("scan — the middleware a registration hands its handler to", () => {

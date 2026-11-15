@@ -7,7 +7,7 @@ import {
   makeSourceRange,
   nameFieldText,
 } from "./ast-helpers"
-import { callFunctions, layOutBodies } from "./call-symbols"
+import { callBodies, layOutBodies } from "./call-symbols"
 import { classMemberCandidates } from "./class-candidates"
 import { foldMemberGroup, groupMemberDeclaration, type MemberGroup } from "./declaration-merge"
 import { refuseAnonymousId } from "./declared-name"
@@ -111,7 +111,7 @@ function makeVariableCandidate(
     ]
   }
   const { bodies, evidence } =
-    initializer === null ? { bodies: [], evidence: [] } : callFunctions(initializer, initializer)
+    initializer === null ? { bodies: [], evidence: [] } : callBodies(initializer, initializer)
   return [
     {
       id,

@@ -11,33 +11,55 @@ describe("a default export written as a call", () => {
     expect(symbol.derivedBy).toEqual(["call-argument-function", "export-default"])
   })
 
+  const HANDED = ["call-argument-function", "export-default"]
+  const UNHANDED = ["export-default"]
+
+  // framework-next takes a `<default>` carrying `call-argument-function` for a page component, so
+  // the tag comes only from a function the call itself is handed.
   it.each([
-    ["a call handed an arrow", "export default withAuth(() => { q() })", ["withAuth", "q"]],
+    ["a call handed an arrow", "export default withAuth(() => { q() })", ["withAuth", "q"], HANDED],
     [
       "a call handed a named function expression",
       "export default memo(function Row() { r() })",
       ["memo", "r"],
+      HANDED,
     ],
-    ["a call in parentheses", "export default (withAuth(() => { q() }))", ["withAuth", "q"]],
-    ["a call behind `as`", "export default withAuth(() => { q() }) as Handler", ["withAuth", "q"]],
+    [
+      "a call in parentheses",
+      "export default (withAuth(() => { q() }))",
+      ["withAuth", "q"],
+      HANDED,
+    ],
+    [
+      "a call behind `as`",
+      "export default withAuth(() => { q() }) as Handler",
+      ["withAuth", "q"],
+      HANDED,
+    ],
     [
       "a chain of calls",
       "export default compose(log)(() => { a() }, () => { b() })",
       ["compose", "compose", "a", "b"],
+      HANDED,
     ],
     [
       "a call handed no function",
       "export default defineConfig({ plugins: [react()] })",
       ["defineConfig", "react"],
+      UNHANDED,
     ],
+    ["a call handed a name", "export default React.memo(Inner)", ["React.memo"], UNHANDED],
+    ["a call behind `await`", "export default await loadConfig()", ["loadConfig"], UNHANDED],
     [
       "a function inside an argument",
       "export default withAuth(withLogging(() => { q() }))",
       ["withAuth", "withLogging", "q"],
+      UNHANDED,
     ],
-  ])("walks %s, with the call that makes the value", async (_label, source, calls) => {
+  ])("walks %s, with the call that makes the value", async (_label, source, calls, derivedBy) => {
     expect(await idsOf(source)).toEqual([DEFAULT])
     expect(await callsOf(source, DEFAULT)).toEqual(calls)
+    expect((await symbolOf(source, DEFAULT)).derivedBy).toEqual(derivedBy)
   })
 
   it("holds the statement as its body and lays the functions out beside it", async () => {
@@ -67,6 +89,7 @@ describe("a default export written as a call", () => {
 
     expect(await idsOf(source)).toEqual([DEFAULT, "ts:src/a.ts#Page"])
     expect(await callsOf(source, DEFAULT)).toEqual(["withAuth"])
+    expect((await symbolOf(source, DEFAULT)).derivedBy).toEqual(["export-default"])
     expect(page.visibility).toBe("internal")
   })
 

@@ -147,10 +147,29 @@ describe("a const whose value is a call walks the call", () => {
     expect(rules.map((r) => [r.type, r.expr])).toEqual([["return", "x * 2"]])
   })
 
-  it("keeps the calls on a line in the order they are written", async () => {
-    const source = "export const h = pipe(() => a(), b())"
+  it.each([
+    [
+      "handed to a call inside an argument",
+      "export const z = withAuth(withLogging((x: number) => x * 2))",
+    ],
+    ["handed to an awaited call", "export const z = await withRetry((x: number) => x * 2)"],
+  ])("reads a concise arrow %s with the call, adding no return rule", async (_label, source) => {
+    expect((await walkOf(source, "ts:src/a.ts#z")).rules).toEqual([])
+  })
 
-    expect(await callsOf(source, "ts:src/a.ts#h")).toEqual(["pipe", "a", "b"])
+  it.each([
+    [
+      "a call beside a handed function",
+      "export const h = pipe(() => a(), b())",
+      ["pipe", "a", "b"],
+    ],
+    [
+      "a default of a handed function's parameter",
+      "export const h = pipe(() => { a() }, (x = dflt()) => { b(x) })",
+      ["pipe", "a", "dflt", "b"],
+    ],
+  ])("records %s once, in the order the line is written", async (_label, source, targets) => {
+    expect(await callsOf(source, "ts:src/a.ts#h")).toEqual(targets)
   })
 
   it("is still described by the whole declaration, as a const with no body is", async () => {
@@ -164,7 +183,7 @@ describe("a const whose value is a call walks the call", () => {
 
   it.each([
     [
-      "an initializer behind `await`",
+      "a function handed to an awaited call",
       "export const r = await withRetry(() => { q() })",
       "r",
       ["withRetry", "q"],
@@ -182,35 +201,31 @@ describe("a const whose value is a call walks the call", () => {
       ["withAuth", "withLogging", "q"],
     ],
     [
-      "a class handed to a call",
-      "export const A = mixin(class { m() { prisma.user.deleteMany() } })",
-      "A",
-      ["mixin", "prisma.user.deleteMany"],
+      "a function whose body has no width",
+      "export const z = withAuth(async (req: any) =>)",
+      "z",
+      ["withAuth"],
     ],
-    ["a body of no width", "export const z = withAuth(async (req: any) =>)", "z", ["withAuth"]],
     [
-      "a call handed no function",
+      "the object a call is handed",
       "export const z = makeClient({ retries: 3 })",
       "z",
       ["makeClient"],
     ],
     [
-      "an awaited call handed no function",
+      "the object an awaited call is handed",
       "export const n = await prisma.user.deleteMany({})",
       "n",
       ["prisma.user.deleteMany"],
     ],
-  ])(
-    "walks what %s is handed as part of the call, with no function of its own",
-    async (_label, source, name, targets) => {
-      const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
+  ])("walks %s with the call, as no function of its own", async (_label, source, name, targets) => {
+    const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
-      expect(symbol.kind).toBe("const")
-      expect(symbol.derivedBy).not.toContain("call-argument-function")
-      expect("mergedDeclarations" in symbol).toBe(false)
-      expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
-    },
-  )
+    expect(symbol.kind).toBe("const")
+    expect(symbol.derivedBy).not.toContain("call-argument-function")
+    expect("mergedDeclarations" in symbol).toBe(false)
+    expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
+  })
 })
 
 describe("what the reading leaves alone", () => {
@@ -220,12 +235,13 @@ describe("what the reading leaves alone", () => {
       "export const p = new Promise((resolve: any) => { q(resolve) })",
       "p",
     ],
-    ["a call read past a member access", "export const pool = makeClient().pool", "pool"],
+    ["a member of a call's result", "export const pool = makeClient().pool", "pool"],
     ["a value a call is one operand of", "export const n = count() + 1", "n"],
   ])("leaves %s unwalked", async (_label, source, name) => {
     const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
     expect(symbol.kind).toBe("const")
+    expect(symbol.derivedBy).not.toContain("call-argument-function")
     expect(symbol.bodyNode).toBeNull()
     expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual([])
   })

@@ -1,52 +1,23 @@
 import { describe, expect, it } from "vitest"
-import type { Node } from "web-tree-sitter"
 import { STATEMENT_LISTS } from "../src/extract-symbols"
-import { parseSource, requireTree, walksOf } from "./fixtures/ctx"
+import { walksOf } from "./fixtures/ctx"
+import { readingNodes } from "./fixtures/node-reads"
 
-const LIST_GETTERS = ["namedChildren", "children"] as const
-const CHILD_METHODS = ["namedChild", "child"] as const
+const LIST_GETTERS: ReadonlySet<string> = new Set(["namedChildren", "children"])
+const CHILD_METHODS: ReadonlySet<string> = new Set(["namedChild", "child"])
 
-// Counts the children read off statement lists rather than timing the scan, which would measure
-// the machine as much as the code. Every way of reading them is counted, so a rewrite stays guarded.
+// Counts the children read off statement lists. Every way of reading them is counted, so a rewrite
+// stays guarded.
 async function childrenRead(source: string): Promise<number> {
-  const tree = requireTree((await parseSource("")).tree)
-  const prototype = Object.getPrototypeOf(tree.rootNode) as object
-  const originals = new Map<string, PropertyDescriptor>()
   let reads = 0
-  for (const name of LIST_GETTERS) {
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, name)
-    const read = descriptor?.get
-    if (descriptor === undefined || read === undefined) throw new Error(`no ${name} getter`)
-    originals.set(name, descriptor)
-    Object.defineProperty(prototype, name, {
-      ...descriptor,
-      get(this: Node) {
-        const children = read.call(this) as unknown[]
-        if (STATEMENT_LISTS.has(this.type)) reads += children.length
-        return children
-      },
-    })
-  }
-  for (const name of CHILD_METHODS) {
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, name)
-    const method: unknown = descriptor?.value
-    if (descriptor === undefined || typeof method !== "function") {
-      throw new Error(`no ${name} method`)
-    }
-    originals.set(name, descriptor)
-    Object.defineProperty(prototype, name, {
-      ...descriptor,
-      value(this: Node, index: number): unknown {
-        if (STATEMENT_LISTS.has(this.type)) reads += 1
-        return method.call(this, index)
-      },
-    })
-  }
-  try {
-    await walksOf(source)
-  } finally {
-    for (const [name, descriptor] of originals) Object.defineProperty(prototype, name, descriptor)
-  }
+  await readingNodes(
+    (node, member, value) => {
+      if (!STATEMENT_LISTS.has(node.type)) return
+      if (LIST_GETTERS.has(member) && Array.isArray(value)) reads += value.length
+      else if (CHILD_METHODS.has(member)) reads += 1
+    },
+    () => walksOf(source),
+  )
   return reads
 }
 

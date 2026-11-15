@@ -320,6 +320,22 @@ describe("scan — what a const's initializer makes it", () => {
     )
   })
 
+  it("classifies a router a default export builds", async () => {
+    await workspace.writeSource(
+      "src/server.ts",
+      [
+        SERVER_IMPORT,
+        "const t = initTRPC.create()",
+        "export default t.router({ user: userRouter })",
+      ].join("\n"),
+    )
+
+    expect(classifiedIn(await scanWorkspace(), "src/server.ts")).toEqual([
+      "<default> framework:trpc:router high framework:trpc:router:t.router",
+      "t framework:trpc:instance high framework:trpc:instance:initTRPC.create",
+    ])
+  })
+
   it("reads only the const's own declarator", async () => {
     await workspace.writeSource(
       "src/server.ts",

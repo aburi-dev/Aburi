@@ -140,7 +140,7 @@ describe("a function a const's initializer or a default export runs in place", (
       "export-default",
       ["<computed>", "q"],
     ],
-  ])("is the body of %s", async (_label, source, name, exported, calls) => {
+  ])("is walked beside the call by %s", async (_label, source, name, exported, calls) => {
     const id = `ts:src/a.ts#${name}`
     const symbol = await symbolOf(source, id)
 

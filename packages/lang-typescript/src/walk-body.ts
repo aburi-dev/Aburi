@@ -21,17 +21,57 @@ import { conditionText, isTrivialExpr, LOOP_KINDS, makeRule, ruleText } from "./
 export function walkBody(symbol: SymbolCandidate<Node>, _ctx: WalkContext<Node>): BodyExtraction {
   const rules: Rule[] = []
   const calls: CallCandidate[] = []
-  const bodies = bodyNodesOf(symbol)
-  const holds = (outer: Node, inner: Node) => outer.id !== inner.id && isAncestorOf(outer, inner)
-  for (const body of bodies) {
-    if (bodies.some((other) => holds(other, body))) continue
-    const held = bodies.filter((other) => holds(body, other))
-    if (held.length === 0) visitRoot(body, rules, calls)
-    else visitHolding(body, held, rules, calls)
+  for (const { root, held } of nestedBodies(bodyNodesOf(symbol))) {
+    if (held.length === 0) visitRoot(root, rules, calls)
+    else visitHolding(root, holdingOf(root, held), rules, calls)
   }
   rules.sort((a, b) => a.line - b.line)
   calls.sort((a, b) => a.line - b.line)
   return { rules, calls }
+}
+
+interface NestedBodies {
+  readonly root: Node
+  readonly held: Node[]
+}
+
+// Two nodes of one tree either nest or do not meet, so ordered by where they start, a body is held
+// by the last root it ends inside. Comparing ranges rather than walking up from every body keeps a
+// `<module>` of many statements, or a const chaining many handlers, linear.
+function nestedBodies(bodies: readonly Node[]): NestedBodies[] {
+  const spans = bodies
+    .map((node, order) => ({ node, order, start: node.startIndex, end: node.endIndex }))
+    .sort((a, b) => a.start - b.start || b.end - a.end || a.order - b.order)
+  const roots: (NestedBodies & { readonly end: number; readonly order: number })[] = []
+  for (const { node, order, start, end } of spans) {
+    const last = roots.at(-1)
+    if (last !== undefined && start < last.end && node.id !== last.root.id) last.held.push(node)
+    else roots.push({ root: node, held: [], end, order })
+  }
+  return roots.sort((a, b) => a.order - b.order)
+}
+
+interface Holding {
+  readonly bodies: ReadonlyMap<number, Node>
+  /** The held bodies' parameter lists, left to `visitRoot`, which reads their defaults with the body. */
+  readonly parameterLists: ReadonlySet<number>
+  /** Every node between the root and a body it holds. */
+  readonly spine: ReadonlySet<number>
+}
+
+function holdingOf(root: Node, held: readonly Node[]): Holding {
+  const spine = new Set<number>()
+  for (const body of held) {
+    for (let node = body.parent; node !== null; node = node.parent) {
+      if (node.id === root.id || spine.has(node.id)) break
+      spine.add(node.id)
+    }
+  }
+  return {
+    bodies: new Map(held.map((body) => [body.id, body])),
+    parameterLists: new Set(held.flatMap((body) => parametersOf(body)?.id ?? [])),
+    spine,
+  }
 }
 
 function visitRoot(body: Node, rules: Rule[], calls: CallCandidate[]): void {
@@ -52,20 +92,14 @@ function visitRoot(body: Node, rules: Rule[], calls: CallCandidate[]): void {
 
 // A body held by another is read as a function of its own where it is written, so the calls on a
 // line keep the order they are written in.
-function visitHolding(
-  node: Node,
-  held: readonly Node[],
-  rules: Rule[],
-  calls: CallCandidate[],
-): void {
+function visitHolding(node: Node, holding: Holding, rules: Rule[], calls: CallCandidate[]): void {
   if (isCall(node)) recordCall(node, calls)
   for (const part of node.namedChildren) {
-    if (part === null || held.some((body) => parametersOf(body)?.id === part.id)) continue
-    const body = held.find((candidate) => candidate.id === part.id)
+    if (part === null || holding.parameterLists.has(part.id)) continue
+    const body = holding.bodies.get(part.id)
     if (body !== undefined) visitRoot(body, rules, calls)
-    else if (held.some((candidate) => isAncestorOf(part, candidate))) {
-      visitHolding(part, held, rules, calls)
-    } else visitNode(part, rules, calls)
+    else if (holding.spine.has(part.id)) visitHolding(part, holding, rules, calls)
+    else visitNode(part, rules, calls)
   }
 }
 
