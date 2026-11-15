@@ -188,6 +188,43 @@ describe("a call through a field of `this` carries the type the class declares t
       "C.m",
       "EventEmitter2",
     ],
+    [
+      "a generic class, whose type parameter names another type",
+      [
+        "export class C<Payload> {",
+        "  constructor(private events: EventEmitter2) {}",
+        '  m() { this.events.emit("a") }',
+        "}",
+      ].join("\n"),
+      "C.m",
+      "EventEmitter2",
+    ],
+    [
+      "a class the module declares beside it",
+      [
+        "export class Bus {}",
+        "export class C {",
+        "  events!: Bus",
+        '  m() { this.events.emit("a") }',
+        "}",
+      ].join("\n"),
+      "C.m",
+      "Bus",
+    ],
+    [
+      "a class in a namespace that declares no type of the name",
+      [
+        "export namespace N {",
+        "  export class Bus {}",
+        "  export class C {",
+        "    constructor(private events: EventEmitter2) {}",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "N.C.m",
+      "EventEmitter2",
+    ],
   ])("reads %s", async (_label, source, id, type) => {
     expect(await emitReceiverType(source, id)).toBe(type)
   })
@@ -281,6 +318,80 @@ describe("a call through `this` carries no type where the class does not declare
       "C.m",
     ],
     ["a parameter", "export function f(events: EventEmitter2) { events.emit() }", "f"],
+    [
+      "a type parameter of the class",
+      [
+        "export class C<Events> {",
+        "  constructor(private events: Events) {}",
+        '  m() { this.events.emit("a") }',
+        "}",
+      ].join("\n"),
+      "C.m",
+    ],
+    [
+      "a type parameter of the method a class is nested in",
+      classOf('  m<Bus>() { return class { events!: Bus; n() { this.events.emit("a") } } }'),
+      "C.m",
+    ],
+    [
+      "a type parameter of the function a class is declared in",
+      'export function f<Bus>() { return class { events!: Bus; n() { this.events.emit("a") } } }',
+      "f",
+    ],
+    [
+      "the name of the class expression itself",
+      'export const make = () => class Bus { events!: Bus; n() { this.events.emit("a") } }',
+      "make",
+    ],
+    [
+      "a class the enclosing function declares",
+      'export function f() { class Bus {} return class { events!: Bus; n() { this.events.emit("a") } } }',
+      "f",
+    ],
+    [
+      "a class a `switch` case declares",
+      'export function f(k: number) { switch (k) { case 1: class Bus {} return class { events!: Bus; n() { this.events.emit("a") } } } }',
+      "f",
+    ],
+    [
+      "a class the enclosing namespace declares",
+      [
+        "export namespace N {",
+        "  export class EventEmitter2 {}",
+        "  export class C {",
+        "    constructor(private events: EventEmitter2) {}",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "N.C.m",
+    ],
+    [
+      "a namespace an enclosing one declares, which a dotted type goes through",
+      [
+        "export namespace N {",
+        "  declare namespace ee { class EventEmitter2 {} }",
+        "  export class C {",
+        "    constructor(private events: ee.EventEmitter2) {}",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "N.C.m",
+    ],
+    [
+      "an import alias of the enclosing namespace",
+      [
+        "export namespace N {",
+        "  import EventEmitter2 = lib.Bus",
+        "  export class C {",
+        "    constructor(private events: EventEmitter2) {}",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "N.C.m",
+    ],
   ])("reads nothing from %s", async (_label, source, id) => {
     expect(await emitReceiverType(source, id)).toBeUndefined()
   })

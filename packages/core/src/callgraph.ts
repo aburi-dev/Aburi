@@ -7,7 +7,13 @@ import type {
   SymbolId,
   UnresolvedCallDiagnostic,
 } from "@aburi/types"
-import { CALL_SITE_KEY_SEPARATOR, makeCallSiteKey, receiverHead } from "./call-site"
+import {
+  CALL_SITE_KEY_SEPARATOR,
+  type DeclaredReceiverTypes,
+  makeCallSiteKey,
+  makeSymbolCallKey,
+  receiverHead,
+} from "./call-site"
 import {
   buildCallResolutionStats,
   classifyUnresolved,
@@ -21,6 +27,7 @@ import {
   type ResolutionHit,
   type ResolutionRun,
   resolveTarget,
+  resolveThroughDeclaredType,
 } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
 import { CoreError } from "./errors"
@@ -43,6 +50,8 @@ export interface ResolveCallGraphInput {
   receiverHints?: ReadonlyMap<string, ReceiverHint>
   implementerHints?: ReadonlyMap<SymbolId, readonly SymbolId[]>
   dynamicCallSites?: ReadonlySet<string>
+  /** By `makeSymbolCallKey`: the named type each call's receiver is declared with. */
+  declaredReceiverTypes?: DeclaredReceiverTypes
   /**
    * By importing file, then by bare specifier: the workspace-relative paths the language's import
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
@@ -62,6 +71,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const receiverHints = input.receiverHints ?? EMPTY_RECEIVER_HINTS
   assertReceiverHintKeys(receiverHints)
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
+  const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
@@ -91,10 +101,14 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
         return call
       }
       const trace = newTrace()
-      let hit = resolveTarget(
-        { run, caller: symbol, target: call.target, imports, parameterNames },
-        trace,
-      )
+      const ctx = { run, caller: symbol, target: call.target, imports, parameterNames }
+      // A declared type is the untyped tier's, so a language server only lifts what it leaves.
+      let hit =
+        resolveTarget(ctx, trace) ??
+        resolveThroughDeclaredType(
+          ctx,
+          declaredReceiverTypes.get(makeSymbolCallKey(symbol.id, call.line, call.target)),
+        )
       if (hit === null) {
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
         const hinted = resolveViaLspHint(
@@ -146,6 +160,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
 
 const EMPTY_CALL_SITE_KEYS: ReadonlySet<string> = new Set()
 const EMPTY_RECEIVER_HINTS: ReadonlyMap<string, ReceiverHint> = new Map()
+const EMPTY_DECLARED_RECEIVER_TYPES: DeclaredReceiverTypes = new Map()
 
 function assertReceiverHintKeys(hints: ReadonlyMap<string, ReceiverHint>): void {
   for (const key of hints.keys()) {
