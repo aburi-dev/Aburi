@@ -72,6 +72,8 @@ export interface ScanOptions {
   configPath?: string
   pinnedConfig?: PinnedConfig
   pluginRefRoot?: string
+  /** Handed to the scan as its `installedRoot`. */
+  installedRoot?: string
   outputDir?: string
   format?: "json" | "md" | "both"
   ignore?: readonly string[]
@@ -137,6 +139,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   try {
     scanResult = await scan({
       workspaceRoot,
+      ...(options.installedRoot === undefined ? {} : { installedRoot: options.installedRoot }),
       config,
       languages: plugins.languages,
       frameworks: plugins.frameworks,

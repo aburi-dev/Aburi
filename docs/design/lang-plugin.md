@@ -51,8 +51,8 @@ Keeping the responsibilities narrow lets a new language addition focus solely on
 3. For each file matching the language:
      a. plugin.parseFile(file) → ParseResult { tree, errors, imports }
      b. plugin.extractSymbols(tree, ctx) → SymbolCandidate[]
-     c. For each SymbolCandidate:
-          plugin.walkBody(symbol, ctx) → BodyExtraction { rules, calls, returns }
+     c. For each SymbolCandidate that no drop rule takes (§5.3):
+          plugin.walkBody(symbol, ctx) → BodyExtraction { rules, calls }
           plugin.normalizeAst(symbol) → string  (syntax fingerprint input)
      d. plugin.releaseTree?(tree) — on every way out of a–c, including a throw
    plugin.createImportResolver?() runs at most once, the first time the core
@@ -60,7 +60,7 @@ Keeping the responsibilities narrow lets a new language addition focus solely on
 4. After the scan's last plugin call, plugin.cleanup?() is called
 ```
 
-The core then performs effect classification, drop-list application, and fingerprint computation.
+Around these calls the core decides drops, classifies effects and computes fingerprints; §5.3 has the order, a dropped Symbol never reaching `walkBody`.
 
 `init` and `cleanup` bracket one scan, for every plugin it loads: language, framework and effects
 plugins alike. They are what a plugin holding something for the length of a scan opens and closes
@@ -94,7 +94,7 @@ it with, such as a parser running as a process of its own ([`plugin-process.md`]
 
 ## 4. Interface
 
-The actual types are defined in the `types` package of `@aburi/core`. This document shows the signatures as a contract.
+The actual types are defined in `@aburi/types`. This document shows the signatures as a contract.
 
 ### 4.1 `LanguagePlugin`
 
@@ -204,7 +204,7 @@ A brand can be asserted rather than constructed, so the type is a contract, not 
 
 A plugin that has real column information may write it; nothing forbids that. The in-tree TypeScript plugin deliberately does not, so that every column in an Aburi IR comes from `textDocument/documentSymbol` ([lsp-enrichment.md](./lsp-enrichment.md) §4.2) and one convention about what a column counts. Be aware that a published column is not durable: the enrichment pass overwrites both keys on every Symbol it matches (§5), so a plugin-written column survives only where the LSP tier produced nothing — which is where it is least likely to be checked.
 
-When the plugin chooses an `extKind` from its own declarations, the chosen value must fall under manifest.provides.extKinds or extKindPrefixes. The registry detects violations at startup.
+When the plugin chooses an `extKind` from its own declarations, the chosen value must fall under manifest.provides.extKinds or extKindPrefixes. Nothing checks it at startup: the core checks each Symbol's `extKind` as the Symbol is extracted, against the plugin that assigned it, so under `strict` an undeclared value ends the run (`vocab-undeclared`, exit 3) and otherwise it is recorded as discovered ([`config.md`](./config.md) §10).
 
 #### 4.3.1 One entity, several declarations
 
@@ -439,9 +439,11 @@ Do **not** set it for `this.save()` / `super.save()` — §4.7 already keeps tho
 
 #### `receiverType`
 
-Set it to the **named type the receiver is declared with**, type arguments aside, when the plugin can read that declaration off the tree without resolving a scope — `EventEmitter2` for `this.eventEmitter.emit(…)` in a class whose constructor reads `constructor(private readonly eventEmitter: EventEmitter2)`. Leave it absent otherwise, which includes every type that is not a name (a union, an object type, a function type): the field is evidence about whose method the call is, and a type an effect plugin would have to parse is not evidence it can compare. An effect plugin sees no AST (effect-plugin.md §6.1), and the callee string holds the binding's name, not what it was declared as, so a plugin that recognises a receiver by name alone recognises only the names its own vocabulary guesses ([effect-plugin.md](./effect-plugin.md) §5.4).
+Set it to the **named type the receiver is declared with**, type arguments aside, when the plugin can read that declaration off the tree without resolving a scope and the name means there what it means at the module, which is where a reader binds it — `EventEmitter2` for `this.eventEmitter.emit(…)` in a class whose constructor reads `constructor(private readonly eventEmitter: EventEmitter2)`. Leave it absent otherwise, which includes every type that is not a name (a union, an object type, a function type) and a name declared in a scope between the declaration and the module, such as a type parameter: the field is evidence about whose method the call is, and a type an effect plugin would have to parse is not evidence it can compare. An effect plugin sees no AST (effect-plugin.md §6.1), and the callee string holds the binding's name, not what it was declared as, so a plugin that recognises a receiver by name alone recognises only the names its own vocabulary guesses ([effect-plugin.md](./effect-plugin.md) §5.4).
 
-The in-tree TypeScript plugin reads it for a receiver that is `this.<field>`, one segment deep, in the class `this` is bound to there (LP20n). A plain name is left out: telling a parameter from what shadows it takes a scope resolver, which this plugin does not have. The field reaches no axis and no IR field — it is read by `classify` and dropped with the candidate — so the field itself moves no fingerprint; a plugin that classifies by it moves `logic` as any new effect does. The scan puts it in NFC with `target` before any classifier sees it, as it does an `ImportEdge`'s `symbols` and `namespaceBinding`, so a type compares equal to the name an import binds whichever spelling either was written in.
+The in-tree TypeScript plugin reads it for a receiver that is `this.<field>`, one segment deep, in the class `this` is bound to there (LP20n). A plain name is left out: telling a parameter from what shadows it takes a scope resolver, which this plugin does not have. A scope between the class and the module is read off the tree instead, since the declarations that shadow a type's name sit in it: a type parameter of the class or of a function or method it is written in, a class expression's own name, and a class, interface, type alias, enum, namespace or import alias of an enclosing block or namespace.
+
+The field reaches no axis and no IR field of its own. It is read by `classify`, and by the call resolver for a call no effect claims ([call-resolution.md](./call-resolution.md) §4.7.1), and dropped with the candidate. It still moves fingerprints. A plugin that classifies by it moves `logic` as any new effect does, and a call the resolver reaches through it gets a `resolved` id and an edge, along which the callee's effects propagate into the caller's `logic`. So a caller's `calls[]` and `logic` can change with no change to its source, as when a release starts reading the field, and an `aburi diff` against an IR an earlier release wrote reports those callers as changed. The scan puts it in NFC with `target` before any classifier sees it, as it does an `ImportEdge`'s `symbols` and `namespaceBinding`, so a type compares equal to the name an import binds whichever spelling either was written in.
 
 #### `thisBinding`
 
@@ -455,7 +457,7 @@ The in-tree TypeScript plugin finds the class `this` is bound to as LP20n does (
 interface ExtractionContext {
   file: SourceFile
   registry: VocabRegistry                      // ext-vocab §7
-  config: AburiConfig
+  config: Config
 }
 
 interface WalkContext extends ExtractionContext {
@@ -482,12 +484,14 @@ interface DropHint {
 
 Example: for TypeScript's `export type X = Y`, return `{ reason: "type alias", category: "B" }`.
 
+The core does not read `category`. Every hint is a Symbol-level drop (drop-list §4): the Symbol stays in the IR with `dropped: true`, `reason` as its `dropReason` and zeroed fingerprints, and `walkBody` is not called for it, so a `"C"` hint drops the Symbol exactly as a `"B"` one does. Call-level (Category C) drops come from `dropCallees`, `config.suppress` and the core's list, never from this hint.
+
 ### 4.7 `PluginContext`
 
 ```ts
 interface PluginContext {
   registry: VocabRegistry
-  config: AburiConfig
+  config: Config
   workspaceRoot: string                        // absolute path (used by the plugin to initialize its parser)
   log: Logger
 }
@@ -498,6 +502,7 @@ interface PluginContext {
 ```ts
 interface ImportResolverContext {
   workspaceRoot: string                        // absolute
+  installedRoot?: string                       // absolute; set when the workspace has no dependencies installed
   log: Logger
 }
 
@@ -508,15 +513,17 @@ interface ImportResolver {
 }
 ```
 
-A bare specifier can name a workspace file through build configuration the core does not read, such as TypeScript's `compilerOptions.paths`. The language plugin knows its build configuration and the core knows the file set, so the plugin maps the specifier and the core decides which path is a file: it probes each path, in the order given, the way it probes a relative specifier ([call-resolution.md](./call-resolution.md) §4.4.1, steps 1 and 3), against the files discovery found. A path may therefore leave out its extension or name a directory, and one that names no file costs nothing. The core never asks about a relative specifier.
+A bare specifier can name a workspace file through build configuration the core does not read, such as TypeScript's `compilerOptions.paths`. The language plugin knows its build configuration and the core knows the file set, so the plugin maps the specifier and the core decides which path is a file: it probes each path, in the order given, the way it probes a relative specifier ([call-resolution.md](./call-resolution.md) §4.4.1, steps 1 and 3) — against the files discovery found to follow a decorator's name (§5.2.4), and against the files the scan has Symbols in to resolve a call ([call-resolution.md](./call-resolution.md) §4.4.1, step 2). A path may therefore leave out its extension or name a directory, and one that names no file costs nothing. The core never asks about a relative specifier. It asks about each bare specifier a file imports names through, when one of the file's Symbols makes a call, and about each one a decorator's chain reaches.
 
-The core calls `createImportResolver` at most once per scan on each thread that extracts files — the main thread, or each parser worker ([performance.md](./performance.md) §7.2.1) — and only when that thread has a non-relative specifier to ask about. A resolver may cache what it reads for the length of that scan and no longer: the next scan creates a new one, which reads the configuration afresh. What resolvers say is counted over the scan, not over each of them: a line logged through `ctx.log` is said once per scan, at the first file whose extraction logged it, however many resolvers log it and however often; a failure on one specifier written in one file counts once; and a plugin's first resolver failure — `createImportResolver` throwing or returning something with no `resolve` method, or `resolve` throwing — is a warning, later ones are logged at debug, and a plugin whose resolver failed more than once is warned with the count at the end of the scan. A specifier the resolver failed on ends the chain it was part of without an origin (§5.2.4).
+`installedRoot` is set when the workspace is a checkout made without its dependencies, such as the base of `aburi diff <base>..<head>` ([cli-spec.md](./cli-spec.md) §6.4.1.5): it is the root of another checkout of the same repository, the one they are installed in (for that base, the head). A dependency the build configuration names and the workspace lacks is looked up there, at the same place relative to that root. When the file it leads to is one of that checkout's own sources, as a workspace package that an install links into `node_modules` is, the workspace's copy at the same path is read instead, because the workspace's revision of it is the one being scanned. Without one, the installed file is read as it stands.
+
+The core calls `createImportResolver` at most once per scan on each thread that extracts files — the main thread, or each parser worker ([performance.md](./performance.md) §7.2.1) — and only when that thread has a non-relative specifier to ask about. A resolver may cache what it reads for the length of that scan and no longer: the next scan creates a new one, which reads the configuration afresh. What resolvers say is counted over the scan, not over each of them: a line logged through `ctx.log` is said once per scan, at the first file whose extraction logged it, however many resolvers log it and however often; a failure on one specifier written in one file counts once; and a plugin's first resolver failure — `createImportResolver` throwing or returning something with no `resolve` method, or `resolve` throwing — is a warning, later ones are logged at debug, and a plugin whose resolver failed more than once is warned with the count at the end of the scan. A specifier the resolver failed on ends the chain it was part of without an origin (§5.2.4), and a call through it resolves as through a bare specifier the resolver maps to nothing.
 
 The TypeScript plugin reads the `tsconfig.json` nearest above the importing file, or a `jsconfig.json` where no `tsconfig.json` sits beside it, and looks no higher than the workspace root for it; an `extends` entry may still name a config outside the root. Comments, trailing commas, a leading byte order mark and an empty file (read as `{}`) are accepted, as `tsc` accepts them. It applies `compilerOptions.paths` and `baseUrl` the way `tsc` does:
 
 - An exact key wins outright; otherwise the wildcard key with the longest prefix does, its match put in place of each substitution's `*`. Every substitution is returned, in the order written, followed by `baseUrl` joined with the specifier when `baseUrl` is set.
 - Substitutions resolve against `baseUrl` when it is set, and otherwise against the directory of the config that declared `paths`.
-- `extends`, a string or an array, is followed. A relative or absolute entry resolves against the extending config's directory, with `.json` added when the entry has no such extension and names no file as written. A package entry is looked up as `node_modules/<entry>`, `node_modules/<entry>.json` and `node_modules/<entry>/tsconfig.json` in each directory upwards. A later entry overrides an earlier one and the extending config overrides them all, an option at a time, so its own `paths` replaces the inherited ones whole. A config that extends itself, directly or through others, is read once.
+- `extends`, a string or an array, is followed. A relative or absolute entry resolves against the extending config's directory, with `.json` added when the entry has no such extension and names no file as written. A package entry is looked up as `node_modules/<entry>`, `node_modules/<entry>.json` and `node_modules/<entry>/tsconfig.json` in each directory upwards, and read where its links lead, as `tsc` reads it, so a workspace package linked into `node_modules` is read as its own sources and its relative values and `extends` entries resolve among them. A relative entry is read where it is written, links and all, as `tsc` reads it too, so one that names a path through `node_modules` resolves its relative values there. A later entry overrides an earlier one and the extending config overrides them all, an option at a time, so its own `paths` replaces the inherited ones whole. A config that extends itself, directly or through others, is read once.
 - `${configDir}` at the start of a value is the directory of the config the file is compiled under, whichever config in the chain wrote it.
 
 It does not read a package's `package.json` `exports` or `tsconfig` field when an `extends` entry names the package, project references, a config's `files` and `include`, or a `package.json` `imports` field. A path outside the workspace is dropped. What it cannot use, it warns about once and leaves out:
@@ -525,7 +532,7 @@ It does not read a package's `package.json` `exports` or `tsconfig` field when a
 - An `extends` entry that names no config file. The rest of the chain still applies.
 - A value `tsc` refuses: a `paths` that is not an object, a key whose value is not a list, a key or substitution with more than one `*`, a substitution that is not a string, or a `baseUrl` that is not a string. Only that key, substitution or option is left out.
 
-A package entry in `extends` is found only where `node_modules` is installed. `aburi diff <base>..<head>` scans the base revision in a fresh worktree with no `node_modules`, so `paths` from a package's config apply to the head's scan and not to the base's, and a decorator reached through one of those aliases reads as moving from `medium` to `high`. The base's scan warns about the entry.
+With `installedRoot` set, a path through one of the workspace's `node_modules` directories that the workspace does not hold, whether a package entry's candidate or a relative entry, is read at the same place in the installed checkout. Where that path's links lead to one of the installed checkout's own sources, the workspace's copy at the same path is read instead, and the installed file stands in, logged at debug, only when the workspace has no copy. A relative entry keeps its place in the workspace, so its relative values resolve, and its own `extends` entries are looked up, from there. A package entry sits where its links lead: at the workspace's copy for one of the installed checkout's own sources, and otherwise at the installed file, as the installed checkout reads it. A config of the workspace's own that it does not have is not looked for in the installed checkout, since it is not a dependency, and nor is anything above the workspace root. Both roots are compared as their links lead, and a config is named in a warning by its path relative to the root of the checkout it is read from, so a warning reads alike from either side. So the base of `aburi diff <base>..<head>` reads the `paths` of a shared workspace config package as its own revision declares them, and those of a config installed from a registry as the head has it installed, which is the base's own only when the diff leaves that package's version alone.
 
 ## 5. Cooperation with Other Plugins
 
@@ -634,25 +641,30 @@ An inline function is left out, since its body is the registration's own and its
 plugin.parseFile()                              [lang]
   ↓
 plugin.extractSymbols()                         [lang]
-  ↓
+  ↓  for each Symbol:
 framework plugin classifySymbol()               [framework]
   ↓
+core decides the Symbol drop: core rules,       [core, framework, lang]
+then each framework plugin's symbolDropHint(),
+then the language plugin's
+  ↓  a dropped Symbol stops here: no walkBody, no fingerprints
 plugin.walkBody()                               [lang]
   ↓
 effect plugin classify() for each call          [effects]
+(after the Category C call drop)
   ↓
 plugin.normalizeAst()                           [lang]
   ↓
-core applies the drop list / computes fingerprints
-  ↓
+core computes fingerprints
+  ↓  after the last Symbol:
 plugin.releaseTree()                            [lang, called by the core — §8.1]
   ↓
-core assembles the IR
+core assembles the IR: call resolution, then effect propagation, which recomputes `logic`
 ```
 
 ## 6. Capabilities
 
-`LanguageCapabilities` is a flag set through which the plugin declares "what is expressible in my language". The core and other plugins use it for branching.
+`LanguageCapabilities` is a flag set through which the plugin declares "what is expressible in my language". It is descriptive only: neither the core nor the CLI reads any of its flags today, so a plugin's answers change nothing about a scan.
 
 ```ts
 interface LanguageCapabilities {
@@ -672,7 +684,7 @@ interface LanguageCapabilities {
 
 For the runtime resource budget (`wasmHeapPerWorkerMB`), the source-of-truth is the **`capabilities` of the plugin manifest**, not the runtime interface. The CLI reads the manifest to size its parser pool, so it is not duplicated at runtime (see §8.1 / cli-spec.md §14.2).
 
-If a framework plugin requires decorator-based extraction from a language with `hasDecorators: false`, the core aborts with an error at startup.
+No check pairs the flags with the framework plugins either: a framework plugin that classifies by decorators, loaded beside a language with `hasDecorators: false`, is not refused at startup, and simply finds no decorator to classify.
 
 ## 7. Error Handling
 
@@ -792,6 +804,8 @@ So a per-node question must be asked of the node, never of its container:
 - **Do not ask the container**: reading the parent's whole child list to find the node's own index in it. It answers the same question, but a top-level declaration's parent is the entire file. Doing it once per declaration makes a file of N declarations cost O(N²) — the shape a generated API client or a Prisma type file has, comfortably inside `maxFileSizeBytes` and minutes long to extract.
 
 Reading the container is right when the container is what the question is about: every member of a class body, every argument of a call. It is the *per-node* use that has to be avoided. When a per-node question can only be answered by the container — whether a class of a namespace's name is declared in the same statement list — read the container once per tree and remember what it holds, keyed by the container, so every later node is answered by a lookup instead of another read of the list.
+
+A walk that visits every node of a subtree, as `normalizeAst` does, pays for a wrapper per node it is handed, anonymous tokens included, and most of what it reads of most nodes is their type. It goes through a `TreeCursor` instead: the cursor reads the current node's type id, field id and missing flag without building a node, and the grammar names the type and says whether it is named, once per type id. Only what the cursor cannot say is asked of a node: whether it is an extra, asked only of the types that can be one (the grammar's extras, which its parse table names, and the `ERROR` nodes error recovery inserts), and the operand of a union or intersection written with a leading operator. A leaf's text is read through the cursor too.
 
 ## 9. Verifiable Properties (Test Criteria)
 
@@ -918,7 +932,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP20l | `[...names].sort()`, `'a...'.trim()`, `(.5).toFixed(2)`, `new Date().getTime()`, `(async () => { … })()`, `([...a] as T).m()` | `<computed>.sort`, `<computed>.trim`, `<computed>.toFixed`, `<computed>.getTime`, `<computed>`, `<computed>.m`, all `dynamicReceiver` — an unmodelled receiver contributes the reserved segment, never its source text (§4.4). `svc!.save()` stays `svc!.save`, not dynamic, and `import("./m")` stays `import`. A type assertion around a name contributes the name, whatever its type spells: `(x as {` … `}).m()` is `x.m` |
 | LP20e | an owner-shaped node the walk *meets* rather than owns — `function f() { class Inner { m() { x() } } }` | walked whole. `Inner` is not extracted, so every call in it belongs to `f`; LP20a applies to the Symbol's own body nodes and to nothing else |
 | LP20m | `try { a() } catch (e) { if (!e) return; b() } finally { if (x) return; c() }` | rules `try` and the `finally` block's `guard`; calls `a`, `b`, `c`. The `try` block and the `finally` block are walked like any block, the `finally` block because it runs on every path. The `catch` clause is walked as a `try` block is, and every rule that walk produces is discarded (`ir-schema.md` §8.2), so it records exactly the calls the same statements would record in the `try` block: `try { return a[g()] } catch (e) { return a[h()] }` records `g` and `h` and keeps one `return` rule, the `try` block's, and a `finally` nested inside a `catch` gives no rule, whatever it holds. Collecting every call under the clause instead, as a `throw`'s argument is collected, would record the same calls today, but only because a trivial return holds no call (`drop-list.md` §5.5); walking the clause as a block does not depend on that. A `try` statement at module top level is walked the same way, as `<module>`'s (LP20o) |
-| LP20n | a call through `this.<field>` — `this.eventEmitter.emit(…)` beside `constructor(private readonly eventEmitter: EventEmitter2)`, a typed field (`private events: EventEmitter2`, `#events: EventEmitter2`), a namespace-qualified or generic type (`ee.EventEmitter2`, `Emitter<Payload>`) | `receiverType` is the type's name (`EventEmitter2`, `ee.EventEmitter2`, `Emitter`), read off the class `this` is bound to: the nearest method, accessor, field initializer or static block walking up from the call, through arrows and past a member's name, its decorators and its parameters' decorators, which are evaluated outside it, and not through a `function`, which binds its own `this`. A static member reads the static fields and an instance member the instance fields and the constructor's parameter properties (a parameter with an accessibility modifier, `readonly` or `override`). **Absent** for a field the class does not declare with a named type — no annotation, a union, an inherited field — for a member of a field (`this.events.bus.emit()`), for a non-null assertion (`this.events!.emit()`, whose target keeps the `!`), for an object literal's method, and for a plain name (`events.emit()` beside `events: EventEmitter2`) |
+| LP20n | a call through `this.<field>` — `this.eventEmitter.emit(…)` beside `constructor(private readonly eventEmitter: EventEmitter2)`, a typed field (`private events: EventEmitter2`, `#events: EventEmitter2`), a namespace-qualified or generic type (`ee.EventEmitter2`, `Emitter<Payload>`) | `receiverType` is the type's name (`EventEmitter2`, `ee.EventEmitter2`, `Emitter`), read off the class `this` is bound to: the nearest method, accessor, field initializer or static block walking up from the call, through arrows and past a member's name, its decorators and its parameters' decorators, which are evaluated outside it, and not through a `function`, which binds its own `this`. A static member reads the static fields and an instance member the instance fields and the constructor's parameter properties (a parameter with an accessibility modifier, `readonly` or `override`). **Absent** for a field the class does not declare with a named type — no annotation, a union, an inherited field — for a member of a field (`this.events.bus.emit()`), for a non-null assertion (`this.events!.emit()`, whose target keeps the `!`), for an object literal's method, for a plain name (`events.emit()` beside `events: EventEmitter2`), and for a type whose name, or the first part of a dotted one, a scope between the class and the module declares: a type parameter of the class (`class Store<Model> { constructor(private item: Model) {} }`) or of a function or method the class is written in, a class expression's own name, or a class, interface, type alias, enum, namespace or import alias of an enclosing block, `switch` case or namespace. A type the module declares beside the class is read |
 | LP20n1 | a call through `this` or `super` — `static { this.make() }`, `static first = this.make()`, `static m() { return () => super.make() }`, `second = this.make()`, `m() { this.repo.save() }` | `thisBinding` is `class` for the first three and `instance` for the others, read off the class `this` is bound to as LP20n reads it: the nearest method, accessor, field initializer or static block walking up from the call, through arrows and past a member's name, its decorators and its parameters' decorators. **Absent** inside a `function`, which binds its own `this`, for a computed member name (`[this.key()]() {}`) or a decorator's argument (`@Use(this.guard())`, `m(@Inject(this.token()) a)`), whose `this` is the one around the class, for an object literal's method, and for a call through anything but `this` or `super`, `this!.m()` included, whose target keeps the `!` |
 | LP20o | a file's top-level statements that are not declarations — `await prisma.user.deleteMany({})`, `doThing()`, `process.on("SIGTERM", () => shutdown())`; an `if`, `for`, `while`, `do`, `try`, `switch`, `with`, block, labelled statement or `throw` at the top level; and the statements of a namespace body, registrations included, which run when the module does | one SymbolCandidate for the file, `<module>` ([ir-schema.md](./ir-schema.md) §3.3): `kind = "module"`, `visibility = "internal"`, a null `signature`, `derivedBy` `["module-scope"]`, and a `source` from the first such statement to the last. Each statement is a body, in source order — the first as `bodyNode`, the rest on `mergedDeclarations` — and each is its own `fullNode`, so the walk reads them as it reads any body (a callback written in one is absorbed, an immediately invoked function's body with it) and `normalizeAst` describes the module scope by their text alone: an edit to a declaration written between two of them is that declaration's change and not `<module>`'s. Left out, because they are another construct's or run nothing: a declaration; an import or export, a default export written as a call included, which is LP7c1's question; a registration LP20i1 names, which is its own Symbol, walking its handler (LP20g) or, handed none, its own call (LP20g1); a directive, an expression statement holding one string, which a `throw` of a string is not; and a statement the parser recovered, whose ERROR is what is left of something else (`export function* g(a: string): T;`, a signature the grammar cannot parse). A file with no such statement has no `<module>`. LP20i1 names only a file's own registrations, so one in a namespace body is `<module>`'s whole. **Two gaps are recorded rather than closed.** A const whose initializer is a call handed no function, `const n = await prisma.user.deleteMany({})` or `export const app = express()`, and a default export written as one, `export default defineConfig({ … })` (LP7c1), make calls on import that no Symbol carries: each statement is a declaration, so it is not `<module>`'s, and the const and `<default>` walk only the functions a call is handed or invokes (LP7c). Closing them needs either the const to walk its whole initializer, which moves the `logic` of every const computed by a call, or `<module>` to take the initializer, which splits one declaration across two Symbols |
 
@@ -1017,6 +1031,15 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP42c | an `extends` entry that names no config | one warning, and the rest of the chain applies |
 | LP42d | a `paths` or `baseUrl` value `tsc` refuses | one warning per value, and the rest of the config applies |
 | LP42e | an `extends` entry that names a config outside the workspace root | that config is read |
+| LP42f | with `installedRoot` set, a package entry or a relative entry through `node_modules` leads, through the installed checkout's link, to a workspace package the workspace has a copy of | the workspace's copy is read, with no warning |
+| LP42g | the same with no copy in the workspace | the installed file is read, and a debug line names it |
+| LP42h | with `installedRoot` set, a package installed from a registry, directly or through a pnpm store's links | read as installed, with the same result and warnings as a scan of the installed checkout |
+| LP42i | the workspace has the package installed itself | its own copy is read over the installed checkout's |
+| LP42j | a relative entry to a config of the workspace's own that it lacks, or a package neither checkout has | not looked for in the installed checkout: one warning that no config was found |
+| LP42k | a linked workspace package's config reached by a package entry, and by a relative path through `node_modules` | its relative values resolve among its sources for the first and under `node_modules` for the second, alike from either checkout |
+| LP42l | a config read from the installed checkout extends a package that leads to one of that checkout's own sources | the workspace's copy of it is read |
+| LP42m | the workspace root or `installedRoot` reached through a link | read as from the roots the links lead to, a config named relative to the root |
+| LP42n | a config whose links cannot be followed for another reason than its absence | read where it is written, with one warning saying so |
 | LP43 | a decorator imported through a path alias, or a relative specifier, to a barrel that re-exports it from `@nestjs/common`, directly or through another barrel | `origins` maps the imported name to `@nestjs/common`, and the NestJS plugin grades the decorator `high`, renamed on import or read through a namespace import alike |
 | LP43a | the barrel republishes an import of `@nestjs/common` in an export clause or as its default export, re-exports `@nestjs/common` as a namespace the decorator reads through, or re-exports a competing library's decorator under another name before `@nestjs/common`'s | `high` |
 | LP44 | the barrel reaches the name through `export *`, declares it itself, or the alias maps to no file | no origin, and the decorator stays `medium` |

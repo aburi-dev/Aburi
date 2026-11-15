@@ -1,6 +1,6 @@
 import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
-import type { Node } from "web-tree-sitter"
-import { firstNonCommentChild, leadingOperatorOperand } from "./ast-helpers"
+import type { Language, Node, TreeCursor } from "web-tree-sitter"
+import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
 
 export function normalizeAst(symbol: SymbolCandidate<Node>): string {
   if (symbol.kind === "call") return serialize(symbol.fullNode)
@@ -27,13 +27,13 @@ function parameterList(fullNode: Node): string {
   const list = fullNode.childForFieldName("parameters")
   if (list !== null) return firstNonCommentChild(list) === null ? "" : serialize(list)
   const lone = fullNode.childForFieldName("parameter")
-  return lone === null ? "" : loneParameter(lone)
+  return lone === null ? "" : wrapLoneParameter(serialize(lone))
 }
 
 // A formatter adds the parentheses a lone arrow parameter may go without (`x => …` → `(x) => …`),
 // so it is described as the parenthesised spelling parses.
-function loneParameter(parameter: Node): string {
-  return `(formal_parameters (required_parameter ${serialize(parameter)}))`
+function wrapLoneParameter(parameter: string): string {
+  return `(formal_parameters (required_parameter ${parameter}))`
 }
 
 function classHead(fullNode: Node): string {
@@ -62,45 +62,94 @@ function describedNode(declaration: Pick<MergedDeclaration<Node>, "bodyNode" | "
 
 function serialize(node: Node): string {
   if (node.isExtra) return ""
-  if (SKIPPED_NODE_TYPES.has(node.type)) return ""
-  const operand = leadingOperatorOperand(node)
-  if (operand !== null) return serialize(operand)
+  const cursor = node.walk()
+  try {
+    return serializeAt(cursor, node.type, grammarOf(node.tree.language))
+  } finally {
+    cursor.delete()
+  }
+}
+
+// A cursor reads a child's type and flags without allocating a `Node` for it, which `children` does
+// for every anonymous token. The cursor has no `isExtra`, so only the types that can be extras are
+// materialised to ask.
+function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string {
+  if (SKIPPED_NODE_TYPES.has(type)) return ""
+  if (hasLeadingOperator(type)) {
+    const operand = leadingOperatorOperand(cursor.currentNode)
+    if (operand !== null) return serialize(operand)
+  }
 
   const children: string[] = []
-  let previous: Node | null = null
-  for (const child of node.children) {
-    if (child.isMissing) continue
-    const rendered = child.isNamed
-      ? serializeNamed(child, node)
-      : tokenPayload(child, previous, node)
-    if (rendered.length > 0) children.push(rendered)
-    if (!child.isExtra) previous = child
+  if (cursor.gotoFirstChild()) {
+    let previousType: string | null = null
+    const parameterField = type === "arrow_function" ? grammar.parameterField : null
+    do {
+      if (cursor.nodeIsMissing) continue
+      const typeId = cursor.nodeTypeId
+      const childType = grammar.typeName(typeId)
+      if (grammar.mayBeExtra.has(childType) && cursor.currentNode.isExtra) continue
+      if (grammar.isNamed(typeId)) {
+        const lone = parameterField !== null && cursor.currentFieldId === parameterField
+        const rendered = serializeAt(cursor, childType, grammar)
+        if (lone) children.push(wrapLoneParameter(rendered))
+        else if (rendered.length > 0) children.push(rendered)
+      } else if (
+        childType === "," &&
+        ELIDING_TYPES.has(type) &&
+        (previousType === "[" || previousType === ",")
+      ) {
+        children.push(JSON.stringify(childType))
+      } else if (!FORMATTING_TOKENS.has(childType)) {
+        children.push(JSON.stringify(childType))
+      }
+      previousType = childType
+    } while (cursor.gotoNextSibling())
+    cursor.gotoParent()
   }
 
-  const leafText = leafPayload(node)
-  if (children.length === 0 && leafText === null) return `(${node.type})`
-  if (children.length === 0 && leafText !== null) return `(${node.type} ${leafText})`
-  return `(${node.type} ${children.join(" ")})`
+  const leafText = LEAF_TEXT_TYPES.has(type) ? leafPayload(cursor.nodeText) : null
+  if (children.length === 0 && leafText === null) return `(${type})`
+  if (children.length === 0 && leafText !== null) return `(${type} ${leafText})`
+  return `(${type} ${children.join(" ")})`
 }
 
-function serializeNamed(child: Node, parent: Node): string {
-  if (parent.type === "arrow_function" && child.id === parent.childForFieldName("parameter")?.id) {
-    return loneParameter(child)
+interface Grammar {
+  typeName(typeId: number): string
+  isNamed(typeId: number): boolean
+  readonly parameterField: number | null
+  readonly mayBeExtra: ReadonlySet<string>
+}
+
+const grammars = new WeakMap<Language, Grammar>()
+
+function grammarOf(language: Language): Grammar {
+  const known = grammars.get(language)
+  if (known !== undefined) return known
+  const named: boolean[] = []
+  const grammar: Grammar = {
+    // Falls back as `Node.type` does: the grammar has no name for the `ERROR` id.
+    typeName: (typeId) => language.types[typeId] || "ERROR",
+    isNamed: (typeId) => (named[typeId] ??= language.nodeTypeIsNamed(typeId)),
+    parameterField: language.fieldIdForName("parameter"),
+    mayBeExtra: extraTypes(language),
   }
-  return serialize(child)
+  grammars.set(language, grammar)
+  return grammar
 }
 
-function tokenPayload(token: Node, previous: Node | null, parent: Node): string {
-  if (token.isExtra) return ""
-  if (isElision(token, previous, parent)) return JSON.stringify(token.type)
-  if (FORMATTING_TOKENS.has(token.type)) return ""
-  return JSON.stringify(token.type)
+// An extra may appear in any state and is shifted without leaving it, so the start state's table
+// names each one. Error recovery also inserts `ERROR` nodes as extras.
+function extraTypes(language: Language): ReadonlySet<string> {
+  const types = new Set(["ERROR"])
+  for (let typeId = 0; typeId < language.nodeTypeCount; typeId++) {
+    const name = language.types[typeId]
+    if (name && language.nextState(START_STATE, typeId) === START_STATE) types.add(name)
+  }
+  return types
 }
 
-function isElision(token: Node, previous: Node | null, parent: Node): boolean {
-  if (token.type !== "," || !ELIDING_TYPES.has(parent.type)) return false
-  return previous?.type === "[" || previous?.type === ","
-}
+const START_STATE = 1
 
 const ELIDING_TYPES: ReadonlySet<string> = new Set(["array", "array_pattern"])
 
@@ -141,9 +190,7 @@ const LEAF_TEXT_TYPES: ReadonlySet<string> = new Set([
   "super",
 ])
 
-function leafPayload(node: Node): string | null {
-  if (!LEAF_TEXT_TYPES.has(node.type)) return null
-  const text = node.text
+function leafPayload(text: string): string | null {
   if (text.length === 0) return null
   return JSON.stringify(text)
 }

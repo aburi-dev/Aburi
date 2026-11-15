@@ -1,3 +1,7 @@
+---
+description: "How to read an aburi diff report: the summary line, its sections, one entry, a Slice, confidence and gaps."
+---
+
 # Reading the report
 
 `aburi diff` writes `.aburi/diff.md`. This page walks you through it, from the top
@@ -124,7 +128,7 @@ its route handlers under Derived by instead, which `aburi explain` shows, and th
 entry has no Boundary line.
 
 **Rules** are the control flow Aburi kept. Guards, throws, returns, loops,
-branches. A removed `guard` line means somebody removed a condition.
+`try` blocks and `switch`es. A removed `guard` line means somebody removed a condition.
 
 **Effects** are what the symbol does to the world: `db.read`, `db.write`,
 `db.transaction`, `event.publish`, `network.rpc`. A method that gained

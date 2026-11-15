@@ -1,5 +1,11 @@
 export { AsyncMemo } from "./async-memo"
-export { makeCallSiteKey, receiverHead, type ThisBindingSites } from "./call-site"
+export {
+  type DeclaredReceiverTypes,
+  makeCallSiteKey,
+  makeSymbolCallKey,
+  receiverHead,
+  type ThisBindingSites,
+} from "./call-site"
 export {
   type CallEdge,
   type ResolveCallGraphInput,
@@ -11,7 +17,6 @@ export { type SerializeOptions, serializeCanonical } from "./canonical"
 export { describeCodePoints, stripUtf8Bom } from "./codepoints"
 export { countBy, groupBy } from "./collections"
 export {
-  __testing as __testing_component,
   type DetectComponentsOptions,
   type DetectComponentsResult,
   detectComponents,

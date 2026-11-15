@@ -157,6 +157,15 @@ export interface PluginContext {
 export interface ImportResolverContext {
   /** Absolute. */
   workspaceRoot: string
+  /**
+   * Set when the workspace is a checkout made without its dependencies installed, such as the base
+   * of `aburi diff <base>..<head>`: the absolute root of the checkout of the same repository they
+   * are installed in. A dependency the workspace's build config names and the workspace lacks is
+   * looked up there, at the same place relative to that root. A file the lookup leads to among that
+   * checkout's own sources is read from the workspace's copy at the same path, so the workspace's
+   * own revision of it applies; where the workspace has no copy, the installed file is read.
+   */
+  installedRoot?: string
   log: Logger
 }
 
