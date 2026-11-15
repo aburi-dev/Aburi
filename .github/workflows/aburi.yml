@@ -20,15 +20,15 @@ jobs:
         ${{ github.event.pull_request.head.repo.full_name == github.repository
             && github.actor != 'dependabot[bot]' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -41,7 +41,7 @@ jobs:
 
       - name: Aburi diff
         id: aburi
-        uses: ./packages/github-action
+        uses: $/packages/github-action
         with:
           cli: workspace
           comment: ${{ env.CAN_COMMENT }}
@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload the report
         if: always() && steps.aburi.outputs.diff-md-path != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: aburi-diff
           path: .aburi/
