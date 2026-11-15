@@ -5,7 +5,9 @@ import HomeExample from "./HomeExample"
 import "./brand.css"
 import "./home-example.css"
 
-export default {
+const theme: Theme = {
   extends: DefaultTheme,
   Layout: () => h(DefaultTheme.Layout, null, { "home-hero-after": () => h(HomeExample) }),
-} satisfies Theme
+}
+
+export default theme
