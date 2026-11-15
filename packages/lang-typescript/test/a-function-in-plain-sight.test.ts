@@ -49,7 +49,7 @@ describe("a function behind a wrapper is a function", () => {
   })
 })
 
-describe("a function a const hands to a call is the const's body", () => {
+describe("a const whose value is a call walks the call", () => {
   const POST = [
     "export const POST = withAuth(async (id: number) => {",
     '  if (!id) throw new Error("missing id")',
@@ -57,31 +57,37 @@ describe("a function a const hands to a call is the const's body", () => {
     "})",
   ].join("\n")
 
-  it("walks the wrapped handler onto the const, without the call that wraps it", async () => {
+  it("walks the call and the handler it wraps onto the const", async () => {
     const symbol = await symbolOf(POST, "ts:src/a.ts#POST")
     const { rules, calls } = await walkOf(POST, "ts:src/a.ts#POST")
 
     expect(symbol.kind).toBe("const")
     expect(symbol.signature).toBeNull()
     expect(symbol.derivedBy).toEqual(["call-argument-function", "export-keyword"])
-    expect("mergedDeclarations" in symbol).toBe(false)
+    expect(symbol.bodyNode?.type).toBe("call_expression")
+    expect(symbol.mergedDeclarations?.map((d) => d.bodyNode?.type)).toEqual(["statement_block"])
     expect(rules.map((r) => r.type)).toEqual(["guard", "throw"])
-    expect(calls.map((c) => c.target)).toEqual(["Error", "prisma.user.delete"])
+    expect(calls.map((c) => c.target)).toEqual(["withAuth", "Error", "prisma.user.delete"])
   })
 
   it.each([
-    ["memo", "export const Row = memo(function Row(p: any) { track(p.id) })", "Row", ["track"]],
+    [
+      "memo",
+      "export const Row = memo(function Row(p: any) { track(p.id) })",
+      "Row",
+      ["memo", "track"],
+    ],
     [
       "forwardRef",
       "export const Input = forwardRef((props: any, ref: any) => { useFocus(ref) })",
       "Input",
-      ["useFocus"],
+      ["forwardRef", "useFocus"],
     ],
     [
       "cache",
       "export const load = cache(async (id: string) => { await db.find(id) })",
       "load",
-      ["db.find"],
+      ["cache", "db.find"],
     ],
   ])("walks the function handed to %s", async (_label, source, name, targets) => {
     expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
@@ -95,53 +101,130 @@ describe("a function a const hands to a call is the const's body", () => {
     ].join("\n")
     const symbol = await symbolOf(source, "ts:src/a.ts#list")
 
-    expect(symbol.mergedDeclarations).toHaveLength(1)
-    expect(await callsOf(source, "ts:src/a.ts#list")).toEqual(["audit", "next", "db.read"])
+    expect(symbol.mergedDeclarations).toHaveLength(2)
+    expect(await callsOf(source, "ts:src/a.ts#list")).toEqual([
+      "t.procedure.use.query",
+      "t.procedure.use",
+      "audit",
+      "next",
+      "db.read",
+    ])
   })
 
   it.each([
-    ["map", "export const names = users.map((u: any) => u.name)", "names", 0, []],
+    ["map", "export const names = users.map((u: any) => u.name)", "names", 1, ["users.map"]],
     [
       "a chain of collection calls",
       "export const ids = xs.filter((x: any) => ok(x)).map((x: any) => x.id)",
       "ids",
-      1,
-      ["ok"],
+      2,
+      ["xs.filter.map", "xs.filter", "ok"],
     ],
     [
       "reduce",
       "export const total = items.reduce((a: number, i: any) => { if (!i) throw new Error('x'); return a + i.n }, 0)",
       "total",
-      0,
-      ["Error"],
+      1,
+      ["items.reduce", "Error"],
     ],
   ])(
     "reads %s the same way, because it asks nothing about the call",
-    async (_label, source, name, further, targets) => {
+    async (_label, source, name, functions, targets) => {
       const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
-      expect(symbol.bodyNode).not.toBeNull()
       expect(symbol.derivedBy).toContain("call-argument-function")
-      expect(symbol.mergedDeclarations?.length ?? 0).toBe(further)
+      expect(symbol.mergedDeclarations).toHaveLength(functions)
       expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
     },
   )
 
+  it("reads a handed concise arrow's expression as its return value", async () => {
+    const { rules } = await walkOf(
+      "export const doubled = xs.map((x: number) => x * 2)",
+      "ts:src/a.ts#doubled",
+    )
+
+    expect(rules.map((r) => [r.type, r.expr])).toEqual([["return", "x * 2"]])
+  })
+
+  it.each([
+    [
+      "handed to a call inside an argument",
+      "export const z = withAuth(withLogging((x: number) => x * 2))",
+    ],
+    ["handed to an awaited call", "export const z = await withRetry((x: number) => x * 2)"],
+  ])("reads a concise arrow %s with the call, adding no return rule", async (_label, source) => {
+    expect((await walkOf(source, "ts:src/a.ts#z")).rules).toEqual([])
+  })
+
+  it.each([
+    [
+      "a call beside a handed function",
+      "export const h = pipe(() => a(), b())",
+      ["pipe", "a", "b"],
+    ],
+    [
+      "a default of a handed function's parameter",
+      "export const h = pipe(() => { a() }, (x = dflt()) => { b(x) })",
+      ["pipe", "a", "dflt", "b"],
+    ],
+  ])("records %s once, in the order the line is written", async (_label, source, targets) => {
+    expect(await callsOf(source, "ts:src/a.ts#h")).toEqual(targets)
+  })
+
   it("is still described by the whole declaration, as a const with no body is", async () => {
     const withAuth = await symbolOf(POST, "ts:src/a.ts#POST")
     const withRole = await symbolOf(POST.replace("withAuth", "withRole"), "ts:src/a.ts#POST")
+    const { mergedDeclarations: _, ...bodyless } = withAuth
 
     expect(normalizeAst(withAuth)).not.toBe(normalizeAst(withRole))
-    expect(normalizeAst(withAuth)).toBe(normalizeAst({ ...withAuth, bodyNode: null }))
+    expect(normalizeAst(withAuth)).toBe(normalizeAst({ ...bodyless, bodyNode: null }))
   })
 
-  it("does not describe a second wrapped function twice", async () => {
-    const source = "export const h = pipe(() => { a() }, () => { b() })"
-    const symbol = await symbolOf(source, "ts:src/a.ts#h")
+  it.each([
+    [
+      "a function handed to an awaited call",
+      "export const r = await withRetry(() => { q() })",
+      "r",
+      ["withRetry", "q"],
+    ],
+    [
+      "a function in an object property",
+      "export const o = useQuery({ queryFn: () => { q() } })",
+      "o",
+      ["useQuery", "q"],
+    ],
+    [
+      "a function inside a call inside an argument",
+      "export const z = withAuth(withLogging(async () => { q() }))",
+      "z",
+      ["withAuth", "withLogging", "q"],
+    ],
+    [
+      "a function whose body has no width",
+      "export const z = withAuth(async (req: any) =>)",
+      "z",
+      ["withAuth"],
+    ],
+    [
+      "the object a call is handed",
+      "export const z = makeClient({ retries: 3 })",
+      "z",
+      ["makeClient"],
+    ],
+    [
+      "the object an awaited call is handed",
+      "export const n = await prisma.user.deleteMany({})",
+      "n",
+      ["prisma.user.deleteMany"],
+    ],
+  ])("walks %s with the call, as no function of its own", async (_label, source, name, targets) => {
+    const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
-    expect(symbol.mergedDeclarations).toHaveLength(1)
-    const { mergedDeclarations: _, ...bodyless } = symbol
-    expect(normalizeAst(symbol)).toBe(normalizeAst({ ...bodyless, bodyNode: null }))
+    expect(symbol.kind).toBe("const")
+    expect(symbol.derivedBy).not.toContain("call-argument-function")
+    expect("mergedDeclarations" in symbol).toBe(false)
+    expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
   })
 })
 
@@ -152,25 +235,14 @@ describe("what the reading leaves alone", () => {
       "export const p = new Promise((resolve: any) => { q(resolve) })",
       "p",
     ],
-    ["an initializer behind `await`", "export const r = await withRetry(() => { q() })", "r"],
-    [
-      "a function in an object property",
-      "export const o = useQuery({ queryFn: () => { q() } })",
-      "o",
-    ],
-    ["a body of no width", "export const z = withAuth(async (req: any) =>)", "z"],
-    [
-      "a function inside a call inside an argument",
-      "export const z = withAuth(withLogging(async () => { q() }))",
-      "z",
-    ],
-    ["a call handed no function", "export const z = makeClient({ retries: 3 })", "z"],
+    ["a member of a call's result", "export const pool = makeClient().pool", "pool"],
+    ["a value a call is one operand of", "export const n = count() + 1", "n"],
   ])("leaves %s unwalked", async (_label, source, name) => {
     const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
     expect(symbol.kind).toBe("const")
-    expect(symbol.bodyNode).toBeNull()
     expect(symbol.derivedBy).not.toContain("call-argument-function")
+    expect(symbol.bodyNode).toBeNull()
     expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual([])
   })
 

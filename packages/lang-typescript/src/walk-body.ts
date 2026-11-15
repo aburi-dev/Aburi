@@ -21,24 +21,90 @@ import { conditionText, isTrivialExpr, LOOP_KINDS, makeRule, ruleText } from "./
 export function walkBody(symbol: SymbolCandidate<Node>, _ctx: WalkContext<Node>): BodyExtraction {
   const rules: Rule[] = []
   const calls: CallCandidate[] = []
-  for (const body of bodyNodesOf(symbol)) {
-    const owner = body.type === "class_body" ? body.parent : null
-    if (owner !== null) {
-      visitOwnClassBody(owner, body, rules, calls)
-      continue
-    }
-    if (body.type === "object") {
-      visitOwnObjectBody(body, rules, calls)
-      continue
-    }
-    const parameters = body.parent?.childForFieldName("parameters") ?? null
-    if (parameters !== null) visitParameterDefaults(parameters, rules, calls)
-    if (isConciseBody(body)) visitConciseBody(body, rules, calls)
-    else visitNode(body, rules, calls)
+  for (const { root, held } of nestedBodies(bodyNodesOf(symbol))) {
+    if (held.length === 0) visitRoot(root, rules, calls)
+    else visitHolding(root, holdingOf(root, held), rules, calls)
   }
   rules.sort((a, b) => a.line - b.line)
   calls.sort((a, b) => a.line - b.line)
   return { rules, calls }
+}
+
+interface NestedBodies {
+  readonly root: Node
+  readonly held: Node[]
+}
+
+// Two nodes of one tree either nest or do not meet, so ordered by where they start, a body is held
+// by the last root it ends inside. Comparing ranges rather than walking up from every body keeps a
+// `<module>` of many statements, or a const chaining many handlers, linear.
+function nestedBodies(bodies: readonly Node[]): NestedBodies[] {
+  const spans = bodies
+    .map((node, order) => ({ node, order, start: node.startIndex, end: node.endIndex }))
+    .sort((a, b) => a.start - b.start || b.end - a.end || a.order - b.order)
+  const roots: (NestedBodies & { readonly end: number; readonly order: number })[] = []
+  for (const { node, order, start, end } of spans) {
+    const last = roots.at(-1)
+    if (last !== undefined && start < last.end && node.id !== last.root.id) last.held.push(node)
+    else roots.push({ root: node, held: [], end, order })
+  }
+  return roots.sort((a, b) => a.order - b.order)
+}
+
+interface Holding {
+  readonly bodies: ReadonlyMap<number, Node>
+  /** The held bodies' parameter lists, left to `visitRoot`, which reads their defaults with the body. */
+  readonly parameterLists: ReadonlySet<number>
+  /** Every node between the root and a body it holds. */
+  readonly spine: ReadonlySet<number>
+}
+
+function holdingOf(root: Node, held: readonly Node[]): Holding {
+  const spine = new Set<number>()
+  for (const body of held) {
+    for (let node = body.parent; node !== null; node = node.parent) {
+      if (node.id === root.id || spine.has(node.id)) break
+      spine.add(node.id)
+    }
+  }
+  return {
+    bodies: new Map(held.map((body) => [body.id, body])),
+    parameterLists: new Set(held.flatMap((body) => parametersOf(body)?.id ?? [])),
+    spine,
+  }
+}
+
+function visitRoot(body: Node, rules: Rule[], calls: CallCandidate[]): void {
+  const owner = body.type === "class_body" ? body.parent : null
+  if (owner !== null) {
+    visitOwnClassBody(owner, body, rules, calls)
+    return
+  }
+  if (body.type === "object") {
+    visitOwnObjectBody(body, rules, calls)
+    return
+  }
+  const parameters = parametersOf(body)
+  if (parameters !== null) visitParameterDefaults(parameters, rules, calls)
+  if (isConciseBody(body)) visitConciseBody(body, rules, calls)
+  else visitNode(body, rules, calls)
+}
+
+// A body held by another is read as a function of its own where it is written, so the calls on a
+// line keep the order they are written in.
+function visitHolding(node: Node, holding: Holding, rules: Rule[], calls: CallCandidate[]): void {
+  if (isCall(node)) recordCall(node, calls)
+  for (const part of node.namedChildren) {
+    if (part === null || holding.parameterLists.has(part.id)) continue
+    const body = holding.bodies.get(part.id)
+    if (body !== undefined) visitRoot(body, rules, calls)
+    else if (holding.spine.has(part.id)) visitHolding(part, holding, rules, calls)
+    else visitNode(part, rules, calls)
+  }
+}
+
+function parametersOf(body: Node): Node | null {
+  return body.parent?.childForFieldName("parameters") ?? null
 }
 
 function visitParameterDefaults(parameters: Node, rules: Rule[], calls: CallCandidate[]): void {

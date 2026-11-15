@@ -11,7 +11,7 @@ import {
 } from "./ast-helpers"
 import {
   type CallExtractionState,
-  callFunctions,
+  callBodies,
   layOutBodies,
   makeCallExtractionState,
   visitCallStatement,
@@ -212,7 +212,8 @@ function makeDefaultCallCandidate(
 ): SymbolCandidate<Node> | null {
   const statement = value.parent
   if (statement === null) return null
-  const { bodies, evidence } = callFunctions(value)
+  // The statement holds the value so that the syntax string still describes it whole.
+  const { bodies, evidence } = callBodies(value, statement)
   if (bodies.length === 0) return null
   const qname = defaultExportQname()
   return {
