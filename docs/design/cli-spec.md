@@ -1517,17 +1517,19 @@ Running together changes nothing the run says or decides:
   as in a sequential run: the head's log is held while the base scan runs and written once it is
   through. The `pluginOptions` line is still said once.
 - **Failures.** Which failure ends the run, and with which exit code, is the one a sequential run
-  would report. A base scan that fails ends the run with its own error once the head scan has
-  stopped too, and what the head said or threw is discarded, as a sequential run would never have
-  started it. Until then the run says nothing, since the head's log is still held. A head scan that
-  fails waits for the base, whose failure, if it has one, comes first.
+  would report. A base scan that fails stops the head scan and ends the run with its own error once
+  the head has stopped, and what the head said or threw is discarded, as a sequential run would
+  never have started it. The head checks before each file it extracts on its own thread, before
+  each it takes from its parser pool, and before resolving its symbols and calls, so the run waits
+  at most for the files the head is on; until then it says nothing, since the head's log is still
+  held. A head scan that fails waits for the base, whose failure, if it has one, comes first.
 - **Artefacts and stdout.** `diff.json`, `diff.md` and the glyph line are byte for byte the
   sequential run's.
 
 A failure of the base's thread rather than of its scan has no sequential counterpart, and ends the
 run with exit `1` (§9), naming the base ref and `--no-parallel-scans`. Like a failing base scan it
-waits for the head scan to stop, and the worktree and the temporary directory are removed as on any
-other failure:
+stops the head scan and waits for it, and the worktree and the temporary directory are removed as on
+any other failure:
 
 - a plugin that calls `process.exit()` ends the thread, not the process;
 - an error thrown outside the scan's own handling, from a timer for instance, reaches the thread's
@@ -1703,7 +1705,7 @@ a command's option, not a global one (§3).
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
 | CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |
 | CL58 | `aburi diff … --fail-on-scope tests` | exit 2, `--fail-on-scope must be one of: all \| non-test`, before either IR is read |
-| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
+| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped at its next file, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
 | CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |

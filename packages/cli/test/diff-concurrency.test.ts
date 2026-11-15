@@ -181,14 +181,14 @@ describe("aburi diff — its two scans at once", () => {
     },
   )
 
-  it("waits for the head scan when the base scan stops, and leaves no temporary directory", async () => {
+  it("stops the head scan at its next file when the base scan stops, and leaves no temporary directory", async () => {
     const tmp = await temporaryDirectory()
     const repository = await timedRepository(
-      { base: ["odd-base.timed"], head: ["slow-head.timed"] },
+      { base: ["odd-base.timed"], head: ["a-head.timed", "b-head.timed"] },
       `    if (side === "base") await mark("base-stopping")
     else if (await until("base-stopping", 60000)) {
       await sleep(500)
-      await mark("head-done")
+      await mark("parsed-" + file.path)
     }`,
     )
 
@@ -196,7 +196,9 @@ describe("aburi diff — its two scans at once", () => {
 
     expect(code).toBe(EXIT.GATE)
     expect(stderr).toContain('emitted extKind "timed:odd:thing" at odd-base.timed')
-    expect(marked("head-done")).toBe(true)
+    expect(["parsed-a-head.timed", "parsed-b-head.timed"].filter(marked)).toEqual([
+      "parsed-a-head.timed",
+    ])
     expect(await readdir(tmp)).toEqual([".keep"])
   })
 

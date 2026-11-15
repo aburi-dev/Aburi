@@ -89,6 +89,8 @@ export interface ScanOptions {
   logLevel?: LogLevel
   log?: LogWrite
   progress?: (progress: ScanProgress) => void
+  /** Handed to the core's scan, which stops at its next file once the signal is aborted. */
+  signal?: AbortSignal
   incidents?: {
     warn: WarnFn
     label?: string
@@ -161,6 +163,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         logger,
       }),
       ...(options.progress === undefined ? {} : { onProgress: options.progress }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     })
   } catch (error) {
     if (isPluginSetFault(error)) {

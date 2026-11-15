@@ -85,6 +85,8 @@ export interface ScanInput {
   /** Without one, or when it answers `null`, the scan extracts one file at a time on its own thread. */
   parsePool?: ParsePoolFactory
   onProgress?: (progress: ScanProgress) => void
+  /** Checked before each file and each phase after extraction; once aborted, the scan rejects with its reason. */
+  signal?: AbortSignal
 }
 
 export interface ScanResult {
@@ -106,6 +108,8 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   assertLanguageIdsDeclared(input.languages)
   const logger = input.logger ?? silentLogger
   const progress = input.onProgress ?? (() => {})
+  const { signal } = input
+  signal?.throwIfAborted()
 
   const router = buildLanguageRouter(input.languages)
   const langDropPatterns = languageFileDropPatterns(input.languages)
@@ -123,6 +127,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
   progress({ phase: "discovering" })
   const discovered = await discoverFiles(discoverOptions)
 
+  signal?.throwIfAborted()
   const extracted = await extractFiles({
     workspaceRoot: input.workspaceRoot,
     ...(input.installedRoot === undefined ? {} : { installedRoot: input.installedRoot }),
@@ -136,6 +141,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     logger,
     ...(input.parsePool === undefined ? {} : { parsePool: input.parsePool }),
     progress: (done, total) => progress({ phase: "extracting", done, total }),
+    ...(signal === undefined ? {} : { signal }),
   })
   progress({ phase: "resolving" })
   const { symbols } = extracted
@@ -152,10 +158,12 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     logger,
   }
   if (input.lspServerFactory !== undefined) enrichmentInput.serverFactory = input.lspServerFactory
+  signal?.throwIfAborted()
   const enrichment = await enrichWithLsp(enrichmentInput)
   const enrichedSymbols = enrichment.symbols
   enrichedSymbols.sort(compareBy((symbol) => symbol.id))
 
+  signal?.throwIfAborted()
   const callGraph = resolveCallGraph({
     symbols: enrichedSymbols,
     importsByFile: extracted.importsByFile,
