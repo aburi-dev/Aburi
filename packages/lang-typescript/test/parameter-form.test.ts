@@ -11,6 +11,10 @@ type Host = (params: string) => [source: string, id: string]
 const inFunction: Host = (params) => [`export function f(${params}) {}`, "ts:src/a.ts#f"]
 const inMethod: Host = (params) => [`export class C {\n  m(${params}) {}\n}`, "ts:src/a.ts#C.m"]
 const inArrow: Host = (params) => [`export const g = (${params}) => 0`, "ts:src/a.ts#g"]
+const inConstructor: Host = (params) => [
+  `export class C {\n  constructor(${params}) {}\n}`,
+  "ts:src/a.ts#C.constructor",
+]
 
 async function inputsOf(params: string, host: Host = inFunction): Promise<Input[] | undefined> {
   const [source, id] = host(params)
@@ -48,18 +52,32 @@ const FORMS: Array<[string, string, Input]> = [
   [
     "a decorated optional parameter",
     "@Query() q?: string",
-    { name: "q", type: "string", optional: true },
+    { name: "q", type: "string", optional: true, decorators: ["Query()"] },
   ],
   [
     "a decorated defaulted parameter property",
     "@Inject() private x = 5",
-    { name: "x", type: "", optional: true },
+    { name: "x", type: "", optional: true, modifiers: ["private"], decorators: ["Inject()"] },
   ],
-  ["a parameter property", "private readonly x: T", { name: "x", type: "T" }],
+  [
+    "two decorators either side of a comment",
+    "@Optional() /* c */ @Inject(TOKEN) protected s: string",
+    {
+      name: "s",
+      type: "string",
+      modifiers: ["protected"],
+      decorators: ["Optional()", "Inject(TOKEN)"],
+    },
+  ],
+  [
+    "a parameter property",
+    "private readonly x: T",
+    { name: "x", type: "T", modifiers: ["private", "readonly"] },
+  ],
   [
     "an optional parameter property",
     "public override readonly y?: T",
-    { name: "y", type: "T", optional: true },
+    { name: "y", type: "T", optional: true, modifiers: ["public", "override", "readonly"] },
   ],
 ]
 
@@ -68,6 +86,7 @@ describe("readParameters — the form of a parameter", () => {
     ["a function", inFunction],
     ["a class method", inMethod],
     ["an arrow", inArrow],
+    ["a constructor", inConstructor],
   ])("in %s", (_host, host) => {
     it.each(FORMS)("records %s", async (_label, params, expected) => {
       expect(await inputsOf(params, host)).toStrictEqual([expected])

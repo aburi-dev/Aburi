@@ -149,6 +149,32 @@ describe("apiFingerprint moves with", () => {
       withSignature({ inputs: [{ name: "dto", type: "CreateInvoiceDto", rest: true }] }),
     ],
     [
+      "a parameter property's accessibility",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["private"] }],
+      }),
+      withSignature({ inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["public"] }] }),
+    ],
+    [
+      "a parameter becoming a parameter property",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["readonly"] }],
+      }),
+      method(),
+    ],
+    [
+      "a parameter decorator's argument",
+      withSignature({ inputs: [{ name: "id", type: "string", decorators: ['Param("id")'] }] }),
+      withSignature({ inputs: [{ name: "id", type: "string", decorators: ['Param("userId")'] }] }),
+    ],
+    [
+      "an added parameter decorator",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", decorators: ["Body()"] }],
+      }),
+      method(),
+    ],
+    [
       "the order of parameters",
       withSignature({
         inputs: [

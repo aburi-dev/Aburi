@@ -434,7 +434,14 @@ export function formatInput(input: {
   type: string
   optional?: boolean | undefined
   rest?: boolean | undefined
+  modifiers?: readonly string[] | undefined
+  decorators?: readonly string[] | undefined
 }): string {
-  const head = `${input.rest === true ? "..." : ""}${input.name}${input.optional === true ? "?" : ""}`
+  const prefix = [
+    ...(input.decorators ?? []).map((decorator) => `@${decorator}`),
+    ...(input.modifiers ?? []),
+  ]
+  const name = `${input.rest === true ? "..." : ""}${input.name}${input.optional === true ? "?" : ""}`
+  const head = prefix.length === 0 ? name : `${prefix.join(" ")} ${name}`
   return input.type === "" ? head : `${head}: ${input.type}`
 }

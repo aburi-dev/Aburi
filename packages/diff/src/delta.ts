@@ -323,7 +323,9 @@ function inputsEqual(a: SignatureInput, b: SignatureInput): boolean {
     a.name === b.name &&
     a.type === b.type &&
     (a.optional === true) === (b.optional === true) &&
-    (a.rest === true) === (b.rest === true)
+    (a.rest === true) === (b.rest === true) &&
+    stringArraysEqual(a.modifiers ?? [], b.modifiers ?? []) &&
+    stringArraysEqual(a.decorators ?? [], b.decorators ?? [])
   )
 }
 

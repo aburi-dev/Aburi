@@ -402,6 +402,8 @@ describe("signature", () => {
   it.each([
     ["turns optional", { optional: true } as const],
     ["turns into a rest parameter", { rest: true } as const],
+    ["turns into a parameter property", { modifiers: ["private" as const] }],
+    ["gains a decorator", { decorators: ["Inject(TOKEN)"] }],
   ])("reports an input that %s as modified, since the api moved with it", (_, form) => {
     expect(
       signatureDelta(

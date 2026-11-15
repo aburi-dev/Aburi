@@ -889,7 +889,7 @@ delta.signature = {
 
 If both signatures are null → delta.signature = null.
 
-Inputs pair by position and name, with no fuzz. A paired input is `modified` when its `type`, `optional` or `rest` differs — everything the api fingerprint reads about it ([fingerprint.md](./fingerprint.md) §3.1) — so a parameter that turns optional or rest is named in the delta that explains the `api` change. An absent `optional` or `rest` compares as `false`.
+Inputs pair by position and name, with no fuzz. A paired input is `modified` when its `type`, `optional`, `rest`, `modifiers` or `decorators` differs — everything the api fingerprint reads about it ([fingerprint.md](./fingerprint.md) §3.1) — so a parameter that turns optional or rest, or a parameter property whose modifier changes, is named in the delta that explains the `api` change. An absent `optional` or `rest` compares as `false`, and absent `modifiers` or `decorators` as an empty list.
 
 ### 5.4 component / visibility / confidence delta
 

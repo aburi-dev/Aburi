@@ -51,14 +51,20 @@ describe("fingerprints are pinned across releases", () => {
     expect(apiFingerprint(makeSymbol(id, { derivedBy }))).toBe(hash)
   })
 
-  it("apiFingerprint of a parameter with neither marker, whether absent or written false", () => {
+  it("apiFingerprint of a parameter with no marker, modifier or decorator, whether absent or written empty", () => {
     const withInputs = (inputs: Array<{ name: string; type: string }>) =>
       makeSymbol("ts:src/a.ts#find", { signature: sig({ inputs, outputs: ["User[]"] }) })
     const plain = [
       { name: "query", type: "string" },
       { name: "ids", type: "string[]" },
     ]
-    const writtenFalse = plain.map((input) => ({ ...input, optional: false, rest: false }))
+    const writtenFalse = plain.map((input) => ({
+      ...input,
+      optional: false,
+      rest: false,
+      modifiers: [],
+      decorators: [],
+    }))
 
     expect(apiFingerprint(withInputs(plain))).toBe("a1f625081136")
     expect(apiFingerprint(withInputs(writtenFalse))).toBe("a1f625081136")

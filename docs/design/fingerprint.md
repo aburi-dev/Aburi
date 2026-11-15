@@ -74,7 +74,9 @@ Represents the symbol's **externally observable contract**. Changes when the "pu
     "inputs": [{
       "type": <canonical(input.type)>,
       "optional": true,                         // only when input.optional is true
-      "rest": true                              // only when input.rest is true
+      "rest": true,                             // only when input.rest is true
+      "modifiers": [<input.modifiers[i]>],      // only when present; input order preserved
+      "decorators": [<canonical(input.decorators[i])>]  // only when present; input order preserved
     }],                                         // name excluded, input order preserved
     "outputs": [<canonical(output)>],           // input order preserved
     "throws": [<canonical(throw)>],             // sorted (alpha)
@@ -87,7 +89,7 @@ Represents the symbol's **externally observable contract**. Changes when the "pu
 
 `language` is **not included in the input**. It is already separated by the `<language>:` prefix inside Symbol.id, and by design `language` never changes between Symbols with the same ID. The fingerprint represents only the API surface of a single Symbol.
 
-`optional` and `rest` are what a caller sees of a parameter's form besides its type ([ir-schema.md](./ir-schema.md) §7). Each is written only when `true`, and by §2.3 rule 6 an absent marker writes nothing, so a parameter with neither contributes the same bytes whether or not its Document knows of the fields. A `false` written against the Class B rule hashes as absent.
+`optional` and `rest` are what a caller sees of a parameter's form besides its type ([ir-schema.md](./ir-schema.md) §7). `modifiers` and `decorators` are what the parameter is to its class and to a framework: a parameter property's `private` → `public` adds a member callers can read, and `@Inject(A)` → `@Inject(B)` or `@Param("id")` → `@Param("key")` changes what the parameter is handed. Both are read in source order, since `@Optional() @Inject(T)` applies its decorators in turn, and each key is left out when the IR omits it, so a parameter with neither hashes as it did before the fields existed. Each is written only when `true`, and by §2.3 rule 6 an absent marker writes nothing, so a parameter with neither contributes the same bytes whether or not its Document knows of the fields. A `false` written against the Class B rule hashes as absent.
 
 ### 3.2 Formula
 
@@ -403,6 +405,7 @@ The reference implementation and every language plugin must pass the following t
 | A14 | Change `shortName` (last segment) | api changes |
 | A20 | Toggle `signature.inputs[].optional` (absent ↔ `true`) | api changes |
 | A21 | Toggle `signature.inputs[].rest` (absent ↔ `true`) | api changes |
+| A27 | Change a parameter property's modifier (`private s` → `public s`, `readonly` dropped) or a parameter's decorator (`@Inject(A)` → `@Inject(B)`, `@Param("id")` → `@Param("key")`) | api changes on the member the parameter belongs to |
 | A26 | Change the names a module exports a declaration under (`export { handler as GET }` → `export { handler as DELETE }`, `export default function Page` → `export function Page`) | api changes (§3.8) |
 
 ### 7.4 logic invariance conditions

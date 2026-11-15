@@ -166,6 +166,50 @@ describe("an edit to what a caller passes or gets is an api change", () => {
   )
 })
 
+describe("an edit to a parameter's modifier or decorator is an api change on its member", () => {
+  const service = (parameter: string) =>
+    `export class C {\n  constructor(${parameter}) {}\n\n  run() {\n    use()\n  }\n}\n`
+  const controller = (parameter: string) =>
+    `export class C {\n  find(${parameter}) {\n    use(id)\n  }\n}\n`
+
+  it.each([
+    [
+      "a parameter property made public",
+      service("private s: string"),
+      service("public s: string"),
+      "C.constructor",
+    ],
+    [
+      "`readonly` dropped",
+      service("private readonly s: string"),
+      service("private s: string"),
+      "C.constructor",
+    ],
+    [
+      "an injection token swapped",
+      service("@Inject(A) private s: S"),
+      service("@Inject(B) private s: S"),
+      "C.constructor",
+    ],
+    [
+      "a route parameter renamed",
+      controller('@Param("id") id: string'),
+      controller('@Param("key") id: string'),
+      "C.find",
+    ],
+  ])("reports %s", async (_label, before, after, name) => {
+    const diff = await diffOfEdit(workspace, FILE, before, after)
+    const changed = changedSymbols(diff)
+
+    expect(changed.map((c) => c.name).sort()).toEqual(["C", name])
+    expect(changed.find((c) => c.name === name)).toMatchObject({
+      apiChanged: true,
+      logicChanged: false,
+      syntaxChanged: true,
+    })
+  })
+})
+
 describe("an edit to the names a declaration is exported under is an api change", () => {
   it.each([
     [

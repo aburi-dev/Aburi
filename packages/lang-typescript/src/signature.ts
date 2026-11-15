@@ -8,6 +8,7 @@ import {
   thrownValue,
   walkDescendants,
 } from "./ast-helpers"
+import { readDecorators } from "./decorators"
 import { collectPatternBindings, isRepairedPattern } from "./pattern-bindings"
 
 export function buildSignature(declaration: Node, jsDocText: string | null): Signature {
@@ -80,8 +81,33 @@ function readParameter(param: Node): Signature["inputs"][number] {
   if (rest) input.rest = true
   const bindings = readPatternBindings(binding)
   if (bindings.length > 0) input.bindings = bindings
+  const modifiers = readParameterModifiers(param)
+  if (modifiers.length > 0) input.modifiers = modifiers
+  const decorators = readDecorators(param).map((decorator) => decorator.raw)
+  if (decorators.length > 0) input.decorators = decorators
   return input
 }
+
+type ParameterModifier = NonNullable<Signature["inputs"][number]["modifiers"]>[number]
+
+function readParameterModifiers(param: Node): ParameterModifier[] {
+  const out: ParameterModifier[] = []
+  for (const child of param.children) {
+    if (child === null) continue
+    if (child.type === "accessibility_modifier") {
+      const accessibility = ACCESSIBILITY_MODIFIERS.get(child.text)
+      if (accessibility !== undefined) out.push(accessibility)
+    } else if (child.type === "override_modifier") out.push("override")
+    else if (child.type === "readonly") out.push("readonly")
+  }
+  return out
+}
+
+const ACCESSIBILITY_MODIFIERS: ReadonlyMap<string, ParameterModifier> = new Map([
+  ["public", "public"],
+  ["private", "private"],
+  ["protected", "protected"],
+])
 
 function writtenText(node: Node | null): string | null {
   if (node === null || node.isMissing || node.type === "ERROR") return null
