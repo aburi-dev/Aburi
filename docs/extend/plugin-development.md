@@ -367,7 +367,7 @@ Contracts:
   node the chain starts from; `chainCalls(call)` returns the calls the chain
   passes, the call itself first.
 - A plugin for a framework that registers handlers by call can return
-  `middleware`: what the registration runs before its handler, in order, named
+  `middleware`: what the Symbol runs before its handler, in order, named
   from the syntax tree by the same rule as `derivedBy`. The pipeline writes it to
   `Symbol.middleware`, which the logic fingerprint reads, so a removed
   authorization step is a logic change the report names. Hand the arguments

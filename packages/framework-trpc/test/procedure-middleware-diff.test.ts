@@ -1,7 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { diffOfEditWith } from "@aburi/test-harness"
-import { soleChange, useScratchWorkspace } from "@aburi/test-support"
-import type { DiffResult, SymbolChanged } from "@aburi/types"
+import { onlyChange, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { trpcFrameworkPlugin } from "../src/index"
 
@@ -24,11 +23,6 @@ const byId = (...steps: string[]) =>
   server(
     `export const byId = ${["t.procedure", ...steps, "query(({ input }) => find(input))"].join(".")}`,
   )
-
-function onlyChange(diff: DiffResult): SymbolChanged {
-  expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 1 })
-  return soleChange(diff.symbols, "changed")
-}
 
 describe("diff — a procedure's middleware", () => {
   it.each([
@@ -73,6 +67,21 @@ describe("diff — a procedure's middleware", () => {
     )
 
     expect(diff.summary).toMatchObject({ added: 0, removed: 0, changed: 0 })
+  })
+
+  it("is a logic change when the base procedure it is built on is swapped", async () => {
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      SOURCE,
+      server("export const deleteUser = protectedProcedure.input(id).mutation(remove)"),
+      server("export const deleteUser = publicProcedure.input(id).mutation(remove)"),
+    )
+
+    expect(onlyChange(diff).delta).toMatchObject({
+      logicChanged: true,
+      middleware: { added: ["publicProcedure"], removed: ["protectedProcedure"], reordered: false },
+    })
   })
 
   it("is a logic change to the base procedure that loses a use", async () => {

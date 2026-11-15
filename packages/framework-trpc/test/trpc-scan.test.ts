@@ -310,35 +310,45 @@ describe("scan — the middleware a procedure runs", () => {
       ["timing", "isAuthed"],
     ],
     [
-      "a factory with its arguments, and a member path",
-      `t.procedure.use(requireRole('admin')).use(auth.required).query(list)`,
-      [`requireRole("admin")`, "auth.required"],
+      "each as framework-express names its middleware",
+      `t.procedure.use(requireRole('admin')).query(list)`,
+      [`requireRole("admin")`],
     ],
     [
-      "middleware behind a type assertion",
-      "t.procedure.use(isAuthed as Middleware).query(list)",
-      ["isAuthed"],
+      "a step in the middle of the chain behind a type assertion",
+      "(t.procedure.use(isAuthed) as Base).use(audit).query(list)",
+      ["isAuthed", "audit"],
     ],
+    [
+      "a middleware made by the instance, but not its body",
+      "t.procedure.use(t.middleware(async ({ next }) => next())).query(list)",
+      ["t.middleware(…)"],
+    ],
+    ["the base procedure it is built on", "protectedProcedure.query(list)", ["protectedProcedure"]],
     [
       "the builder concat joins, where it joins it",
       "publicProcedure.use(timing).concat(authedProcedure).query(list)",
-      ["timing", "authedProcedure"],
+      ["publicProcedure", "timing", "authedProcedure"],
     ],
     ["what a base procedure adds", "t.procedure.use(isAuthed)", ["isAuthed"]],
     [
-      "only what a base procedure adds to the one it extends",
+      "the base procedure a base procedure extends, then what it adds",
       "protectedProcedure.use(isAdmin)",
-      ["isAdmin"],
+      ["protectedProcedure", "isAdmin"],
     ],
   ])("records %s", async (_label, initializer, middleware) => {
     expect(await middlewareOf(initializer)).toEqual(middleware)
   })
 
   it.each([
-    ["a procedure built on a base procedure", "protectedProcedure.query(list)"],
+    ["a procedure built on the instance's procedure alone", "t.procedure.query(list)"],
     [
       "a procedure whose middleware is an inline function",
       "t.procedure.use(({ ctx, next }) => next({ ctx })).query(list)",
+    ],
+    [
+      "an inline middleware behind a type assertion",
+      "t.procedure.use((({ next }) => next()) as Middleware).query(list)",
     ],
     ["the instance's procedure", "t.procedure"],
     ["a middleware", "t.middleware(async ({ next }) => next())"],

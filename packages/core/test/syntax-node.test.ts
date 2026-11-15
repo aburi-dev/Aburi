@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { middlewareNames } from "../src/middleware-names"
 import {
   anyCallCalleeMatches,
   asSyntaxNode,
@@ -41,6 +42,7 @@ const member = (object: SyntaxNode, property: string) =>
     property: node({ type: "property_identifier", text: property }),
   })
 const call = (callee: SyntaxNode) => withFields("call_expression", { function: callee })
+const wrapped = (type: string, ...namedChildren: SyntaxNode[]) => node({ type, namedChildren })
 
 describe("calleeText", () => {
   it("returns the verbatim source of the `function` field", () => {
@@ -275,7 +277,6 @@ describe("findNamedChildOfType", () => {
 
 describe("unwrapValue", () => {
   const value = node({ text: "memo(Inner)" })
-  const wrapped = (type: string, ...namedChildren: SyntaxNode[]) => node({ type, namedChildren })
 
   it.each([
     ["parentheses", wrapped("parenthesized_expression", value)],
@@ -415,5 +416,132 @@ describe("anyCallCalleeMatches", () => {
     ["a node that is not a call", member(identifier("router"), "get")],
   ])("rejects %s", (_case, tree) => {
     expect(anyCallCalleeMatches(tree, isGet)).toBe(false)
+  })
+})
+
+describe("middlewareNames", () => {
+  const callOf = (callee: SyntaxNode, ...args: SyntaxNode[]) =>
+    withFields("call_expression", { function: callee, arguments: wrapped("arguments", ...args) })
+  const subscript = (object: SyntaxNode, index: SyntaxNode) =>
+    withFields("subscript_expression", { object, index })
+  const string = (...parts: SyntaxNode[]) => wrapped("string", ...parts)
+  const template = (...parts: SyntaxNode[]) => wrapped("template_string", ...parts)
+  const fragment = (text: string) => node({ type: "string_fragment", text })
+  const escaped = (text: string) => node({ type: "escape_sequence", text })
+  const substitution = wrapped("template_substitution", identifier("role"))
+  const literal = (type: string, text = type) => node({ type, text })
+  const requireRole = (...args: SyntaxNode[]) => callOf(identifier("requireRole"), ...args)
+  const handlers = (index: SyntaxNode) => subscript(identifier("handlers"), index)
+  const inline = node({ type: "arrow_function" })
+
+  it.each([
+    ["a name", identifier("requireAdmin"), "requireAdmin"],
+    ["`this`", literal("this"), "this"],
+    [
+      "a member path",
+      member(member(identifier("auth"), "guards"), "required"),
+      "auth.guards.required",
+    ],
+    ["a key in quotes", handlers(string(fragment("auth"))), "handlers.auth"],
+    ["a key in a backtick", handlers(template(fragment("auth"))), "handlers.auth"],
+    [
+      "a key spelled with an escape",
+      handlers(string(escaped("\\x61"), fragment("uth"))),
+      "handlers.auth",
+    ],
+    ["a numeric key", handlers(literal("number", "0")), "handlers.0"],
+    ["a key read off a name", handlers(identifier("kind")), "handlers.<computed>"],
+    ["an empty key", handlers(string()), "handlers.<computed>"],
+    [
+      "a key with a substitution",
+      handlers(template(fragment("a"), substitution)),
+      "handlers.<computed>",
+    ],
+    [
+      "a string argument, in double quotes",
+      requireRole(string(fragment("admin"))),
+      `requireRole("admin")`,
+    ],
+    ["a backtick argument", requireRole(template(fragment("admin"))), `requireRole("admin")`],
+    [
+      "an argument spelled with an escape",
+      requireRole(string(escaped("\\x61"), fragment("dmin"))),
+      `requireRole("admin")`,
+    ],
+    [
+      "an argument holding a quote",
+      requireRole(string(fragment('a "b"'))),
+      `requireRole("a \\"b\\"")`,
+    ],
+    [
+      "an argument with a substitution",
+      requireRole(template(fragment("a"), substitution)),
+      "requireRole(…)",
+    ],
+    [
+      "literal arguments",
+      callOf(
+        identifier("limit"),
+        literal("number", "10"),
+        literal("true"),
+        literal("null"),
+        literal("undefined"),
+      ),
+      "limit(10, true, null, undefined)",
+    ],
+    [
+      "names and calls handed as arguments",
+      callOf(
+        identifier("validate"),
+        member(identifier("schema"), "user"),
+        callOf(identifier("strict")),
+      ),
+      "validate(schema.user, strict())",
+    ],
+    [
+      "an object argument",
+      callOf(identifier("rateLimit"), node({ type: "object" })),
+      "rateLimit(…)",
+    ],
+    [
+      "a call through a member",
+      callOf(member(identifier("auth"), "role"), string(fragment("admin"))),
+      `auth.role("admin")`,
+    ],
+    ["a spread", wrapped("spread_element", identifier("guards")), "...guards"],
+    [
+      "a spread of a member",
+      wrapped("spread_element", member(identifier("auth"), "guards")),
+      "...auth.guards",
+    ],
+    ["a spread of nothing the tree holds", wrapped("spread_element"), "...<computed>"],
+    [
+      "a name behind `as` and parentheses",
+      wrapped("as_expression", wrapped("parenthesized_expression", identifier("isAuthed"))),
+      "isAuthed",
+    ],
+    ["a choice between handlers", node({ type: "ternary_expression" }), "<computed>"],
+    ["an `await`", wrapped("await_expression", identifier("load")), "<computed>"],
+    ["a `new`", node({ type: "new_expression" }), "<computed>"],
+  ])("names %s", (_label, handler, name) => {
+    expect(middlewareNames([handler])).toEqual([name])
+  })
+
+  it.each([
+    ["an arrow function", inline],
+    ["a function expression", node({ type: "function_expression" })],
+    [
+      "an inline function behind `as` and parentheses",
+      wrapped("as_expression", wrapped("parenthesized_expression", inline)),
+    ],
+  ])("leaves out %s", (_label, handler) => {
+    expect(middlewareNames([handler])).toEqual([])
+  })
+
+  it("keeps the order it is handed the rest in", () => {
+    expect(middlewareNames([identifier("timing"), inline, identifier("isAuthed")])).toEqual([
+      "timing",
+      "isAuthed",
+    ])
   })
 })
