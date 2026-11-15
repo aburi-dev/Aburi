@@ -22,7 +22,8 @@ jobs:
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
-      url: ${{ steps.upload.outputs.url }}
+      alias-url: ${{ steps.upload.outputs.alias-url }}
+      version-url: ${{ steps.upload.outputs.version-url }}
     steps:
       # Full history: VitePress' lastUpdated reads each page's date from the git log.
       - uses: actions/checkout@v7
@@ -58,17 +59,25 @@ jobs:
         run: |
           set -euo pipefail
           pnpm dlx wrangler@4 versions upload --preview-alias "$PREVIEW_ALIAS" --message "Preview of $HEAD_SHA"
-          url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")
-          if [ -z "$url" ]; then
-            echo "::error::Wrangler uploaded the version but reported no alias URL. preview_urls in docs/wrangler.jsonc has to stay true for previews to be served." >&2
+          entry=$(jq -c 'select(.type == "version-upload")' "$WRANGLER_OUTPUT_FILE_PATH")
+          alias_url=$(jq -r '.preview_alias_url // empty' <<< "$entry")
+          version_url=$(jq -r '.preview_url // empty' <<< "$entry")
+          if [ -z "$alias_url" ] || [ -z "$version_url" ]; then
+            echo "::error::Wrangler uploaded the version but reported no preview URL. preview_urls in docs/wrangler.jsonc has to stay true for previews to be served." >&2
             exit 1
           fi
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "Docs preview: $url" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "alias-url=$alias_url"
+            echo "version-url=$version_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "Docs preview: $alias_url (this commit: $version_url)" >> "$GITHUB_STEP_SUMMARY"
 
   comment:
     name: Link the preview
     needs: upload
+    # A failed build is reported too, or the comment would keep advertising the previous push as current.
+    # A cancelled one was superseded by a newer push, whose own run reports.
+    if: always() && (needs.upload.result == 'success' || needs.upload.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -76,24 +85,53 @@ jobs:
       - name: Upsert the preview comment
         uses: actions/github-script@v9
         env:
-          PREVIEW_URL: ${{ needs.upload.outputs.url }}
+          UPLOAD_RESULT: ${{ needs.upload.result }}
+          ALIAS_URL: ${{ needs.upload.outputs.alias-url }}
+          VERSION_URL: ${{ needs.upload.outputs.version-url }}
         with:
           script: |
             const marker = '<!-- aburi:docs-preview -->'
             const { owner, repo } = context.repo
             const pr = context.payload.pull_request
-            const body = [
-              marker,
-              `**Docs preview:** ${process.env.PREVIEW_URL}`,
-              '',
-              `Built from ${pr.head.sha} merged into \`${pr.base.ref}\`. Each push replaces it at the same URL.`,
-            ].join('\n')
+            const { UPLOAD_RESULT, ALIAS_URL, VERSION_URL } = process.env
+            const repoUrl = `${context.serverUrl}/${owner}/${repo}`
+            const link = (url, text = url) => `<a href="${url}">${text}</a>`
+            const row = (label, value) => `<tr><td><strong>${label}</strong></td><td>${value}</td></tr>`
+            const commit = link(`${repoUrl}/commit/${pr.head.sha}`, `<code>${pr.head.sha.slice(0, 7)}</code>`)
+
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr.number, per_page: 100,
             })
             const existing = comments.find(
               (c) => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker),
             )
+            // The alias keeps serving the last successful upload, so a failed push still links it.
+            const previousAlias = existing?.body.match(/Preview URL:<\/strong><\/td><td><a href="([^"]+)"/)?.[1]
+
+            const rows =
+              UPLOAD_RESULT === 'success'
+                ? [
+                    row('Latest commit:', commit),
+                    row('Status:', '✅&nbsp; Preview ready'),
+                    row('Preview URL:', link(ALIAS_URL)),
+                    row('This commit:', link(VERSION_URL)),
+                  ]
+                : [
+                    row('Latest commit:', commit),
+                    row('Status:', '❌&nbsp; Build failed'),
+                    ...(previousAlias
+                      ? [row('Preview URL:', `${link(previousAlias)} (still the last successful push)`)]
+                      : []),
+                  ]
+            const body = [
+              marker,
+              '## Docs preview on <img alt="" src="https://workers.cloudflare.com/logo.svg" width="16">&nbsp;Cloudflare Workers',
+              '',
+              `<table>${rows.join('')}</table>`,
+              '',
+              `${link(`${repoUrl}/actions/runs/${context.runId}`, 'View logs')} · built from this pull request merged into <code>${pr.base.ref}</code>`,
+            ].join('\n')
+
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
             } else {
