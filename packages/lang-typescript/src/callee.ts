@@ -142,7 +142,8 @@ export function describeCallee(node: Node): CalleeShape | null {
   }
 }
 
-// A pair the grammar repaired is read by its first fragment, the part its receiver parsed as.
+// A pair holding more than its expression is read by its first fragment, the part its receiver
+// parsed as.
 function parenthesizedReceiver(node: Node): Node | null {
   const inner = throughParentheses(node)
   return inner.type === "parenthesized_expression" ? firstNonCommentChild(inner) : inner
