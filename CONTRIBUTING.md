@@ -20,12 +20,13 @@ pnpm install
 
 ```bash
 pnpm check       # Biome lint + format check (pnpm format to write fixes)
+pnpm hygiene     # no citations of design docs, spec ids or issues in code
 pnpm typecheck   # tsc --noEmit across packages (turbo)
 pnpm test        # Vitest across packages
 pnpm build       # tsdown across packages
 ```
 
-All four must pass before a pull request can merge — CI runs them on Ubuntu,
+All five must pass before a pull request can merge — CI runs them on Ubuntu,
 macOS, and Windows.
 
 ## Workflow
@@ -41,7 +42,7 @@ macOS, and Windows.
    only when no stored fingerprint moves.
 4. Open a pull request against `main`.
 
-Two workflows then run on your pull request. CI runs the four commands above on Ubuntu, macOS
+Two workflows then run on your pull request. CI runs the five commands above on Ubuntu, macOS
 and Windows, and Aburi runs on itself: [`.github/workflows/aburi.yml`](.github/workflows/aburi.yml)
 builds your branch, diffs it against the pull request's base with the CLI your branch
 contains, and posts the report as a comment it rewrites on every push. Its gate
@@ -109,9 +110,10 @@ for the plugin contracts and a walkthrough.
 
 [aburi.dev](https://aburi.dev) is the VitePress site under
 [`docs/`](docs/), served by a Cloudflare Worker configured in
-[`docs/wrangler.jsonc`](docs/wrangler.jsonc). Production is deployed from
-[`.github/workflows/docs.yml`](.github/workflows/docs.yml); previews still come
-from Cloudflare's git integration, which watches the repository directly. The
+[`docs/wrangler.jsonc`](docs/wrangler.jsonc). Both deploys run in GitHub
+Actions: production from [`.github/workflows/docs.yml`](.github/workflows/docs.yml),
+pull-request previews from
+[`.github/workflows/docs-preview.yml`](.github/workflows/docs-preview.yml). The
 site's `build` script first builds the workspace packages it renders — the
 Showcase runs the CLI over `examples/` — so whatever runs `pnpm --filter
 @aburi/docs build` gets a complete site.
@@ -123,34 +125,26 @@ a version that cannot be installed yet. A documentation fix that should not
 wait for the next release can be shipped on its own by running the **Docs**
 workflow from the Actions tab.
 
-Pushing to a branch other than `main` uploads a *version*: the site is built
-and reachable at a preview URL, but no traffic moves off the deployed version.
-Cloudflare comments that URL on the pull request and rewrites the comment on
-every push, so the link in a review always points at the commit being reviewed.
+Every push to a pull request uploads a *version* with
+`wrangler versions upload --preview-alias pr-<number>`: the site is built and
+reachable at `https://pr-<number>-aburi.<account subdomain>.workers.dev`, but
+no traffic moves off the deployed version. The workflow comments that URL on
+the pull request and rewrites the comment on every push, so the alias always
+serves the latest push. Pull requests from forks and from Dependabot get no
+preview, because their runs are not given the repository secrets.
 
-Two things make the previews work, one in this repository and one outside it:
+What the deploys need:
 
 - `preview_urls` in [`docs/wrangler.jsonc`](docs/wrangler.jsonc). It is set
   explicitly because the default follows `workers_dev`, and because Wrangler
   overwrites the dashboard toggle on every deploy.
-- **Workers & Pages → aburi → Settings → Build → Branch control**: *Builds for
-  non-production branches* must be enabled, or pull requests get no preview at
-  all.
-
-And two make the release-time deploy work, neither of which lives in the
-repository:
-
-- On that same **Branch control** screen, builds for the **production branch**
-  must be *disabled*. Left on, every push to `main` deploys the site the moment
-  it merges, and the release-time deploy is only a second deploy of something
-  already live — which is the coupling this arrangement exists to break.
 - Two repository secrets, because Cloudflare has no equivalent of the OIDC
   trusted publishing the npm release leans on: `CLOUDFLARE_API_TOKEN` (a token
   with *Workers Scripts: Edit* on this account) and `CLOUDFLARE_ACCOUNT_ID`.
-
-Because this is a monorepo, a pull request that touches no documentation still
-triggers a preview build. **Build → Build watch paths** can narrow that to
-`docs/*` if the noise becomes a problem.
+- No Git integration on the Worker (**Workers & Pages → aburi → Settings →
+  Build** shows no connected repository). Connected, Cloudflare builds every
+  push a second time, and a production-branch build deploys `main` the moment
+  it merges — before the release it is supposed to wait for.
 
 ## Conventions
 

@@ -7,7 +7,7 @@ import type {
   EffectDecline,
 } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { makeCallSiteKey } from "../../src/call-site"
+import { makeCallSiteKey, makeSymbolCallKey } from "../../src/call-site"
 import { CoreError } from "../../src/errors"
 import {
   extractOneSymbol,
@@ -268,6 +268,84 @@ describe("runFilePipeline — effect classification", () => {
     })
 
     expect(result.thisBindings).toEqual([])
+  })
+
+  it("keys each call's declared receiver type by its Symbol, its line and its target", async () => {
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+        makeCall({ target: "this.events.emit", line: 4, receiverType: "EventEmitter2" }),
+      ),
+    })
+
+    expect(result.declaredReceiverTypes).toEqual([
+      [makeSymbolCallKey("stub:test.stub#Fn", 3, "this.repo.find"), "UserRepository"],
+      [makeSymbolCallKey("stub:test.stub#Fn", 4, "this.events.emit"), "EventEmitter2"],
+    ])
+  })
+
+  it.each([
+    [
+      "a classified call",
+      [makeCall({ target: "this.repo.save", line: 3, receiverType: "UserRepository" })],
+    ],
+    ["a call with none", [makeCall({ target: "this.repo.find", line: 3 })]],
+    ["an empty type", [makeCall({ target: "this.repo.find", line: 3, receiverType: "" })]],
+    [
+      "calls on one key that name two types",
+      [
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "AdminRepository" }),
+      ],
+    ],
+    [
+      "calls on one key of which one names none",
+      [
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+        makeCall({ target: "this.repo.find", line: 3 }),
+      ],
+    ],
+    [
+      "calls on one key of which the first names none",
+      [
+        makeCall({ target: "this.repo.find", line: 3 }),
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+      ],
+    ],
+  ])("keys no declared receiver type for %s", async (_case, calls) => {
+    const result = await extractOneSymbol({
+      effects: [
+        stubEffectsPlugin("effects-db", (call) =>
+          call.target === "this.repo.save"
+            ? { effectId: "db.write", confidence: "high", derivedBy: "effects-db:hit" }
+            : null,
+        ),
+      ],
+      body: bodyCalling(...calls),
+    })
+
+    expect(result.declaredReceiverTypes).toEqual([])
+  })
+
+  it("keys a classified call's type nowhere, so the surviving call on its key keeps its own", async () => {
+    const result = await extractOneSymbol({
+      effects: [
+        stubEffectsPlugin("effects-db", (call) =>
+          call.receiverType === "PrismaClient"
+            ? { effectId: "db.write", confidence: "high", derivedBy: "effects-db:hit" }
+            : null,
+        ),
+      ],
+      body: bodyCalling(
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "PrismaClient" }),
+        makeCall({ target: "this.repo.find", line: 3, receiverType: "UserRepository" }),
+      ),
+    })
+
+    expect(result.declaredReceiverTypes).toEqual([
+      [makeSymbolCallKey("stub:test.stub#Fn", 3, "this.repo.find"), "UserRepository"],
+    ])
   })
 
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {

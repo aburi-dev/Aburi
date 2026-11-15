@@ -9,7 +9,7 @@ import type {
   SourceFile,
   VocabRegistry,
 } from "@aburi/types"
-import { CoreError } from "../errors"
+import { CoreError, REPORT_BUG } from "../errors"
 import { buildComponentAttribution } from "./attribute"
 import type { DiscoveredFile } from "./discover"
 import { buildDropCFilter } from "./drop-c"
@@ -23,6 +23,7 @@ import { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./vocab"
 /** What extracting any file of a scan reads beside the plugins: plain data, so a thread can hold it. */
 export interface ExtractionJob {
   readonly workspaceRoot: string
+  readonly installedRoot?: string
   /** A file is named by its index here. */
   readonly files: readonly DiscoveredFile[]
   readonly config: Config
@@ -83,6 +84,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
   )
   const origins = new ImportOrigins({
     workspaceRoot: job.workspaceRoot,
+    ...(job.installedRoot === undefined ? {} : { installedRoot: job.installedRoot }),
     files: job.files,
     router,
     loadSource: (file) => loadSourceFile(job.workspaceRoot, file),
@@ -152,7 +154,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
   }
 }
 
-export async function loadSourceFile(
+async function loadSourceFile(
   workspaceRoot: string,
   discovered: DiscoveredFile,
 ): Promise<SourceFile> {
@@ -167,8 +169,7 @@ export function normalizeLineTerminators(content: string): string {
 
 function unknownFile(fileId: number, count: number): CoreError {
   return new CoreError(
-    `Internal error: asked to extract file ${fileId} of a scan that discovered ${count}\n` +
-      "This is a bug in Aburi — please report it at https://github.com/aburi-dev/Aburi/issues.",
+    `Internal error: asked to extract file ${fileId} of a scan that discovered ${count}\n${REPORT_BUG}`,
     { code: "scan-file-unknown" },
   )
 }

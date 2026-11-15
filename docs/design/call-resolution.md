@@ -27,7 +27,7 @@ Aburi runs in two environments:
 | Tier | Availability | Refines |
 |---|---|---|
 | **Untyped (default)** | always | resolves by import binding + qualified-name matching over the Symbol table |
-| **LSP-enriched (optional)** | when a language server is running and available (spec: [`lsp-enrichment.md`](./lsp-enrichment.md)) | resolves method dispatch through the actual receiver type + interface implementations |
+| **LSP-enriched (optional)** | when a language server is running and available (spec: [`lsp-enrichment.md`](./lsp-enrichment.md)) | resolves `this` / `super` method dispatch through the actual receiver type; interface implementations are planned (§5.3) |
 
 The two tiers share a **single output contract** (§7). Enabling LSP MUST NOT change the shape or ordering of `calls[]`; it only lifts more `resolved: null` entries to non-null and lifts `confidence`. This preserves time-series diff stability (`overview.md` §2 — "diff stability" is non-negotiable).
 
@@ -45,13 +45,14 @@ The resolver runs after all files have been parsed and `Symbol[]` is available. 
 | `call` | `walkBody` `CallCandidate` | provides `target`, `line`, `argumentCount`, `inAwait`, `inNew`, `literalArgs` |
 | `importTable` | `parseFile().imports` | per-file `ImportEdge[]` (`lang-plugin.md` §4.2) — the resolver reads this to know what a bare identifier binds to |
 | `localScope` | derived per Symbol | in-file local declarations shadowing imports / module-level names |
+| `receiverType` | `walkBody` `CallCandidate` | the named type a receiver is declared with, where the language plugin reads one off the source (`lang-plugin.md` LP20n). It reaches the resolver as `declaredReceiverTypes`, keyed by the calling Symbol, the line and the target, and §4.7.1 reads it |
 | `receiverTypes` | LSP layer only | actual type at each call receiver — absent in the untyped tier |
 
 The **caller's file path** is the anchor; resolution is always evaluated in the frame of one call site inside one Symbol.
 
 ## 4. Untyped Resolution Rules
 
-The untyped tier resolves callees by **name binding**, not by type. It runs five ordered steps; the first step to return a match wins. A step that binds the leading identifier to a declaration whose members it can see, or to an import under a name the declaration does not have, ends the search even when it finds no match there (§4.3, §4.4).
+The untyped tier resolves callees by **name binding**, not by type. It runs five ordered steps; the first step to return a match wins. A call through a field of `this` that they leave unresolved is then tried through the type the field is declared with, which is reached by binding its name in the same way (§4.7.1). A step that binds the leading identifier to a declaration whose members it can see, or to an import under a name the declaration does not have, ends the search even when it finds no match there (§4.3, §4.4).
 
 ### 4.1 Step order
 
@@ -63,7 +64,7 @@ The untyped tier resolves callees by **name binding**, not by type. It runs five
 5. Workspace scope — cross-component match against a globally-unique qname (§4.6)
 ```
 
-Steps 1–3 handle same-file / directly-imported calls. Steps 4–5 catch cases where the language plugin's normalized `target` already includes enough qualification to disambiguate (e.g. `PricingService.calculateTotal`) but the leading identifier is bound to no declaration whose members the resolver can see: nothing in the caller's file declares or imports it, the file declares it as a value that comes from elsewhere (§4.3), or a named import that keeps the exported name reaches no module declaring it, as through a bare specifier or a barrel re-exporting it (§4.4).
+Steps 1–3 handle same-file / directly-imported calls. Steps 4–5 catch cases where the language plugin's normalized `target` already includes enough qualification to disambiguate (e.g. `PricingService.calculateTotal`) but the leading identifier is bound to no declaration whose members the resolver can see: nothing in the caller's file declares or imports it, the file declares it as a value that comes from elsewhere (§4.3), or a named import that keeps the exported name reaches no module declaring it, as through a bare specifier §4.4.1 maps to no workspace file or a barrel re-exporting it (§4.4).
 
 ### 4.2 Step 1: local scope
 
@@ -113,18 +114,19 @@ Sub-cases:
 | `import type { X } from './y'` | no call edge (type-only imports produce no runtime edge). Like every import, a `via: import` Component edge when it crosses a Component boundary ([`ir-schema.md`](./ir-schema.md) §11.3) |
 | `import('./y')` (dynamic) | ignored at the target site. Like every import, it is a `via: import` Component edge when it crosses a Component boundary ([`ir-schema.md`](./ir-schema.md) §11.3) |
 | `import './y'` (for its effects) | binds nothing, so no call resolves through it. What `./y` does when it is imported is its `<module>` Symbol ([`ir-schema.md`](./ir-schema.md) §3.3), which no target names, so no call edge reaches it from this or any other import. Like every import, it is a `via: import` Component edge when it crosses a Component boundary ([`ir-schema.md`](./ir-schema.md) §11.3) |
-| bare specifier `'lodash'` | out-of-workspace — `resolved` stays `null`, confidence `high` (this is a definite external, not a failure); a qualified target through a named import that keeps the exported name goes on to Step 4 |
+| bare specifier the language maps to a workspace file (`'@app/billing'` through `compilerOptions.paths`) | as a relative specifier: resolve against the file it maps to (§4.4.1, step 2) |
+| any other bare specifier (`'lodash'`) | out-of-workspace — `resolved` stays `null`, confidence `high` (this is a definite external, not a failure); a qualified target through a named import that keeps the exported name goes on to Step 4 |
 
 A default export is reached only as one of those two Symbols. A call (`export default withAuth(async (req) => { … })`, `export default withAuth(Page)`) is the file's `<default>` Symbol, a `const` ([`lang-plugin.md`](./lang-plugin.md) LP7c1), and is reached as any `<default>` is. Three spellings are not. A default export that is any other value rather than a declaration or a call (`export default { Page }`, `export default new Router()`) has no Symbol. An anonymous `export default class` has no member Symbols for a dotted tail to reach, since `<default>::run` is not a qualified name ([`ir-schema.md`](./ir-schema.md) §3.2). And a default re-exported from another module (`export { default } from './impl'`) leads to the re-exporting file, which §8.3 does not see past. Each leaves the call `null`, bucketed `no-match`.
 
 An import ends the search as file scope does (§4.3), member or not, in two cases:
 
-- **It binds `name` under a name the declaration does not have.** That covers an alias (`import { Logger as B }`), a default import (`import L from …`) and a namespace import (`import * as ns from …`). Steps 4–5 compare the target as written, so `B.log`, `L.log` or `ns.Logger.log` could only match a namesake there, never the declaration the import reaches. So `B.log()` through `import { Logger as B } from './barrel'` stays `null` where the barrel only re-exports `Logger`. So does `L.log()` through a default import of a module with no default export, or of an anonymous `export default class`. The rule holds for a bare specifier too, where the call is bucketed `external` (§8.1).
+- **It binds `name` under a name the declaration does not have.** That covers an alias (`import { Logger as B }`), a default import (`import L from …`) and a namespace import (`import * as ns from …`). Steps 4–5 compare the target as written, so `B.log`, `L.log` or `ns.Logger.log` could only match a namesake there, never the declaration the import reaches. So `B.log()` through `import { Logger as B } from './barrel'` stays `null` where the barrel only re-exports `Logger`. So does `L.log()` through a default import of a module with no default export, or of an anonymous `export default class`. The rule holds for a bare specifier §4.4.1 maps to no file too, where the call is bucketed `external` (§8.1).
 - **It keeps the exported name, and its module declares that name as §4.3 requires**, kept or dropped. So where `base-logger.ts` declares a `Logger` class with no `log`, `Logger.log()` through `import { Logger } from './base-logger'` stays `null`, bucketed `no-match`.
 
 A named import that keeps the exported name and reaches no such declaration goes on to Step 4 (§4.5). The target then spells the declaration's own name, so Steps 4–5 can find it. That happens for:
 
-- a bare specifier, which §4.4.1 does not resolve to a file. Steps 4–5 are how a call into a workspace package reaches the Symbol it names;
+- a bare specifier §4.4.1 does not resolve to a file, such as a workspace package's name. Steps 4–5 are how a call into a workspace package reaches the Symbol it names;
 - a relative specifier that resolves to no file the scan has a Symbol in;
 - a module that does not itself declare the name, such as a barrel re-exporting it (§11.6);
 - a module that declares it as a value the resolver cannot see, such as `export const Logger = makeLogger()`.
@@ -138,13 +140,13 @@ For a specifier `'./y'` (or `'../y'`, `'@workspace-alias/foo'`) in file `apps/bi
 1. **Relative** (`./` or `../` prefix, or exactly `.` or `..`) — resolve against the caller's file directory.
    - A specifier that names a directory outright — one whose last segment is empty, `.` or `..` (`.`, `..`, `./`, `../`, `./y/..`) — probes only that directory's `index.<ext>` (step 3's directory form), never `<dir>.<ext>`. TypeScript resolves these to the index outside ESM mode and not at all inside it; the resolver carries no per-file module mode, so it always takes the former. A directory's `package.json#main`, which TypeScript consults before `index`, is not read: the resolver reads no filesystem state
    - A specifier written with an emitted-JavaScript extension first probes the sources that compile to it, in TypeScript's order less its declaration files: `.js` → `.ts`, `.tsx`, `.js`, `.jsx`; `.jsx` → `.tsx`, `.ts`, `.jsx`, `.js`; `.mjs` → `.mts`, `.mjs`; `.cjs` → `.cts`, `.cjs`. Under `node16`/`nodenext` a relative import of `repo.ts` has to be written `./repo.js`, and TypeScript resolves it to `repo.ts` even when a `repo.js` sits beside it. The written extension is always probed, in its place in the row; the others only when they are in the resolver's probe list (step 3). When none of them names a file, step 3 carries on from `<path>.<ext>`
-2. **Path alias** — not implemented yet: the resolver applies no mapping table, so a path alias or a workspace package name is a bare specifier to it (§4.4), bucketed `external` (§8.1). The language plugin's `ImportResolver` ([`lang-plugin.md`](./lang-plugin.md) §4.8) already maps a TypeScript path alias for the scan, which follows a decorator's name through it (§5.2.4 there); call resolution does not ask it yet. The step is to apply the mapping table read from the language plugin's config at startup:
-   - For TypeScript: the `paths` field of the caller's nearest `tsconfig.json` (Node16/NodeNext resolution semantics), plus each workspace package name declared in `pnpm-workspace.yaml` / `workspaces` / `turbo.json`.
-   - For other languages: the equivalent lookup surface the plugin declares (out of scope here).
+2. **Path alias** — a bare specifier is mapped by the language plugin's `ImportResolver` ([`lang-plugin.md`](./lang-plugin.md) §4.8): for TypeScript, the `paths` and `baseUrl` of the importing file's nearest `tsconfig.json` (§4.8 there). The scan asks it while it extracts the file, for each bare specifier the file imports names through when one of its Symbols makes a call, and hands the resolver the paths in the order the plugin gives them. Each is probed as step 3 probes a relative specifier's path, from the workspace root, against the files the scan has Symbols in; the first that names one is the module, and the import resolves against it as a relative one would (§4.4). A specifier mapped to no such file — a package's, or one the plugin's resolver failed on — stays bare: `external` when nothing else resolves the call (§8.1), and on to Step 4 for a qualified target through a named import that keeps the exported name.
+   - A workspace package's name (`pnpm-workspace.yaml`, `workspaces`) is not mapped: the TypeScript plugin reads no `package.json`, so a call into a workspace package by its name reaches its Symbol by Steps 4–5 as before.
+   - For other languages: the equivalent lookup surface the plugin declares, through the same `ImportResolver`.
 3. **Extension probing** — the probe list is `ResolveCallGraphInput.fileExtensions`: dot-less extensions (`ts`, where a language plugin's `fileExtensions` in [`lang-plugin.md`](./lang-plugin.md) §4.1 writes `.ts`), the standard TypeScript / JavaScript set unless a caller sets it. Try the path as written, then `<path>.<ext>` in the list's order, then `<path>/index.<ext>` in the same order. A specifier that names a directory (step 1) skips straight to `<path>/index.<ext>`; a specifier with an emitted extension has step 1's sources tried in place of the path as written, ahead of the other two. The path as written is tried whatever the probe list holds.
 4. **Symbol table hit** — confirm the resolved absolute path (workspace-relativized to POSIX) exists as a Symbol id prefix in `symbolTable`. If not, `resolved` stays `null`, `confidence` = `high` (a definite miss).
 
-Step 2's mapping table is to be built once per `aburi scan` invocation from the config already loaded by [`config.md`](./config.md) and the workspace-manager information already produced by [`component-detect.md`](./component-detect.md) §3; the resolver will read it, never re-parse `tsconfig.json` or workspace manifests. Determinism follows: no filesystem race can influence which candidate wins because the candidate order is fixed by step 1's table and the probe list, no candidate is checked against the filesystem (only against `symbolTable`), and the mapping table is deterministic input.
+Step 2's mapping is read by the language plugin from the build configuration it knows, once per scan on each thread that extracts files ([`lang-plugin.md`](./lang-plugin.md) §4.8), and is handed to the resolver as data before it runs; the resolver itself reads no configuration. Determinism follows: the plugin's answer for a file and specifier depends only on the configuration files, the candidate order is fixed by that answer, step 1's table and the probe list, and no candidate is checked against the filesystem (only against `symbolTable`).
 
 ### 4.5 Step 4: component scope
 
@@ -164,7 +166,7 @@ Same as Step 4 but the search is over the whole workspace, not just the caller's
 
 ### 4.7 Special normalized targets
 
-The language plugin's `normalizeCallee` produces some targets that never resolve to a Symbol and MUST be left unresolved:
+The language plugin's `normalizeCallee` produces some targets that never resolve to a Symbol by name, and steps 1–5 MUST leave them unresolved. The one exception is a call through a field of `this` that the class declares with a named type, which §4.7.1 resolves after them:
 
 | Target shape | Reason |
 |---|---|
@@ -175,14 +177,33 @@ The language plugin's `normalizeCallee` produces some targets that never resolve
 
 For `this` and `super`, the untyped tier writes `null` with `confidence = medium`; the LSP tier can promote these to real ids (§5.2).
 
+#### 4.7.1 A receiver of a declared type
+
+`this.repo.find(id)` beside `constructor(private readonly repo: UserRepository)` names its receiver's type in the source, and the language plugin reports it as the call's `receiverType`. A call that steps 1–5 leave unresolved is resolved through that type, as the untyped tier's last rule:
+
+1. The type's name is bound as a target's leading identifier is in steps 2 and 3: a top-level Symbol of the caller's file, or a name an import binds, a dotted name (`repos.UserRepository`) composing past it. Steps 4 and 5 are not searched: they match by spelling, so for a type they could only find a namesake.
+2. The name must bind a class, and the class must declare the member the call's last segment names, as an instance member: `UserRepository.find`, never the static `UserRepository::find`, since the receiver is a value of the type.
+3. `resolved` = that member, `confidence = medium`: the value can be a subclass's, whose override is then the member that runs.
+
+Being untyped, the rule runs whether or not a language server does, and the LSP tier reads a hint only for a call it leaves unresolved (§2, §5.4). The LSP layer hints no such call yet: it hovers only a two-segment `this.<method>` or `super.<method>` ([`lsp-enrichment.md`](./lsp-enrichment.md) §5).
+
+What it leaves unresolved stays in the `dynamic` bucket (§8.1), which describes the call's own receiver, `this`, whatever its type turned out to be:
+
+- a field that carries no `receiverType`: one with no annotation, a union type or an inherited declaration, or one whose type's name a scope between the class and the module declares, the class's own type parameter included ([`lang-plugin.md`](./lang-plugin.md) LP20n);
+- an interface-typed field, which binds no class. Its implementers are left for §5.3, which is planned, so nothing resolves such a call today;
+- a type the file binds to no class whose members the resolver can see: a class re-exported through a barrel (§11.6), or imported by a package name that §4.4.1 maps to no workspace file;
+- a type whose name binds more than one declaration, and a class that does not declare the member itself. These end in `dynamic` too, not in `ambiguous` or `no-match`.
+
+The type is read per key: the calling Symbol, the line and the target. When every call on a key names one type, they all resolve through it. When they do not, an untyped call on the key included, none does, since which call a type was written for is lost. Two `this` can share a key on one line, the method's and a nested class's or a `function`'s.
+
 ## 5. LSP-Enriched Resolution Rules
 
 When LSP is available, resolution runs a second pass that reads receiver types.
 
 ### 5.1 Additional inputs
 
-- `receiverType(callSite)` — the resolved type of the receiver expression at the call site (returned from the language server's `textDocument/hover` or `typeDefinition` request).
-- `implementers(interfaceName)` — the set of Symbols known to `implements`/`extends` the given interface (from `textDocument/implementation`).
+- `receiverType(callSite)` — the resolved type of the receiver expression at the call site, read from the language server's `textDocument/hover` answer for a `this` / `super` receiver (a `textDocument/typeDefinition` lookup for other receivers is planned with §5.3).
+- `implementers(interfaceName)` — the set of Symbols known to `implements`/`extends` the given interface (from `textDocument/implementation`; planned with §5.3, the pass issues no such request yet).
 
 The exact protocol subset used, plus fallback and timeout policy, is specified in [`lsp-enrichment.md`](./lsp-enrichment.md) §4. This document only names the two capabilities and treats them as inputs.
 
@@ -199,10 +220,12 @@ A hint the resolver declines — one whose receiver kind is not the one its call
 
 ### 5.3 Interface-typed receivers
 
+> **Status**: planned. The LSP pass issues no `textDocument/typeDefinition` or `textDocument/implementation` request yet and hands the resolver no implementers, so every interface-typed call stays `null`, whatever number of classes implements the interface. The rules below are what it will do.
+
 For `repo.save(...)` where `repo`'s LSP type is `IRepository`:
 - Look up `implementers(IRepository)` — the set of implementing classes.
 - If it is a **single class**, `resolved` = that class's `.save` Symbol, `confidence = medium`.
-- If it is **multiple classes** and DI wiring is knowable via the framework plugin (`framework:nestjs:provider` binding), the framework plugin may supply the chosen implementer via a hook (§7.4); use its answer with `confidence = medium`.
+- If it is **multiple classes** and DI wiring is knowable via the framework plugin (`framework:nestjs:provider` binding), the framework plugin would supply the chosen implementer via a hook (§7.4, planned); until that hook exists the call stays `null`.
 - If ambiguous, `resolved` stays `null` — do not silently pick one.
 
 ### 5.4 Untyped result preservation
@@ -261,10 +284,11 @@ The edge's `confidence` is the resolution confidence at the moment of resolution
 | §4.4 import scope | `high` |
 | §4.5 component scope (unique) | `medium` |
 | §4.6 workspace scope (unique) | `low` |
+| §4.7.1 declared receiver type | `medium` |
 | §5.2 LSP `this`/`super` direct | `high` |
 | §5.2 LSP walked hierarchy | `medium` |
-| §5.3 LSP interface with single impl | `medium` |
-| §5.3 LSP interface with DI-resolved impl | `medium` |
+| §5.3 LSP interface with single impl (planned) | `medium` |
+| §5.3 LSP interface with DI-resolved impl (planned, §7.4) | `medium` |
 
 Effect propagation must respect edge confidence when combining propagated effect confidence — see [`effect-propagation.md`](./effect-propagation.md) §5.3.
 
@@ -272,7 +296,9 @@ Effect propagation must respect edge confidence when combining propagated effect
 
 An edge whose `from` and `to` differ in the `<language>:` prefix is a **cross-language call**. The untyped tier of this document does not resolve cross-language calls; they are the concern of `multi-language-id.md` (Later phase). Until that design lands, the resolver emits `null` for any candidate whose only match crosses language boundaries.
 
-### 7.4 Framework-plugin hook (optional)
+### 7.4 Framework-plugin hook (planned)
+
+> **Status**: not implemented. No plugin interface in `@aburi/types` declares `resolveDispatch` and the core asks no plugin; an interface-typed call stays `null` (§5.3, itself planned). The design below is what the hook will be.
 
 For §5.3, framework plugins may register a `resolveDispatch(interfaceName, callerComponent) → SymbolId | null` hook. When registered:
 - The core queries plugins in config order; first non-null wins (same convention as effect plugins per [`effect-plugin.md`](./effect-plugin.md) §5.1).
@@ -291,19 +317,19 @@ The core does not persist a "why null" reason field on `Call` in the IR. Adding 
 | Bucket | Meaning | Example |
 |---|---|---|
 | `local-scope` | resolved to a local variable / parameter | `callback(x)` inside `foo(callback: () => void)` |
-| `external` | resolved to a bare specifier import | `lodash.sortBy(...)` |
-| `dynamic` | receiver is an expression, not a name, or a `this` / `super` receiver with no usable LSP hint | `getRepo().save(...)`, `items[0].save(...)` |
+| `external` | bound by an import whose specifier is bare and maps to no file with Symbols (§4.4.1) | `lodash.sortBy(...)` |
+| `dynamic` | receiver is an expression, not a name, or a `this` / `super` receiver with no usable LSP hint and no declared type that resolves it (§4.7.1) | `getRepo().save(...)`, `items[0].save(...)` |
 | `ambiguous` | multiple candidates | two `User.save` in different components with no explicit import |
-| `no-match` | no candidate found | typo, a member the declaration a call is bound to does not declare, or callee not in workspace and not imported |
+| `no-match` | no candidate found | typo, a member the declaration a call is bound to does not declare, or callee not in workspace and not imported. A member missing from a field's declared type is `dynamic` (§4.7.1) |
 
 #### Bucket precedence
 
 A single call can fit several descriptions at once — a parameter that happens to share a name with an imported package, an ambiguous qname reached through an expression receiver. The reviewer needs one stable answer per call site, so the resolver assigns the **most specific cause** in this fixed order:
 
 1. `local-scope` — the §4.2 shadow guard fired, so the resolver never looked outward at all.
-2. `dynamic` — the receiver is not a name: an expression receiver reported by the language plugin — which includes a property addressed through brackets with something that is not a name, `items[0].save()` ([`lang-plugin.md`](./lang-plugin.md) §4.4) — or `this` / `super` with no *usable* LSP hint (§4.7) — no hint at all, or one the LSP tier declined (§5.2). `this.save()` is filed here because in the untyped tier the receiver's identity is a runtime property of the class hierarchy, exactly like `getRepo().save()`; there is no name for the resolver to look up. The bucket therefore does not separate a call site the type layer never spoke about from one whose hint was refused; `stats.lspEnrichment.hintsRejected` ([`lsp-enrichment.md`](./lsp-enrichment.md) §7.2) is where that distinction is recorded, per run rather than per call site.
+2. `dynamic` — the receiver is not a name: an expression receiver reported by the language plugin — which includes a property addressed through brackets with something that is not a name, `items[0].save()` ([`lang-plugin.md`](./lang-plugin.md) §4.4) — or `this` / `super` with no declared type that resolves the call (§4.7.1) and no *usable* LSP hint (§4.7) — no hint at all, or one the LSP tier declined (§5.2). `this.save()` is filed here because in the untyped tier the receiver's identity is a runtime property of the class hierarchy, exactly like `getRepo().save()`; there is no name for the resolver to look up. The bucket therefore does not separate a call site the type layer never spoke about from one whose hint was refused; `stats.lspEnrichment.hintsRejected` ([`lsp-enrichment.md`](./lsp-enrichment.md) §7.2) is where that distinction is recorded, per run rather than per call site.
 3. `ambiguous` — some tier found the callee and refused to choose between candidates (§7.1). The competing Symbol ids are recorded, deduplicated and lex-sorted.
-4. `external` — the head of the target is bound in the caller's file by an import whose specifier is not relative. §4.4.1 resolves relative specifiers only, so such a callee is out of reach by construction rather than by accident.
+4. `external` — the head of the target is bound in the caller's file by an import whose specifier is not relative and that §4.4.1 maps to no file the scan has Symbols in. Such a callee is out of reach by construction rather than by accident. A bare specifier that does map to one is a relative specifier's case, and a miss through it is `no-match`.
 5. `no-match` — nothing matched anywhere, or the search ended at the declaration the head is bound to, which lacks the member (§4.3, §4.4).
 
 The order is part of the contract: changing it would move counts between buckets on an unchanged workspace.
@@ -351,7 +377,7 @@ Explicitly out of scope:
 
 ## 9. Determinism Guarantees
 
-The resolver's output is a pure function of its inputs. Given the same `symbolTable`, same `importTable`, same `receiverTypes` (or an empty LSP layer), the same `(Symbol, Call)` pair produces the same `resolved` and same confidence, **byte-for-byte**.
+The resolver's output is a pure function of its inputs. Given the same `symbolTable`, same `importTable`, same `declaredReceiverTypes`, same `receiverTypes` (or an empty LSP layer), the same `(Symbol, Call)` pair produces the same `resolved` and same confidence, **byte-for-byte**.
 
 - No timestamps, no random tiebreaks, no dependence on OS filesystem enumeration order.
 - Multi-candidate tiebreak is lexicographic on Symbol id (§5.5).
@@ -381,6 +407,7 @@ Every implementation of the resolver must pass the following.
 | CR5e | default import of a default export written as a call handed a function (`export default withAuth(async (req) => { … })` in `./y`; `import handler from './y'; handler(r)`) | `resolved` = `<lang>:./y#<default>`, confidence `high`, as CR5 |
 | CR6 | type-only import used as call — cannot happen at runtime but resolver sees the string | `resolved` = `null`, confidence `high` |
 | CR7 | bare specifier (`import { sortBy } from 'lodash'; sortBy()`) | `resolved` = `null`, confidence `high` |
+| CR7a | bare specifier a `tsconfig.json` path alias maps to a workspace file (`"paths": { "@app/billing": ["libs/billing/src/index.ts"] }`; `import { formatInvoice } from '@app/billing'; formatInvoice()`), a named, aliased or namespace import, a mapping to a directory or an extensionless path | `resolved` = `<lang>:libs/billing/src/index.ts#formatInvoice`, confidence `high`; a name the file does not declare is `null`, bucketed `no-match`. A mapping to no file with Symbols leaves CR7's answer |
 | CR8 | dynamic import (`await import('./y')`) — no direct call at the site | no `Call` entry, no edge |
 | CR9 | call to a parameter (`function f(cb) { cb() }`) | `resolved` = `null`, confidence `high` (local shadow) |
 | CR9a | call to a name a destructuring parameter binds (`{ x }`, `[x]`, `{ a: x }`, `{ x = y }`, `...[x]`) | `resolved` = `null`, confidence `high` (local shadow); a call to `y` in `{ x = y }` is not shadowed. A single-name rest parameter (`...x`) is CR9's case: its `name` is `x`. Not reached through a function a `const` or a class field hands its call (`const h = withAuth(({ x }) => x())`, LP7c; `class C { h = withAuth(({ x }) => x()) }`, LP20f1), whose parameters are on no `signature`: that `x()` resolves as though nothing shadowed it, as CR9's `withAuth((x) => x())` does (§4.2) |
@@ -390,6 +417,7 @@ Every implementation of the resolver must pass the following.
 | CR12 | qualified workspace-scope (no import, unique globally) | `resolved` = that Symbol id, confidence `low` |
 | CR13 | ambiguous qualified name (two matches) | `resolved` = `null`, confidence `medium` |
 | CR14 | `this.<method>` in untyped mode | `resolved` = `null`, confidence `medium` |
+| CR14a | `this.repo.find()` beside `constructor(private readonly repo: UserRepository)`, the class imported or declared in the caller's file, in untyped mode | `resolved` = `UserRepository.find`, the instance member, confidence `medium`, the same with an LSP hint for the call, which is not read. `null`, bucketed `dynamic`, when the type is an interface, when the class does not declare `find` itself, when the file binds no such name, though another file declares the class, when it reaches the class only through a barrel or a package name that maps to no workspace file, for an unannotated, union-typed or inherited field, and when the calls sharing the key (Symbol, line, target) do not all name one type |
 | CR15 | `new <ClassName>()` where class is imported | `resolved` = the class Symbol id, confidence `high` |
 
 ### 10.2 LSP-tier resolution
@@ -399,9 +427,9 @@ Every implementation of the resolver must pass the following.
 | CR16 | `this.foo()` in class C with method `foo` | `resolved` = `C.foo`, confidence `high` |
 | CR17 | `this.foo()` inherited from parent class B | `resolved` = `B.foo`, confidence `medium` |
 | CR18 | `super.foo()` | `resolved` = parent's `foo` Symbol, confidence `high` |
-| CR19 | interface-typed receiver with single implementer | `resolved` = implementer's method, confidence `medium` |
+| CR19 | interface-typed receiver with single implementer (planned, §5.3) | `resolved` = implementer's method, confidence `medium` |
 | CR20 | interface-typed receiver with multiple implementers, no framework hook | `resolved` = `null` |
-| CR21 | interface-typed receiver, framework plugin's `resolveDispatch` returns a Symbol id | `resolved` = that id, confidence `medium` |
+| CR21 | interface-typed receiver, framework plugin's `resolveDispatch` returns a Symbol id (planned, §7.4) | `resolved` = that id, confidence `medium` |
 | CR22 | untyped tier already resolved → LSP tier leaves it alone | unchanged |
 
 ### 10.3 Determinism

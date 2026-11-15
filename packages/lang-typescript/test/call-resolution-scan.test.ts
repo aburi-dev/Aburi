@@ -242,3 +242,158 @@ describe("scan — a call through the name of a dropped class", () => {
     })
   })
 })
+
+describe("scan — a call through a field of a declared type", () => {
+  it("reaches the member of the class the field is declared with, and only of a class", async () => {
+    await workspace.writeSource(
+      "src/repo.ts",
+      [
+        "export class UserRepository {",
+        "  find(id: string) { return id }",
+        "}",
+        "export interface Store { find(id: string): string }",
+        "",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/service.ts",
+      [
+        'import { type Store, UserRepository } from "./repo"',
+        "export class Base { protected inherited: UserRepository = new UserRepository() }",
+        "export class UserService extends Base {",
+        "  private untyped",
+        "  private either: UserRepository | null = null",
+        "  constructor(private readonly repo: UserRepository, private store: Store) {",
+        "    super()",
+        "    this.untyped = repo",
+        "  }",
+        "  byId(id: string) {",
+        "    this.repo.find(id)",
+        "    this.untyped.find(id)",
+        "    this.either.find(id)",
+        "    this.inherited.find(id)",
+        "    this.store.find(id)",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const { ir } = await scanTypeScript(workspace.root)
+    const byId = ir.symbols.find((s) => s.id === "ts:src/service.ts#UserService.byId")
+    expect(byId?.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["this.repo.find", "ts:src/repo.ts#UserRepository.find"],
+      ["this.untyped.find", null],
+      ["this.either.find", null],
+      ["this.inherited.find", null],
+      ["this.store.find", null],
+    ])
+  })
+
+  /** Write two repositories and `service`, which imports them through `specifier`, and scan. */
+  async function callsByMember(service: readonly string[], specifier = "./repo") {
+    await workspace.writeSource(
+      "src/repo.ts",
+      [
+        "export class UserRepository { find(id: string) { return id } }",
+        "export class AdminRepository { find(id: string) { return id } }",
+        "",
+      ].join("\n"),
+    )
+    const imports = `import { AdminRepository, UserRepository } from "${specifier}"`
+    await workspace.writeSource("src/service.ts", [imports, ...service, ""].join("\n"))
+    const { ir } = await scanTypeScript(workspace.root)
+    return Object.fromEntries(
+      ir.symbols
+        .filter((s) => s.source.file === "src/service.ts" && s.calls.length > 0)
+        .map((s) => [s.id.slice(s.id.indexOf("#") + 1), s.calls.map((call) => call.resolved)]),
+    )
+  }
+
+  const USER_FIND = "ts:src/repo.ts#UserRepository.find"
+  const ADMIN_FIND = "ts:src/repo.ts#AdminRepository.find"
+
+  it("resolves the calls one line holds alike, and none where their types differ", async () => {
+    const calls = await callsByMember([
+      "export class S {",
+      "  constructor(private readonly repo: UserRepository) {}",
+      '  twice() { return this.repo.find("a") ?? this.repo.find("b") }',
+      '  nested() { return [this.repo.find("a"), class { repo!: AdminRepository; n() { this.repo.find("b") } }] }',
+      '  untyped() { return [this.repo.find("a"), function (this: any) { this.repo.find("b") }] }',
+      "}",
+    ])
+    expect(calls).toEqual({
+      "S.twice": [USER_FIND, USER_FIND],
+      "S.nested": [null, null],
+      "S.untyped": [null, null],
+    })
+  })
+
+  it("keeps apart two classes written on one line", async () => {
+    const calls = await callsByMember([
+      'export class A { constructor(private r: UserRepository) {} m() { this.r.find("a") } }; export class B { constructor(private r: AdminRepository) {} m() { this.r.find("b") } }',
+    ])
+    expect(calls).toEqual({ "A.m": [USER_FIND], "B.m": [ADMIN_FIND] })
+  })
+
+  it("leaves a type parameter to its class, though a class of its name is imported", async () => {
+    const calls = await callsByMember([
+      "export class Box<UserRepository> {",
+      "  constructor(private readonly item: UserRepository) {}",
+      '  put() { this.item.find("a") }',
+      "}",
+    ])
+    expect(calls).toEqual({ "Box.put": [null] })
+  })
+
+  it("reaches a class imported through a tsconfig path alias", async () => {
+    await workspace.writeSource(
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@repo/*": ["src/*"] } } }),
+    )
+    const calls = await callsByMember(
+      [
+        "export class S {",
+        "  constructor(private readonly repo: UserRepository) {}",
+        '  m() { this.repo.find("a") }',
+        "}",
+      ],
+      "@repo/repo",
+    )
+    expect(calls).toEqual({ "S.m": [USER_FIND] })
+  })
+})
+
+describe("scan — a call through a tsconfig path alias", () => {
+  it("reaches the Symbol the alias names, and buckets what it cannot reach by where it led", async () => {
+    const result = await callsFromMain(
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            paths: { "@app/billing": ["libs/billing/src/index.ts"], "@lib/*": ["libs/*/src"] },
+          },
+        }),
+        "libs/billing/src/index.ts": "export function formatInvoice() { return 1 }\n",
+        "libs/tax/src/index.ts": "export class Tax { static rate() { return 2 } }\n",
+      },
+      [
+        'import { formatInvoice, missing as gone } from "@app/billing"',
+        'import * as tax from "@lib/tax"',
+        'import { sortBy } from "lodash"',
+      ],
+      ["formatInvoice()", "tax.Tax.rate()", "gone()", "sortBy()"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["formatInvoice", "ts:libs/billing/src/index.ts#formatInvoice"],
+        ["tax.Tax.rate", "ts:libs/tax/src/index.ts#Tax::rate"],
+        ["gone", null],
+        ["sortBy", null],
+      ],
+      unresolved: [
+        ["gone", "no-match"],
+        ["sortBy", "external"],
+      ],
+    })
+  })
+})

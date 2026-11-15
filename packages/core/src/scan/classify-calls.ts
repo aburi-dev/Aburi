@@ -18,7 +18,13 @@ import type {
   SymbolCandidate,
   VocabRegistry,
 } from "@aburi/types"
-import { type CallSiteBinding, isThisBinding, makeCallSiteKey } from "../call-site"
+import {
+  type CallSiteBinding,
+  type DeclaredReceiverType,
+  isThisBinding,
+  makeCallSiteKey,
+  makeSymbolCallKey,
+} from "../call-site"
 import { CoreError } from "../errors"
 import type { DropCFilter } from "./drop-c"
 import { normalizeCallStrings } from "./normalize"
@@ -56,12 +62,15 @@ export function classifyCalls(input: ClassifyCallsInput): {
   dynamicCallSites: string[]
   declinedCalls: DeclinedCall[]
   thisBindings: CallSiteBinding[]
+  declaredReceiverTypes: DeclaredReceiverType[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
   const dynamicCallSites: string[] = []
   const declinedCalls: DeclinedCall[] = []
   const thisBindings: CallSiteBinding[] = []
+  // `null` once a key's calls stop naming one type, an untyped call's included.
+  const declaredTypes = new Map<string, string | null>()
   const owner: OwnerSummary = {
     id: input.candidate.id,
     kind: input.candidate.kind,
@@ -134,8 +143,18 @@ export function classifyCalls(input: ClassifyCallsInput): {
       const key = makeCallSiteKey(input.file.path, call.line, call.target)
       if (call.dynamicReceiver === true) dynamicCallSites.push(key)
       if (isThisBinding(call.thisBinding)) thisBindings.push([key, call.thisBinding])
+      const type =
+        typeof call.receiverType === "string" && call.receiverType.length > 0
+          ? call.receiverType
+          : null
+      const symbolKey = makeSymbolCallKey(input.candidate.id, call.line, call.target)
+      const seen = declaredTypes.get(symbolKey)
+      declaredTypes.set(symbolKey, seen === undefined || seen === type ? type : null)
     }
   }
+  const declaredReceiverTypes: DeclaredReceiverType[] = []
+  for (const [key, type] of declaredTypes)
+    if (type !== null) declaredReceiverTypes.push([key, type])
 
   // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
   // so two effects on one line keep the order they are written in, which `logic` reads.
@@ -144,6 +163,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     calls: survivingCalls,
     dynamicCallSites,
     thisBindings,
+    declaredReceiverTypes,
     declinedCalls,
   }
 }

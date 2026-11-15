@@ -6,9 +6,9 @@ import type {
   ParseError,
   ThisBinding,
 } from "@aburi/types"
-import type { ThisBindingSites } from "../call-site"
+import type { DeclaredReceiverTypes, ThisBindingSites } from "../call-site"
 import { countBy } from "../collections"
-import { CoreError } from "../errors"
+import { CoreError, REPORT_BUG } from "../errors"
 import { symbolIdFile } from "../id"
 import type { ReadFile } from "../lsp"
 import type { DiscoveredFile, SkippedFile } from "./discover"
@@ -43,6 +43,9 @@ export interface ExtractedFiles {
   dynamicCallSites: Set<string>
   declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
+  declaredReceiverTypes: DeclaredReceiverTypes
+  /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
+  specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
 
 type Ran = Extract<FileOutcome, { kind: "ran" }>
@@ -58,6 +61,7 @@ export class ExtractionCollator {
     class: new Set(),
     instance: new Set(),
   }
+  readonly #declaredReceiverTypes = new Map<string, string>()
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -72,6 +76,8 @@ export class ExtractionCollator {
     dynamicCallSites: new Set(),
     declinedCalls: [],
     thisBindings: this.#thisBindings,
+    declaredReceiverTypes: this.#declaredReceiverTypes,
+    specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
   readonly #resolverLinesSaid = new Set<string>()
@@ -264,6 +270,13 @@ export class ExtractionCollator {
         for (const key of result.dynamicCallSites) out.dynamicCallSites.add(key)
         out.declinedCalls.push(...result.declinedCalls)
         for (const [key, binding] of result.thisBindings) this.#thisBindings[binding].add(key)
+        // A key names its Symbol, and a file two Symbols share an id in is withdrawn above.
+        for (const [key, type] of result.declaredReceiverTypes) {
+          this.#declaredReceiverTypes.set(key, type)
+        }
+        if (result.specifierPaths.length > 0) {
+          out.specifierPaths.set(result.path, new Map(result.specifierPaths))
+        }
         return
       }
       default:
@@ -316,19 +329,16 @@ function describeIdFault(symbols: readonly IRSymbol[], path: string): FileFault 
   return null
 }
 
-const REPORT =
-  "This is a bug in Aburi — please report it at https://github.com/aburi-dev/Aburi/issues."
-
 function unhandled(what: string, value: never): CoreError {
   return new CoreError(
-    `Internal error: the scan does not handle the ${what} ${JSON.stringify(value)}\n${REPORT}`,
+    `Internal error: the scan does not handle the ${what} ${JSON.stringify(value)}\n${REPORT_BUG}`,
     { code: "scan-outcome-unhandled" },
   )
 }
 
 function outOfOrder(reached: string, expected: string): CoreError {
   return new CoreError(
-    `Internal error: the scan's extraction reached ${reached} while waiting for ${expected}\n${REPORT}`,
+    `Internal error: the scan's extraction reached ${reached} while waiting for ${expected}\n${REPORT_BUG}`,
     { code: "scan-extraction-out-of-order" },
   )
 }
