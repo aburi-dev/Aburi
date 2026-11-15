@@ -49,24 +49,41 @@ describe("classifyTrpcCall — client procedure calls", () => {
   })
 })
 
-describe("classifyTrpcCall — a file that imports @trpc/server too", () => {
-  it.each(["client.user.byId.query", "publicProcedure.input.query", "t.procedure.query"])(
-    "declines %s — `query` is the router's own builder verb there",
-    (target) => {
-      expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toEqual({
-        declined: "effects-plugin:trpc:server-file-query",
+describe("classifyTrpcCall — a query on a procedure's chain", () => {
+  it.each([
+    ["publicProcedure.input.query", "without"],
+    ["t.procedure.query", "without"],
+    ["protectedProcedure.use.input.query", "with"],
+    ["t.procedure.input.query", "with"],
+    ["this.adminProcedure.input.query", "with"],
+  ])(
+    "declines %s, %s an @trpc/server import — `query` is the router's own builder verb there",
+    (target, server) => {
+      expect(
+        classifyTrpcCall(makeCall({ target }), server === "with" ? bothCtx : clientCtx),
+      ).toEqual({
+        declined: "effects-plugin:trpc:procedure-query",
       })
     },
   )
 
-  it.each(["client.user.create.mutate", "client.onAdd.subscribe", "trpc.post.list.useQuery"])(
-    "still classifies %s, which the router does not spell",
-    (target) => {
-      expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toMatchObject({
-        effectId: "network.rpc",
-      })
-    },
-  )
+  it.each([
+    "client.user.byId.query",
+    "client.user.create.mutate",
+    "client.onAdd.subscribe",
+    "trpc.post.list.useQuery",
+    "client.procedures.list.query",
+  ])("classifies %s in a file that imports @trpc/server too", (target) => {
+    expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toMatchObject({
+      effectId: "network.rpc",
+    })
+  })
+
+  it("leaves a procedure's other builder verbs to the client vocabulary, which spells none of them", () => {
+    expect(
+      classifyTrpcCall(makeCall({ target: "publicProcedure.input.mutation" }), bothCtx),
+    ).toBeNull()
+  })
 })
 
 describe("classifyTrpcCall — calls that are not a procedure call", () => {

@@ -6,7 +6,7 @@ import type {
   EffectDecline,
 } from "@aburi/types"
 import { EFFECTS_TRPC_DERIVED_BY_PREFIX, EFFECTS_TRPC_PLUGIN_NAME } from "./constants"
-import { hasTrpcClientImport, hasTrpcServerImport } from "./imports"
+import { hasTrpcClientImport } from "./imports"
 import {
   isTrpcMutationTerminal,
   isTrpcQueryTerminal,
@@ -14,7 +14,10 @@ import {
   type TrpcQueryTerminal,
 } from "./methods"
 
-const SERVER_AMBIGUOUS_TERMINAL: TrpcQueryTerminal = "query"
+const PROCEDURE_BUILDER_TERMINAL: TrpcQueryTerminal = "query"
+
+// tRPC's documentation and create-t3-app name a base procedure `procedure` or `…Procedure`.
+const PROCEDURE_NAME = /(^p|P)rocedure$/
 
 const MIN_CLIENT_SEGMENTS = 3
 
@@ -32,11 +35,9 @@ export function classifyTrpcCall(
   if (clientPath.length < MIN_CLIENT_SEGMENTS) return null
 
   // The router's own builder (`publicProcedure.input(schema).query(resolver)`) is spelled alike.
-  if (
-    terminal === SERVER_AMBIGUOUS_TERMINAL &&
-    hasTrpcServerImport(ctx.file.imports, ctx.file.path)
-  )
-    return { declined: `${EFFECTS_TRPC_DERIVED_BY_PREFIX}:server-file-query` }
+  if (terminal === PROCEDURE_BUILDER_TERMINAL && buildsOnProcedure(clientPath)) {
+    return { declined: `${EFFECTS_TRPC_DERIVED_BY_PREFIX}:procedure-query` }
+  }
 
   const family = terminalFamily(terminal)
   if (family === null) return null
@@ -48,6 +49,10 @@ export function classifyTrpcCall(
     confidence: call.dynamicReceiver === true ? "medium" : "high",
     derivedBy: `${EFFECTS_TRPC_DERIVED_BY_PREFIX}:${family}:${procedurePath}`,
   }
+}
+
+function buildsOnProcedure([root, ...rest]: readonly string[]): boolean {
+  return (root !== undefined && PROCEDURE_NAME.test(root)) || rest.includes("procedure")
 }
 
 function terminalFamily(terminal: string): "query" | "mutation" | "subscription" | null {

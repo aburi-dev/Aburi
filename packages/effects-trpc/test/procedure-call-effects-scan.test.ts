@@ -140,7 +140,7 @@ describe("scan — tRPC procedure calls", () => {
     expect(result.ir.stats.declinedCalls).toBeUndefined()
   })
 
-  it("names each query it declines in a file that colocates a client with a router", async () => {
+  it("classifies a client's query beside a router, and names the builder's query it declines", async () => {
     await workspace.writeSource(
       "src/server.ts",
       [
@@ -169,21 +169,12 @@ describe("scan — tRPC procedure calls", () => {
         symbolId: "ts:src/server.ts#buildRouter",
         target: "t.procedure.query",
         line: 7,
-        reason: "effects-plugin:trpc:server-file-query",
-      },
-      {
-        plugin: "effects-trpc",
-        symbolId: "ts:src/server.ts#warmUp",
-        target: "client.health.ping.query",
-        line: 11,
-        reason: "effects-plugin:trpc:server-file-query",
+        reason: "effects-plugin:trpc:procedure-query",
       },
     ])
-    expect(symbolNamed(result, "warmUp").calls.map((c) => c.target)).toContain(
-      "client.health.ping.query",
-    )
-    expect(symbolNamed(result, "warmUp").effects.map((e) => e.target)).toEqual([
-      "client.health.reset.mutate",
+    expect(symbolNamed(result, "warmUp").effects.map((e) => [e.target, e.derivedBy])).toEqual([
+      ["client.health.ping.query", "effects-plugin:trpc:query:health.ping"],
+      ["client.health.reset.mutate", "effects-plugin:trpc:mutation:health.reset"],
     ])
     expect(irSchemaViolations(result.ir)).toEqual([])
   })
