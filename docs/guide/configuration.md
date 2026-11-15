@@ -88,12 +88,21 @@ With no `testFiles` in your config, these files are test code:
 **/test/**  **/tests/**  **/e2e/**
 ```
 
-Set `testFiles` to use your own list instead. It replaces the default one, so copy the patterns you
-keep:
+Set `testFiles` to use your own list instead. It replaces the default one, so a production
+`src/test/` can stay out by leaving `**/test/**` out:
 
 ```jsonc
 {
-  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"]
+  "testFiles": ["**/*.test.*", "**/tests/**", "examples/**"]
+}
+```
+
+To add patterns to the default rather than replace it, write `"..."` where the default list goes.
+It keeps up with the default when a release adds a pattern, which a copy of it would not:
+
+```jsonc
+{
+  "testFiles": ["...", "examples/**"]
 }
 ```
 

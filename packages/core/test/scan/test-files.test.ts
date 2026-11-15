@@ -68,6 +68,21 @@ describe("scan — the Symbols of test code", () => {
     },
   )
 
+  it.each([
+    { testFiles: ["...", "src/order.stub"], files: [...TEST_CODE, "src/order.stub"] },
+    { testFiles: ["src/order.stub", "..."], files: [...TEST_CODE, "src/order.stub"] },
+    {
+      testFiles: ["...", "!tools", "!src/__mocks__/"],
+      files: TEST_CODE.filter((file) => !file.startsWith("tools/") && !file.includes("__mocks__")),
+    },
+    { testFiles: ["..."], files: TEST_CODE },
+  ])(
+    "are those of the default list and the rest of $testFiles, where it holds `...`",
+    async ({ testFiles, files }) => {
+      expect(await markedFiles({ testFiles })).toEqual({ files: [...files].sort(), values: [true] })
+    },
+  )
+
   it("include a dropped one, in a document the IR schema accepts", async () => {
     const language = oneSymbolPerFile({
       symbolDropHint: (symbol) =>
