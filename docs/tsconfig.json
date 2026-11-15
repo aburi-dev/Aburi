@@ -3,8 +3,9 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitepress/client"]
   },
-  "include": ["worker/**/*", "test/**/*", ".vitepress/head.ts"],
+  "include": ["worker/**/*", "test/**/*", "showcase/**/*", ".vitepress/**/*.ts"],
   "exclude": ["node_modules", ".vitepress/dist"]
 }

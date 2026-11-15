@@ -21,6 +21,7 @@ describe("pageHead", () => {
     ["guide/page.md", "https://aburi.dev/guide/page"],
     ["section/index.md", "https://aburi.dev/section/"],
     ["section/generated-slug.md", "https://aburi.dev/section/generated-slug"],
+    ["guide/reindex.md", "https://aburi.dev/guide/reindex"],
   ])("gives %s the canonical URL %s, shared by og:url", (relativePath, url) => {
     const head = pageHead(relativePath)
     expect(linkHref(head, "canonical")).toBe(url)
@@ -49,7 +50,7 @@ describe("pageHead", () => {
     expect(data.keywords).toEqual(expect.any(String))
   })
 
-  it("adds structured data to the home page only", () => {
-    expect(jsonLd(pageHead("guide/page.md"))).toEqual([])
+  it.each(["guide/page.md", "section/index.md"])("gives %s no structured data", (relativePath) => {
+    expect(jsonLd(pageHead(relativePath))).toEqual([])
   })
 })
