@@ -1,6 +1,8 @@
+import type { SymbolCandidate } from "@aburi/types"
 import { describe, expect, it } from "vitest"
+import type { Node } from "web-tree-sitter"
 import { normalizeAst } from "../src/index"
-import { symbolsOf } from "./fixtures/ctx"
+import { symbolOf, symbolsOf } from "./fixtures/ctx"
 
 async function normalizeFirstSymbol(source: string): Promise<string> {
   const [target] = await symbolsOf(source)
@@ -172,6 +174,18 @@ describe("normalizeAst — the shape of the string", () => {
     )
 
     expect(normalized.match(/\(formal_parameters /g)).toHaveLength(2)
+  })
+
+  it("reads a member's modifiers after its body, and leaves a member with none as it was", async () => {
+    const source =
+      "export class C extends B {\n  public async a() { go() }\n  override b?() { go() }\n}"
+    const bodyAlone = (symbol: SymbolCandidate<Node>) =>
+      normalizeAst({ ...symbol, fullNode: symbol.bodyNode ?? symbol.fullNode })
+    const plain = await symbolOf(source, "ts:src/a.ts#C.a")
+    const marked = await symbolOf(source, "ts:src/a.ts#C.b")
+
+    expect(normalizeAst(plain)).toBe(bodyAlone(plain))
+    expect(normalizeAst(marked)).toBe(`${bodyAlone(marked)} (override_modifier "override") "?"`)
   })
 
   it("keeps the tokens a formatter owns out, and every other token in", async () => {

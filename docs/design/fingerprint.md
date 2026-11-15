@@ -454,6 +454,7 @@ The reference implementation and every language plugin must pass the following t
 | S5 | Change a literal | syntax changes |
 | S5a | Change an operator, a declaration keyword, a modifier or a primitive type (`a + b` → `a - b`, `let` → `const`, `private` → `public`, `number` → `string`) | syntax changes |
 | S5b | Change a destructuring parameter's pattern (`{ a: b }` → `{ c: b }`, `[, b]` → `[b]`) or a parameter's default value (`limit = 20` → `limit = 10`) | syntax changes; api unchanged (A1, A23) |
+| S5d | Add `override` to a method, make it optional (`m()` → `m?()`), or add `readonly` / `override` / `accessor` to a field holding a function | syntax changes on the member as well as its class; api unchanged |
 
 ### 7.7.1 syntax test criteria every language plugin must satisfy
 

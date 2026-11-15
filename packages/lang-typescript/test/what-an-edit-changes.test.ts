@@ -355,6 +355,47 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
   })
 })
 
+describe("an edit to a member's own modifier moves the member", () => {
+  const member = (head: string, rest = "m() {\n    use()\n  }") =>
+    `export class C extends B {\n  ${head}${rest}\n}\n`
+
+  it.each([
+    ["`override` added to a method", member(""), member("override ")],
+    ["a method made optional", member(""), member("", "m?() {\n    use()\n  }")],
+    [
+      "`override` added to an accessor",
+      member("", "get m() {\n    return use()\n  }"),
+      member("override ", "get m() {\n    return use()\n  }"),
+    ],
+    [
+      "`readonly` added to a field holding a function",
+      member("", "m = () => {\n    use()\n  }"),
+      member("readonly ", "m = () => {\n    use()\n  }"),
+    ],
+    [
+      "`override` added to a field holding a function",
+      member("", "m = () => {\n    use()\n  }"),
+      member("override ", "m = () => {\n    use()\n  }"),
+    ],
+    [
+      "a field holding a function made optional",
+      member("", "m = () => {\n    use()\n  }"),
+      member("", "m? = () => {\n    use()\n  }"),
+    ],
+    [
+      "`accessor` added to a field holding a function",
+      member("", "m = () => {\n    use()\n  }"),
+      member("accessor ", "m = () => {\n    use()\n  }"),
+    ],
+  ])("reports %s on the member and its class", async (_label, before, after) => {
+    const diff = await diffOfEdit(workspace, FILE, before, after)
+    const changed = changedSymbols(diff)
+
+    expect(changed.map((c) => c.name).sort()).toEqual(["C", "C.m"])
+    for (const c of changed) expect(c).toMatchObject(SYNTAX_ONLY)
+  })
+})
+
 describe("a formatting edit is no change", () => {
   it.each([
     [

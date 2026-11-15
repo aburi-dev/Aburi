@@ -1,3 +1,4 @@
+import { unwrapValue } from "@aburi/core"
 import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Language, Node, TreeCursor } from "web-tree-sitter"
 import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
@@ -14,8 +15,9 @@ export function normalizeAst(symbol: SymbolCandidate<Node>): string {
     .flatMap(({ node, fullNode }) => [
       serialize(node),
       classHead(fullNode),
-      // A declaration described whole already carries its list.
+      // A declaration described whole already carries its list and its modifiers.
       node.id === fullNode.id ? "" : parameterList(fullNode),
+      node.id === fullNode.id ? "" : memberHead(fullNode),
     ])
     .filter((part) => part.length > 0)
     .join(" ")
@@ -35,6 +37,39 @@ function parameterList(fullNode: Node): string {
 function wrapLoneParameter(parameter: string): string {
   return `(formal_parameters (required_parameter ${parameter}))`
 }
+
+// The modifiers no other axis reads: `static` is in the member's id, an accessibility modifier is its
+// `visibility`, and `async` and `*` are on its signature.
+const MEMBER_HEAD_MODIFIERS: ReadonlySet<string> = new Set([
+  "override_modifier",
+  "?",
+  "readonly",
+  "accessor",
+])
+
+function memberHead(fullNode: Node): string {
+  const member = fullNode.type === "method_definition" ? fullNode : fieldHolding(fullNode)
+  if (member === null) return ""
+  const parts: string[] = []
+  for (const child of member.children) {
+    if (child === null || !MEMBER_HEAD_MODIFIERS.has(child.type)) continue
+    parts.push(child.isNamed ? serialize(child) : JSON.stringify(child.type))
+  }
+  return parts.join(" ")
+}
+
+function fieldHolding(fn: Node): Node | null {
+  for (let node = fn.parent; node !== null; node = node.parent) {
+    if (node.type === "public_field_definition") {
+      const value = node.childForFieldName("value")
+      return value !== null && unwrapValue(value).id === fn.id ? node : null
+    }
+    if (FIELD_BOUNDARIES.has(node.type)) return null
+  }
+  return null
+}
+
+const FIELD_BOUNDARIES: ReadonlySet<string> = new Set(["class_body", "statement_block", "program"])
 
 function classHead(fullNode: Node): string {
   if (!CLASS_TYPES.has(fullNode.type)) return ""
