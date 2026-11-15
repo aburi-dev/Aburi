@@ -1,24 +1,22 @@
-import { defineConfig } from "vitepress"
+import { type DefaultTheme, defineConfig, type UserConfig } from "vitepress"
 import llmstxt from "vitepress-plugin-llms"
 import { readShowcase } from "../showcase/showcase.ts"
 import { DESCRIPTION, pageHead, REPOSITORY, SITE } from "./head.ts"
 import { LLMS_TXT } from "./llms.ts"
 
-export default defineConfig({
+const config: UserConfig<DefaultTheme.Config> = defineConfig({
   title: "Aburi",
   description: DESCRIPTION,
   lang: "en-US",
   lastUpdated: true,
   cleanUrls: true,
-  vite: {
-    // The local search index, about 1.2 MB, is the one chunk over Vite's 500 kB default, and it
-    // loads only when the search box opens.
-    build: { chunkSizeWarningLimit: 1536 },
-  },
   sitemap: {
     hostname: SITE,
   },
   vite: {
+    // The local search index, about 1.2 MB, is the one chunk over Vite's 500 kB default, and it
+    // loads only when the search box opens.
+    build: { chunkSizeWarningLimit: 1536 },
     plugins: [
       llmstxt({
         domain: SITE,
@@ -137,3 +135,5 @@ export default defineConfig({
     },
   },
 })
+
+export default config

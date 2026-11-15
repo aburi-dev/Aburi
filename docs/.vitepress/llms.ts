@@ -1,7 +1,7 @@
 import { SITE } from "./head.ts"
 
 // vitepress-plugin-llms fills `{toc}` from the sidebar.
-export const LLMS_TXT = `# Aburi
+export const LLMS_TXT: string = `# Aburi
 
 > Semantic code review for pull requests: Aburi reads a change the way a senior reviewer does, then
 > writes what it did as Markdown your CI can gate on.
