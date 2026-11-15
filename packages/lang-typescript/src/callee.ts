@@ -1,7 +1,7 @@
 import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } from "@aburi/core"
 import { type CallCandidate, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild, firstNonCommentChild, hasErrorChild } from "./ast-helpers"
+import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
 import { receiverTypeOf, thisBindingAt } from "./receiver-type"
 
 export function readCall(node: Node): CallCandidate | null {
@@ -116,7 +116,7 @@ export function describeCallee(node: Node): CalleeShape | null {
       }
     }
     case "parenthesized_expression": {
-      const innerNode = node.namedChild(0)
+      const innerNode = parenthesizedReceiver(node)
       if (innerNode === null) return null
       const inner = describeCallee(innerNode)
       if (inner === null) return null
@@ -140,6 +140,12 @@ export function describeCallee(node: Node): CalleeShape | null {
     default:
       return node.text.length > 0 ? UNMODELLED_EXPRESSION : null
   }
+}
+
+// A pair the grammar repaired is read by its first fragment, the part its receiver parsed as.
+function parenthesizedReceiver(node: Node): Node | null {
+  const inner = throughParentheses(node)
+  return inner.type === "parenthesized_expression" ? firstNonCommentChild(inner) : inner
 }
 
 function describeNonNull(node: Node): CalleeShape | null {
