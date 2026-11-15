@@ -242,13 +242,13 @@ describe("every walk root reads its concise arrow this way", () => {
     ],
     [
       "a function a const hands to a call",
-      "export const d = xs.map((x: number) => x * 2)",
+      "export const d = memoize((x: number) => x * 2)",
       "ts:src/a.ts#d",
       "x * 2",
     ],
     [
       "a function a class field hands to a call",
-      "export class C {\n  doubled = xs.map((x: number) => x * 2)\n}",
+      "export class C {\n  doubled = memoize((x: number) => x * 2)\n}",
       "ts:src/a.ts#C.doubled",
       "x * 2",
     ],

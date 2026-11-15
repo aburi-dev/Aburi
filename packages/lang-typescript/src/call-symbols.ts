@@ -27,6 +27,32 @@ const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "disable",
 ])
 
+// Each runs the function it is handed at once, or registers it to run later, by what the name
+// means across the libraries that use it; read as wrappers, their callbacks would leave the code
+// whose construction runs them.
+const RUNS_OR_SCHEDULES_ITS_ARGUMENT: ReadonlySet<string> = new Set([
+  "then",
+  "catch",
+  "finally",
+  "setTimeout",
+  "setInterval",
+  "setImmediate",
+  "queueMicrotask",
+  "subscribe",
+  "on",
+  "once",
+  "addListener",
+  "effect",
+  "reaction",
+  "autorun",
+  "watch",
+  "map",
+  "filter",
+  "forEach",
+  "reduce",
+  "$transaction",
+])
+
 export interface CallExtractionState {
   seen: Map<string, number>
 }
@@ -80,7 +106,14 @@ export function visitCallStatement(
   }
 }
 
+/** The functions handed directly to the calls on a value's spine that hand them back to run later. */
 export function wrappedFunctions(value: Node): Node[] {
+  const call = unwrapValue(value)
+  return call.type === "call_expression" ? wrappedHandlers(call) : []
+}
+
+/** Every function handed directly to a call on the value's spine, whatever the call does with it. */
+export function handedFunctions(value: Node): Node[] {
   const call = unwrapValue(value)
   return call.type === "call_expression" ? inlineHandlers(call) : []
 }
@@ -102,7 +135,7 @@ export function callBodies(value: Node, holder: Node): CallBodies {
   // it resolves to, not a function wrapping the ones it is handed, so the functions it is handed are
   // walked with the call, not as functions of their own.
   const invoked = invokedBody(call)
-  const handed = awaited ? [] : inlineHandlers(call)
+  const handed = awaited ? [] : wrappedHandlers(call)
   return {
     bodies: [holder, ...(invoked === null ? [] : [invoked]), ...handed],
     evidence: [
@@ -128,8 +161,37 @@ export function layOutBodies(
 }
 
 function inlineHandlers(call: Node): Node[] {
+  return functionsHandedTo(chainCalls(call))
+}
+
+function wrappedHandlers(call: Node): Node[] {
+  return functionsHandedTo(chainCalls(call).filter((step) => !runsOrSchedulesItsArgument(step)))
+}
+
+function runsOrSchedulesItsArgument(call: Node): boolean {
+  const name = calleeName(call)
+  return name !== null && RUNS_OR_SCHEDULES_ITS_ARGUMENT.has(name)
+}
+
+function calleeName(call: Node): string | null {
+  const callee = call.childForFieldName("function")
+  switch (callee?.type) {
+    case "identifier":
+      return callee.text
+    case "member_expression":
+      return callee.childForFieldName("property")?.text ?? null
+    case "subscript_expression": {
+      const index = callee.childForFieldName("index")
+      return index === null ? null : readStaticString(unwrapValue(index))
+    }
+    default:
+      return null
+  }
+}
+
+function functionsHandedTo(steps: readonly Node[]): Node[] {
   const bodies: Node[] = []
-  for (const step of chainCalls(call)) {
+  for (const step of steps) {
     const args = argumentsOf(step)
     if (args === null) continue
     for (const argument of args.namedChildren) {

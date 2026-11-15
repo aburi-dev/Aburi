@@ -219,20 +219,6 @@ describe("a field holding a function handed to a call is a member Symbol", () =>
       ["a"],
       ["debounce", "delay"],
     ],
-    [
-      "a callback a call runs at once on the member, a known cost",
-      "  doubled = xs.map((x) => x * 2)",
-      "doubled",
-      [],
-      ["xs.map"],
-    ],
-    [
-      "a callback a call registers on the member, a known cost",
-      "  timer = setInterval(() => { tick() }, 1000)",
-      "timer",
-      ["tick"],
-      ["setInterval"],
-    ],
   ])("walks %s", async (_label, field, member, onMember, onClass) => {
     const source = classOf(field)
 
@@ -244,19 +230,19 @@ describe("a field holding a function handed to a call is a member Symbol", () =>
   it.each([
     [
       "an empty handler before one with code",
-      "  ready = p.then(() => {}).catch((e) => report(e))",
+      "  ready = withRetry(() => {}, (e) => report(e))",
       null,
       ["report"],
     ],
     [
       "an empty handler after one with code",
-      "  ready = p.then((r) => use(r), () => {})",
+      "  ready = withRetry((r) => use(r), () => {})",
       null,
       ["use"],
     ],
     [
       "only empty handlers",
-      "  ready = p.then(() => {}, () => {})",
+      "  ready = withRetry(() => {}, () => {})",
       { reason: "empty body", category: "B" },
       [],
     ],
@@ -302,6 +288,49 @@ describe("a field holding a function handed to a call is a member Symbol", () =>
 
     expect(await idsOf(source)).toEqual(["ts:src/a.ts#C"])
     expect(await callsOf(source, "ts:src/a.ts#C")).toEqual(onClass)
+  })
+})
+
+describe("a field handed to a call that runs or schedules its callback stays on the class", () => {
+  it.each([
+    ["runs it at once", "  doubled = xs.map((x) => x * 2)", ["xs.map"]],
+    [
+      "registers it on a timer",
+      "  timer = setInterval(() => { tick() }, 1000)",
+      ["setInterval", "tick"],
+    ],
+    ["subscribes it", "  sub = store.subscribe(() => { render() })", ["store.subscribe", "render"]],
+    ["listens with it", '  off = emitter.on("x", () => { log() })', ["emitter.on", "log"]],
+    [
+      "runs it in a transaction",
+      "  migrate = this.prisma.$transaction(async () => { write() })",
+      ["this.prisma.$transaction", "write"],
+    ],
+    ["schedules it reactively", "  stop = autorun(() => { draw() })", ["autorun", "draw"]],
+    [
+      "continues a promise with it, along the chain",
+      "  ready = connect().then(() => { warm() }).catch((e) => report(e))",
+      ["connect.then.catch", "connect.then", "connect", "warm", "report"],
+    ],
+    [
+      "continues through an index",
+      '  ready = p["finally"](() => { done() })',
+      ["p.finally", "done"],
+    ],
+  ])("when the call %s, keeping the class", async (_label, field, onClass) => {
+    const source = classOf(field)
+
+    expect(await idsOf(source)).toEqual(["ts:src/a.ts#C"])
+    expect(await callsOf(source, "ts:src/a.ts#C")).toEqual(onClass)
+    expect(await hintOf(source, "ts:src/a.ts#C")).toBeNull()
+  })
+
+  it("keeps a wrapper's function on the member when the chain also continues it", async () => {
+    const source = classOf("  handle = withAuth(() => { inner() }).then(() => { after() })")
+
+    expect(await idsOf(source)).toEqual(["ts:src/a.ts#C", "ts:src/a.ts#C.handle"])
+    expect(await callsOf(source, "ts:src/a.ts#C.handle")).toEqual(["inner"])
+    expect(await callsOf(source, "ts:src/a.ts#C")).toEqual(["withAuth.then", "withAuth", "after"])
   })
 })
 

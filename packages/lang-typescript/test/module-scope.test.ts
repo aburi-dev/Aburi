@@ -151,8 +151,8 @@ describe("a function a const's initializer or a default export runs in place", (
   })
 
   it.each([
-    ["a member access", "export const h = (async () => { q() })().then(() => { r() })"],
-    ["an index", 'export const h = (async () => { q() })()["then"](() => { r() })'],
+    ["a member access", "export const h = (async () => { q() })().pipe(() => { r() })"],
+    ["an index", 'export const h = (async () => { q() })()["pipe"](() => { r() })'],
   ])("leads the functions the rest of the chain is handed, through %s", async (_label, source) => {
     const symbol = await symbolOf(source, "ts:src/a.ts#h")
 
@@ -162,7 +162,7 @@ describe("a function a const's initializer or a default export runs in place", (
       "export-keyword",
     ])
     expect(await callsOf(source, "ts:src/a.ts#h")).toEqual([
-      "<computed>.then",
+      "<computed>.pipe",
       "<computed>",
       "q",
       "r",

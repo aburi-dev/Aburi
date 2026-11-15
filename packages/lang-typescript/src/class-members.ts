@@ -1,7 +1,7 @@
 import { decodeStringLiteral, isQnameSegment, unwrapValue } from "@aburi/core"
 import type { Node } from "web-tree-sitter"
 import { asFunctionValue, hasChildOfType, hasErrorChild, nameFieldText } from "./ast-helpers"
-import { wrappedFunctions } from "./call-symbols"
+import { handedFunctions, wrappedFunctions } from "./call-symbols"
 
 const CONSTRUCTION_SEGMENT = "constructor"
 
@@ -61,13 +61,19 @@ export function functionValuedField(member: Node): HeldFunction | null {
   return functionAFieldHolds(member)
 }
 
-export function functionAFieldHolds(field: Node): HeldFunction | null {
+function functionAFieldHolds(field: Node): HeldFunction | null {
   const value = field.childForFieldName("value")
   if (value === null) return null
   const fn = asFunctionValue(value)
   if (fn !== null) return { kind: "function", fn }
   const [lead, ...rest] = wrappedFunctions(value)
   return lead === undefined ? null : { kind: "handed-to-a-call", bodies: [lead, ...rest] }
+}
+
+/** Whether the field's value runs a function it holds, whenever that is, which no data model does. */
+export function fieldHoldsAFunction(field: Node): boolean {
+  const value = field.childForFieldName("value")
+  return value !== null && (asFunctionValue(value) !== null || handedFunctions(value).length > 0)
 }
 
 export function heldFunctionBodies(held: HeldFunction): Node[] {

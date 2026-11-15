@@ -56,6 +56,12 @@ describe("a default export written as a call", () => {
       ["withAuth", "withLogging", "q"],
       UNHANDED,
     ],
+    [
+      "a call that schedules the function it is handed",
+      "export default store.subscribe(() => { q() })",
+      ["store.subscribe", "q"],
+      UNHANDED,
+    ],
   ])("walks %s, with the call that makes the value", async (_label, source, calls, derivedBy) => {
     expect(await idsOf(source)).toEqual([DEFAULT])
     expect(await callsOf(source, DEFAULT)).toEqual(calls)

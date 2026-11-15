@@ -112,35 +112,58 @@ describe("a const whose value is a call walks the call", () => {
   })
 
   it.each([
-    ["map", "export const names = users.map((u: any) => u.name)", "names", 1, ["users.map"]],
+    ["map", "export const names = users.map((u: any) => u.name)", "names", ["users.map"]],
     [
       "a chain of collection calls",
       "export const ids = xs.filter((x: any) => ok(x)).map((x: any) => x.id)",
       "ids",
-      2,
       ["xs.filter.map", "xs.filter", "ok"],
     ],
     [
       "reduce",
       "export const total = items.reduce((a: number, i: any) => { if (!i) throw new Error('x'); return a + i.n }, 0)",
       "total",
-      1,
       ["items.reduce", "Error"],
     ],
+    [
+      "a listener",
+      'export const off = emitter.on("x", () => { log() })',
+      "off",
+      ["emitter.on", "log"],
+    ],
+    [
+      "a promise continuation",
+      "export const ready = connect().then(() => { warm() })",
+      "ready",
+      ["connect.then", "connect", "warm"],
+    ],
   ])(
-    "reads %s the same way, because it asks nothing about the call",
-    async (_label, source, name, functions, targets) => {
+    "walks the callback handed to %s with the call, as one that runs or schedules it",
+    async (_label, source, name, targets) => {
+      const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
+
+      expect(symbol.derivedBy).not.toContain("call-argument-function")
+      expect(symbol.mergedDeclarations).toBeUndefined()
+      expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
+    },
+  )
+
+  it.each([
+    ["Array.from", "export const xs = Array.from(ys, (y: any) => y.id)", "xs"],
+    ["compareBy", "export const byId = compareBy((item: any) => item.id)", "byId"],
+  ])(
+    "reads the function handed to %s as a body, since only a name decides",
+    async (_label, source, name) => {
       const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
       expect(symbol.derivedBy).toContain("call-argument-function")
-      expect(symbol.mergedDeclarations).toHaveLength(functions)
-      expect(await callsOf(source, `ts:src/a.ts#${name}`)).toEqual(targets)
+      expect(symbol.mergedDeclarations).toHaveLength(1)
     },
   )
 
   it("reads a handed concise arrow's expression as its return value", async () => {
     const { rules } = await walkOf(
-      "export const doubled = xs.map((x: number) => x * 2)",
+      "export const doubled = memoize((x: number) => x * 2)",
       "ts:src/a.ts#doubled",
     )
 
@@ -153,6 +176,7 @@ describe("a const whose value is a call walks the call", () => {
       "export const z = withAuth(withLogging((x: number) => x * 2))",
     ],
     ["handed to an awaited call", "export const z = await withRetry((x: number) => x * 2)"],
+    ["handed to a call that runs it at once", "export const z = xs.map((x: number) => x * 2)"],
   ])("reads a concise arrow %s with the call, adding no return rule", async (_label, source) => {
     expect((await walkOf(source, "ts:src/a.ts#z")).rules).toEqual([])
   })
