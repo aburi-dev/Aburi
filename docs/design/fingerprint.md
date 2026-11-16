@@ -258,7 +258,7 @@ Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct 
 
 ## 5. `syntax` fingerprint
 
-Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head and a function's parameter list ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1). Changes on any structural change other than formatting.
+Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head, a function's parameter list and a member's own modifiers ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1, LP8p2). Changes on any structural change other than formatting.
 
 ### 5.1 Input fields
 
@@ -313,6 +313,7 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 - Changing a literal → changes
 - Changing an operator, a declaration keyword (`let` / `const`), a modifier or a primitive type → changes
 - Changing a function's parameter list where the api axis does not read it — a parameter's name, a destructuring pattern, a default's value → changes. The api input reads a parameter's type and form only (§3.1), so the language plugin's normalized string covers the list as well as the body ([lang-plugin.md](./lang-plugin.md) LP8p1). The list goes in whole, so an edit to a parameter's type or form changes `syntax` as well as `api`; a return type or a type parameter, outside the list, changes `api` alone
+- Changing a member's own modifiers where neither its id nor the api axis reads them — `override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor` → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
 
 ### 5.5 Uses of the syntax fingerprint
 
@@ -454,7 +455,7 @@ The reference implementation and every language plugin must pass the following t
 | S5 | Change a literal | syntax changes |
 | S5a | Change an operator, a declaration keyword, a modifier or a primitive type (`a + b` → `a - b`, `let` → `const`, `private` → `public`, `number` → `string`) | syntax changes |
 | S5b | Change a destructuring parameter's pattern (`{ a: b }` → `{ c: b }`, `[, b]` → `[b]`) or a parameter's default value (`limit = 20` → `limit = 10`) | syntax changes; api unchanged (A1, A23) |
-| S5d | Add `override` to a method, make it optional (`m()` → `m?()`), or add `readonly` / `override` / `accessor` to a field holding a function | syntax changes on the member as well as its class; api unchanged |
+| S5d | Add `override` to a method or an accessor, make it optional (`m()` → `m?()`), turn it into a getter (`m()` → `get m()`), or add `readonly` / `override` / `accessor` / `?` to a field holding a function | syntax changes on the member as well as its class; api unchanged |
 
 ### 7.7.1 syntax test criteria every language plugin must satisfy
 

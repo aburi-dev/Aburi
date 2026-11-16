@@ -358,34 +358,50 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
 describe("an edit to a member's own modifier moves the member", () => {
   const member = (head: string, rest = "m() {\n    use()\n  }") =>
     `export class C extends B {\n  ${head}${rest}\n}\n`
+  const GETTER = "get m() {\n    return use()\n  }"
+  const FIELD = "m = () => {\n    use()\n  }"
+  const accessorPair = (setterHead: string) =>
+    `${GETTER}\n  ${setterHead}set m(v) {\n    use(v)\n  }`
 
   it.each([
     ["`override` added to a method", member(""), member("override ")],
     ["a method made optional", member(""), member("", "m?() {\n    use()\n  }")],
+    ["a method made a getter", member("", "m() {\n    return use()\n  }"), member("", GETTER)],
+    ["`override` added to an accessor", member("", GETTER), member("override ", GETTER)],
     [
-      "`override` added to an accessor",
-      member("", "get m() {\n    return use()\n  }"),
-      member("override ", "get m() {\n    return use()\n  }"),
+      "`override` added to the setter of an accessor pair",
+      member("", accessorPair("")),
+      member("", accessorPair("override ")),
     ],
     [
       "`readonly` added to a field holding a function",
-      member("", "m = () => {\n    use()\n  }"),
-      member("readonly ", "m = () => {\n    use()\n  }"),
+      member("", FIELD),
+      member("readonly ", FIELD),
     ],
     [
       "`override` added to a field holding a function",
-      member("", "m = () => {\n    use()\n  }"),
-      member("override ", "m = () => {\n    use()\n  }"),
+      member("", FIELD),
+      member("override ", FIELD),
     ],
     [
       "a field holding a function made optional",
-      member("", "m = () => {\n    use()\n  }"),
-      member("", "m? = () => {\n    use()\n  }"),
+      member("", FIELD),
+      member("", FIELD.replace("m =", "m? =")),
     ],
     [
       "`accessor` added to a field holding a function",
-      member("", "m = () => {\n    use()\n  }"),
-      member("accessor ", "m = () => {\n    use()\n  }"),
+      member("", FIELD),
+      member("accessor ", FIELD),
+    ],
+    [
+      "`readonly` added to a field holding a function behind `as`",
+      member("", "m = (() => {\n    use()\n  }) as Handler"),
+      member("readonly ", "m = (() => {\n    use()\n  }) as Handler"),
+    ],
+    [
+      "`readonly` added to a field holding a function behind `satisfies`",
+      member("", "m = (() => {\n    use()\n  }) satisfies Handler"),
+      member("readonly ", "m = (() => {\n    use()\n  }) satisfies Handler"),
     ],
   ])("reports %s on the member and its class", async (_label, before, after) => {
     const diff = await diffOfEdit(workspace, FILE, before, after)

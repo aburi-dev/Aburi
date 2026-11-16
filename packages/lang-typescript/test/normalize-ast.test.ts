@@ -1,8 +1,6 @@
-import type { SymbolCandidate } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import type { Node } from "web-tree-sitter"
 import { normalizeAst } from "../src/index"
-import { symbolOf, symbolsOf } from "./fixtures/ctx"
+import { classOf, normalizedOf, symbolsOf } from "./fixtures/ctx"
 
 async function normalizeFirstSymbol(source: string): Promise<string> {
   const [target] = await symbolsOf(source)
@@ -176,17 +174,36 @@ describe("normalizeAst — the shape of the string", () => {
     expect(normalized.match(/\(formal_parameters /g)).toHaveLength(2)
   })
 
-  it("reads a member's modifiers after its body, and leaves a member with none as it was", async () => {
-    const source =
-      "export class C extends B {\n  public async a() { go() }\n  override b?() { go() }\n}"
-    const bodyAlone = (symbol: SymbolCandidate<Node>) =>
-      normalizeAst({ ...symbol, fullNode: symbol.bodyNode ?? symbol.fullNode })
-    const plain = await symbolOf(source, "ts:src/a.ts#C.a")
-    const marked = await symbolOf(source, "ts:src/a.ts#C.b")
+  it("reads a member's own modifiers after its body and its parameter list", async () => {
+    const id = "ts:src/a.ts#C.m"
+    const plain = await normalizedOf(classOf("  m(x: number) { go() }"), id)
 
-    expect(normalizeAst(plain)).toBe(bodyAlone(plain))
-    expect(normalizeAst(marked)).toBe(`${bodyAlone(marked)} (override_modifier "override") "?"`)
+    expect(await normalizedOf(classOf("  override m?(x: number) { go() }"), id)).toBe(
+      `${plain} (override_modifier "override") "?"`,
+    )
   })
+
+  const method = (head: string) => `  ${head}m(x: number) { go() }`
+  const field = (head: string, value = "") => `  ${head}m = ${value}(x: number) => { go() }`
+
+  it.each([
+    ["an accessibility modifier on a method", method(""), method("private "), "C.m"],
+    ["`static` on a method", method(""), method("static "), "C::m"],
+    ["`async` on a method", method(""), method("async "), "C.m"],
+    ["`*` on a method", method(""), method("*"), "C.m"],
+    ["a decorator on a method", method(""), method("@Dec() "), "C.m"],
+    ["an accessibility modifier on a field", field(""), field("private "), "C.m"],
+    ["`static` on a field", field(""), field("static "), "C::m"],
+    ["`async` on a field's function", field(""), field("", "async "), "C.m"],
+    ["a decorator on a field", field(""), field("@Dec() "), "C.m"],
+  ])(
+    "leaves a member's string as it was for %s, which another axis or the id reads",
+    async (_label, plain, marked, id) => {
+      expect(await normalizedOf(classOf(marked), `ts:src/a.ts#${id}`)).toBe(
+        await normalizedOf(classOf(plain), "ts:src/a.ts#C.m"),
+      )
+    },
+  )
 
   it("keeps the tokens a formatter owns out, and every other token in", async () => {
     const source = `export function f(a: any, b: any) { save(a, [, b], { c: 1 }, 'd', \`e\${a}\`, (x: number) => x < 1); }`

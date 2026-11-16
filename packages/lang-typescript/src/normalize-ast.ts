@@ -38,9 +38,11 @@ function wrapLoneParameter(parameter: string): string {
   return `(formal_parameters (required_parameter ${parameter}))`
 }
 
-// The modifiers no other axis reads: `static` is in the member's id, an accessibility modifier is its
-// `visibility`, and `async` and `*` are on its signature.
+// The modifiers neither the member's id nor another axis reads: `static` is in the id, an
+// accessibility modifier is its `visibility`, and `async` and `*` are on its signature.
 const MEMBER_HEAD_MODIFIERS: ReadonlySet<string> = new Set([
+  "get",
+  "set",
   "override_modifier",
   "?",
   "readonly",
