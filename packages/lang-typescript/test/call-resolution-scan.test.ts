@@ -43,6 +43,24 @@ describe("scan — calls through a default import", () => {
     })
   })
 
+  it("reaches an anonymous default export written behind a wrapper", async () => {
+    const result = await callsFromMain(
+      {
+        "src/paren.ts": "export default (() => 1)\n",
+        "src/satisfies.ts": "export default (async () => 2) satisfies () => Promise<number>\n",
+      },
+      ['import one from "./paren"', 'import two from "./satisfies"'],
+      ["one()", "two()"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["one", "ts:src/paren.ts#<default>"],
+        ["two", "ts:src/satisfies.ts#<default>"],
+      ],
+      unresolved: [],
+    })
+  })
+
   it("reaches a named default export under another name, declared with, apart from or by a clause", async () => {
     const result = await callsFromMain(
       {
