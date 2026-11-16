@@ -2,6 +2,7 @@ import type { DropHint, ExtractionContext, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { bodyNodesOf } from "./ast-helpers"
 import { functionAFieldHolds } from "./class-members"
+import { parameterDefaultsRecordAnything } from "./walk-body"
 
 export const TYPESCRIPT_FILE_DROP_PATTERNS: readonly string[] = [
   "**/*.d.ts",
@@ -92,8 +93,14 @@ function isLiteralNode(node: Node): boolean {
 
 function classifyFunctionBody(symbol: SymbolCandidate<Node>): DropHint | null {
   const bodies = bodyNodesOf(symbol)
-  if (bodies.length === 0 || !bodies.every(isEmptyBlock)) return null
+  if (bodies.length === 0 || !bodies.every(runsNothing)) return null
   return { reason: "empty body", category: "B" }
+}
+
+// A parameter default runs on every call that omits its argument, and the walk reads it on the
+// function's own Symbol, so dropping the Symbol would drop what the default calls.
+function runsNothing(body: Node): boolean {
+  return isEmptyBlock(body) && !parameterDefaultsRecordAnything(body)
 }
 
 function isEmptyBlock(body: Node): boolean {
