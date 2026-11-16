@@ -60,6 +60,15 @@ describe("a function an object literal holds is a member Symbol", () => {
     expect(await callsOf(source, "ts:src/a.ts#api")).toEqual([])
   })
 
+  it("keeps a member whose body is empty beside a default holding a call", async () => {
+    const source = "export const api = { m(x = f()) {}, onClose: (x = g()) => {} }"
+
+    expect(await hintOf(source, "ts:src/a.ts#api.m")).toBeNull()
+    expect(await hintOf(source, "ts:src/a.ts#api.onClose")).toBeNull()
+    expect(await callsOf(source, "ts:src/a.ts#api.m")).toEqual(["f"])
+    expect(await callsOf(source, "ts:src/a.ts#api.onClose")).toEqual(["g"])
+  })
+
   it.each([
     ["a function expression", "  f: function (a: number) { q(a) },"],
     ["an async method", "  async f(a: number) { q(a) },"],
