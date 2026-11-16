@@ -27,14 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the upsert script
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           sparse-checkout: packages/github-action/scripts
           persist-credentials: false
 
       - name: Find the report
         id: artifact
-        uses: actions/github-script@v9
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const run = context.payload.workflow_run
@@ -53,7 +53,7 @@ jobs:
       - name: Resolve the pull request
         id: pr
         if: steps.artifact.outputs.found == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const run = context.payload.workflow_run
@@ -78,7 +78,7 @@ jobs:
 
       - name: Download the report
         if: steps.pr.outputs.number != ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: aburi-diff
           path: report
