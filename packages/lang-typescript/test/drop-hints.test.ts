@@ -125,31 +125,39 @@ describe("a parameter default is code its function carries", () => {
   const workspace = useScratchWorkspace("parameter-default")
 
   it.each([
-    ["a function with a default holding a call", "export function g(x = f()) {}", "g"],
-    ["an arrow with a default holding a call", "export const g = (x = f()) => {}", "g"],
-    ["a method with a default holding a call", "export class C { m(x = f()) {} }", "C.m"],
-    ["a method with a default constructing", "export class C { m(x = new Map()) {} }", "C.m"],
+    ["a function with a default holding a call", "export function g(x = f()) {}", "g", null],
+    ["an arrow with a default holding a call", "export const g = (x = f()) => {}", "g", null],
+    ["a method with a default holding a call", "export class C { m(x = f()) {} }", "C.m", null],
+    ["a method with a default constructing", "export class C { m(x = new Map()) {} }", "C.m", null],
+    [
+      "a constructor with a default holding a call",
+      "export class C { constructor(x = f()) {} }",
+      "C.constructor",
+      null,
+    ],
     [
       "a field's wrapped function with a default holding a call",
       "export class C { handle = withAuth((x = count()) => {}) }",
       "C.handle",
+      null,
     ],
     [
       "a destructured parameter with a default holding a call",
       "export function g({ a = f() } = {}) {}",
       "g",
+      null,
     ],
-  ])("keeps %s", async (_label, source, name) => {
-    expect(await hintOf(source, `ts:src/a.ts#${name}`)).toBeNull()
-  })
-
-  // A parameter's decorator runs where the class is defined, so its call stays on the class.
-  it.each([
-    ["a literal default", "export function g(x = 1) {}", "g"],
-    ["an object default", "export function g({ a } = {}) {}", "g"],
-    ["a parameter decorator holding a call", "export class C { m(@Inject(t()) x) {} }", "C.m"],
-  ])("still hints an empty function with %s", async (_label, source, name) => {
-    expect(await hintOf(source, `ts:src/a.ts#${name}`)).toEqual(B("empty body"))
+    ["a function with a literal default", "export function g(x = 1) {}", "g", B("empty body")],
+    ["a function with an object default", "export function g({ a } = {}) {}", "g", B("empty body")],
+    // A parameter's decorator runs where the class is defined, so its call stays on the class.
+    [
+      "a method with a parameter decorator holding a call",
+      "export class C { m(@Inject(t()) x) {} }",
+      "C.m",
+      B("empty body"),
+    ],
+  ])("hints an empty body on %s", async (_label, source, name, hint) => {
+    expect(await hintOf(source, `ts:src/a.ts#${name}`)).toEqual(hint)
   })
 
   it("scans the default's call onto the function", async () => {
