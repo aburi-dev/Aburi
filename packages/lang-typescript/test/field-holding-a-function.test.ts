@@ -246,6 +246,12 @@ describe("a field holding a function handed to a call is a member Symbol", () =>
       { reason: "empty body", category: "B" },
       [],
     ],
+    [
+      "empty handlers, one with a default holding a call",
+      "  ready = withRetry(() => {}, (x = d()) => {})",
+      null,
+      ["d"],
+    ],
   ])("hints a member of %s by every body it has", async (_label, field, hint, onMember) => {
     const source = classOf(field)
 

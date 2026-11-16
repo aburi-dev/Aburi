@@ -448,6 +448,18 @@ describe("a formatting edit is no change", () => {
       1,
     ],
     [
+      "a wrapper put around an anonymous default export",
+      "export default async (id: string) => {\n  q(id)\n}\n",
+      "export default (async (id: string) => {\n  q(id)\n}) satisfies Handler\n",
+      1,
+    ],
+    [
+      "the type a wrapped default export satisfies",
+      "export default (async () => {\n  q()\n}) satisfies A\n",
+      "export default (async () => {\n  q()\n}) satisfies B\n",
+      1,
+    ],
+    [
       "a method's union parameter joined onto one line, on the method as well as its class",
       "export class Module {\n  add(\n    provider:\n      | ClassProvider\n      | ValueProvider,\n  ): void {\n    use(provider)\n  }\n}\n",
       "export class Module {\n  add(provider: ClassProvider | ValueProvider): void {\n    use(provider)\n  }\n}\n",

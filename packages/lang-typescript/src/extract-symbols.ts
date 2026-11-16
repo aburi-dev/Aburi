@@ -1,8 +1,10 @@
+import { unwrapValue } from "@aburi/core"
 import type { ExtractionContext, SymbolCandidate } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import {
   AMBIENT_DECLARATION_TYPE,
   asClassValue,
+  asFunctionValue,
   findChild,
   firstNonCommentChild,
   inAmbientContext,
@@ -16,14 +18,17 @@ import {
   makeCallExtractionState,
   visitCallStatement,
 } from "./call-symbols"
-import { addClassAndMembers } from "./class-candidates"
+import { addClassAndMembers, makeClassCandidate } from "./class-candidates"
 import { type CandidateSink, makeCandidateSink } from "./declaration-merge"
 import { declaredOrDefaultQname } from "./declared-name"
 import { readDecorators } from "./decorators"
 import {
   exportEvidence,
+  exportVisibility,
   isDefaultExport,
+  isDefaultExportStatement,
   promoteDetachedExports,
+  statementExportEvidence,
   topLevelVisibility,
 } from "./export-evidence"
 import { readLeadingJsDoc } from "./leading-jsdoc"
@@ -67,6 +72,11 @@ function visitStatement(
   if (node.type === "export_statement") {
     const declarationNode = exportedDeclaration(node)
     if (declarationNode === null) return
+    const wrapped = wrappedDefaultValue(node, declarationNode)
+    if (wrapped !== null) {
+      out.add(makeWrappedDefaultCandidate(wrapped, node, ctx))
+      return
+    }
     visitStatement(declarationNode, ctx, namespacePath, out, state)
     return
   }
@@ -191,19 +201,49 @@ function makeFunctionCandidate(
   namespacePath: readonly string[],
 ): SymbolCandidate<Node> {
   const { qname } = declaredOrDefaultQname(node, "function", ctx, namespacePath)
+  return functionCandidate(node, qname, exportEvidence(node), readLeadingJsDoc(node), ctx)
+}
+
+function functionCandidate(
+  node: Node,
+  qname: string,
+  evidence: readonly string[],
+  jsDoc: string | null,
+  ctx: ExtractionContext,
+): SymbolCandidate<Node> {
   return {
     id: makeTsSymbolId(ctx.file.path, qname),
     kind: "function",
     extKind: null,
     name: qname,
-    visibility: topLevelVisibility(node),
+    visibility: exportVisibility(evidence),
     decorators: readDecorators(node),
-    signature: buildSignature(node, readLeadingJsDoc(node)),
+    signature: buildSignature(node, jsDoc),
     source: makeSourceRange(node, ctx),
-    derivedBy: exportEvidence(node),
+    derivedBy: [...evidence],
     bodyNode: node.childForFieldName("body"),
     fullNode: node,
   }
+}
+
+// A function or class expression's own name binds nothing in the module.
+function wrappedDefaultValue(statement: Node, value: Node): Node | null {
+  if (!isDefaultExportStatement(statement)) return null
+  const unwrapped = unwrapValue(value)
+  if (unwrapped.id === value.id) return null
+  return asFunctionValue(unwrapped) ?? asClassValue(unwrapped)
+}
+
+function makeWrappedDefaultCandidate(
+  value: Node,
+  statement: Node,
+  ctx: ExtractionContext,
+): SymbolCandidate<Node> {
+  const qname = defaultExportQname()
+  const evidence = statementExportEvidence(statement)
+  return value.type === "class"
+    ? makeClassCandidate(value, qname, evidence, ctx)
+    : functionCandidate(value, qname, evidence, readLeadingJsDoc(statement), ctx)
 }
 
 function makeDefaultCallCandidate(

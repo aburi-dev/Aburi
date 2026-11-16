@@ -21,7 +21,7 @@ import {
 } from "./declaration-merge"
 import { declaredOrDefaultQname } from "./declared-name"
 import { readDecorators } from "./decorators"
-import { exportEvidence, memberVisibility, topLevelVisibility } from "./export-evidence"
+import { exportEvidence, exportVisibility, memberVisibility } from "./export-evidence"
 import { readLeadingJsDoc } from "./leading-jsdoc"
 import { classMemberQname, makeTsSymbolId } from "./qname"
 import { buildSignature } from "./signature"
@@ -33,23 +33,32 @@ export function addClassAndMembers(
   out: CandidateSink,
 ): void {
   const { name: className, qname } = declaredOrDefaultQname(node, "class", ctx, namespacePath)
-  out.add({
-    id: makeTsSymbolId(ctx.file.path, qname),
-    kind: "class",
-    extKind: null,
-    name: qname,
-    visibility: topLevelVisibility(node),
-    decorators: readDecorators(node),
-    signature: null,
-    source: makeSourceRange(node, ctx),
-    derivedBy: exportEvidence(node),
-    bodyNode: node.childForFieldName("body"),
-    fullNode: node,
-  })
+  out.add(makeClassCandidate(node, qname, exportEvidence(node), ctx))
 
   if (className === null) return
   for (const member of classMemberCandidates(node, ctx, [...namespacePath, className])) {
     out.add(member)
+  }
+}
+
+export function makeClassCandidate(
+  node: Node,
+  qname: string,
+  evidence: readonly string[],
+  ctx: ExtractionContext,
+): SymbolCandidate<Node> {
+  return {
+    id: makeTsSymbolId(ctx.file.path, qname),
+    kind: "class",
+    extKind: null,
+    name: qname,
+    visibility: exportVisibility(evidence),
+    decorators: readDecorators(node),
+    signature: null,
+    source: makeSourceRange(node, ctx),
+    derivedBy: [...evidence],
+    bodyNode: node.childForFieldName("body"),
+    fullNode: node,
   }
 }
 
