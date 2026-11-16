@@ -2,7 +2,7 @@
   "name": "order-api",
   "private": true,
   "dependencies": {
-    "@prisma/client": "^6.0.0",
-    "next": "^15.0.0"
+    "@prisma/client": "^7.10.1",
+    "next": "^16.4.6"
   }
 }
