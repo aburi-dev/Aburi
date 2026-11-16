@@ -242,7 +242,7 @@ These are explicitly declared as "not yet guaranteed". A field rename appearing 
 
 By design, the order of effects can carry meaning (transaction boundaries, idempotency, retry safety). Discarding order would give "DB write before event publish" and "event publish before DB write" the same fingerprint, making refactoring-induced bugs undetectable in the diff.
 
-As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise. The diff says which reordering it was: a reorder pairs every effect with its counterpart, so `delta.effects` holds nothing, and `delta.effectsReordered` ([`diff-algorithm.md`](./diff-algorithm.md) §5.2.4) is what names it.
+As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise. A pure reorder pairs every effect with its counterpart, so `delta.effects` holds nothing; `delta.effectsReordered` ([`diff-algorithm.md`](./diff-algorithm.md) §5.2.4) flags it, and the report lists both orders.
 
 The order kept is source order (§4.1), which is the order effects run in only for calls written one after another. A language plugin writes a call before the calls inside it ([lang-plugin.md](./lang-plugin.md) §5.1), so `x.save(y.publish())` hashes as `[x.save, y.publish]` although `y.publish` runs first, and rewriting it as `x.save(); y.publish()` leaves `logic` where it was.
 

@@ -864,18 +864,6 @@ Decorators are identified by `(name)`, but differences in `arguments` and `quali
 - A same-name pair further apart than the line fuzz is not paired by the near pass, so a receiver edit that also moved that far reports as `added` + `removed`, as a changed argument list does
 - Same name + same arguments + same qualifier + only line differs, by any distance → implicitly the same (not shown in the delta)
 
-##### 5.2.4 Effects that run in another order
-
-```
-delta.effectsReordered = LCS(local(base), local(head)) < shared(local(base), local(head))
-```
-
-The `logic` fingerprint reads locally detected effects in call order ([`fingerprint.md`](./fingerprint.md) §4.7), so swapping two writes moves it. Every effect still pairs with its counterpart, though, and `delta.effects` holds nothing, so without this flag the Symbol reports a logic change with no detail and `--fail-on logic-changed` trips with nothing in the report to say why.
-
-`local(side)` is each locally detected effect's key `(id, target)`, in the order the IR holds them, and the two sequences are compared as middleware lists are (§5.6): `effectsReordered` is true when their longest common subsequence is shorter than the keys they share as multisets. An effect added or removed between the others is not a reorder, and one that moved past a repeat of another key is (`[save, log, save]` → `[save, save, log]`). Two effects of one key that trade places — one plugin's and another's — are not either: no key moved, and the fingerprint, which reads targets, did not. Propagated effects are read by target alone and carry no order (fingerprint.md §4.1), so they are left out.
-
-`effectsReordered` is optional in the schema only so a diff written before it existed stays valid. A current writer always emits it, `false` included (§10.1). The orders themselves are on `before` and `after`.
-
 ##### 5.2.3 `modified` determination for Component diffs
 
 Components have no `modified` (only the three states added / removed / changed).
@@ -885,6 +873,20 @@ Component changed: billing
   roots: ['apps/billing'] → ['apps/billing', 'packages/billing-domain']
   frameworks: [] → ['nestjs']
 ```
+
+##### 5.2.4 Effects that appear in another order
+
+```
+delta.effectsReordered = LCS(local(base), local(head)) < shared(local(base), local(head))
+```
+
+The `logic` fingerprint reads locally detected effects in source order ([`fingerprint.md`](./fingerprint.md) §4.7), so swapping two writes moves it. A pure reorder pairs every effect with its counterpart, though, and `delta.effects` holds nothing, so without this flag the Symbol reports a logic change with no detail and `--fail-on logic-changed` trips with nothing in the report to say why.
+
+`local(side)` is the sequence `logic` hashes for that side's locally detected effects: each one's target, canonicalized as the fingerprint reads it ([`fingerprint.md`](./fingerprint.md) §4.1), in the order the IR holds them. The two sequences are compared as middleware lists are (§5.6): `effectsReordered` is true when their longest common subsequence is shorter than the targets they share as multisets, so it is true exactly when the order `logic` reads moved. An effect added or removed between the others is not a reorder, and one that moved past a repeat of another target is (`[save, emit, save]` → `[save, save, emit]`). Two effects on one target that trade places, whatever their ids or plugins, are not a reorder, since `logic` reads the same sequence; two targets that trade places while one's id changes are, and the id change is named as an effect removed and one added beside it. Propagated effects are left out: the fingerprint reads their targets sorted and once each, so their order moves nothing.
+
+Source order is the order effects run in only for calls written one after another ([`fingerprint.md`](./fingerprint.md) §4.7). So the flag, like `logic`, is set by `x.save(y.publish())` → `const r = y.publish(); x.save(r)`, which keeps the order they run in, and not by `x.save(y.publish())` → `x.save(); y.publish()`, which changes it.
+
+`effectsReordered` is optional in the schema only so a diff written before it existed stays valid. A current writer always emits it, `false` included (§10.1). The orders themselves are on `before` and `after`.
 
 ### 5.3 signature delta
 
@@ -1244,8 +1246,8 @@ If they survive with the same ID they are treated as unchanged; if caught by sta
 | DF18c | DF18a on a pair dropped on both sides | unchanged, as DF13 |
 | DF18d | Only the names a declaration is exported under changed: `export { handler as GET }` → `export { handler as GET, handler as DELETE }` | changed: 1, delta.apiChanged true, `delta.exportedAs.added: ["DELETE"]` (§5.5). Writing `export function f` as `function f` with `export { f }` is unchanged ([`fingerprint.md`](./fingerprint.md) A25) |
 | DF18e | `router.get("/users", requireAdmin, h)` → `router.get("/users", h)` | changed: 1, delta.logicChanged true, delta.middleware `{ added: [], removed: ["requireAdmin"], reordered: false }` → in Markdown: a Logic changes entry with ``- middleware removed: `requireAdmin` ``; swapping two middleware gives `reordered: true`, and a route that names none on either side has no delta.middleware (§5.6) |
-| DF18g | `await prisma.account.update(…)` above `await prisma.audit.create(…)` → the two swapped, on two lines or on one | changed: 1, delta.logicChanged true, delta.effects empty, delta.effectsReordered true (§5.2.4) → in Markdown: ``- effects reordered: …``, the base's order before the head's, and no "no field-level detail" row. Two propagated effects in another order set nothing |
 | DF18f | `router.get("/a", requireAdmin, listA)` → `router.post("/b", requireAdmin, createB)`, in one file or with the two routes in different files, with or without a third route behind `requireAdmin` left as it was | added: 1, removed: 1 — middleware alone names nothing (§3.3), and neither route name passes the 0.85 bar |
+| DF18g | `await prisma.account.update(…)` above `await prisma.audit.create(…)` → the two swapped, on two lines or on one | changed: 1, delta.logicChanged true, delta.effects empty, delta.effectsReordered true (§5.2.4) → in Markdown: ``- effects reordered: …``, the base's order before the head's, and no "no field-level detail" row. Two propagated effects in another order set nothing |
 | DF19 | Two unrelated top-level `main(x: string)` in different files | added: 1, removed: 1 — §3.4.3 does not read a name of one word, and §3.3 applies the same rule where the logic names nothing |
 | DF19a | A name of one word in any script — `главная`, `مستخدم`, `initialize` | as DF19; the rule is about how much the name says, not which script says it |
 | DF19b | `ユーザー情報を取得する` moved file with an edited body | moved+changed: 1, rationale: "name-signature" — `nameEvidence` floors an unsegmentable run to the words it must hold (§3.4.1) |

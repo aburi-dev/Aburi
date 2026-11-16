@@ -1,4 +1,9 @@
-import { compareCodeUnit, exportNames, stringArraysEqual } from "@aburi/core"
+import {
+  compareCodeUnit,
+  exportNames,
+  normalizeFingerprintString,
+  stringArraysEqual,
+} from "@aburi/core"
 import type {
   ArrayDelta,
   Call,
@@ -46,9 +51,9 @@ export function computeSymbolDelta(
     confidenceChanged: base.confidence !== head.confidence,
     rules: diffRules(base.rules, head.rules, origins, fuzz),
     effects: diffEffects(base.effects, head.effects, origins),
-    effectsReordered: runsInAnotherOrder(
-      localEffectKeys(base.effects),
-      localEffectKeys(head.effects),
+    effectsReordered: appearInAnotherOrder(
+      localEffectTargets(base.effects),
+      localEffectTargets(head.effects),
     ),
     calls: diffCalls(base.calls, head.calls, origins, fuzz),
     decorators: diffDecorators(base.decorators, head.decorators, origins, fuzz),
@@ -260,18 +265,17 @@ function diffEffects(
 ): ArrayDelta {
   const [b, h] = identifyEach(base, head, origins, (effect, origin) => ({
     item: effect,
-    key: effectKey(effect),
+    key: `${effect.id}::${effect.target}`,
     line: effect.line === undefined ? 0 : effect.line - origin,
   }))
   return classifyArrayDelta(b, h, effectsEqual, Number.POSITIVE_INFINITY)
 }
 
-function localEffectKeys(effects: readonly Effect[]): string[] {
-  return effects.filter((effect) => effect.propagated !== true).map(effectKey)
-}
-
-function effectKey(effect: Effect): string {
-  return `${effect.id}::${effect.target}`
+// The sequence `logic` hashes, so the flag moves exactly when that order does.
+function localEffectTargets(effects: readonly Effect[]): string[] {
+  return effects
+    .filter((effect) => effect.propagated !== true)
+    .map((effect) => normalizeFingerprintString(effect.target))
 }
 
 function effectsEqual(a: Effect, b: Effect): boolean {
@@ -383,12 +387,11 @@ function diffMiddleware(base: readonly string[], head: readonly string[]): Middl
   return {
     added: beyondCounts(head, base),
     removed: beyondCounts(base, head),
-    reordered: runsInAnotherOrder(base, head),
+    reordered: appearInAnotherOrder(base, head),
   }
 }
 
-/** Whether the entries both lists hold, paired as multisets, appear in a different order. */
-function runsInAnotherOrder(base: readonly string[], head: readonly string[]): boolean {
+function appearInAnotherOrder(base: readonly string[], head: readonly string[]): boolean {
   const shared = base.length - beyondCounts(base, head).length
   return longestCommonSubsequence(base, head) < shared
 }

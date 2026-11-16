@@ -918,7 +918,12 @@ describe("a changed Symbol's middleware rows", () => {
 
 describe("a changed Symbol's effects reordered row", () => {
   const save = effect({ id: "db.write", target: "a.save", plugin: "effects-prisma", line: 2 })
-  const log = effect({ id: "log.write", target: "b.log", plugin: "effects-pino", line: 3 })
+  const emit = effect({
+    id: "event.publish",
+    target: "events.emit",
+    plugin: "effects-nest",
+    line: 3,
+  })
   const viaCallee = effect({
     id: "db.read",
     target: "repo.find",
@@ -927,7 +932,7 @@ describe("a changed Symbol's effects reordered row", () => {
     derivedFrom: ["ts:src/b.ts#b"],
   })
 
-  it("names each side's locally detected effects in order, after the effect buckets, as the logic change's detail", () => {
+  it("names each side's locally detected effects in order, between the effect buckets and the call rows", () => {
     const md = renderDelta(
       {
         apiChanged: false,
@@ -936,31 +941,39 @@ describe("a changed Symbol's effects reordered row", () => {
         effects: { ...none(), removed: [viaCallee] },
         calls: { ...none(), added: [call({ target: "go", line: 9 })] },
       },
-      { effects: [save, log, viaCallee] },
-      { effects: [log, save] },
+      { effects: [save, emit, viaCallee] },
+      { effects: [emit, save] },
     )
 
     expect(md).toContain(
-      "\n- effects reordered: db.write `a.save`, log.write `b.log` → log.write `b.log`, db.write `a.save`\n- calls added:",
+      [
+        "- effects removed:",
+        "  - db.read: `repo.find` [propagated from `ts:src/b.ts#b`] [effects-prisma]",
+        "- effects reordered: db.write `a.save`, event.publish `events.emit` → event.publish `events.emit`, db.write `a.save`",
+        "- calls added:",
+      ].join("\n"),
     )
-    expect(md).toContain("- effects removed:\n")
-    expect(md.indexOf("- effects removed:")).toBeLessThan(md.indexOf("- effects reordered:"))
-    expect(md).not.toContain("no field-level detail")
   })
 
   it.each([
-    ["false", { effectsReordered: false }],
-    ["absent, as a diff written before the flag left it", {}],
-  ])("writes no row when the flag is %s", (_label, flags) => {
-    const md = renderDelta(
-      { apiChanged: false, logicChanged: true, ...flags },
-      { effects: [save, log] },
-      { effects: [log, save] },
-    )
+    ["true", { effectsReordered: true }, true],
+    ["false", { effectsReordered: false }, false],
+    ["absent, as a diff written before the flag left it", {}, false],
+  ])(
+    "explains a logic change that has no other detail only when the flag is %s",
+    (_label, flags, reordered) => {
+      const md = renderDelta(
+        { apiChanged: false, logicChanged: true, ...flags },
+        { effects: [save, emit] },
+        { effects: [emit, save] },
+      )
 
-    expect(md).not.toContain("reordered")
-    expect(md).toContain("logic fingerprint changed; no field-level detail was recorded")
-  })
+      expect(md.includes("- effects reordered:")).toBe(reordered)
+      expect(md.includes("logic fingerprint changed; no field-level detail was recorded")).toBe(
+        !reordered,
+      )
+    },
+  )
 })
 
 describe("a changed Symbol's component, visibility and confidence rows", () => {
