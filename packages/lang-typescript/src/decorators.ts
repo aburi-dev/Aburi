@@ -3,12 +3,12 @@ import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, throughParentheses } from "./ast-helpers"
 
 export function readDecorators(declaration: Node): Decorator[] {
-  return collectDecoratorNodes(declaration)
+  return decoratorNodes(declaration)
     .map(readDecorator)
     .filter((d): d is Decorator => d !== null)
 }
 
-function collectDecoratorNodes(declaration: Node): Node[] {
+export function decoratorNodes(declaration: Node): Node[] {
   const found = [
     ...precedingDecorators(declaration),
     ...declaration.childrenForFieldName("decorator"),

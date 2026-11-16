@@ -51,14 +51,14 @@ describe("fingerprints are pinned across releases", () => {
     expect(apiFingerprint(makeSymbol(id, { derivedBy }))).toBe(hash)
   })
 
-  it("apiFingerprint of a parameter with no marker, modifier or decorator, whether absent or written empty", () => {
+  it("apiFingerprint of a parameter with no marker, modifier or decorator, absent or written false and empty", () => {
     const withInputs = (inputs: Array<{ name: string; type: string }>) =>
       makeSymbol("ts:src/a.ts#find", { signature: sig({ inputs, outputs: ["User[]"] }) })
     const plain = [
       { name: "query", type: "string" },
       { name: "ids", type: "string[]" },
     ]
-    const writtenFalse = plain.map((input) => ({
+    const writtenEmpty = plain.map((input) => ({
       ...input,
       optional: false,
       rest: false,
@@ -67,7 +67,26 @@ describe("fingerprints are pinned across releases", () => {
     }))
 
     expect(apiFingerprint(withInputs(plain))).toBe("a1f625081136")
-    expect(apiFingerprint(withInputs(writtenFalse))).toBe("a1f625081136")
+    expect(apiFingerprint(withInputs(writtenEmpty))).toBe("a1f625081136")
+  })
+
+  it("apiFingerprint of a parameter property, its modifiers in source order and its decorators sorted", () => {
+    // echo -n '{"decorators":[],"extKind":null,"kind":"method","shortName":"constructor","signature":{"async":false,"generator":false,"inputs":[{"decorators":["Inject(REPO)","Optional()"],"modifiers":["private","readonly"],"type":"Repo"}],"outputs":[],"throws":[],"typeParameters":[]},"visibility":"public"}' | sha256sum | cut -c1-12
+    const symbol = makeSymbol("ts:src/a.ts#C.constructor", {
+      kind: "method",
+      signature: sig({
+        inputs: [
+          {
+            name: "repo",
+            type: "Repo",
+            modifiers: ["private", "readonly"],
+            decorators: ["Optional()", "Inject(REPO)"],
+          },
+        ],
+        outputs: [],
+      }),
+    })
+    expect(apiFingerprint(symbol)).toBe("bc45b2fbdce9")
   })
 
   it("logicFingerprint of a body with no rules and no effects", () => {

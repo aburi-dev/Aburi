@@ -88,6 +88,15 @@ describe("apiFingerprint ignores", () => {
       method({ decorators: [NOT_FOUND, OK] }),
     ],
     [
+      "the order of a parameter's decorators",
+      withSignature({
+        inputs: [{ name: "repo", type: "Repo", decorators: ["Optional()", "Inject(REPO)"] }],
+      }),
+      withSignature({
+        inputs: [{ name: "repo", type: "Repo", decorators: ["Inject(REPO)", "Optional()"] }],
+      }),
+    ],
+    [
       "the class the member sits in",
       method({ name: "Old.createInvoice" }),
       method({ name: "New.createInvoice" }),

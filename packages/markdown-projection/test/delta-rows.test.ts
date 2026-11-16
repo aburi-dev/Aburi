@@ -579,6 +579,28 @@ describe("a modified element's row beside the base element the diff paired it wi
       "- signature.inputs modified: `limit: number` → `limit?: number`\n",
     ],
     [
+      "a parameter property whose accessibility and injection token changed",
+      {
+        signature: sig({
+          inputs: [{ name: "s", type: "S", modifiers: ["private"], decorators: ["Inject(A)"] }],
+        }),
+      },
+      {
+        signature: sig({
+          inputs: [{ name: "s", type: "S", modifiers: ["public"], decorators: ["Inject(B)"] }],
+        }),
+      },
+      {
+        signature: signature({
+          inputs: {
+            ...none(),
+            modified: [{ name: "s", type: "S", modifiers: ["public"], decorators: ["Inject(B)"] }],
+          },
+        }),
+      },
+      "- signature.inputs modified: `@Inject(A) private s: S` → `@Inject(B) public s: S`\n",
+    ],
+    [
       "the loop it replaced, beside a removed loop of another kind",
       { rules: [loop(3, "for"), loop(7, "do")] },
       { rules: [loop(5, "while")] },

@@ -95,7 +95,7 @@ function canonicalizeParameter(input: Signature["inputs"][number]): ApiParameter
     out.modifiers = [...input.modifiers]
   }
   if (input.decorators !== undefined && input.decorators.length > 0) {
-    out.decorators = input.decorators.map(normalizeFingerprintString)
+    out.decorators = input.decorators.map(normalizeFingerprintString).sort(compareCodeUnit)
   }
   return out
 }

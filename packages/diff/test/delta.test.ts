@@ -24,6 +24,8 @@ function symbolWith(overrides: Partial<IRSymbol>, seed: string): IRSymbol {
   return makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp(seed), ...overrides })
 }
 
+type SignatureInput = Signature["inputs"][number]
+
 const NOTHING = { added: [], removed: [], modified: [] }
 
 describe("lineFuzz", () => {
@@ -399,18 +401,40 @@ describe("signature", () => {
     })
   })
 
-  it.each([
-    ["turns optional", { optional: true } as const],
-    ["turns into a rest parameter", { rest: true } as const],
-    ["turns into a parameter property", { modifiers: ["private" as const] }],
-    ["gains a decorator", { decorators: ["Inject(TOKEN)"] }],
-  ])("reports an input that %s as modified, since the api moved with it", (_, form) => {
+  it.each<[string, Partial<SignatureInput>, Partial<SignatureInput>]>([
+    ["turns optional", {}, { optional: true }],
+    ["turns into a rest parameter", {}, { rest: true }],
+    ["turns into a parameter property", {}, { modifiers: ["private"] }],
+    ["changes its accessibility", { modifiers: ["private"] }, { modifiers: ["public"] }],
+    ["gains a decorator", {}, { decorators: ["Inject(TOKEN)"] }],
+    [
+      "changes a decorator's argument",
+      { decorators: ["Inject(A)"] },
+      { decorators: ["Inject(B)"] },
+    ],
+  ])("reports an input that %s as modified, since the api moved with it", (_, from, to) => {
     expect(
       signatureDelta(
-        sig({ inputs: [{ name: "x", type: "string" }] }),
-        sig({ inputs: [{ name: "x", type: "string", ...form }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...from }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...to }] }),
       )?.inputs,
-    ).toEqual({ added: [], removed: [], modified: [{ name: "x", type: "string", ...form }] })
+    ).toEqual({ added: [], removed: [], modified: [{ name: "x", type: "string", ...to }] })
+  })
+
+  it.each<[string, Partial<SignatureInput>, Partial<SignatureInput>]>([
+    [
+      "reorders its decorators",
+      { decorators: ["Optional()", "Inject(T)"] },
+      { decorators: ["Inject(T)", "Optional()"] },
+    ],
+    ["writes no modifier and no decorator as empty lists", {}, { modifiers: [], decorators: [] }],
+  ])("reports nothing for an input that %s, which the api reads alike", (_, from, to) => {
+    expect(
+      signatureDelta(
+        sig({ inputs: [{ name: "x", type: "string", ...from }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...to }] }),
+      )?.inputs,
+    ).toEqual(NOTHING)
   })
 
   it("does not compare the bindings a plugin read out of a destructuring input", () => {

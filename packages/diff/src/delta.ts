@@ -269,11 +269,12 @@ function effectsEqual(a: Effect, b: Effect): boolean {
     a.plugin === b.plugin &&
     a.confidence === b.confidence &&
     (a.propagated ?? false) === (b.propagated ?? false) &&
-    stringArraysEqual(
-      [...(a.derivedFrom ?? [])].sort(compareCodeUnit),
-      [...(b.derivedFrom ?? [])].sort(compareCodeUnit),
-    )
+    stringArraysEqual(sortedStrings(a.derivedFrom), sortedStrings(b.derivedFrom))
   )
+}
+
+function sortedStrings(list: readonly string[] | undefined): string[] {
+  return [...(list ?? [])].sort(compareCodeUnit)
 }
 
 function diffCalls(
@@ -325,7 +326,7 @@ function inputsEqual(a: SignatureInput, b: SignatureInput): boolean {
     (a.optional === true) === (b.optional === true) &&
     (a.rest === true) === (b.rest === true) &&
     stringArraysEqual(a.modifiers ?? [], b.modifiers ?? []) &&
-    stringArraysEqual(a.decorators ?? [], b.decorators ?? [])
+    stringArraysEqual(sortedStrings(a.decorators), sortedStrings(b.decorators))
   )
 }
 

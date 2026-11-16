@@ -256,7 +256,7 @@ describe("an edit to the names a declaration is exported under is an api change"
   })
 })
 
-describe("an edit to a parameter's name, pattern or default value is a syntax-only change", () => {
+describe("an edit to a parameter's name, pattern, default value or decorator order is a syntax-only change", () => {
   it.each([
     ["a default's value", withParams("limit = 20"), withParams("limit = 10"), ["f"]],
     [
@@ -293,6 +293,12 @@ describe("an edit to a parameter's name, pattern or default value is a syntax-on
       "a constructor's default",
       "export class C {\n  constructor(a = 1) {\n    use(a)\n  }\n}\n",
       "export class C {\n  constructor(a = 2) {\n    use(a)\n  }\n}\n",
+      ["C", "C.constructor"],
+    ],
+    [
+      "the order of a constructor parameter's decorators",
+      "export class C {\n  constructor(@Optional() @Inject(T) private s: S) {}\n}\n",
+      "export class C {\n  constructor(@Inject(T) @Optional() private s: S) {}\n}\n",
       ["C", "C.constructor"],
     ],
     [
@@ -502,6 +508,24 @@ describe("a formatting edit is no change", () => {
       "export default (async () => {\n  q()\n}) satisfies A\n",
       "export default (async () => {\n  q()\n}) satisfies B\n",
       1,
+    ],
+    [
+      "a constructor broken one parameter per line, each decorator above its modifiers",
+      "export class Repo {\n  constructor(@Inject(DB) private readonly db: Db, @Optional() private log?: Log) {}\n}\n",
+      "export class Repo {\n  constructor(\n    @Inject(DB)\n    private readonly db: Db,\n    @Optional()\n    private log?: Log,\n  ) {}\n}\n",
+      2,
+    ],
+    [
+      "a parameter decorator's arguments broken over lines with a trailing comma",
+      "export class Repo {\n  constructor(@Inject(DB, { optional: true }) private db: Db) {}\n}\n",
+      "export class Repo {\n  constructor(\n    @Inject(\n      DB,\n      {optional: true},\n    )\n    private db: Db,\n  ) {}\n}\n",
+      2,
+    ],
+    [
+      "a comment written into a parameter decorator",
+      "export class Repo {\n  constructor(@Inject(DB) private db: Db) {}\n}\n",
+      "export class Repo {\n  constructor(@Inject(/* legacy */ DB) private db: Db) {}\n}\n",
+      2,
     ],
     [
       "a method's union parameter joined onto one line, on the method as well as its class",
