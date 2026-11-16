@@ -118,6 +118,11 @@ whole pipeline, and its tests run against its own built bin.
 - Workflow settings that look like oversights (no `registry-url`, a constant docs concurrency group,
   `fetch-depth: 0`) carry a one-line reason beside them; npm's trusted-publisher setup is in
   `CONTRIBUTING.md`.
+- `.github/workflows/actions.lock` locks every `uses:` in the workflows and in
+  `packages/github-action/action.yml` to a commit. Change a `uses:` and rerun `gh actions-lock`, or CI's
+  `actions lockfile` job fails. Never edit the lockfile by hand. The
+  workflows call the repository's own action as `$/packages/github-action`, because the lockfile cannot
+  cover a `./` path.
 
 ## Skills
 

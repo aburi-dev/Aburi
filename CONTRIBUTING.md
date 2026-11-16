@@ -43,7 +43,7 @@ macOS, and Windows.
 4. Open a pull request against `main`.
 
 Two workflows then run on your pull request. CI runs the five commands above on Ubuntu, macOS
-and Windows, and Aburi runs on itself: [`.github/workflows/aburi.yml`](.github/workflows/aburi.yml)
+and Windows and verifies the actions lockfile, and Aburi runs on itself: [`.github/workflows/aburi.yml`](.github/workflows/aburi.yml)
 builds your branch, diffs it against the pull request's base with the CLI your branch
 contains, and posts the report as a comment it rewrites on every push. Its gate
 (`removed,dropped-toggled:to-dropped:>10`) turns the check red when a symbol disappears or
@@ -156,6 +156,13 @@ What the deploys need:
   `catalog:` for a name the catalog already lists; `pnpm add <dep> --save-catalog`,
   run for every package that declares it, moves a newly shared one there.
 - No linter-suppression comments; fix the root cause instead.
+- Every action a workflow or `packages/github-action/action.yml` uses is pinned
+  to a release tag and locked to its commit in `.github/workflows/actions.lock`,
+  which the runner checks at job start. After adding or changing a `uses:`, run
+  `gh actions-lock` (`gh extension install github/gh-actions-lock`) and commit
+  the lockfile with it; CI's `actions lockfile` job runs `gh actions-lock --verify`.
+  The workflows reach the repository's own action as `$/packages/github-action`,
+  never `./`, which the lockfile cannot cover.
 - Generated files are never edited by hand:
   `packages/types/src/generated/` is regenerated from `schema/`, and
   `packages/lang-typescript/wasm/` is vendored from the
@@ -177,7 +184,10 @@ need a hand before they merge:
   out of its files: changesets writes every CHANGELOG, and pnpm and Dependabot
   write the catalog, each in a style the next check would flag.
 - The workflow examples in the READMEs and under `docs/` use the same action
-  versions as `.github/workflows/`; move them in the same pull request. A bump
+  majors as `.github/workflows/`; move them in the same pull request when a
+  major lands. Dependabot is meant to move `.github/workflows/actions.lock`
+  with the `uses:` lines; when CI's `actions lockfile` job is red on its pull
+  request, run `gh actions-lock` on the branch and push the lockfile. A bump
   that reaches [`packages/github-action/action.yml`](packages/github-action/action.yml)
   changes what the action's users run and needs a changeset for
   `@aburi/github-action`.

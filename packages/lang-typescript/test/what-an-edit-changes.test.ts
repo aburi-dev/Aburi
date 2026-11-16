@@ -355,6 +355,39 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
   })
 })
 
+describe("an edit inside a part the parser recovered is a syntax-only change", () => {
+  it.each([
+    [
+      "a name in a broken call",
+      FILE,
+      "export function f() {\n  save(a b)\n}\n",
+      "export function f() {\n  save(a c)\n}\n",
+    ],
+    [
+      "a name in a broken return type",
+      FILE,
+      "export function f(): Map<A B, C> {\n  return m\n}\n",
+      "export function f(): Map<A X, C> {\n  return m\n}\n",
+    ],
+    [
+      "a name in a broken class heritage",
+      FILE,
+      "export class K extends A B {\n  m() {}\n}\n",
+      "export class K extends A X {\n  m() {}\n}\n",
+    ],
+    [
+      "the text after a bare `&` in JSX",
+      "src/a.tsx",
+      "export function F() {\n  render(<p>Subscription & Billing</p>)\n}\n",
+      "export function F() {\n  render(<p>Subscription & Invoices</p>)\n}\n",
+    ],
+  ])("reports %s", async (_label, file, before, after) => {
+    const diff = await diffOfEdit(workspace, file, before, after)
+
+    expect(changedSymbols(diff)).toMatchObject([SYNTAX_ONLY])
+  })
+})
+
 describe("a formatting edit is no change", () => {
   it.each([
     [
@@ -445,6 +478,18 @@ describe("a formatting edit is no change", () => {
       "a guard re-wrapped over several lines",
       check('user.age < 18 || user.banned || user.role === "guest"'),
       check("", "    user.age < 18 ||", "    user.banned ||", '    user.role === "guest"', "  "),
+      1,
+    ],
+    [
+      "a wrapper put around an anonymous default export",
+      "export default async (id: string) => {\n  q(id)\n}\n",
+      "export default (async (id: string) => {\n  q(id)\n}) satisfies Handler\n",
+      1,
+    ],
+    [
+      "the type a wrapped default export satisfies",
+      "export default (async () => {\n  q()\n}) satisfies A\n",
+      "export default (async () => {\n  q()\n}) satisfies B\n",
       1,
     ],
     [

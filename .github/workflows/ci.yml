@@ -32,13 +32,13 @@ jobs:
       # of 0xC0000142 can start nothing afterwards to look at what the runner held.
       RUN_TASK: ${{ startsWith(matrix.os, 'windows') && './.github/scripts/run-sampled.ps1' || 'pnpm' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -60,3 +60,21 @@ jobs:
 
       - name: Test
         run: ${{ env.RUN_TASK }} test
+
+  actions-lock:
+    name: actions lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned: an extension release can change what it reports, and Dependabot does not move this line.
+      - name: Install gh-actions-lock
+        run: gh extension install github/gh-actions-lock --pin v0.4.1
+
+      - name: Every action is locked to a commit that still verifies upstream
+        run: gh actions-lock --verify

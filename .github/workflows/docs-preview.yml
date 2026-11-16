@@ -26,16 +26,16 @@ jobs:
       version-url: ${{ steps.upload.outputs.version-url }}
     steps:
       # Full history: VitePress' lastUpdated reads each page's date from the git log.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -83,7 +83,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Upsert the preview comment
-        uses: actions/github-script@v9
+        uses: actions/github-script@v9.0.0
         env:
           UPLOAD_RESULT: ${{ needs.upload.result }}
           ALIAS_URL: ${{ needs.upload.outputs.alias-url }}
