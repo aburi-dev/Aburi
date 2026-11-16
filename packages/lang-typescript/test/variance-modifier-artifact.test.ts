@@ -278,21 +278,6 @@ describe("the Symbols are the same with the modifiers as without them", () => {
     expect(await callsOf(WITH_MODIFIERS, "ts:src/a.ts#E.m")).toEqual(["inner"])
     expect(await callsOf(WITH_MODIFIERS, "ts:src/a.ts#after")).toEqual(["post"])
   })
-})
-
-describe("where the rule stops", () => {
-  it("still needs the filter: the grammar has no rule for a variance modifier yet", async () => {
-    const { tree } = await parseSource("export interface A<out T> { v: T }")
-    expect(tree?.rootNode.hasError).toBe(true)
-  })
-
-  it.each([
-    ["a type alias whose right-hand side is not an object type", "export type A<out T> = T"],
-    ["a union", "export type H<out T> = T | Promise<T>"],
-    ["`in out` before a parameter named `out`", "export interface Z<in out> { v: out }"],
-  ])("drops the modifier on %s, which only `tsc`'s checker refuses", async (_label, source) => {
-    expect(await parseErrorsOf(source)).toEqual([])
-  })
 
   const astOf = async (source: string) => {
     const [symbol] = await symbolsOf(source)
@@ -310,4 +295,19 @@ describe("where the rule stops", () => {
       expect(await astOf(after)).not.toBe(await astOf(before))
     },
   )
+})
+
+describe("where the rule stops", () => {
+  it("still needs the filter: the grammar has no rule for a variance modifier yet", async () => {
+    const { tree } = await parseSource("export interface A<out T> { v: T }")
+    expect(tree?.rootNode.hasError).toBe(true)
+  })
+
+  it.each([
+    ["a type alias whose right-hand side is not an object type", "export type A<out T> = T"],
+    ["a union", "export type H<out T> = T | Promise<T>"],
+    ["`in out` before a parameter named `out`", "export interface Z<in out> { v: out }"],
+  ])("drops the modifier on %s, which only `tsc`'s checker refuses", async (_label, source) => {
+    expect(await parseErrorsOf(source)).toEqual([])
+  })
 })

@@ -14,8 +14,8 @@ export function normalizeAst(symbol: SymbolCandidate<Node>): string {
     .flatMap(({ node, fullNode }) => [
       serialize(node),
       classHead(fullNode),
-      // A declaration described whole already carries its list.
-      node.id === fullNode.id ? "" : parameterList(fullNode),
+      // A declaration described whole already carries its list and its head.
+      ...(node.id === fullNode.id ? [] : [parameterList(fullNode), parkedInHead(fullNode, node)]),
     ])
     .filter((part) => part.length > 0)
     .join(" ")
@@ -30,6 +30,26 @@ function parameterList(fullNode: Node): string {
   return lone === null ? "" : wrapLoneParameter(serialize(lone))
 }
 
+// The api axis reads a type's tokens and leaves an extra out, so what recovery parked in a return
+// type, a function's type parameters or between a head's parts would reach neither axis.
+function parkedInHead(fullNode: Node, described: Node): string {
+  const isClass = CLASS_TYPES.has(fullNode.type)
+  const list = fullNode.childForFieldName("parameters") ?? fullNode.childForFieldName("parameter")
+  if (!isClass && list === null) return ""
+  const serialized = new Set([described.id, list?.id])
+  const parked: string[] = []
+  const visit = (node: Node): void => {
+    for (const child of node.namedChildren) {
+      if (child === null || serialized.has(child.id)) continue
+      if (isClass && CLASS_HEAD_TYPES.has(child.type)) continue
+      if (child.type === ERROR_TYPE) parked.push(serialize(child))
+      else visit(child)
+    }
+  }
+  visit(fullNode)
+  return parked.filter((part) => part.length > 0).join(" ")
+}
+
 // A formatter adds the parentheses a lone arrow parameter may go without (`x => …` → `(x) => …`),
 // so it is described as the parenthesised spelling parses.
 function wrapLoneParameter(parameter: string): string {
@@ -41,13 +61,12 @@ function classHead(fullNode: Node): string {
   const parts: string[] = []
   if (fullNode.type === "abstract_class_declaration") parts.push(JSON.stringify("abstract"))
   for (const child of fullNode.namedChildren) {
-    if (child === null) continue
-    if (child.type === "type_parameters" || child.type === "class_heritage") {
-      parts.push(serialize(child))
-    }
+    if (child !== null && CLASS_HEAD_TYPES.has(child.type)) parts.push(serialize(child))
   }
   return parts.join(" ")
 }
+
+const CLASS_HEAD_TYPES: ReadonlySet<string> = new Set(["type_parameters", "class_heritage"])
 
 const CLASS_TYPES: ReadonlySet<string> = new Set([
   "class_declaration",
@@ -61,7 +80,6 @@ function describedNode(declaration: Pick<MergedDeclaration<Node>, "bodyNode" | "
 }
 
 function serialize(node: Node): string {
-  if (node.isExtra && node.type !== ERROR_TYPE) return ""
   const cursor = node.walk()
   try {
     return serializeAt(cursor, node.type, grammarOf(node.tree.language))
@@ -89,7 +107,7 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
       if (cursor.nodeIsMissing) continue
       const typeId = cursor.nodeTypeId
       const childType = grammar.typeName(typeId)
-      if (isSkippedExtra(childType, cursor, grammar)) continue
+      if (grammar.mayBeExtra.has(childType) && cursor.currentNode.isExtra) continue
       if (grammar.isNamed(typeId)) {
         const lone = parameterField !== null && cursor.currentFieldId === parameterField
         const rendered = serializeAt(cursor, childType, grammar)
@@ -109,25 +127,30 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
     cursor.gotoParent()
   }
 
-  // Punctuation alone is what a formatter owns, wherever recovery parked it.
+  // An ERROR whose children are all dropped would leave a bare level: a stray `)` read as an edit.
   if (type === ERROR_TYPE && hasChildren && children.length === 0) return ""
-  const isLeaf = LEAF_TEXT_TYPES.has(type) || (type === ERROR_TYPE && !hasChildren)
-  const leafText = isLeaf ? leafPayload(cursor.nodeText) : null
+  if (type === ERROR_TYPE && !hasChildren) return unlexedPieces(cursor.nodeText)
+  const leafText = LEAF_TEXT_TYPES.has(type) ? leafPayload(cursor.nodeText) : null
   if (children.length === 0 && leafText === null) return `(${type})`
   if (children.length === 0 && leafText !== null) return `(${type} ${leafText})`
   return `(${type} ${children.join(" ")})`
 }
 
-// Reduced to its operand, the level would lose the text recovery parked beside it.
-function reducibleOperand(node: Node): Node | null {
-  const parked = node.children.some((child) => child?.isExtra && child.type === ERROR_TYPE)
-  return parked ? null : leadingOperatorOperand(node)
+// Recovery merges the characters it cannot lex into one leaf, across whitespace and line breaks.
+function unlexedPieces(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter((piece) => piece.length > 0)
+    .map((piece) => `(${ERROR_TYPE} ${JSON.stringify(piece)})`)
+    .join(" ")
 }
 
-// Recovery parks the text it cannot place in an `ERROR` extra, which is still what the file says;
-// a comment is the only extra that is not.
-function isSkippedExtra(type: string, cursor: TreeCursor, grammar: Grammar): boolean {
-  return type !== ERROR_TYPE && grammar.mayBeExtra.has(type) && cursor.currentNode.isExtra
+// Reduced to its operand, the level would lose the text recovery parked beside it.
+function reducibleOperand(node: Node): Node | null {
+  const parked = node.children.some(
+    (child) => child?.isExtra && child.type === ERROR_TYPE && serialize(child).length > 0,
+  )
+  return parked ? null : leadingOperatorOperand(node)
 }
 
 const ERROR_TYPE = "ERROR"
@@ -157,9 +180,9 @@ function grammarOf(language: Language): Grammar {
 }
 
 // An extra may appear in any state and is shifted without leaving it, so the start state's table
-// names each one. Error recovery also inserts `ERROR` nodes as extras.
+// names each one.
 function extraTypes(language: Language): ReadonlySet<string> {
-  const types = new Set([ERROR_TYPE])
+  const types = new Set<string>()
   for (let typeId = 0; typeId < language.nodeTypeCount; typeId++) {
     const name = language.types[typeId]
     if (name && language.nextState(START_STATE, typeId) === START_STATE) types.add(name)
