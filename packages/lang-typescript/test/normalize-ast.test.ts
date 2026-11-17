@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { normalizeAst } from "../src/index"
-import { symbolsOf } from "./fixtures/ctx"
+import { BACKSLASH, classOf, normalizedOf, symbolsOf } from "./fixtures/ctx"
 
 async function normalizeFirstSymbol(source: string): Promise<string> {
   const [target] = await symbolsOf(source)
@@ -15,6 +15,26 @@ describe("normalizeAst — what a formatter or a reviewer's eye would not call a
     ["a comment in the body", fn("return 1"), fn("/* note */ return 1")],
     ["an HTML-like comment in the body", fn("return 1"), fn("\n<!-- note\nreturn 1")],
     ["a stray token error recovery skips", fn("save(a); return 1"), fn("save(a); ) return 1")],
+    ["a comment beside text recovery skips", fn("save(a b)"), fn("save(a /* c */ b)")],
+    ["a stray `)` beside a union's leading `|`", "export type T = | A", "export type T = | ) A"],
+    [
+      "a stray `)` beside an intersection's leading `&`",
+      "export type T = & A",
+      "export type T = & ) A",
+    ],
+    [
+      "a stray `)` in a function's head",
+      "export function f(): T {}",
+      "export function f(): T ) {}",
+    ],
+    ["the spacing in a run recovery cannot lex", fn("save(a # # b)"), fn("save(a #   # b)")],
+    ["a line break in a run recovery cannot lex", fn("save(a # # b)"), fn("save(a #\n# b)")],
+    [
+      "the spacing between backslashes recovery cannot lex",
+      fn(`save(a ${BACKSLASH} ${BACKSLASH} b)`),
+      fn(`save(a ${BACKSLASH}  ${BACKSLASH} b)`),
+    ],
+    ["a comment in a run recovery cannot lex", fn("save(a # # b)"), fn("save(a # /* c */ # b)")],
     [
       "whitespace and indentation",
       "export function f(){return 1}",
@@ -146,6 +166,25 @@ describe("normalizeAst — what changes the string", () => {
       "export const pick = y => use",
     ],
     ["a hole between elements", fn("save([1, , 3])"), fn("save([1, 3])")],
+    ["a name recovery skips in a union", "export type T = | A B", "export type T = | X B"],
+    ["a name recovery skips in a call", fn("save(a b)"), fn("save(a c)")],
+    ["a character recovery cannot place", fn("save(a # b)"), fn("save(a ## b)")],
+    [
+      "a name recovery skips in a return type",
+      "export function f(): Map<A B, C> {}",
+      "export function f(): Map<A X, C> {}",
+    ],
+    [
+      "a name recovery skips in type parameters",
+      "export function f<T U>() {}",
+      "export function f<T X>() {}",
+    ],
+    [
+      "a name recovery skips in a class's heritage",
+      "export class K extends A B {}",
+      "export class K extends A X {}",
+    ],
+    ["a name recovery skips before a body", "export function f() B {}", "export function f() X {}"],
     ["a hole before a trailing comma", fn("save([x, ,])"), fn("save([x,])")],
   ])("tells %s", async (_label, before, after) => {
     expect(await normalizeFirstSymbol(after)).not.toBe(await normalizeFirstSymbol(before))
@@ -173,6 +212,37 @@ describe("normalizeAst — the shape of the string", () => {
 
     expect(normalized.match(/\(formal_parameters /g)).toHaveLength(2)
   })
+
+  it("reads a member's own modifiers after its body and its parameter list", async () => {
+    const id = "ts:src/a.ts#C.m"
+    const plain = await normalizedOf(classOf("  m(x: number) { go() }"), id)
+
+    expect(await normalizedOf(classOf("  override m?(x: number) { go() }"), id)).toBe(
+      `${plain} (override_modifier "override") "?"`,
+    )
+  })
+
+  const method = (head: string) => `  ${head}m(x: number) { go() }`
+  const field = (head: string, value = "") => `  ${head}m = ${value}(x: number) => { go() }`
+
+  it.each([
+    ["an accessibility modifier on a method", method(""), method("private "), "C.m"],
+    ["`static` on a method", method(""), method("static "), "C::m"],
+    ["`async` on a method", method(""), method("async "), "C.m"],
+    ["`*` on a method", method(""), method("*"), "C.m"],
+    ["a decorator on a method", method(""), method("@Dec() "), "C.m"],
+    ["an accessibility modifier on a field", field(""), field("private "), "C.m"],
+    ["`static` on a field", field(""), field("static "), "C::m"],
+    ["`async` on a field's function", field(""), field("", "async "), "C.m"],
+    ["a decorator on a field", field(""), field("@Dec() "), "C.m"],
+  ])(
+    "leaves a member's string as it was for %s, which another axis or the id reads",
+    async (_label, plain, marked, id) => {
+      expect(await normalizedOf(classOf(marked), `ts:src/a.ts#${id}`)).toBe(
+        await normalizedOf(classOf(plain), "ts:src/a.ts#C.m"),
+      )
+    },
+  )
 
   it("keeps the tokens a formatter owns out, and every other token in", async () => {
     const source = `export function f(a: any, b: any) { save(a, [, b], { c: 1 }, 'd', \`e\${a}\`, (x: number) => x < 1); }`
