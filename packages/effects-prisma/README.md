@@ -49,18 +49,21 @@ Four further checks decide what is recorded:
   shape exactly, so the entry would hand `apiClient.users.update(payload)` the
   top tier.
 - **Model name.** A Prisma model is named after a table, so a model segment
-  that is exactly a client word is not one: `this.db.delete(auditLog)` is
-  Drizzle's `<client>.<verb>` with `this` in front, and is not classified at
-  all, which leaves it to `effects-drizzle` in a file that imports both. The
-  match is exact, so a `txLog` or `ormMapping` model still counts.
+  that is exactly a word an ORM binds its client to (Prisma's client words and
+  Drizzle's `drizzle`, `conn` and `connection`) is not one, unless a Prisma
+  client stands in front of it. `this.db.delete(auditLog)` is Drizzle's
+  `<client>.<verb>` with `this` in front, and is not classified at all, which
+  leaves it to `effects-drizzle` in a file that imports both, while
+  `prisma.tx.create(…)` is a `Tx` model. The match is exact, so a `txLog` or
+  `ormMapping` model still counts.
 - **Argument count.** A delegate takes at most one argument, `$transaction`
   two. More than that is evidence against — but only evidence: `argumentCount`
   is a syntactic count, and a drop would erase a real write without logging
   anything, so an overflow costs the tier instead.
 
-A call past the two gates whose receiver names a client and whose arguments fit
-gets `confidence: "high"`; anything short of that still
-records the effect, at `confidence: "medium"`.
+A call that passes the literal-argument and model-name checks, whose receiver
+names a client and whose arguments fit, gets `confidence: "high"`; anything
+short of that still records the effect, at `confidence: "medium"`.
 
 The `medium` tier is deliberate. Without the AST — which effect plugins never
 see — a client bound under a house naming convention and an unrelated object of

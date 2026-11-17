@@ -7,12 +7,20 @@ export type PrismaClientWord = (typeof PRISMA_CLIENT_WORDS_LIST)[number]
 
 export const PRISMA_CLIENT_WORDS: ReadonlySet<PrismaClientWord> = new Set(PRISMA_CLIENT_WORDS_LIST)
 
-export function isPrismaClientWord(segment: string): boolean {
-  return (PRISMA_CLIENT_WORDS as ReadonlySet<string>).has(segment)
-}
-
 export function namesPrismaClient(segment: string): boolean {
   return identifierMentions(segment, PRISMA_CLIENT_WORDS as ReadonlySet<string>)
+}
+
+// Another ORM's client words too, since it is that ORM's `<client>.<verb>` the model gate keeps out.
+const CLIENT_BINDING_WORDS: ReadonlySet<string> = new Set([
+  ...PRISMA_CLIENT_WORDS_LIST,
+  "drizzle",
+  "conn",
+  "connection",
+])
+
+export function isClientBindingWord(segment: string): boolean {
+  return CLIENT_BINDING_WORDS.has(segment)
 }
 
 export const PRISMA_DELEGATE_MAX_ARGUMENTS = 1
