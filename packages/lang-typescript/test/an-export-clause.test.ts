@@ -132,6 +132,11 @@ describe("an export clause", () => {
     ["a type-only clause", "function handler() {}\nexport type { handler as GET }", "#handler"],
     ["a type-only specifier", "const handler = 1\nexport { type handler as GET }", "#handler"],
     ["a type-only clause naming a class", "class Shape {}\nexport type { Shape }", "#Shape"],
+    [
+      "a type-only clause naming a class an interface above it merges with",
+      "interface Shape {}\nclass Shape {}\nexport type { Shape }",
+      "#Shape",
+    ],
     ["a type-only default export", "function Page() {}\nexport type { Page as default }", "#Page"],
   ])(
     "does not export a value through %s, which is erased at runtime",
