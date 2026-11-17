@@ -549,11 +549,18 @@ function asCallLike(value: unknown): CallLike | null {
 
 function asInputLike(value: unknown): InputLike | null {
   if (!isRecord(value)) return null
-  const { name, type, optional, rest } = value
+  const { name, type, optional, rest, modifiers, decorators } = value
   if (typeof name !== "string" || typeof type !== "string") return null
   return {
     name,
-    written: formatInput({ name, type, optional: optional === true, rest: rest === true }),
+    written: formatInput({
+      name,
+      type,
+      optional: optional === true,
+      rest: rest === true,
+      modifiers: stringsOf(modifiers),
+      decorators: stringsOf(decorators),
+    }),
   }
 }
 

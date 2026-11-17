@@ -12,6 +12,15 @@ describe("formatInput", () => {
     [{ name: "ids", type: "string[]", rest: true }, "...ids: string[]"],
     [{ name: "args", type: "", rest: true }, "...args"],
     [{ name: "x", type: "" }, "x"],
+    [
+      { name: "repo", type: "Repo", modifiers: ["private", "readonly"] },
+      "private readonly repo: Repo",
+    ],
+    [
+      { name: "id", type: "string", decorators: ['Param("id")'], modifiers: ["public"] },
+      '@Param("id") public id: string',
+    ],
+    [{ name: "dto", type: "", optional: true, decorators: ["Body()"] }, "@Body() dto?"],
   ])("prints %j as %j", (input, expected) => {
     expect(formatInput(input)).toBe(expected)
   })

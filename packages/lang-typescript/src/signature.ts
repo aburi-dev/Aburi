@@ -8,6 +8,7 @@ import {
   thrownValue,
   walkDescendants,
 } from "./ast-helpers"
+import { decoratorNodes } from "./decorators"
 import { collectPatternBindings, isRepairedPattern } from "./pattern-bindings"
 
 export function buildSignature(declaration: Node, jsDocText: string | null): Signature {
@@ -80,7 +81,42 @@ function readParameter(param: Node): Signature["inputs"][number] {
   if (rest) input.rest = true
   const bindings = readPatternBindings(binding)
   if (bindings.length > 0) input.bindings = bindings
+  const modifiers = readParameterModifiers(param)
+  if (modifiers.length > 0) input.modifiers = modifiers
+  const decorators = decoratorNodes(param).flatMap(decoratorText)
+  if (decorators.length > 0) input.decorators = decorators
   return input
+}
+
+type ParameterModifier = NonNullable<Signature["inputs"][number]["modifiers"]>[number]
+
+function readParameterModifiers(param: Node): ParameterModifier[] {
+  const out: ParameterModifier[] = []
+  for (const child of param.children) {
+    if (child === null) continue
+    if (child.type === "accessibility_modifier") {
+      if (isAccessibilityModifier(child.text)) out.push(child.text)
+    } else if (child.type === "override_modifier") out.push("override")
+    else if (child.type === "readonly") out.push("readonly")
+  }
+  return out
+}
+
+const ACCESSIBILITY_MODIFIERS: ReadonlySet<string> = new Set<ParameterModifier>([
+  "public",
+  "private",
+  "protected",
+])
+
+function isAccessibilityModifier(text: string): text is ParameterModifier {
+  return ACCESSIBILITY_MODIFIERS.has(text)
+}
+
+// A formatter breaks a decorator's arguments over lines and adds a trailing comma, as it does a
+// type's, so a parameter's decorator is recorded as it reads on one line, after its `@`.
+function decoratorText(decorator: Node): string[] {
+  const written = firstNonCommentChild(decorator)
+  return written === null ? [] : [oneLine(lineTokens(written, []), EXPRESSION_BRACKETS)]
 }
 
 function writtenText(node: Node | null): string | null {
@@ -118,11 +154,28 @@ function readReturnType(node: Node): string[] {
   return text.length > 0 ? [text] : []
 }
 
-const VERBATIM_TYPES: ReadonlySet<string> = new Set(["string", "template_literal_type"])
+const VERBATIM_TYPES: ReadonlySet<string> = new Set([
+  "string",
+  "template_literal_type",
+  "template_string",
+])
 
-const OPENING_BRACKETS: ReadonlySet<string> = new Set(["<", "(", "["])
+interface Brackets {
+  readonly opening: ReadonlySet<string>
+  readonly closing: ReadonlySet<string>
+}
 
-const CLOSING_BRACKETS: ReadonlySet<string> = new Set([">", ")", "]"])
+const TYPE_BRACKETS: Brackets = {
+  opening: new Set(["<", "(", "["]),
+  closing: new Set([">", ")", "]"]),
+}
+
+// In an expression `<` and `>` compare, and an object literal's braces are spaced on one line by
+// some formatters and not by others.
+const EXPRESSION_BRACKETS: Brackets = {
+  opening: new Set(["(", "[", "{"]),
+  closing: new Set([")", "]", "}"]),
+}
 
 const SEPARATORS: ReadonlySet<string> = new Set([",", ";"])
 
@@ -136,25 +189,29 @@ interface TypeToken {
 // leading `|`, and drops them when it joins the type again, so a type is recorded as it reads on
 // one line. On one line it separates an object type's members with `;`, and over lines with none.
 function typeText(type: Node): string {
-  const tokens = typeTokens(type, [])
+  return oneLine(lineTokens(type, []), TYPE_BRACKETS)
+}
+
+function oneLine(tokens: readonly TypeToken[], brackets: Brackets): string {
   let out = ""
   let previous: TypeToken | null = null
   for (const [index, token] of tokens.entries()) {
     const next = tokens[index + 1]
-    if (SEPARATORS.has(token.text) && next !== undefined && CLOSING_BRACKETS.has(next.text))
+    if (SEPARATORS.has(token.text) && next !== undefined && brackets.closing.has(next.text))
       continue
     const spaced =
       previous !== null &&
       previous.end < token.start &&
-      !OPENING_BRACKETS.has(previous.text) &&
-      !CLOSING_BRACKETS.has(token.text)
+      !brackets.opening.has(previous.text) &&
+      !brackets.closing.has(token.text) &&
+      !SEPARATORS.has(token.text)
     out += spaced ? ` ${token.text}` : token.text
     previous = token
   }
   return out
 }
 
-function typeTokens(node: Node, out: TypeToken[]): TypeToken[] {
+function lineTokens(node: Node, out: TypeToken[]): TypeToken[] {
   if (node.isMissing || node.isExtra) return out
   if (node.childCount === 0 || VERBATIM_TYPES.has(node.type)) {
     out.push({ text: node.text, start: node.startIndex, end: node.endIndex })
@@ -162,8 +219,8 @@ function typeTokens(node: Node, out: TypeToken[]): TypeToken[] {
   }
   if (node.type === "object_type") return objectTypeTokens(node, out)
   const operand = leadingOperatorOperand(node)
-  if (operand !== null) return typeTokens(operand, out)
-  for (const child of node.children) typeTokens(child, out)
+  if (operand !== null) return lineTokens(operand, out)
+  for (const child of node.children) lineTokens(child, out)
   return out
 }
 
@@ -179,7 +236,7 @@ function objectTypeTokens(node: Node, out: TypeToken[]): TypeToken[] {
     } else if (SEPARATORS.has(child.type)) {
       continue
     }
-    typeTokens(child, out)
+    lineTokens(child, out)
   }
   return out
 }

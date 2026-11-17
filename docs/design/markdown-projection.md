@@ -431,7 +431,7 @@ A symbol with everything empty (class without boundary, no methods) is normally 
 `(name: type, name: type) → output` form, in one code span. Multiple outputs are separated by `|`. An empty `outputs` prints nothing after the inputs, `(x: number)`: the source wrote no return type and nothing inferred one, which is not the `void` a function annotated `(): void` declares. ``throws `A`, `B` `` is appended, each thrown type in a span of its own: `Signature.throws` items are unconstrained strings ([ir-schema.md](./ir-schema.md) §7, §3.4.2).
 Type parameters lead the span (`<T,U>(…)`); `⚡async` and `*generator*` follow it.
 
-Each input is written as TypeScript writes it, whatever language the IR came from: an input's `optional` and `rest` fields ([ir-schema.md](./ir-schema.md) §7) print as `a?: string` and `...ids: string[]`, and a defaulted input as the optional one it is to a caller, `limit?`. An input with an empty `type` prints its name alone, `x`. The `signature.inputs` rows of a diff entry spell inputs the same way.
+Each input is written as TypeScript writes it, whatever language the IR came from: an input's `optional` and `rest` fields ([ir-schema.md](./ir-schema.md) §7) print as `a?: string` and `...ids: string[]`, and a defaulted input as the optional one it is to a caller, `limit?`. Its `decorators` and `modifiers` print before the name, decorators first and each in its order: `@Inject(TOKEN) private readonly repo: Repo`. An input with an empty `type` prints its name alone, `x`. The `signature.inputs` rows of a diff entry spell inputs the same way.
 
 Example:
 ```md
@@ -648,7 +648,7 @@ A `modified` element is one the diff paired with a base element of the same key 
 | effects (`id`, `target`) | origin (`propagated`, `derivedFrom`), `plugin`, `confidence` | ``db.write: `prisma.user.create` (L5) [effects-drizzle → effects-prisma] ⚠ medium (was high)`` |
 | calls (`target`) | `resolved` | ``` `useInvoices` (L15) resolved: `ts:src/hooks.ts#useInvoices` → none ``` |
 | decorators (`name`) | `qualifier`, `arguments` | ``decorator modified: `@UseGuards(AuthGuard)` → `@UseGuards(AuthGuard, RoleGuard)` `` |
-| signature.inputs (position and `name`; looked up by `name`) | `type`, `optional`, `rest` | ``signature.inputs modified: `limit: number` → `limit?: number` `` |
+| signature.inputs (position and `name`; looked up by `name`) | `type`, `optional`, `rest`, `modifiers`, `decorators` | ``signature.inputs modified: `limit: number` → `limit?: number` `` |
 
 `high` has no badge, so a confidence that fell reads `⚠ medium (was high)` and one that rose to `high` reads `(was ⚠ medium)`. An effect's origin is its line or its `[propagated from …]` list, so a local effect that is now propagated reads `` (L5) → [propagated from …] ``. A call row names what the call resolves to only under `calls modified`, the one thing a modified call can differ in, with `none` for an unresolved call.
 
