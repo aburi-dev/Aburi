@@ -88,17 +88,8 @@ With no `testFiles` in your config, these files are test code:
 **/test/**  **/tests/**  **/e2e/**
 ```
 
-Set `testFiles` to use your own list instead. It replaces the default one, so a production
-`src/test/` can stay out by leaving `**/test/**` out:
-
-```jsonc
-{
-  "testFiles": ["**/*.test.*", "**/tests/**", "examples/**"]
-}
-```
-
-To add patterns to the default rather than replace it, write `"..."` where the default list goes.
-It keeps up with the default when a release adds a pattern, which a copy of it would not:
+Set `testFiles` to change the list. Write `"..."` where the default list goes to add patterns to
+it. It keeps up with the default when a release adds a pattern, which a copy of it would not:
 
 ```jsonc
 {
@@ -106,9 +97,21 @@ It keeps up with the default when a release adds a pattern, which a copy of it w
 }
 ```
 
+A pattern that starts with `!` takes files back out, so `["...", "!src/test"]` keeps a production
+`src/test/` out of the fold.
+
+A list without `"..."` replaces the default one, for a workspace whose tests follow a layout of
+their own:
+
+```jsonc
+{
+  "testFiles": ["src/**/*.check.ts"]
+}
+```
+
 The globs read like `ignore`'s: `fixtures` or `fixtures/` marks the root's `fixtures/` directory,
-and `**/fixtures/**` marks every one. A pattern that starts with `!` takes files back out, so
-`["**/test/**", "!src/test"]` keeps a production `src/test/` out of the fold. `[]` marks nothing.
+and `**/fixtures/**` marks every one. `[]` marks nothing, and `"!..."` is an error: leave `"..."`
+out to drop the default.
 Use `testFiles` rather than `ignore` for tests: an ignored file is never read, and the calls a
 test makes leave the graph with it.
 
