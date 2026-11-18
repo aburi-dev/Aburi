@@ -938,6 +938,66 @@ describe("a changed Symbol's middleware rows", () => {
   })
 })
 
+describe("a changed Symbol's effects reordered row", () => {
+  const save = effect({ id: "db.write", target: "a.save", plugin: "effects-prisma", line: 2 })
+  const emit = effect({
+    id: "event.publish",
+    target: "events.emit",
+    plugin: "effects-nest",
+    line: 3,
+  })
+  const viaCallee = effect({
+    id: "db.read",
+    target: "repo.find",
+    plugin: "effects-prisma",
+    propagated: true,
+    derivedFrom: ["ts:src/b.ts#b"],
+  })
+
+  it("names each side's locally detected effects in order, between the effect buckets and the call rows", () => {
+    const md = renderDelta(
+      {
+        apiChanged: false,
+        logicChanged: true,
+        effectsReordered: true,
+        effects: { ...none(), removed: [viaCallee] },
+        calls: { ...none(), added: [call({ target: "go", line: 9 })] },
+      },
+      { effects: [save, emit, viaCallee] },
+      { effects: [emit, save] },
+    )
+
+    expect(md).toContain(
+      [
+        "- effects removed:",
+        "  - db.read: `repo.find` [propagated from `ts:src/b.ts#b`] [effects-prisma]",
+        "- effects reordered: db.write `a.save`, event.publish `events.emit` → event.publish `events.emit`, db.write `a.save`",
+        "- calls added:",
+      ].join("\n"),
+    )
+  })
+
+  it.each([
+    ["true", { effectsReordered: true }, true],
+    ["false", { effectsReordered: false }, false],
+    ["absent, as a diff written before the flag left it", {}, false],
+  ])(
+    "explains a logic change that has no other detail only when the flag is %s",
+    (_label, flags, reordered) => {
+      const md = renderDelta(
+        { apiChanged: false, logicChanged: true, ...flags },
+        { effects: [save, emit] },
+        { effects: [emit, save] },
+      )
+
+      expect(md.includes("- effects reordered:")).toBe(reordered)
+      expect(md.includes("logic fingerprint changed; no field-level detail was recorded")).toBe(
+        !reordered,
+      )
+    },
+  )
+})
+
 describe("a changed Symbol's component, visibility and confidence rows", () => {
   it("sets each base value before the head one, the confidence row last", () => {
     const md = projectChanges([

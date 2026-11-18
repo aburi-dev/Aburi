@@ -33,8 +33,9 @@ statuses per [`docs/design/diff-algorithm.md`](../../docs/design/diff-algorithm.
 Per-Symbol delta records what specifically changed: array deltas for rules,
 effects, calls, decorators and the names the Symbol is exported under
 (`exportedAs`), a signature delta, a middleware delta when either side names
-middleware, the three fingerprint bits `apiChanged` / `logicChanged` /
-`syntaxChanged`, and `componentChanged` / `visibilityChanged` /
+middleware, `effectsReordered` when the locally detected effects both sides
+hold appear in another order, the three fingerprint bits `apiChanged` /
+`logicChanged` / `syntaxChanged`, and `componentChanged` / `visibilityChanged` /
 `confidenceChanged` for the Symbol's Component, visibility and confidence.
 
 ## Install

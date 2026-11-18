@@ -1,4 +1,9 @@
-import { compareCodeUnit, exportNames, stringArraysEqual } from "@aburi/core"
+import {
+  compareCodeUnit,
+  exportNames,
+  normalizeFingerprintString,
+  stringArraysEqual,
+} from "@aburi/core"
 import type {
   ArrayDelta,
   Call,
@@ -46,6 +51,10 @@ export function computeSymbolDelta(
     confidenceChanged: base.confidence !== head.confidence,
     rules: diffRules(base.rules, head.rules, origins, fuzz),
     effects: diffEffects(base.effects, head.effects, origins),
+    effectsReordered: appearInAnotherOrder(
+      localEffectTargets(base.effects),
+      localEffectTargets(head.effects),
+    ),
     calls: diffCalls(base.calls, head.calls, origins, fuzz),
     decorators: diffDecorators(base.decorators, head.decorators, origins, fuzz),
     exportedAs: diffStringSet(exportNames(base), exportNames(head)),
@@ -262,6 +271,13 @@ function diffEffects(
   return classifyArrayDelta(b, h, effectsEqual, Number.POSITIVE_INFINITY)
 }
 
+// The sequence `logic` hashes, so the flag moves exactly when that order does.
+function localEffectTargets(effects: readonly Effect[]): string[] {
+  return effects
+    .filter((effect) => effect.propagated !== true)
+    .map((effect) => normalizeFingerprintString(effect.target))
+}
+
 function effectsEqual(a: Effect, b: Effect): boolean {
   return (
     a.id === b.id &&
@@ -371,10 +387,16 @@ function oneSidedSignatureDelta(present: Signature, bucket: "added" | "removed")
 }
 
 function diffMiddleware(base: readonly string[], head: readonly string[]): MiddlewareDelta {
-  const added = beyondCounts(head, base)
-  const removed = beyondCounts(base, head)
-  const shared = base.length - removed.length
-  return { added, removed, reordered: longestCommonSubsequence(base, head) < shared }
+  return {
+    added: beyondCounts(head, base),
+    removed: beyondCounts(base, head),
+    reordered: appearInAnotherOrder(base, head),
+  }
+}
+
+function appearInAnotherOrder(base: readonly string[], head: readonly string[]): boolean {
+  const shared = base.length - beyondCounts(base, head).length
+  return longestCommonSubsequence(base, head) < shared
 }
 
 /** The occurrences in `side` that `other` holds no counterpart for, the earlier ones paired first. */
