@@ -53,13 +53,17 @@ normalizes `publicProcedure.input(schema).query(resolver)` to
 `publicProcedure.input.query`, which is structurally identical to a client call.
 What tells them apart is the chain, which the target keeps: **a `query` whose
 chain starts from a name that is `procedure` or ends in `Procedure`
-(`publicProcedure`, `protectedProcedure`), or that reads a `procedure` segment
-on the way (`t.procedure.query`), is never classified**. Those are the names
-tRPC's documentation and create-t3-app give a base procedure, and the ones
-`@aburi/framework-trpc` reads a procedure by. The plugin declines such a call,
-so it stays in `calls[]` and is listed in the IR's `stats.declinedCalls` under
-`effects-plugin:trpc:procedure-query`, which `aburi explain` shows under the
-Symbol that builds the router. The rule is scoped to `query` alone — the server
+(`publicProcedure`, `protectedProcedure`), or that reads `procedure` straight
+off its root (`t.procedure.query`), is never classified**. Those are the names
+tRPC's documentation and create-t3-app give a base procedure, and the
+convention `@aburi/framework-trpc` reads a procedure by, applied here after a
+leading `this` is stripped so that a client reached as `this.trpc…` reads like
+any other. In a file that imports a tRPC client, the plugin declines such a
+call when it has three or more segments, so it stays in `calls[]` and is listed
+in the IR's `stats.declinedCalls` under `effects-plugin:trpc:procedure-query`,
+which `aburi explain` shows under the Symbol that builds the router. A
+two-segment `protectedProcedure.query(resolver)` is left unclassified with no
+entry. The rule is scoped to `query` alone — the server
 spells its other verbs `mutation` / `subscription`, which are absent from the
 client vocabulary.
 
@@ -69,6 +73,14 @@ script or a Next.js file beside an adapter import is `network.rpc`.
 
 ### Known limitations
 
+- **A `query` that is not tRPC's.** In a file that imports a tRPC client, a
+  `query` of three or more segments whose chain names no procedure reads as a
+  client call, so `ctx.db.query(sql)` inside a resolver is `network.rpc` tagged
+  `query:db`. A file that imports `@trpc/server` as well used to decline it with
+  the router's own queries.
+- **A router key named `procedure`.** `client.procedure.list.query` reads
+  `procedure` straight off its root, as `t.procedure.query` does, so it is
+  declined rather than recorded.
 - **A base procedure under another name.** `const authed = t.procedure.use(auth)`
   followed by `authed.input(schema).query(resolver)` has no procedure name on
   its chain, so in a file that also imports a tRPC client it reads as a client

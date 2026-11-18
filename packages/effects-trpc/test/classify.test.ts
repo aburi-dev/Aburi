@@ -51,32 +51,42 @@ describe("classifyTrpcCall — client procedure calls", () => {
 
 describe("classifyTrpcCall — a query on a procedure's chain", () => {
   it.each([
-    ["publicProcedure.input.query", "without"],
-    ["t.procedure.query", "without"],
-    ["protectedProcedure.use.input.query", "with"],
-    ["t.procedure.input.query", "with"],
-    ["this.adminProcedure.input.query", "with"],
+    ["procedure.input.query", "a client import", clientCtx],
+    ["publicProcedure.input.query", "a client import", clientCtx],
+    ["t.procedure.query", "a client import", clientCtx],
+    ["protectedProcedure.use.input.query", "client and server imports", bothCtx],
+    ["t.procedure.input.query", "client and server imports", bothCtx],
+    ["this.adminProcedure.input.query", "client and server imports", bothCtx],
   ])(
-    "declines %s, %s an @trpc/server import — `query` is the router's own builder verb there",
-    (target, server) => {
-      expect(
-        classifyTrpcCall(makeCall({ target }), server === "with" ? bothCtx : clientCtx),
-      ).toEqual({
+    "declines %s in a file with %s — `query` is the router's own builder verb there",
+    (target, _label, ctx) => {
+      expect(classifyTrpcCall(makeCall({ target }), ctx)).toEqual({
         declined: "effects-plugin:trpc:procedure-query",
       })
     },
   )
 
+  it("declines a router key named procedure, as a known limit", () => {
+    expect(
+      classifyTrpcCall(makeCall({ target: "client.procedure.list.query" }), clientCtx),
+    ).toEqual({ declined: "effects-plugin:trpc:procedure-query" })
+  })
+
   it.each([
-    "client.user.byId.query",
-    "client.user.create.mutate",
-    "client.onAdd.subscribe",
-    "trpc.post.list.useQuery",
-    "client.procedures.list.query",
-  ])("classifies %s in a file that imports @trpc/server too", (target) => {
+    ["client.user.byId.query", "in a file that imports @trpc/server too"],
+    ["myprocedure.input.query", "whose root only ends in procedure"],
+    ["publicProcedures.list.query", "whose root ends in Procedures"],
+    ["client.adminProcedure.list.query", "with a …Procedure name past the root"],
+    ["client.clinic.procedure.byId.query", "with a procedure segment past the one after the root"],
+    ["client.procedures.list.query", "whose segment after the root is procedures, not procedure"],
+  ])("classifies %s as a client query, %s", (target) => {
     expect(classifyTrpcCall(makeCall({ target }), bothCtx)).toMatchObject({
       effectId: "network.rpc",
     })
+  })
+
+  it("returns null for a procedure's two-segment query, which no client call is either", () => {
+    expect(classifyTrpcCall(makeCall({ target: "publicProcedure.query" }), bothCtx)).toBeNull()
   })
 
   it("leaves a procedure's other builder verbs to the client vocabulary, which spells none of them", () => {

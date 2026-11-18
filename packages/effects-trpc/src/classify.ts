@@ -51,8 +51,9 @@ export function classifyTrpcCall(
   }
 }
 
-function buildsOnProcedure([root, ...rest]: readonly string[]): boolean {
-  return (root !== undefined && PROCEDURE_NAME.test(root)) || rest.includes("procedure")
+// `t.procedure` is read off the instance, so a `procedure` deeper down is a router key.
+function buildsOnProcedure([root, next]: readonly string[]): boolean {
+  return (root !== undefined && PROCEDURE_NAME.test(root)) || next === "procedure"
 }
 
 function terminalFamily(terminal: string): "query" | "mutation" | "subscription" | null {
