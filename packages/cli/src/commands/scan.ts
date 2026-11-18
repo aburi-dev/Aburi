@@ -89,7 +89,10 @@ export interface ScanOptions {
   logLevel?: LogLevel
   log?: LogWrite
   progress?: (progress: ScanProgress) => void
-  /** Handed to the core's scan, which stops at its next file once the signal is aborted. */
+  /**
+   * Checked before the run loads its config, then by the core's scan, which rejects with its
+   * reason once it is aborted.
+   */
   signal?: AbortSignal
   incidents?: {
     warn: WarnFn
@@ -103,6 +106,7 @@ export interface ScanOptions {
 }
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
+  options.signal?.throwIfAborted()
   requireWorkerCount(options.concurrency)
   const cwd = options.cwd ?? process.cwd()
   const workspaceRoot = await resolveWorkspaceRoot(cwd)

@@ -290,6 +290,57 @@ describe("the server's lifecycle", () => {
   )
 })
 
+describe("a scan aborted while its servers run", () => {
+  const reason = new Error("the other scan failed")
+
+  it("opens no further file, shuts the server down, and rejects with the signal's reason", async () => {
+    const stop = new AbortController()
+    const factory = documentSymbolServer(() => {
+      stop.abort(reason)
+      return []
+    })
+    const logger = recordingLogger()
+
+    const enriched = enrich({
+      symbols: [makeClassSymbol("src/a.ts", "C", 1), makeClassSymbol("src/b.ts", "D", 1)],
+      fileContents: { "src/a.ts": "class C {}", "src/b.ts": "class D {}" },
+      serverFactory: factory,
+      logger,
+      signal: stop.signal,
+    })
+
+    await expect(enriched).rejects.toBe(reason)
+    const client = factory.clients.get("ts")
+    expect(client?.openFiles).toEqual([workspaceUri("src/a.ts")])
+    expect(client?.shutdownCount).toBe(1)
+    expect(logger.warnings).toEqual([])
+  })
+
+  it("starts no server for the next language", async () => {
+    const stop = new AbortController()
+    const factory = mockServerFactory((client) =>
+      client.installHandler(DOC_SYMBOL_METHOD, () => {
+        stop.abort(reason)
+        return []
+      }),
+    )
+
+    const enriched = enrich({
+      symbols: [
+        makeSymbol("go:src/a.go#f", { language: makeLanguageId("go") }),
+        makeClassSymbol("src/b.ts", "C", 1),
+      ],
+      fileContents: { "src/a.go": "", "src/b.ts": "class C {}" },
+      serverFactory: factory,
+      lspConfig: makeLspConfig({ servers: { go: makeServerConfig(), ts: makeServerConfig() } }),
+      signal: stop.signal,
+    })
+
+    await expect(enriched).rejects.toBe(reason)
+    expect([...factory.clients.keys()]).toEqual(["go"])
+  })
+})
+
 describe("lsp.servers keys checked against the loaded language plugins", () => {
   async function warningsFor(
     servers: string[] | undefined,

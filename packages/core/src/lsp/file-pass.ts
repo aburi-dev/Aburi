@@ -39,6 +39,7 @@ export interface LanguageFilesInput {
   warnings: string[]
   logger: Logger
   now: () => number
+  signal?: AbortSignal
 }
 
 export async function enrichLanguageFiles(input: LanguageFilesInput): Promise<void> {
@@ -50,6 +51,7 @@ export async function enrichLanguageFiles(input: LanguageFilesInput): Promise<vo
   const lspLanguageId = lspLanguageIds(input.language, input.warnings)
 
   for (const file of [...symbolsByFile.keys()].sort(compareCodeUnit)) {
+    input.signal?.throwIfAborted()
     const read = input.fileContents.get(file)
     if (read === undefined) continue
     const fileSymbols = symbolsByFile.get(file) ?? []

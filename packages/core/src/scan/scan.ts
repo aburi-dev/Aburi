@@ -85,7 +85,10 @@ export interface ScanInput {
   /** Without one, or when it answers `null`, the scan extracts one file at a time on its own thread. */
   parsePool?: ParsePoolFactory
   onProgress?: (progress: ScanProgress) => void
-  /** Checked before each file and each phase after extraction; once aborted, the scan rejects with its reason. */
+  /**
+   * Checked before each file the scan extracts or enriches through LSP, and before each phase up
+   * to call resolution; once aborted, the scan rejects with its reason.
+   */
   signal?: AbortSignal
 }
 
@@ -158,7 +161,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     logger,
   }
   if (input.lspServerFactory !== undefined) enrichmentInput.serverFactory = input.lspServerFactory
-  signal?.throwIfAborted()
+  if (signal !== undefined) enrichmentInput.signal = signal
   const enrichment = await enrichWithLsp(enrichmentInput)
   const enrichedSymbols = enrichment.symbols
   enrichedSymbols.sort(compareBy((symbol) => symbol.id))

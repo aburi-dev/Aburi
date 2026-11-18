@@ -19,28 +19,34 @@ afterEach(() => {
 
 /**
  * A language plugin for `.timed` files, `parseFile` running `body` with `side` set to `base` or
- * `head` by the file's name and `marks`, a directory beside the repository, to leave marks in.
+ * `head` by the file's name, and `cleanup` running `cleanup`. Both may leave marks in `marks`, a
+ * directory beside the repository, and wait on them.
  */
-function timedPlugin(body: string): string {
-  return pluginModuleSource(
-    { ...LANG_MANIFEST, name: "lang-timed", languageId: makeLanguageId("timed") },
-    `  fileExtensions: [".timed"],
+function timedPlugin(body: string, cleanup: string): string {
+  return `import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { isMainThread } from "node:worker_threads"
+const marks = new URL("../marks/", import.meta.url)
+const mark = (name) => {
+  mkdirSync(marks, { recursive: true })
+  writeFileSync(new URL(name, marks), "")
+}
+const marked = (name) => existsSync(new URL(name, marks))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const until = async (name, ms) => {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline && !marked(name)) await sleep(10)
+  return marked(name)
+}
+${pluginModuleSource(
+  { ...LANG_MANIFEST, name: "lang-timed", languageId: makeLanguageId("timed") },
+  `  fileExtensions: [".timed"],
   capabilities: ${JSON.stringify(FAKE_LANGUAGE_PLUGIN.capabilities)},
   init: async () => {},
+  cleanup: async () => {
+${cleanup}
+  },
   parseFile: async (file) => {
-    const { existsSync } = await import("node:fs")
-    const { mkdir, writeFile } = await import("node:fs/promises")
-    const marks = new URL("../marks/", import.meta.url)
-    await mkdir(marks, { recursive: true })
     const side = file.path.includes("base") ? "base" : "head"
-    const mark = (name) => writeFile(new URL(name, marks), "")
-    const marked = (name) => existsSync(new URL(name, marks))
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-    const until = async (name, ms) => {
-      const deadline = Date.now() + ms
-      while (Date.now() < deadline && !marked(name)) await sleep(10)
-      return marked(name)
-    }
 ${body}
     return { tree: { path: file.path }, errors: [], imports: [] }
   },
@@ -62,20 +68,21 @@ ${body}
       : [],
   walkBody: () => ({ rules: [], calls: [] }),
   normalizeAst: () => "timed",`,
-  )
+)}`
 }
 
 /** A repository whose committed `base` files the working tree replaces with `head`, read by `body`. */
 async function timedRepository(
   files: { base: readonly string[]; head: readonly string[] },
   body: string,
+  cleanup = "",
 ): Promise<string> {
   const repository = resolve(workspace.root, "repository")
   await writeStubRepository(repository, files, {
     languages: ["./lang-timed.mjs"],
     parseTimeoutMs: 60_000,
   })
-  await writeFileAt(repository, "lang-timed.mjs", timedPlugin(body))
+  await writeFileAt(repository, "lang-timed.mjs", timedPlugin(body, cleanup))
   return repository
 }
 
@@ -118,8 +125,8 @@ describe("aburi diff — its two scans at once", () => {
   ])("under %s, the scans that found the other in flight leave %j", async (flag, met, wait) => {
     const repository = await timedRepository(
       { base: ["meet-base.timed"], head: ["meet-head.timed"] },
-      `    await mark(side)
-    if (await until(side === "base" ? "head" : "base", ${wait})) await mark(side + "-met")`,
+      `    mark(side)
+    if (await until(side === "base" ? "head" : "base", ${wait})) mark(side + "-met")`,
     )
 
     const { code, stderr } = await runCliIn(repository, ["diff", "main..HEAD", flag])
@@ -183,21 +190,24 @@ describe("aburi diff — its two scans at once", () => {
 
   it("stops the head scan at its next file when the base scan stops, and leaves no temporary directory", async () => {
     const tmp = await temporaryDirectory()
+    // The base fails only once the head is inside its first file. That file ends after the base's
+    // thread has cleaned up, with nothing left there but to post its failure, and time for it to land.
     const repository = await timedRepository(
       { base: ["odd-base.timed"], head: ["a-head.timed", "b-head.timed"] },
-      `    if (side === "base") await mark("base-stopping")
-    else if (await until("base-stopping", 60000)) {
-      await sleep(500)
-      await mark("parsed-" + file.path)
+      `    if (side === "base") await until("started-a-head.timed", 60000)
+    else {
+      mark("started-" + file.path)
+      if (await until("base-cleaned-up", 60000)) await sleep(500)
     }`,
+      `    if (!isMainThread) mark("base-cleaned-up")`,
     )
 
     const { code, stderr } = await runCliIn(repository, ["diff", "main..HEAD", "--parallel-scans"])
 
     expect(code).toBe(EXIT.GATE)
     expect(stderr).toContain('emitted extKind "timed:odd:thing" at odd-base.timed')
-    expect(["parsed-a-head.timed", "parsed-b-head.timed"].filter(marked)).toEqual([
-      "parsed-a-head.timed",
+    expect(["started-a-head.timed", "started-b-head.timed"].filter(marked)).toEqual([
+      "started-a-head.timed",
     ])
     expect(await readdir(tmp)).toEqual([".keep"])
   })
@@ -219,8 +229,7 @@ describe("aburi diff — its two scans at once", () => {
       const tmp = await temporaryDirectory()
       const repository = await timedRepository(
         { base: ["ok-base.timed"], head: ["ok-head.timed"] },
-        `    const { isMainThread } = await import("node:worker_threads")
-    if (!isMainThread) {
+        `    if (!isMainThread) {
     ${call}
     }`,
       )
