@@ -106,7 +106,7 @@ export interface PluginSet {
 export function buildPluginRefs(input: PluginSet): PluginRef[] {
   const refs: PluginRef[] = [
     ...input.languages.map(({ manifest }) =>
-      pluginRef(manifest, "lang", grammarRevision(manifest)),
+      pluginRef(manifest, "lang", recordedGrammarRevision(manifest)),
     ),
     ...input.frameworks.map(({ manifest }) => pluginRef(manifest, "framework", null)),
     ...input.effects.map(({ manifest }) => pluginRef(manifest, "effects", null)),
@@ -124,6 +124,6 @@ function pluginRef(
 }
 
 // Build metadata names a build of one release, and the revision form takes one suffix, not two.
-function grammarRevision(manifest: PluginManifest): string {
+export function recordedGrammarRevision(manifest: PluginManifest): string {
   return manifest.grammarRevision ?? `${manifest.name}@${manifest.version.replace(/\+.*$/, "")}`
 }

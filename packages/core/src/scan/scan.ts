@@ -31,6 +31,7 @@ import {
   buildStats,
   compareDependencies,
   projectSymbolEdges,
+  recordedGrammarRevision,
   sortComponents,
   uniqueSorted,
 } from "./document"
@@ -287,14 +288,25 @@ function assertLanguageIdsDeclared(languages: readonly LanguagePlugin[]): void {
   }
 }
 
-/** The registry refuses a malformed one too; written as declared, it would leave the IR off its schema. */
+/**
+ * The registry checks only a declared revision, and holds a version to no suffix form, so a revision
+ * recorded off the schema's form would leave the Document off its schema.
+ */
 function assertGrammarRevisionsWellFormed(languages: readonly LanguagePlugin[]): void {
+  const form = `a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2"`
   for (const { manifest } of languages) {
     const declared: unknown = manifest.grammarRevision
-    if (declared === undefined) continue
+    if (declared === undefined) {
+      const recorded = recordedGrammarRevision(manifest)
+      if (GRAMMAR_REVISION_PATTERN.test(recorded)) continue
+      throw new CoreError(
+        `Language plugin "${manifest.name}" declares no grammarRevision, so its revision would be "${recorded}", but ${form}. Declare the plugin's grammarRevision in its manifest.`,
+        { code: "scan-plugin-misconfigured", value: manifest.name },
+      )
+    }
     if (typeof declared === "string" && GRAMMAR_REVISION_PATTERN.test(declared)) continue
     throw new CoreError(
-      `Language plugin "${manifest.name}" declares grammarRevision ${JSON.stringify(declared)} in its manifest, but a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".`,
+      `Language plugin "${manifest.name}" declares grammarRevision ${JSON.stringify(declared)} in its manifest, but ${form}.`,
       { code: "scan-plugin-misconfigured", value: manifest.name },
     )
   }

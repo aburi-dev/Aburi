@@ -85,9 +85,11 @@ function describeScanFault(report: ScanReport): string {
 function warnOnPluginSetDifference(baseIR: IR, headIR: IR, warn: WarnFn): void {
   const differences = pluginSetDifferences(baseIR.generator.plugins, headIR.generator.plugins)
   if (differences.length === 0) return
-  const grammar = differences.some((difference) => difference.grammarChanged)
-    ? "Under another grammar, every Symbol of that language can read as a syntax-only change. "
-    : ""
+  const regrammared = differences.flatMap((difference) => difference.grammarChangedIn ?? [])
+  const grammar =
+    regrammared.length === 0
+      ? ""
+      : `Every Symbol parsed by ${orList(regrammared)} can read as a syntax-only change under the other grammar. `
   warn(
     `⚠ The base and head IRs were made with different plugins: ${differences.map((difference) => difference.said).join("; ")}. ` +
       `A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. ${grammar}` +
@@ -97,7 +99,8 @@ function warnOnPluginSetDifference(baseIR: IR, headIR: IR, warn: WarnFn): void {
 
 interface PluginDifference {
   said: string
-  grammarChanged: boolean
+  /** The plugin's name, when it parses under another grammar on each side. */
+  grammarChangedIn?: string
 }
 
 function pluginSetDifferences(
@@ -111,23 +114,27 @@ function pluginSetDifferences(
     const before = baseByName.get(name)
     const after = headByName.get(name)
     if (after === undefined) {
-      return before === undefined
-        ? []
-        : [{ said: `${describePlugin(before)} only in base`, grammarChanged: false }]
+      return before === undefined ? [] : [{ said: `${describePlugin(before)} only in base` }]
     }
-    if (before === undefined) {
-      return [{ said: `${describePlugin(after)} only in head`, grammarChanged: false }]
-    }
-    const grammar = fieldChange("grammar", before.grammarRevision, after.grammarRevision)
+    if (before === undefined) return [{ said: `${describePlugin(after)} only in head` }]
     const changes = [
       fieldChange("type", before.type, after.type),
       fieldChange("version", before.version, after.version),
-      grammar,
+      fieldChange("grammar", before.grammarRevision, after.grammarRevision),
     ].filter((change) => change !== null)
-    return changes.length === 0
-      ? []
-      : [{ said: `${name} ${changes.join(", ")}`, grammarChanged: grammar !== null }]
+    if (changes.length === 0) return []
+    const said = `${name} ${changes.join(", ")}`
+    // A plugin that parses on one side only has no Symbols to re-read under a second grammar.
+    const regrammared =
+      before.grammarRevision !== null &&
+      after.grammarRevision !== null &&
+      before.grammarRevision !== after.grammarRevision
+    return [regrammared ? { said, grammarChangedIn: name } : { said }]
   })
+}
+
+function orList(names: readonly string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`
 }
 
 function describePlugin(plugin: PluginRef): string {

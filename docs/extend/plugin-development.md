@@ -114,7 +114,8 @@ export const myLangManifest: LangManifest = {
   // The exact grammar you parse with, as `<package>@<MAJOR.MINOR.PATCH>`. The
   // IR records it, and `aburi diff` over two stored IRs warns when it differs,
   // since every syntax fingerprint moves with the grammar. Leave it out and the
-  // IR records "lang-mylang@0.1.0": your own release stands for the grammar.
+  // IR records "lang-mylang@0.1.0": your manifest's `version` stands for the
+  // grammar, so bump it whenever the grammar changes.
   grammarRevision: "tree-sitter-mylang@0.21.0",
   engines: { aburi: "*" },
   provides: {

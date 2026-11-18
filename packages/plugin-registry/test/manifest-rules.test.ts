@@ -213,6 +213,14 @@ describe("a manifest's grammarRevision", () => {
         '"<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".',
     ],
     [
+      "a null revision, as the IR writes a plugin that has none",
+      { ...langManifest(), grammarRevision: null as never },
+      "manifest-invalid",
+      "null",
+      'Plugin "lang-foo" declares grammarRevision null, but a grammar revision is ' +
+        '"<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".',
+    ],
+    [
       "an effects manifest that declares one",
       { ...effectsManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
       "namespace-type-mismatch",

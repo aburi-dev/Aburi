@@ -10,7 +10,7 @@ import {
   spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
-import type { LanguagePlugin } from "@aburi/types"
+import type { LangManifest, LanguagePlugin } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
   CoreError,
@@ -61,18 +61,64 @@ describe("scan — what it refuses", () => {
     expect(error.code).toBe("scan-workspace-not-absolute")
   })
 
-  it.each<[string, readonly string[], unknown, string]>([
-    ["declares no languageId, with no file of its", [], undefined, "declares no languageId"],
-    ["declares no languageId, with a file of its", ["a.stub"], undefined, "declares no languageId"],
+  const LANGUAGE_ID =
+    'in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.'
+  const REVISION_FORM =
+    'a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2"'
+
+  // The type system holds every manifest to its shape; a plugin built without it is not.
+  it.each<[string, readonly string[], (manifest: LangManifest) => void, string]>([
+    [
+      "declares no languageId, with no file of its",
+      [],
+      (manifest) => Reflect.deleteProperty(manifest, "languageId"),
+      `declares no languageId ${LANGUAGE_ID}`,
+    ],
+    [
+      "declares no languageId, with a file of its",
+      ["a.stub"],
+      (manifest) => Reflect.deleteProperty(manifest, "languageId"),
+      `declares no languageId ${LANGUAGE_ID}`,
+    ],
     [
       "declares a languageId that is not a string",
       ["a.stub"],
-      7,
-      "declares languageId 7, which is not a string",
+      (manifest) => Reflect.set(manifest, "languageId", 7),
+      `declares languageId 7, which is not a string ${LANGUAGE_ID}`,
+    ],
+    [
+      "declares a grammarRevision with no version",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { grammarRevision: "tree-sitter-stub" }),
+      `declares grammarRevision "tree-sitter-stub" in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a grammarRevision with a version range",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { grammarRevision: "tree-sitter-stub@^1.0.0" }),
+      `declares grammarRevision "tree-sitter-stub@^1.0.0" in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a grammarRevision that is not a string",
+      ["a.stub"],
+      (manifest) => Reflect.set(manifest, "grammarRevision", 1),
+      `declares grammarRevision 1 in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a null grammarRevision, as the IR writes a plugin that has none",
+      ["a.stub"],
+      (manifest) => Reflect.set(manifest, "grammarRevision", null),
+      `declares grammarRevision null in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares no grammarRevision, at a version whose suffix the revision form does not take",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { version: "1.0.0-rc~1" }),
+      `declares no grammarRevision, so its revision would be "lang-stub@1.0.0-rc~1", but ${REVISION_FORM}. Declare the plugin's grammarRevision in its manifest.`,
     ],
   ])(
     "refuses a language plugin whose manifest %s, before parsing anything",
-    async (_, files, languageId, says) => {
+    async (_, files, corrupt, says) => {
       for (const file of files) await workspace.writeSource(file, file)
       const parsed: string[] = []
       const language = stubLanguagePlugin({
@@ -81,47 +127,14 @@ describe("scan — what it refuses", () => {
           return { tree: {}, errors: [], imports: [] }
         },
       })
-      // The type system holds every manifest to a string; a plugin built without it does not.
-      if (languageId === undefined) Reflect.deleteProperty(language.manifest, "languageId")
-      else Reflect.set(language.manifest, "languageId", languageId)
+      corrupt(language.manifest)
 
       const error = await errorFrom(CoreError, () =>
         scanStubs(workspace.root, { languages: [language] }),
       )
 
       expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "lang-stub" })
-      expect(error.message).toBe(
-        `Language plugin "lang-stub" ${says} in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.`,
-      )
-      expect(parsed).toEqual([])
-    },
-  )
-
-  it.each([
-    ["with no version", "tree-sitter-stub"],
-    ["with a version range", "tree-sitter-stub@^1.0.0"],
-    ["that is not a string", 1],
-  ])(
-    "refuses a language plugin whose grammarRevision is one %s, before parsing anything",
-    async (_, grammarRevision) => {
-      await workspace.writeSource("a.stub", "a")
-      const parsed: string[] = []
-      const language = stubLanguagePlugin({
-        parseFile: async (file) => {
-          parsed.push(file.path)
-          return { tree: {}, errors: [], imports: [] }
-        },
-      })
-      Reflect.set(language.manifest, "grammarRevision", grammarRevision)
-
-      const error = await errorFrom(CoreError, () =>
-        scanStubs(workspace.root, { languages: [language] }),
-      )
-
-      expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "lang-stub" })
-      expect(error.message).toBe(
-        `Language plugin "lang-stub" declares grammarRevision ${JSON.stringify(grammarRevision)} in its manifest, but a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".`,
-      )
+      expect(error.message).toBe(`Language plugin "lang-stub" ${says}`)
       expect(parsed).toEqual([])
     },
   )

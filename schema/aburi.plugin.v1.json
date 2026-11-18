@@ -33,7 +33,7 @@
     "grammarRevision": {
       "type": "string",
       "pattern": "^[\\w./@-]+@\\d+\\.\\d+\\.\\d+(?:[-+][\\w.-]+)?$",
-      "description": "(type=lang only) The exact grammar the plugin parses with, as '<grammar-package>@<MAJOR.MINOR.PATCH>' (e.g., 'tree-sitter-typescript@0.23.2'). The scan records it in the IR's generator.plugins[].grammarRevision, so that two IRs say whether their syntax fingerprints were computed over one grammar. A lang manifest that declares none is recorded as '<name>@<version>' without build metadata: the plugin's own release stands for its grammar."
+      "description": "(type=lang only) The exact grammar the plugin parses with, as '<grammar-package>@<MAJOR.MINOR.PATCH>' (e.g., 'tree-sitter-typescript@0.23.2'). The scan records it in the IR's generator.plugins[].grammarRevision, so that two IRs say whether their syntax fingerprints were computed over one grammar. A lang manifest that declares none is recorded as '<name>@<version>' without build metadata, its manifest's version standing for its grammar: that holds only while the version changes with every grammar change."
     },
     "version": {
       "type": "string",

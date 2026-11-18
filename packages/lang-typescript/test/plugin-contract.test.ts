@@ -24,7 +24,9 @@ describe("the manifest's languageId", () => {
 
 describe("the manifest's grammarRevision", () => {
   it("records the package the vendored grammars are copied from, at its installed version", async () => {
-    const vendored = createRequire(import.meta.url)("@vscode/tree-sitter-wasm/package.json")
+    const vendored = createRequire(import.meta.url)("@vscode/tree-sitter-wasm/package.json") as {
+      version: string
+    }
     await workspace.writeSource("src/a.ts", "export function alpha() {}\n")
 
     const ir = await scanWithoutWarnings(workspace.root)

@@ -207,8 +207,8 @@ describe("aburi diff --base/--head over IRs made with different plugins", () => 
   })
   const pluginLines = (said: string) =>
     said.split("\n").filter((line) => line.includes("different plugins"))
-  const GRAMMAR =
-    "Under another grammar, every Symbol of that language can read as a syntax-only change. "
+  const regrammared = (names: string) =>
+    `Every Symbol parsed by ${names} can read as a syntax-only change under the other grammar. `
 
   it.each([
     [
@@ -216,32 +216,39 @@ describe("aburi diff --base/--head over IRs made with different plugins", () => 
       [TS, PRISMA],
       [TS],
       "effects-prisma 0.6.0 (effects) only in base",
-      "",
+      false,
     ],
     [
       "a plugin only the head loaded",
       [TS],
       [TS, PRISMA],
       "effects-prisma 0.6.0 (effects) only in head",
-      "",
+      false,
     ],
     [
       "another version of one plugin",
       [TS],
       [{ ...TS, version: "0.7.0" }],
       "lang-typescript version 0.6.0 → 0.7.0",
-      "",
+      false,
+    ],
+    [
+      "another grammar of one plugin, at the same version",
+      [TS],
+      [{ ...TS, grammarRevision: "tree-sitter-typescript@0.24.0" }],
+      "lang-typescript grammar tree-sitter-typescript@0.23.2 → tree-sitter-typescript@0.24.0",
+      true,
     ],
     [
       "another version and grammar of one plugin",
       [TS],
       [{ ...TS, version: "0.7.0", grammarRevision: "tree-sitter-typescript@0.24.0" }],
       "lang-typescript version 0.6.0 → 0.7.0, grammar tree-sitter-typescript@0.23.2 → tree-sitter-typescript@0.24.0",
-      GRAMMAR,
+      true,
     ],
   ])(
     "names %s once, and diffs as it would without it",
-    async (_, base, head, difference, grammar) => {
+    async (_, base, head, difference, grammarChanged) => {
       const gate = { failOn: "added" }
       const differing = await diffDocuments(
         workspace.root,
@@ -267,11 +274,52 @@ describe("aburi diff --base/--head over IRs made with different plugins", () => 
       expect(pluginLines(differing.said)).toEqual([
         `⚠ The base and head IRs were made with different plugins: ${difference}. ` +
           "A Symbol whose effects, kind or role a plugin decides can be reported as changed for that alone. " +
-          grammar +
+          (grammarChanged ? regrammared("lang-typescript") : "") +
           "Rescan both sides with one plugin set, or diff the two revisions (`aburi diff <base>..<head>`), which scans both with the head's plugins.",
       ])
     },
   )
+
+  const MYLANG = {
+    name: "lang-mylang",
+    type: "lang",
+    version: "0.1.0",
+    grammarRevision: "tree-sitter-mylang@0.21.0",
+  } as const
+
+  it.each<[string, IR["generator"]["plugins"], IR["generator"]["plugins"], string | null]>([
+    [
+      "one plugin's grammar beside another plugin's absence",
+      [TS, PRISMA],
+      [{ ...TS, grammarRevision: "tree-sitter-typescript@0.24.0" }],
+      "lang-typescript",
+    ],
+    [
+      "the grammars of two plugins",
+      [TS, MYLANG],
+      [
+        { ...TS, grammarRevision: "tree-sitter-typescript@0.24.0" },
+        { ...MYLANG, grammarRevision: "tree-sitter-mylang@0.22.0" },
+      ],
+      "lang-mylang or lang-typescript",
+    ],
+    [
+      "a plugin that parses on one side and is another type on the other",
+      [TS],
+      [{ ...TS, type: "effects", grammarRevision: null }],
+      null,
+    ],
+  ])("over %s, says which plugins parse under another grammar", async (_, base, head, names) => {
+    const { said } = await diffDocuments(
+      workspace.root,
+      madeWith(EMPTY, ...base),
+      madeWith(EMPTY, ...head),
+    )
+
+    const [line = ""] = pluginLines(said)
+    const sentences = (line.match(/[^.]*syntax-only change[^.]*\./g) ?? []).map((s) => s.trim())
+    expect(sentences).toEqual(names === null ? [] : [regrammared(names).trim()])
+  })
 
   it("lists every difference in one line, by plugin name", async () => {
     const NEST = {

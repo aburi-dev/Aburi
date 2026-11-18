@@ -8,7 +8,8 @@ export const langTypescriptManifest: LangManifest = {
   version: "0.0.0",
   type: "lang",
   languageId: TYPESCRIPT_LANGUAGE_ID,
-  // The build vendors its .wasm grammars from this package, so its release pins them exactly.
+  // The build copies the .wasm grammars from this package, so the package's version names them
+  // exactly. Kept a devDependency, the package is inlined here rather than imported at run time.
   grammarRevision: `${grammars.name}@${grammars.version}`,
   engines: { aburi: "*" },
   provides: {
