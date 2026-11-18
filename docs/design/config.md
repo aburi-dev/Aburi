@@ -42,7 +42,7 @@ Why JSONC is allowed: this is a human-authored config, so comments on each secti
   "respectGitignore": true,
 
   // Test code: scanned, but reported and gated apart (§4.1)
-  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"],
+  "testFiles": ["...", "examples/**"],
 
   // Plugin enablement (extension-vocab §4)
   "languages": ["lang-typescript"],
@@ -126,13 +126,14 @@ Glob patterns naming the files that hold test code.
 
 ```jsonc
 {
-  "testFiles": ["**/*.test.*", "**/test/**", "examples/**"]
+  "testFiles": ["...", "examples/**"]
 }
 ```
 
 - The syntax of `ignore` (§3): POSIX, relative to the workspace root, a `*` or `**` matching a name that starts with a dot, and a pattern that does not end in `*` naming a directory as well as a file, as the walk reads an `ignore` entry: `test` and `test/` mark every file under the root's `test/`. A pattern is read in NFC, the form every IR path is in
 - A pattern that starts with `!` (but not `!(`) takes the files it names out of what the others mark, whatever their order: `["**/test/**", "!src/test"]` marks every `test/` directory but `src/test/`. A list of `!` patterns alone marks nothing. The walk skips a `!` entry of `ignore`, so this is where the two syntaxes part; reading `!src/test/**` as a glob of its own would mark every other file in the workspace
-- Absent, the default list applies: `**/*.test.*`, `**/*.spec.*`, `**/*.test-d.*`, `**/*.spec-d.*`, `**/__tests__/**`, `**/__mocks__/**`, `**/__fixtures__/**`, `**/test/**`, `**/tests/**`, `**/e2e/**`. Given, the list **replaces** the default one, so a workspace whose `src/test/` is production code can leave that pattern out; `[]` marks no file
+- Absent, the default list applies: `**/*.test.*`, `**/*.spec.*`, `**/*.test-d.*`, `**/*.spec-d.*`, `**/__tests__/**`, `**/__mocks__/**`, `**/__fixtures__/**`, `**/test/**`, `**/tests/**`, `**/e2e/**`. Given, the list **replaces** the default one unless it holds `"..."`, so a workspace whose tests follow a layout of their own writes only that layout (`["src/**/*.check.ts"]`); `[]` marks no file
+- An entry `"..."` stands for the whole default list, wherever it is written: `["...", "packages/test-support/**"]` marks what the default marks and one directory more. A workspace that only adds patterns writes this rather than a copy of the default, which would keep the list it copied when a later release adds a pattern to the default. A `!` pattern takes files out of the combined list as it does out of any other, so `["...", "!src/test"]` keeps a production `src/test/` out of the default, and `"..."` alone is the default list. `"!..."` is `config-invalid`: read as a `!` pattern it would name a directory called `...` and take nothing out, where whoever wrote it meant the default left out, which a list says by not writing `"..."`
 - A file it names is scanned like any other. Its Symbols keep their calls, effects and edges, so Slice View and `aburi explain` still read them, and each carries `inTestFile: true` (ir-schema.md §5.7)
 - What the mark changes is downstream: `diff.md` lists those Symbols' changes in a trailing folded section instead of the sections above it (markdown-projection.md §6.2), and `aburi diff --fail-on-scope non-test` leaves them out of the gate (cli-spec.md §6.7)
 
@@ -574,6 +575,8 @@ writes it down, mapping each detected language and framework to the first-party 
 | C23 | `components: [{ …, "publicApi": ["src\\index.ts"] }]` | Exit 2 naming the component and the entry |
 | C24 | `testFiles` omitted, over `src/a.test.ts`, `src/__tests__/b.ts`, `test/c.ts`, `tools/.harness/test/d.ts` and `src/testing.ts` | Every Symbol of the first four carries `inTestFile: true`; the last file's carry no key |
 | C25 | `testFiles: ["src/order.ts"]` | Only that file's Symbols carry the key: the default list no longer applies |
+| C25a | `testFiles: ["...", "src/order.ts"]`, the two in either order, and `testFiles: ["...", "!tools"]` | The first marks every file C24 marks and `src/order.ts`; the second marks those of C24 but `tools/.harness/test/d.ts` |
+| C25b | `testFiles: ["...", "!..."]` | Exit 2, `config-invalid`, naming `/testFiles/1` |
 | C26 | `testFiles: []` | No Symbol carries the key, and every fingerprint is the one the default list gives |
 | C27 | `testFiles: ["test", "src/__mocks__/"]` | The Symbols of `test/helpers.ts` and `src/__mocks__/db.ts` carry the key; those of `tools/test/run.ts` do not, as neither pattern starts with `**/` |
 | C28 | `testFiles: ["**/test/**", "!tools"]`, and `testFiles: ["!tools/**"]` | The first marks `test/helpers.ts` and not `tools/test/run.ts`; the second marks no file |
