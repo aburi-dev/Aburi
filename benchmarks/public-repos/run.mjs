@@ -17,19 +17,17 @@ import {
   run,
 } from "./checkout.mjs"
 import {
+  comparedFields,
   parseArgs,
-  previousResultFor,
+  readSweep,
   renderReport,
-  reproducesPrevious,
+  scanSchedule,
   scrubPaths,
   summariseScans,
 } from "./report.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CHILD = resolve(HERE, "bench-child.mjs")
-
-// Named rather than left to the default, which a baseline older than the `.aburi` default puts elsewhere.
-const OUTPUT_DIR = ".aburi"
 
 /** Enough of a failing run's output to read, taken from the head, where the first error is. */
 const CAPTURED_OUTPUT_BYTES = 4000
@@ -90,12 +88,9 @@ function readIrMetrics(ir, irBytes) {
   }
 }
 
-/**
- * `aburi init` with `cli`, and the config it wrote with every plugin ref pointing at the plugins
- * the checkout at `root` built, written to `configPath`.
- */
-async function initialise(cli, root, dir, configPath) {
+async function initialise(cli, root, dir, configPath, label) {
   const init = await bench(cli, dir, ["init", "--force"], 300_000)
+  process.stderr.write(`  init${label} ${init.wallMs?.toFixed(0)} ms (exit ${init.exitCode})\n`)
   if (init.exitCode !== 0) return { init, detected: null }
   const config = JSON.parse(await readFile(resolve(dir, "aburi.json"), "utf8"))
   const detected = {
@@ -109,6 +104,24 @@ async function initialise(cli, root, dir, configPath) {
   }
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`)
   return { init, detected }
+}
+
+async function measureScan(build, dir, warm) {
+  await rm(build.irPath, { force: true })
+  const measurement = await bench(
+    build.cli,
+    dir,
+    ["scan", "--no-timestamp", ...build.scanArgs],
+    1_800_000,
+  )
+  process.stderr.write(
+    `  scan${build.label}${warm ? " (warmup)" : ""} ${measurement.wallMs?.toFixed(0)} ms · ` +
+      `${(measurement.maxRssKb / 1024).toFixed(0)} MiB (exit ${measurement.exitCode})\n`,
+  )
+  build.stderr = measurement.stderr
+  if (warm) return
+  const irWritten = existsSync(build.irPath)
+  build.runs.push({ measurement, irWritten, hash: irWritten ? await hashFile(build.irPath) : null })
 }
 
 async function measureDiff(build, dir, repo, outputDir, capture) {
@@ -137,26 +150,62 @@ async function measureDiff(build, dir, repo, outputDir, capture) {
   }
 }
 
+function harnessFault(error, workDir) {
+  const message = error instanceof Error ? error.message : String(error)
+  return {
+    failed: "harness",
+    fault: scrubPaths(message, workDir).slice(0, CAPTURED_OUTPUT_BYTES),
+  }
+}
+
 async function measureRepo(repo, options, previous) {
   const started = Date.now()
   const capture = (text) => scrubPaths(text, options.workDir).slice(0, CAPTURED_OUTPUT_BYTES)
   process.stderr.write(`\n=== ${repo.id} ===\n`)
   const dir = await ensureClone(repo, options.workDir)
 
-  // The baseline initialises first, so the clone's own aburi.json is this build's.
+  // The comparison is optional, so a fault on the baseline's side is recorded against it alone.
   let baseline = null
-  let baselineInitFault = null
+  let baselineFault = null
+  const onBaseline = async (step) => {
+    try {
+      await step()
+    } catch (error) {
+      baselineFault = harnessFault(error, options.workDir)
+      process.stderr.write(`  baseline harness fault: ${baselineFault.fault}\n`)
+    }
+  }
+
+  // The baseline initialises first, so the clone's own aburi.json is this build's.
   if (options.baseline !== null) {
-    const config = resolve(options.workDir, `${repo.id}.baseline.json`)
-    const cli = cliEntry(options.baseline)
-    const { init } = await initialise(cli, options.baseline, dir, config)
-    if (init.exitCode === 0) baseline = { cli, config, label: " (baseline)", runs: [] }
-    else baselineInitFault = { failed: "init", fault: `exit ${init.exitCode}` }
+    await onBaseline(async () => {
+      const config = resolve(options.workDir, `${repo.id}.baseline.json`)
+      const cli = cliEntry(options.baseline)
+      const { init } = await initialise(cli, options.baseline, dir, config, " (baseline)")
+      if (init.exitCode !== 0) {
+        baselineFault = {
+          failed: "init",
+          fault: `exit ${init.exitCode}`,
+          warnings: capture(init.stderr),
+        }
+        return
+      }
+      // Outside the clone, so neither build's IR sits in the tree the other scans.
+      const outputDir = resolve(options.workDir, `${repo.id}.baseline-out`)
+      baseline = {
+        cli,
+        config,
+        scanArgs: ["--output-dir", outputDir, "--config", config],
+        irPath: resolve(outputDir, "aburi.ir.json"),
+        label: " (baseline)",
+        runs: [],
+        stderr: "",
+      }
+    })
   }
 
   const configPath = resolve(dir, "aburi.json")
-  const { init, detected } = await initialise(cliEntry(), REPO_ROOT, dir, configPath)
-  process.stderr.write(`  init ${init.wallMs?.toFixed(0)} ms (exit ${init.exitCode})\n`)
+  const { init, detected } = await initialise(cliEntry(), REPO_ROOT, dir, configPath, "")
   if (init.exitCode !== 0) {
     return {
       id: repo.id,
@@ -168,38 +217,22 @@ async function measureRepo(repo, options, previous) {
     }
   }
 
-  const head = { cli: cliEntry(), config: configPath, label: "", runs: [] }
+  const head = {
+    cli: cliEntry(),
+    config: configPath,
+    scanArgs: [],
+    irPath: resolve(dir, ".aburi/aburi.ir.json"),
+    label: "",
+    runs: [],
+    stderr: "",
+  }
   const builds = baseline === null ? [head] : [baseline, head]
-  const irPath = resolve(dir, OUTPUT_DIR, "aburi.ir.json")
-  let lastStderr = ""
-  for (let i = 0; i < options.warmup + options.runs; i++) {
-    for (const build of builds) {
-      await rm(irPath, { force: true })
-      const measurement = await bench(
-        build.cli,
-        dir,
-        [
-          "scan",
-          "--no-timestamp",
-          "--output-dir",
-          OUTPUT_DIR,
-          ...(build === head ? [] : ["--config", build.config]),
-        ],
-        1_800_000,
-      )
-      const warm = i < options.warmup
-      process.stderr.write(
-        `  scan${build.label}${warm ? " (warmup)" : ""} ${measurement.wallMs?.toFixed(0)} ms · ` +
-          `${(measurement.maxRssKb / 1024).toFixed(0)} MiB (exit ${measurement.exitCode})\n`,
-      )
-      if (build === head) lastStderr = measurement.stderr
-      if (warm) continue
-      const irWritten = existsSync(irPath)
-      build.runs.push({ measurement, irWritten, hash: irWritten ? await hashFile(irPath) : null })
-    }
+  for (const { build, warm } of scanSchedule(builds, options.warmup, options.runs)) {
+    if (build === head) await measureScan(head, dir, warm)
+    else if (baselineFault === null) await onBaseline(() => measureScan(build, dir, warm))
   }
 
-  const scan = summariseScans(head.runs, { warnings: capture(lastStderr) })
+  const scan = summariseScans(head.runs, { warnings: capture(head.stderr) })
   if (scan.failed) {
     return {
       id: repo.id,
@@ -212,8 +245,8 @@ async function measureRepo(repo, options, previous) {
     }
   }
 
-  const ir = JSON.parse(await readFile(irPath, "utf8"))
-  const metrics = readIrMetrics(ir, (await stat(irPath)).size)
+  const ir = JSON.parse(await readFile(head.irPath, "utf8"))
+  const metrics = readIrMetrics(ir, (await stat(head.irPath)).size)
   scan.filesPerSecond =
     metrics.totalFiles == null ? null : metrics.totalFiles / (scan.wallMsMedian / 1000)
 
@@ -229,26 +262,16 @@ async function measureRepo(repo, options, previous) {
     metrics,
   }
 
-  const before = previousResultFor(previous, repo)
-  if (previous !== null) {
-    result.previous =
-      before === null
-        ? null
-        : { scanWallMsMedian: before.scanWallMsMedian, diffWallMs: before.diffWallMs }
-  }
-  if (baselineInitFault !== null) result.baseline = baselineInitFault
-  if (baseline !== null) {
-    const baselineScan = summariseScans(baseline.runs)
-    result.baseline = baselineScan.failed
-      ? { failed: baselineScan.failed, fault: baselineScan.fault }
-      : { scan: baselineScan, reproduced: reproducesPrevious(baselineScan, before) }
-  }
+  if (options.diff) result.diff = await measureDiff(head, dir, repo, "out-diff", capture)
 
-  if (options.diff) {
-    if (result.baseline?.scan !== undefined) {
+  const baselineOutcome =
+    baselineFault ?? (baseline && { runs: baseline.runs, warnings: capture(baseline.stderr) })
+  Object.assign(result, comparedFields(previous, repo, baselineOutcome))
+  if (options.diff && result.baseline?.scan !== undefined) {
+    await onBaseline(async () => {
       result.baseline.diff = await measureDiff(baseline, dir, repo, "out-diff-baseline", capture)
-    }
-    result.diff = await measureDiff(head, dir, repo, "out-diff", capture)
+    })
+    if (baselineFault !== null) result.baseline = baselineFault
   }
 
   result.elapsedMs = Date.now() - started
@@ -262,7 +285,9 @@ async function main() {
   const repos = resolveRepos(manifest, options.only)
   // Read before this sweep writes, which on a second run of the day is the same file.
   const previous =
-    options.previous === null ? null : JSON.parse(await readFile(options.previous, "utf8"))
+    options.previous === null
+      ? null
+      : readSweep(await readFile(options.previous, "utf8"), options.previous)
 
   const report = {
     startedAt: new Date().toISOString(),
@@ -287,6 +312,9 @@ async function main() {
           },
         }),
     ...(options.baseline === null ? {} : { baseline: await aburiCommit(options.baseline) }),
+    ...(options.baselineFailed === null
+      ? {}
+      : { baseline: { commit: options.baselineFailed, failed: "build" } }),
     results: [],
   }
 
@@ -303,14 +331,9 @@ async function main() {
     try {
       report.results.push(await measureRepo(repo, options, previous))
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      process.stderr.write(`  harness fault: ${message}\n`)
-      report.results.push({
-        id: repo.id,
-        head: repo.head,
-        failed: "harness",
-        fault: scrubPaths(message, options.workDir).slice(0, CAPTURED_OUTPUT_BYTES),
-      })
+      const fault = harnessFault(error, options.workDir)
+      process.stderr.write(`  harness fault: ${fault.fault}\n`)
+      report.results.push({ id: repo.id, head: repo.head, ...fault })
     }
     await write()
   }

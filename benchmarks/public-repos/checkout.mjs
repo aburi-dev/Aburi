@@ -8,7 +8,6 @@ import { containsPath } from "./args.mjs"
 const HERE = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(HERE, "../..")
 
-/** The built CLI of the Aburi checkout at `root`. */
 export function cliEntry(root = REPO_ROOT) {
   return resolve(root, "packages/cli/dist/index.mjs")
 }
@@ -60,17 +59,21 @@ export async function aburiCommit(root = REPO_ROOT) {
   return { commit, dirty: status !== "" }
 }
 
-/** `ref` as the `file://` URL of the plugin the Aburi checkout at `root` built. */
 export function pluginRef(ref, root = REPO_ROOT) {
   const name = ref.replace(/^@aburi\//, "")
   return pathToFileURL(resolve(root, "packages", name, "dist/index.mjs")).href
 }
 
 export function assertRunnable(workDir, baseline = null) {
-  for (const root of [REPO_ROOT, ...(baseline === null ? [] : [baseline])]) {
-    if (!existsSync(cliEntry(root))) {
-      throw new Error(`${cliEntry(root)} is missing. Run \`pnpm build\` in ${root} first.`)
-    }
+  const unbuilt = [REPO_ROOT, ...(baseline === null ? [] : [baseline])].filter(
+    (root) => !existsSync(cliEntry(root)),
+  )
+  if (unbuilt.length > 0) {
+    throw new Error(
+      unbuilt
+        .map((root) => `${cliEntry(root)} is missing. Run \`pnpm build\` in ${root} first.`)
+        .join(" "),
+    )
   }
   if (containsPath(REPO_ROOT, workDir)) {
     throw new Error(
