@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest"
 import { classOf, walkOf } from "./fixtures/ctx"
 
-async function emitReceiverType(source: string, id: string): Promise<string | undefined> {
-  const emits = (await walkOf(source, `ts:src/a.ts#${id}`)).calls.filter((c) =>
-    c.target.endsWith(".emit"),
-  )
-  expect(emits).toHaveLength(1)
-  return emits[0]?.receiverType
+async function receiverTypeOfCall(
+  source: string,
+  id: string,
+  matches: (target: string) => boolean,
+): Promise<string | undefined> {
+  const calls = (await walkOf(source, `ts:src/a.ts#${id}`)).calls.filter((c) => matches(c.target))
+  expect(calls).toHaveLength(1)
+  return calls[0]?.receiverType
 }
+
+const emitReceiverType = (source: string, id: string): Promise<string | undefined> =>
+  receiverTypeOfCall(source, id, (target) => target.endsWith(".emit"))
+
+const thisReceiverType = (source: string, id: string): Promise<string | undefined> =>
+  receiverTypeOfCall(source, id, (target) => target === "this.n")
 
 describe("a call through a field of `this` carries the type the class declares the field with", () => {
   it.each([
@@ -394,5 +402,42 @@ describe("a call through `this` carries no type where the class does not declare
     ],
   ])("reads nothing from %s", async (_label, source, id) => {
     expect(await emitReceiverType(source, id)).toBeUndefined()
+  })
+})
+
+describe("a call of a member of `this` in an instance member carries the class's own name", () => {
+  it.each([
+    ["a method", classOf("  m() { this.n() }"), "C.m"],
+    ["an arrow inside a method", classOf("  m() { [1].map(() => this.n()) }"), "C.m"],
+    ["a field's arrow", classOf("  handle = () => this.n()"), "C.handle"],
+    ["a constructor", classOf("  constructor() { this.n() }"), "C.constructor"],
+    ["an abstract class's method", "export abstract class C {\n  m() { this.n() }\n}", "C.m"],
+    ["a default-exported class's method", "export default class C {\n  m() { this.n() }\n}", "C.m"],
+  ])("in %s", async (_label, source, id) => {
+    expect(await thisReceiverType(source, id)).toBe("C")
+  })
+
+  it.each([
+    ["a static member, where `this` is the class", classOf("  static m() { this.n() }"), "C::m"],
+    ["a class expression", "export const X = class C {\n  m() { this.n() }\n}", "X.m"],
+    ["an anonymous default class", "export default class {\n  m() { this.n() }\n}", "<default>"],
+    [
+      "a class declared in a function, which a reader binds apart",
+      "export function f() {\n  class C {\n    m() { this.n() }\n  }\n}",
+      "f",
+    ],
+    [
+      "a class declared in a namespace",
+      "export namespace N {\n  export class C {\n    m() { this.n() }\n  }\n}",
+      "N.C.m",
+    ],
+    ["an object literal's method", "export const o = {\n  m() { this.n() },\n}", "o.m"],
+    [
+      "a `function` inside a method, which binds its own `this`",
+      classOf("  m() { return function () { this.n() } }"),
+      "C.m",
+    ],
+  ])("reads nothing from %s", async (_label, source, id) => {
+    expect(await thisReceiverType(source, id)).toBeUndefined()
   })
 })

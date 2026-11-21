@@ -23,6 +23,7 @@ interface ThisScope {
 export function receiverTypeOf(callee: Node): string | null {
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
+  if (receiver?.type === "this") return instanceClassOf(receiver)
   if (receiver?.type !== "member_expression") return null
   if (receiver.childForFieldName("object")?.type !== "this") return null
   const field = receiver.childForFieldName("property")
@@ -60,6 +61,21 @@ function thisScope(from: Node): ThisScope | null {
   }
   return null
 }
+
+// In an instance member `this` is a value of the class itself, which a reader binds by its name.
+function instanceClassOf(receiver: Node): string | null {
+  const scope = thisScope(receiver)
+  if (scope === null || scope.isStatic) return null
+  const owner = scope.classBody.parent
+  if (owner === null || !CLASS_DECLARATIONS.has(owner.type)) return null
+  const name = nameFieldText(owner)
+  return name === null || isShadowed(scope.classBody, name) ? null : name
+}
+
+const CLASS_DECLARATIONS: ReadonlySet<string> = new Set([
+  "class_declaration",
+  "abstract_class_declaration",
+])
 
 // A member's name and decorators are evaluated outside it, with the `this` around the class.
 function bindsThisFor(member: Node, child: Node): boolean {

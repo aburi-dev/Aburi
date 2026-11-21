@@ -28,6 +28,7 @@ import {
   type ResolutionRun,
   resolveTarget,
   resolveThroughDeclaredType,
+  splitTargetSegments,
 } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
 import { CoreError } from "./errors"
@@ -109,13 +110,16 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
       }
       const trace = newTrace()
       const ctx = { run, caller: symbol, target: call.target, imports, parameterNames }
-      // A declared type is the untyped tier's, so a language server only lifts what it leaves.
-      let hit =
-        resolveTarget(ctx, trace) ??
+      const declaredType = () =>
         resolveThroughDeclaredType(
           ctx,
           declaredReceiverTypes.get(makeSymbolCallKey(symbol.id, call.line, call.target)),
         )
+      // A field's declared type is the untyped tier's, so a language server only lifts what it
+      // leaves. For `this.<method>` the server reads the class `this` is, inherited members
+      // included, so the class's own member answers only what its hint leaves.
+      const throughThis = isThisMember(call.target)
+      let hit = resolveTarget(ctx, trace) ?? (throughThis ? null : declaredType())
       if (hit === null) {
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
         const hinted = resolveViaLspHint(
@@ -124,7 +128,13 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
           run.table.keptSymbolIds,
         )
         if (hinted.outcome === "rejected") lspHintUsage[hinted.reason] += 1
-        if (hinted.outcome !== "hit") {
+        if (hinted.outcome === "hit") {
+          lspHintUsage.consumed += 1
+          hit = hinted.hit
+        } else if (throughThis) {
+          hit = declaredType()
+        }
+        if (hit === null) {
           diagnostics.push(
             classifyUnresolved({
               caller: symbol,
@@ -139,8 +149,6 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
           )
           return call
         }
-        lspHintUsage.consumed += 1
-        hit = hinted.hit
       }
       resolvedCalls++
       edges.push({
@@ -178,6 +186,11 @@ function assertReceiverHintKeys(hints: ReadonlyMap<string, ReceiverHint>): void 
       { code: "receiver-hint-key-malformed", value: key },
     )
   }
+}
+
+function isThisMember(target: string): boolean {
+  const segments = splitTargetSegments(target)
+  return segments.length === 2 && segments[0] === "this"
 }
 
 type LspHintOutcome =

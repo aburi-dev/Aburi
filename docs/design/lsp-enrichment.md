@@ -18,7 +18,7 @@ References:
 
 Aburi's Tree-sitter tier produces a complete, deterministic IR without any language server. This document specifies the **optional** LSP enrichment pass that refines four aspects of that IR:
 
-1. `Call.resolved` for shapes the untyped tier leaves `null` — `this.*` / `super.*` calls whose receiver class is resolvable through the type system, and, planned (§4.2), interface-typed receivers with a single implementer
+1. `Call.resolved` for shapes the untyped tier leaves `null` — `this.*` / `super.*` calls whose receiver class is resolvable through the type system, a `this.<method>` read before the class's own member that the untyped tier would take ([`call-resolution.md`](./call-resolution.md) §4.7.1), and, planned (§4.2), interface-typed receivers with a single implementer
 2. `SourceRange.startColumn` / `SourceRange.endColumn` — populated from `textDocument/documentSymbol`; currently emitted as `null` by the language plugin
 3. `Signature.inferredThrows` — a new optional array of the types named by the `@throws` tags of the members a Symbol's `this.*` / `super.*` calls reach, read from the hover on each such call that produced a hint (distinct from `Signature.throws`, which stays reserved for explicit `throw` statements + `@throws` JSDoc)
 4. `CallEdge.confidence` — monotone-upward promotion from the untyped tier value to `high` / `medium` per [`call-resolution.md`](./call-resolution.md) §7.2

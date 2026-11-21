@@ -393,6 +393,39 @@ describe("scan — a call through a field of a declared type", () => {
   })
 })
 
+describe("scan — a call of a member of `this`", () => {
+  it("reaches the member the class declares, and leaves one it inherits or a rebound `this`", async () => {
+    await workspace.writeSource(
+      "src/service.ts",
+      [
+        "export class Base { load() { return 1 } }",
+        "export class UserService extends Base {",
+        "  byId(id: string) {",
+        "    this.find(id)",
+        "    this.helper(id)",
+        "    this.load()",
+        "    const later = () => this.find(id)",
+        "    return [later, function () { this.find(id) }]",
+        "  }",
+        "  find(id: string) { return id }",
+        "  helper = (id: string) => id",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const { ir } = await scanTypeScript(workspace.root)
+    const byId = ir.symbols.find((s) => s.id === "ts:src/service.ts#UserService.byId")
+    expect(byId?.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["this.find", "ts:src/service.ts#UserService.find"],
+      ["this.helper", "ts:src/service.ts#UserService.helper"],
+      ["this.load", null],
+      ["this.find", "ts:src/service.ts#UserService.find"],
+      ["this.find", null],
+    ])
+  })
+})
+
 describe("scan — a call through a tsconfig path alias", () => {
   it("reaches the Symbol the alias names, and buckets what it cannot reach by where it led", async () => {
     const result = await callsFromMain(

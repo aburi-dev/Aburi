@@ -179,16 +179,16 @@ Same as Step 4 but the search is over the whole workspace, not just the caller's
 
 ### 4.7 Special normalized targets
 
-The language plugin's `normalizeCallee` produces some targets that never resolve to a Symbol by name, and steps 1–5 MUST leave them unresolved. The one exception is a call through a field of `this` that the class declares with a named type, which §4.7.1 resolves after them:
+The language plugin's `normalizeCallee` produces some targets that never resolve to a Symbol by name, and steps 1–5 MUST leave them unresolved. The exceptions are a call of a member of `this` in an instance member of a named class and a call through a field of `this` that the class declares with a named type, which §4.7.1 resolves after them:
 
 | Target shape | Reason |
 |---|---|
-| `this.<method>` | `this` is a runtime value; resolving it requires typed dispatch (LSP tier) |
+| `this.<method>` | `this` is a runtime value; a member its class declares is §4.7.1's, one it inherits requires typed dispatch (LSP tier) |
 | `super.<method>` | Same — requires the parent class chain |
 | `new <ClassName>()` receiver in a chain | `new` produces an instance; only the class is resolvable, method dispatch off it is not |
 | method chains on non-identifier receivers (`getRepo().save`) | receiver is an expression result, not a name |
 
-For `this` and `super`, the untyped tier writes `null` with `confidence = medium`; the LSP tier can promote these to real ids (§5.2).
+For what it leaves of `this` and `super`, the untyped tier writes `null` with `confidence = medium`; the LSP tier can promote these to real ids (§5.2).
 
 #### 4.7.1 A receiver of a declared type
 
@@ -198,14 +198,17 @@ For `this` and `super`, the untyped tier writes `null` with `confidence = medium
 2. The name must bind a class, and the class must declare the member the call's last segment names, as an instance member: `UserRepository.find`, never the static `UserRepository::find`, since the receiver is a value of the type.
 3. `resolved` = that member, `confidence = medium`: the value can be a subclass's, whose override is then the member that runs.
 
-Being untyped, the rule runs whether or not a language server does, and the LSP tier reads a hint only for a call it leaves unresolved (§2, §5.4). The LSP layer hints no such call yet: it hovers only a two-segment `this.<method>` or `super.<method>` ([`lsp-enrichment.md`](./lsp-enrichment.md) §5).
+`this.find(id)` in an instance member of `class UserService` names its receiver's type as well: the language plugin reports the class's own name as the call's `receiverType` ([`lang-plugin.md`](./lang-plugin.md) LP20n2), and the same rule resolves the call to `UserService.find`, a method or a field's function the class declares.
+
+Being untyped, the rule runs whether or not a language server does, and the LSP tier reads a hint only for a call it leaves unresolved (§2, §5.4). The LSP layer hints no call through a field yet: it hovers only a two-segment `this.<method>` or `super.<method>` ([`lsp-enrichment.md`](./lsp-enrichment.md) §5). For a `this.<method>` the hint is read first and the class's own member only when no hint resolves the call, since the hint reads the class with what it inherits, at `high` confidence where the class declares the member (§5.2).
 
 What it leaves unresolved stays in the `dynamic` bucket (§8.1), which describes the call's own receiver, `this`, whatever its type turned out to be:
 
 - a field that carries no `receiverType`: one with no annotation, a union type or an inherited declaration, or one whose type's name a scope between the class and the module declares, the class's own type parameter included ([`lang-plugin.md`](./lang-plugin.md) LP20n);
 - an interface-typed field, which binds no class. Its implementers are left for §5.3, which is planned, so nothing resolves such a call today;
 - a type the file binds to no class whose members the resolver can see: a class imported by a package name that §4.4.1 maps to no workspace file, or through a barrel whose re-exports do not reach it (§4.4.2);
-- a type whose name binds more than one declaration, and a class that does not declare the member itself. These end in `dynamic` too, not in `ambiguous` or `no-match`.
+- a type whose name binds more than one declaration, and a class that does not declare the member itself. These end in `dynamic` too, not in `ambiguous` or `no-match`;
+- a `this` the plugin names no class for: a static member's, where `this` is the class, a class expression's or an anonymous class's, a class a function or a namespace declares, whose name a reader binds apart, and an object literal's method or a `function` that binds its own.
 
 The type is read per key: the calling Symbol, the line and the target. When every call on a key names one type, they all resolve through it. When they do not, an untyped call on the key included, none does, since which call a type was written for is lost. Two `this` can share a key on one line, the method's and a nested class's or a `function`'s.
 
@@ -243,7 +246,7 @@ For `repo.save(...)` where `repo`'s LSP type is `IRepository`:
 
 ### 5.4 Untyped result preservation
 
-If the untyped tier already resolved a call, the LSP tier does not overwrite it — the untyped result is authoritative for cases the type layer cannot see (barrel re-exports pointing at a different declaration file, for instance). The LSP tier only touches entries where the untyped tier left `resolved: null`.
+If the untyped tier already resolved a call, the LSP tier does not overwrite it — the untyped result is authoritative for cases the type layer cannot see (barrel re-exports pointing at a different declaration file, for instance). The LSP tier only touches entries where the untyped tier left `resolved: null`. The one rule read after it is §4.7.1's for a two-segment `this.<method>`, whose class the hint reads too, with what it inherits.
 
 Exception: if the untyped tier resolved to a Symbol id that no longer exists in `symbolTable` (deleted between passes — should not happen, but defensively), the LSP tier may replace it.
 
@@ -438,7 +441,8 @@ Every implementation of the resolver must pass the following.
 | CR11a | qualified target whose head is bound to a declaration without the member, while other files declare a member of that name (`Logger.log`), in the caller's component or another. The declaration is a class, enum, namespace or object-literal `const`, kept or dropped, that the caller's file declares or that a named import keeping the exported name reaches in a module declaring it. Or the head is bound by an aliased, default or namespace import, whatever its module declares | `resolved` = `null`, diagnostic bucket `no-match` (`external` for a bare specifier, `ambiguous` with CR5d's candidates); Steps 4–5 are not searched. With the member declared, `resolved` = that member, confidence `high`. CR11 / CR12 are still reached for a head bound by nothing, by an `ambient-declaration`, a `destructured-binding`, a function or a `const` whose value the resolver cannot see, or by a named import keeping the exported name of a bare specifier, of a module the scan has no Symbol in, or of a module whose re-exports lead to no declaration of it |
 | CR12 | qualified workspace-scope (no import, unique globally) | `resolved` = that Symbol id, confidence `low` |
 | CR13 | ambiguous qualified name (two matches) | `resolved` = `null`, confidence `medium` |
-| CR14 | `this.<method>` in untyped mode | `resolved` = `null`, confidence `medium` |
+| CR14 | `this.<method>` in untyped mode, where the class only inherits the method, the caller is a static member, the class is a class expression or anonymous, or a function or namespace declares it | `resolved` = `null`, confidence `medium`, bucketed `dynamic` |
+| CR14b | `this.find()` in an instance member of `class UserService`, which declares `find` as a method or a field's function, in untyped mode | `resolved` = `UserService.find`, confidence `medium`. With an LSP hint for the call, the hint's Symbol, confidence `high` (CR16, CR17); a hint the resolver declines leaves `UserService.find` |
 | CR14a | `this.repo.find()` beside `constructor(private readonly repo: UserRepository)`, the class imported or declared in the caller's file, in untyped mode | `resolved` = `UserRepository.find`, the instance member, confidence `medium`, the same with an LSP hint for the call, which is not read. `null`, bucketed `dynamic`, when the type is an interface, when the class does not declare `find` itself, when the file binds no such name, though another file declares the class, when it reaches the class only through a package name that maps to no workspace file or a barrel whose re-exports do not reach it, for an unannotated, union-typed or inherited field, and when the calls sharing the key (Symbol, line, target) do not all name one type |
 | CR15 | `new <ClassName>()` where class is imported | `resolved` = the class Symbol id, confidence `high` |
 

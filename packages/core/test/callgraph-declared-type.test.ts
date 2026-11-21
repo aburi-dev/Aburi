@@ -158,3 +158,77 @@ describe("a call through a receiver of a declared type", () => {
     ])
   })
 })
+
+describe("a call of a member of `this`, whose type is the caller's own class", () => {
+  const OWN = "ts:src/service.ts#UserService.load"
+  const BASE = "ts:src/base.ts#BaseService.load"
+  const service = [
+    makeSymbol("ts:src/service.ts#UserService", { kind: "class" }),
+    makeSymbol(OWN, { kind: "method" }),
+  ]
+
+  function resolveThis(
+    symbols: readonly IRSymbol[],
+    hint?: { kind: "this" | "super"; to: string },
+  ) {
+    const target = "this.load"
+    return resolveCallGraph({
+      symbols: [
+        withCalls(CALLER, [{ target, line: 3 }]),
+        ...symbols,
+        makeSymbol(BASE, { kind: "method" }),
+        makeSymbol("ts:src/base.ts#Dropped.load", {
+          kind: "method",
+          dropped: true,
+          dropReason: "cat-b:trivial",
+        }),
+      ],
+      importsByFile: importsOf("src/service.ts"),
+      declaredReceiverTypes: typed("UserService", target),
+      receiverHints:
+        hint === undefined
+          ? new Map()
+          : new Map([
+              [
+                makeCallSiteKey("src/service.ts", 3, target),
+                { kind: hint.kind, targetSymbolId: symbolId(hint.to) },
+              ],
+            ]),
+    })
+  }
+
+  const edgesOf = (result: ReturnType<typeof resolveCallGraph>) =>
+    result.edges.map((edge) => [edge.to, edge.confidence])
+
+  it("resolves to the member the class declares, at medium confidence", () => {
+    const result = resolveThis(service)
+    expect(edgesOf(result)).toEqual([[OWN, "medium"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it("takes a language server's hint first, which reads the members the class inherits", () => {
+    const result = resolveThis(service, { kind: "this", to: BASE })
+    expect(edgesOf(result)).toEqual([[BASE, "high"]])
+    expect(result.lspHintUsage).toEqual({ consumed: 1, kindMismatch: 0, targetDropped: 0 })
+  })
+
+  it.each([
+    ["names another receiver kind", "super", BASE, { kindMismatch: 1, targetDropped: 0 }],
+    [
+      "names a dropped Symbol",
+      "this",
+      "ts:src/base.ts#Dropped.load",
+      { kindMismatch: 0, targetDropped: 1 },
+    ],
+  ] as const)("reads the class's own member when the hint %s", (_case, kind, to, rejected) => {
+    const result = resolveThis(service, { kind, to })
+    expect(edgesOf(result)).toEqual([[OWN, "medium"]])
+    expect(result.lspHintUsage).toEqual({ consumed: 0, ...rejected })
+  })
+
+  it("leaves a member the class only inherits unresolved without a hint", () => {
+    const result = resolveThis(service.slice(0, 1))
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
