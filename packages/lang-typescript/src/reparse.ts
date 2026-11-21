@@ -17,16 +17,17 @@ export interface Reparsed {
 
 /**
  * Parses the patched source and withdraws every patch the tree does not read as meant, until all
- * that remain hold. The tree is kept only when it has fewer errors than `tree`, and reads the
- * original text, so no node's text shows a patch.
+ * that remain hold. The tree is kept only when it reads less broken than `tree`, comparing
+ * `damage` element by element, and reads the original text, so no node's text shows a patch.
  */
 export function reparsePatched(
   parser: Parser,
   tree: Tree,
   source: string,
   patches: readonly Patch[],
-  errorCount: (tree: Tree) => number,
+  damage: (tree: Tree) => readonly number[],
 ): Reparsed | null {
+  const before = damage(tree)
   let kept = [...patches].sort((a, b) => a.start - b.start)
   while (kept.length > 0) {
     const candidate = parsePatched(parser, source, kept)
@@ -38,7 +39,7 @@ export function reparsePatched(
         kept = holding
         continue
       }
-      if (errorCount(candidate) >= errorCount(tree)) return null
+      if (!isLess(damage(candidate), before)) return null
       adopted = true
       return { tree: candidate, patches: kept }
     } finally {
@@ -46,6 +47,14 @@ export function reparsePatched(
     }
   }
   return null
+}
+
+function isLess(a: readonly number[], b: readonly number[]): boolean {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const by = (a[i] ?? 0) - (b[i] ?? 0)
+    if (by !== 0) return by < 0
+  }
+  return false
 }
 
 function parsePatched(parser: Parser, source: string, patches: readonly Patch[]): Tree | null {

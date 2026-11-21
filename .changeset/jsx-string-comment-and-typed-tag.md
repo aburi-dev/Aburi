@@ -1,0 +1,7 @@
+---
+"@aburi/lang-typescript": patch
+---
+
+Parse two more forms the vendored grammar misreads without reporting a syntax error. A JSX attribute's string that opens with `<!--` (`html="<!--[if mso]>…<![endif]-->"`, how email templates write Outlook's conditional comments) was lexed as an HTML comment running to the end of the line, which broke the element and the file; the file is now parsed a second time with that one character replaced, as `tsc` reads it. A tagged template with type arguments (`` sql<Row[]>`select …` ``, `` db.$queryRaw<T[]>`…` ``) no longer reports the `!` the grammar inserts to make it callable. A second parse is now also kept when it reports as many errors as the first but confines them to less of the file, so an error elsewhere is reported where it is.
+
+A Symbol in such a file can change its range, kind and fingerprints once, as it is now read whole, so an `aburi diff` against an IR an earlier version wrote reports it as changed.

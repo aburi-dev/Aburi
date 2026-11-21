@@ -8,6 +8,7 @@ import { walkDescendants } from "./ast-helpers"
 import { callSignatureSeparators } from "./call-signature-separator"
 import { importTypePatches, rememberImportTypes } from "./import-type-reparse"
 import { extractImports, isTypeStarKeyword } from "./imports"
+import { jsxStringCommentPatches } from "./jsx-string-comment"
 import { reparsePatched } from "./reparse"
 
 const nodeRequire = createRequire(import.meta.url)
@@ -139,15 +140,13 @@ function repairedOrFirst(
 
 function repairedTree(parser: Parser, first: Tree, source: string): Tree | null {
   const importTypes = importTypePatches(first)
-  const patches = [...importTypes, ...callSignatureSeparators(first, source)]
+  const patches = [
+    ...importTypes,
+    ...callSignatureSeparators(first, source),
+    ...jsxStringCommentPatches(source),
+  ]
   if (patches.length === 0) return null
-  const repaired = reparsePatched(
-    parser,
-    first,
-    source,
-    patches,
-    (t) => collectParseErrors(t).length,
-  )
+  const repaired = reparsePatched(parser, first, source, patches, damageOf)
   if (repaired === null) return null
   rememberImportTypes(
     repaired.tree,
@@ -170,13 +169,28 @@ function pickGrammarForPath(path: string): string {
 }
 
 function collectParseErrors(tree: Tree): ParseError[] {
+  return reportedErrors(tree).map((node) => ({
+    message: node.isError ? "syntax error" : "missing token",
+    line: node.startPosition.row + 1,
+    column: node.startPosition.column + 1,
+    recoverable: true,
+  }))
+}
+
+/** How broken a tree reads: its errors, then how much of the file they cover. */
+function damageOf(tree: Tree): readonly [number, number] {
+  const errors = reportedErrors(tree)
+  return [errors.length, errors.reduce((sum, node) => sum + node.endIndex - node.startIndex, 0)]
+}
+
+function reportedErrors(tree: Tree): Node[] {
   const root = tree.rootNode
   if (!root.hasError) return []
-  const errors: ParseError[] = []
+  const errors: Node[] = []
   const descend = (n: Node) => n.hasError && !isTaggedTemplateEscapeArtifact(n)
   for (const node of walkDescendants(root, { anonymous: true, descend })) {
-    const message = node.isError ? "syntax error" : node.isMissing ? "missing token" : null
-    if (message === null) continue
+    if (!node.isError && !node.isMissing) continue
+    if (isTypedTagCompletion(node)) continue
     if (
       node.isError &&
       (isJsxEntityArtifact(node) ||
@@ -186,12 +200,7 @@ function collectParseErrors(tree: Tree): ParseError[] {
     ) {
       continue
     }
-    errors.push({
-      message,
-      line: node.startPosition.row + 1,
-      column: node.startPosition.column + 1,
-      recoverable: true,
-    })
+    errors.push(node)
   }
   return errors
 }
@@ -209,6 +218,24 @@ function isTaggedTemplateEscapeArtifact(node: Node): boolean {
   return (
     template.parent?.type === "call_expression" &&
     template.parent.childForFieldName("arguments")?.equals(template) === true
+  )
+}
+
+/**
+ * The grammar has no tagged template with type arguments (`` sql<Row[]>`…` ``), and completes the
+ * instantiation into a callable with a `!` of its own.
+ */
+function isTypedTagCompletion(node: Node): boolean {
+  const asserted = node.parent
+  const call = asserted?.parent
+  return (
+    node.isMissing &&
+    node.type === "!" &&
+    asserted?.type === "non_null_expression" &&
+    asserted.child(0)?.type === "instantiation_expression" &&
+    call?.type === "call_expression" &&
+    call.childForFieldName("function")?.equals(asserted) === true &&
+    call.childForFieldName("arguments")?.type === "template_string"
   )
 }
 
