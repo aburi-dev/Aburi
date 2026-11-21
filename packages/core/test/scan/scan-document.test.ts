@@ -3,13 +3,14 @@ import { join } from "node:path"
 import {
   component,
   errorFrom,
+  irSchemaViolations,
   makeCall,
   recordingLogger,
   relativePath,
   spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
-import type { LanguagePlugin } from "@aburi/types"
+import type { LangManifest, LanguagePlugin } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
   CoreError,
@@ -60,18 +61,64 @@ describe("scan — what it refuses", () => {
     expect(error.code).toBe("scan-workspace-not-absolute")
   })
 
-  it.each<[string, readonly string[], unknown, string]>([
-    ["declares no languageId, with no file of its", [], undefined, "declares no languageId"],
-    ["declares no languageId, with a file of its", ["a.stub"], undefined, "declares no languageId"],
+  const LANGUAGE_ID =
+    'in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.'
+  const REVISION_FORM =
+    'a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2"'
+
+  // The type system holds every manifest to its shape; a plugin built without it is not.
+  it.each<[string, readonly string[], (manifest: LangManifest) => void, string]>([
+    [
+      "declares no languageId, with no file of its",
+      [],
+      (manifest) => Reflect.deleteProperty(manifest, "languageId"),
+      `declares no languageId ${LANGUAGE_ID}`,
+    ],
+    [
+      "declares no languageId, with a file of its",
+      ["a.stub"],
+      (manifest) => Reflect.deleteProperty(manifest, "languageId"),
+      `declares no languageId ${LANGUAGE_ID}`,
+    ],
     [
       "declares a languageId that is not a string",
       ["a.stub"],
-      7,
-      "declares languageId 7, which is not a string",
+      (manifest) => Reflect.set(manifest, "languageId", 7),
+      `declares languageId 7, which is not a string ${LANGUAGE_ID}`,
+    ],
+    [
+      "declares a grammarRevision with no version",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { grammarRevision: "tree-sitter-stub" }),
+      `declares grammarRevision "tree-sitter-stub" in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a grammarRevision with a version range",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { grammarRevision: "tree-sitter-stub@^1.0.0" }),
+      `declares grammarRevision "tree-sitter-stub@^1.0.0" in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a grammarRevision that is not a string",
+      ["a.stub"],
+      (manifest) => Reflect.set(manifest, "grammarRevision", 1),
+      `declares grammarRevision 1 in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares a null grammarRevision, as the IR writes a plugin that has none",
+      ["a.stub"],
+      (manifest) => Reflect.set(manifest, "grammarRevision", null),
+      `declares grammarRevision null in its manifest, but ${REVISION_FORM}.`,
+    ],
+    [
+      "declares no grammarRevision, at a version whose suffix the revision form does not take",
+      ["a.stub"],
+      (manifest) => Object.assign(manifest, { version: "1.0.0-rc~1" }),
+      `declares no grammarRevision, so its revision would be "lang-stub@1.0.0-rc~1", but ${REVISION_FORM}. Declare the plugin's grammarRevision in its manifest.`,
     ],
   ])(
     "refuses a language plugin whose manifest %s, before parsing anything",
-    async (_, files, languageId, says) => {
+    async (_, files, corrupt, says) => {
       for (const file of files) await workspace.writeSource(file, file)
       const parsed: string[] = []
       const language = stubLanguagePlugin({
@@ -80,27 +127,27 @@ describe("scan — what it refuses", () => {
           return { tree: {}, errors: [], imports: [] }
         },
       })
-      // The type system holds every manifest to a string; a plugin built without it does not.
-      if (languageId === undefined) Reflect.deleteProperty(language.manifest, "languageId")
-      else Reflect.set(language.manifest, "languageId", languageId)
+      corrupt(language.manifest)
 
       const error = await errorFrom(CoreError, () =>
         scanStubs(workspace.root, { languages: [language] }),
       )
 
       expect(error).toMatchObject({ code: "scan-plugin-misconfigured", value: "lang-stub" })
-      expect(error.message).toBe(
-        `Language plugin "lang-stub" ${says} in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.`,
-      )
+      expect(error.message).toBe(`Language plugin "lang-stub" ${says}`)
       expect(parsed).toEqual([])
     },
   )
 })
 
 describe("scan — the Document it assembles", () => {
-  it("names the generator, and every plugin sorted by name with a grammar revision for a language", async () => {
+  it("names the generator, and every plugin sorted by name with the grammar a language declares", async () => {
     const { ir } = await scanStubs(workspace.root, {
-      languages: [stubLanguagePlugin({ manifest: langManifest("lang-zeta") })],
+      languages: [
+        stubLanguagePlugin({
+          manifest: { ...langManifest("lang-zeta"), grammarRevision: "tree-sitter-zeta@0.4.1" },
+        }),
+      ],
       frameworks: [stubFrameworkPlugin("framework-mid")],
       effects: [stubEffectsPlugin("effects-alpha", () => null)],
     })
@@ -111,10 +158,34 @@ describe("scan — the Document it assembles", () => {
       plugins: [
         { name: "effects-alpha", type: "effects", version: "0.0.0", grammarRevision: null },
         { name: "framework-mid", type: "framework", version: "0.0.0", grammarRevision: null },
-        { name: "lang-zeta", type: "lang", version: "0.0.0", grammarRevision: "pending@0.0.0" },
+        {
+          name: "lang-zeta",
+          type: "lang",
+          version: "0.0.0",
+          grammarRevision: "tree-sitter-zeta@0.4.1",
+        },
       ],
     })
   })
+
+  it.each([
+    ["0.6.0", "lang-zeta@0.6.0"],
+    ["2.0.0-rc.1", "lang-zeta@2.0.0-rc.1"],
+    ["2.0.0-rc.1+build.7", "lang-zeta@2.0.0-rc.1"],
+    ["1.4.0+exp", "lang-zeta@1.4.0"],
+  ])(
+    "records a language that declares no grammar, at version %s, as its own release %s",
+    async (version, grammarRevision) => {
+      const { ir } = await scanStubs(workspace.root, {
+        languages: [stubLanguagePlugin({ manifest: { ...langManifest("lang-zeta"), version } })],
+      })
+
+      expect(ir.generator.plugins).toEqual([
+        { name: "lang-zeta", type: "lang", version, grammarRevision },
+      ])
+      expect(irSchemaViolations(ir)).toEqual([])
+    },
+  )
 
   it("takes the generator's name and version from the caller", async () => {
     const { ir } = await scanStubs(workspace.root, {

@@ -18,7 +18,7 @@ function provides(over: Partial<Provides> = {}): Provides {
 }
 
 export function langManifest(
-  over: ManifestOverrides & { languageId?: string } = {},
+  over: ManifestOverrides & { languageId?: string; grammarRevision?: string } = {},
 ): PluginManifest {
   return {
     $schema: PLUGIN_SCHEMA_URL,
@@ -26,6 +26,7 @@ export function langManifest(
     version: "1.0.0",
     type: "lang",
     languageId: over.languageId ?? "foo",
+    ...(over.grammarRevision === undefined ? {} : { grammarRevision: over.grammarRevision }),
     engines: { aburi: "^1.0.0" },
     provides: provides(over.provides),
   }

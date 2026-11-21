@@ -1,4 +1,5 @@
 import { type LangManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
+import grammars from "@vscode/tree-sitter-wasm/package.json" with { type: "json" }
 import { TYPESCRIPT_LANGUAGE_ID } from "./qname"
 
 export const langTypescriptManifest: LangManifest = {
@@ -7,6 +8,9 @@ export const langTypescriptManifest: LangManifest = {
   version: "0.0.0",
   type: "lang",
   languageId: TYPESCRIPT_LANGUAGE_ID,
+  // The build copies the .wasm grammars from this package, so the package's version names them
+  // exactly. Kept a devDependency, the package is inlined here rather than imported at run time.
+  grammarRevision: `${grammars.name}@${grammars.version}`,
   engines: { aburi: "*" },
   provides: {
     effects: [],

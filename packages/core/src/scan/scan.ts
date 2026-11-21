@@ -5,6 +5,7 @@ import {
   type Config,
   type EffectPlugin,
   type FrameworkPlugin,
+  GRAMMAR_REVISION_PATTERN,
   type IR,
   IR_SCHEMA_URL,
   type LanguagePlugin,
@@ -30,6 +31,7 @@ import {
   buildStats,
   compareDependencies,
   projectSymbolEdges,
+  recordedGrammarRevision,
   sortComponents,
   uniqueSorted,
 } from "./document"
@@ -109,6 +111,7 @@ export interface ScanResult {
 export async function scan(input: ScanInput): Promise<ScanResult> {
   assertWorkspaceRootAbsolute(input.workspaceRoot)
   assertLanguageIdsDeclared(input.languages)
+  assertGrammarRevisionsWellFormed(input.languages)
   const logger = input.logger ?? silentLogger
   const progress = input.onProgress ?? (() => {})
   const { signal } = input
@@ -291,6 +294,30 @@ function assertLanguageIdsDeclared(languages: readonly LanguagePlugin[]): void {
         : `declares languageId ${JSON.stringify(declared)}, which is not a string`
     throw new CoreError(
       `Language plugin "${manifest.name}" ${found} in its manifest: the manifest names the <language> token its Symbol ids open with, e.g. "ts". If the plugin object sets languageId, move it into the manifest.`,
+      { code: "scan-plugin-misconfigured", value: manifest.name },
+    )
+  }
+}
+
+/**
+ * The registry checks only a declared revision, and holds a version to no suffix form, so a revision
+ * recorded off the schema's form would leave the Document off its schema.
+ */
+function assertGrammarRevisionsWellFormed(languages: readonly LanguagePlugin[]): void {
+  const form = `a grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2"`
+  for (const { manifest } of languages) {
+    const declared: unknown = manifest.grammarRevision
+    if (declared === undefined) {
+      const recorded = recordedGrammarRevision(manifest)
+      if (GRAMMAR_REVISION_PATTERN.test(recorded)) continue
+      throw new CoreError(
+        `Language plugin "${manifest.name}" declares no grammarRevision, so its revision would be "${recorded}", but ${form}. Declare the plugin's grammarRevision in its manifest.`,
+        { code: "scan-plugin-misconfigured", value: manifest.name },
+      )
+    }
+    if (typeof declared === "string" && GRAMMAR_REVISION_PATTERN.test(declared)) continue
+    throw new CoreError(
+      `Language plugin "${manifest.name}" declares grammarRevision ${JSON.stringify(declared)} in its manifest, but ${form}.`,
       { code: "scan-plugin-misconfigured", value: manifest.name },
     )
   }

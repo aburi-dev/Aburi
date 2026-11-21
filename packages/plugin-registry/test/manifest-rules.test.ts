@@ -185,6 +185,72 @@ describe("a lang manifest's languageId", () => {
   })
 })
 
+describe("a manifest's grammarRevision", () => {
+  it.each<[string, PluginManifest, string, string, string]>([
+    [
+      "a revision with no version",
+      langManifest({ grammarRevision: "tree-sitter-typescript" }),
+      "manifest-invalid",
+      "tree-sitter-typescript",
+      'Plugin "lang-foo" declares grammarRevision "tree-sitter-typescript", but a grammar ' +
+        'revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".',
+    ],
+    [
+      "a version range",
+      langManifest({ grammarRevision: "tree-sitter-typescript@^0.23.0" }),
+      "manifest-invalid",
+      "tree-sitter-typescript@^0.23.0",
+      'Plugin "lang-foo" declares grammarRevision "tree-sitter-typescript@^0.23.0", but a ' +
+        'grammar revision is "<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. ' +
+        '"tree-sitter-typescript@0.23.2".',
+    ],
+    [
+      "a revision that is not a string",
+      { ...langManifest(), grammarRevision: 23 as never },
+      "manifest-invalid",
+      "23",
+      'Plugin "lang-foo" declares grammarRevision 23, but a grammar revision is ' +
+        '"<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".',
+    ],
+    [
+      "a null revision, as the IR writes a plugin that has none",
+      { ...langManifest(), grammarRevision: null as never },
+      "manifest-invalid",
+      "null",
+      'Plugin "lang-foo" declares grammarRevision null, but a grammar revision is ' +
+        '"<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".',
+    ],
+    [
+      "an effects manifest that declares one",
+      { ...effectsManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+      "namespace-type-mismatch",
+      "tree-sitter-sql@1.0.0",
+      'Plugin "effects-foo" (type effects) declares grammarRevision "tree-sitter-sql@1.0.0" but ' +
+        "only lang-type plugins parse with a grammar.",
+    ],
+    [
+      "a framework manifest that declares one",
+      { ...frameworkManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+      "namespace-type-mismatch",
+      "tree-sitter-sql@1.0.0",
+      'Plugin "framework-foo" (type framework) declares grammarRevision "tree-sitter-sql@1.0.0" ' +
+        "but only lang-type plugins parse with a grammar.",
+    ],
+  ])("refuses %s", async (_, manifest, code, value, message) => {
+    const err = await errorFrom(RegistryError, () => new VocabRegistry().register(manifest))
+    expect(err).toMatchObject({ code, plugins: [manifest.name], value })
+    expect(err.message).toBe(message)
+  })
+
+  it.each([
+    "tree-sitter-typescript@0.23.2",
+    "@vscode/tree-sitter-wasm@0.3.1",
+    "@oxc-project/parser@2.1.0+sha.abc123",
+  ])("accepts %s", (grammarRevision) => {
+    expect(() => new VocabRegistry().register(langManifest({ grammarRevision }))).not.toThrow()
+  })
+})
+
 describe("one manifest declaring an id twice", () => {
   it.each<[string, PluginManifest, string, string]>([
     [
