@@ -51,6 +51,7 @@ export interface EnrichmentCase {
   languageIds?: readonly LanguageId[] | null
   logger?: Logger
   thisBindings?: ThisBindingSites
+  signal?: AbortSignal
 }
 
 export function makeEnrichmentInput(input: EnrichmentCase): EnrichmentInput {

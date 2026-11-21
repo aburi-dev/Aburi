@@ -44,6 +44,8 @@ export interface EnrichmentInput {
   logger?: Logger
   serverFactory?: ServerFactory
   now?: () => number
+  /** Checked before each language's server starts and before each file it is asked about. */
+  signal?: AbortSignal
 }
 
 export interface EnrichmentResult {
@@ -98,6 +100,7 @@ export async function enrichWithLsp(input: EnrichmentInput): Promise<EnrichmentR
   for (const [language, langSymbols] of [...symbolsByLanguage].sort(compareBy(([id]) => id))) {
     const serverConfig = servers[language]
     if (serverConfig === undefined) continue
+    input.signal?.throwIfAborted()
     stats.enabled = true
 
     let client: LspClient | null
@@ -144,8 +147,11 @@ export async function enrichWithLsp(input: EnrichmentInput): Promise<EnrichmentR
         warnings,
         logger,
         now: input.now ?? (() => performance.now()),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
       })
     } catch (error) {
+      // The file loop's abort lands here too, and must end the scan rather than disable the language.
+      input.signal?.throwIfAborted()
       disableLanguage(
         language,
         `[aburi:lsp] enrichment for ${language} threw (${errorMessage(error)}); falling back to untyped tier for this language`,

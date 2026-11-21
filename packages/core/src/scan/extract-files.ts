@@ -25,6 +25,7 @@ export interface ExtractFilesInput extends ExtractionJob, ExtractionPlugins {
   logger: Logger
   parsePool?: ParsePoolFactory
   progress?: (done: number, total: number) => void
+  signal?: AbortSignal
 }
 
 export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedFiles> {
@@ -45,6 +46,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     try {
       const extractor = createFileExtractor(job, input)
       for (const [fileId] of input.files.entries()) {
+        input.signal?.throwIfAborted()
         collator.add(await extractor.extract(fileId))
         input.progress?.(++done, total)
       }
@@ -66,7 +68,10 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
         () => {},
       )
     }
-    for (const extraction of extractions) collator.add(await extraction)
+    for (const extraction of extractions) {
+      input.signal?.throwIfAborted()
+      collator.add(await extraction)
+    }
   } finally {
     folding = false
     await pool.close()

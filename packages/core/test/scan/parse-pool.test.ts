@@ -168,6 +168,34 @@ describe("scan — a parse pool", () => {
     expect(closed).toEqual(["closed"])
   })
 
+  it("stops folding once the scan is aborted, without waiting on the files still out, and closes the pool", async () => {
+    const closed: string[] = []
+    const reason = new Error("the other scan failed")
+    const stop = new AbortController()
+    const outcome = scanStubs(workspace.root, {
+      languages: [language()],
+      signal: stop.signal,
+      parsePool: (job) => {
+        const extractor = createFileExtractor(job, {
+          languages: [language()],
+          frameworks: [],
+          effects: [],
+          registry: noopRegistry,
+        })
+        return poolOf(
+          (fileId) =>
+            fileId === 0
+              ? extractor.extract(fileId).finally(() => stop.abort(reason))
+              : new Promise<FileExtraction>(() => {}),
+          closed,
+        )(job)
+      },
+    })
+
+    await expect(outcome).rejects.toBe(reason)
+    expect(closed).toEqual(["closed"])
+  })
+
   it("writes the IR one extractor writes, whichever extractor each file went to", async () => {
     const alone = await scanStubs(workspace.root, { languages: [language()] })
     const pooled = await scanStubs(workspace.root, {
