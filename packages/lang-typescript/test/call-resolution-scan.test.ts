@@ -498,20 +498,24 @@ describe("scan — a call through a barrel", () => {
 })
 
 describe("scan — a call into a workspace package by its name", () => {
-  it("reaches the file the package's manifest names, past its built ones, and buckets what it lacks `no-match`", async () => {
+  it("reaches the file the package's manifest names, past its built ones, and none for a name two manifests share", async () => {
     const sources: Record<string, string> = {
       "packages/kit/src/index.ts": 'export * from "./sort"\n',
       "packages/kit/src/sort.ts": "export function sortBy() { return 1 }\n",
       "packages/legacy/index.ts": "export function legacy() { return 2 }\n",
+      "packages/twin-a/index.ts": "export function twin() { return 3 }\n",
+      "packages/twin-b/index.ts": "export function twin() { return 4 }\n",
       "apps/web/use.ts": [
         'import { sortBy, missing } from "@acme/kit"',
         'import { legacy } from "@acme/legacy"',
         'import { other } from "@acme/kit-extra"',
+        'import { twin } from "@acme/twin"',
         "export function main() {",
         "  sortBy()",
         "  legacy()",
         "  missing()",
         "  other()",
+        "  twin()",
         "}",
         "",
       ].join("\n"),
@@ -528,6 +532,8 @@ describe("scan — a call into a workspace package by its name", () => {
             entry: { exports: { ".": { import: "./dist/index.js", source: "./src/index.ts" } } },
           },
           { name: "@acme/legacy", root: "packages/legacy", entry: { main: "./index.js" } },
+          { name: "@acme/twin", root: "packages/twin-a" },
+          { name: "@acme/twin", root: "packages/twin-b" },
         ],
       },
     )
@@ -537,10 +543,12 @@ describe("scan — a call into a workspace package by its name", () => {
       ["legacy", "ts:packages/legacy/index.ts#legacy"],
       ["missing", null],
       ["other", null],
+      ["twin", null],
     ])
     expect(unresolvedCalls.map((d) => [d.target, d.bucket])).toEqual([
       ["missing", "no-match"],
       ["other", "external"],
+      ["twin", "external"],
     ])
   })
 })

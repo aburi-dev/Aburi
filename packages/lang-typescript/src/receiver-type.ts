@@ -16,10 +16,12 @@ const PARAMETER_TYPES: ReadonlySet<string> = new Set(["required_parameter", "opt
 interface ThisScope {
   readonly classBody: Node
   readonly isStatic: boolean
+  /** A method whose `this` parameter declares what `this` is, which need not be the class. */
+  readonly declaresThis: boolean
 }
 
-// Only `this.<field>` is read: the class that declares the field is found by walking up, where a
-// plain name would need a scope resolver to tell its declaration from what shadows it.
+// Only `this` and `this.<field>` are read: the class `this` is a value of is found by walking up,
+// where a plain name would need a scope resolver to tell its declaration from what shadows it.
 export function receiverTypeOf(callee: Node): string | null {
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
@@ -29,7 +31,7 @@ export function receiverTypeOf(callee: Node): string | null {
   const field = receiver.childForFieldName("property")
   if (field === null) return null
   const scope = thisScope(receiver)
-  if (scope === null) return null
+  if (scope === null || scope.declaresThis) return null
   const type = declaredType(scope, field.text)
   return type === null || isShadowed(scope.classBody, headOf(type)) ? null : type
 }
@@ -57,7 +59,7 @@ function thisScope(from: Node): ThisScope | null {
     const classBody = node.parent
     if (classBody?.type !== "class_body") return null
     const isStatic = node.type === "class_static_block" || hasChildOfType(node, "static")
-    return { classBody, isStatic }
+    return { classBody, isStatic, declaresThis: hasThisParameter(node) }
   }
   return null
 }
@@ -65,7 +67,7 @@ function thisScope(from: Node): ThisScope | null {
 // In an instance member `this` is a value of the class itself, which a reader binds by its name.
 function instanceClassOf(receiver: Node): string | null {
   const scope = thisScope(receiver)
-  if (scope === null || scope.isStatic) return null
+  if (scope === null || scope.isStatic || scope.declaresThis) return null
   const owner = scope.classBody.parent
   if (owner === null || !CLASS_DECLARATIONS.has(owner.type)) return null
   const name = nameFieldText(owner)
@@ -76,6 +78,12 @@ const CLASS_DECLARATIONS: ReadonlySet<string> = new Set([
   "class_declaration",
   "abstract_class_declaration",
 ])
+
+function hasThisParameter(member: Node): boolean {
+  const parameters = member.childForFieldName("parameters")
+  const first = parameters === null ? null : firstNonCommentChild(parameters)
+  return first?.childForFieldName("pattern")?.type === "this"
+}
 
 // A member's name and decorators are evaluated outside it, with the `this` around the class.
 function bindsThisFor(member: Node, child: Node): boolean {

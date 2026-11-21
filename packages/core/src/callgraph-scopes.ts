@@ -16,6 +16,8 @@ export interface ResolutionTrace {
   unnamedReceiver: boolean
   /** A re-export the head's import leads through names a bare specifier outside the workspace. */
   reexportedFromOutside: boolean
+  /** The head's import reaches a name its module's star exports disagree on. */
+  conflictingExport: boolean
 }
 
 export function newTrace(): ResolutionTrace {
@@ -24,6 +26,7 @@ export function newTrace(): ResolutionTrace {
     parameterShadow: false,
     unnamedReceiver: false,
     reexportedFromOutside: false,
+    conflictingExport: false,
   }
 }
 
@@ -180,7 +183,14 @@ function resolveInImportScope(
 ): BoundHead | null {
   const imported = importedNamesOf(ctx, head, tail)
   const renamed = imported.renamed
-  const names = imported.names.flatMap((entry) => declarationsOf(ctx, entry, trace))
+  let conflicting = false
+  const names = imported.names.flatMap((entry) => {
+    const reached = declarationsOf(ctx, entry, trace)
+    if (reached === null) conflicting = true
+    return reached ?? []
+  })
+  // A member only some of the disagreeing declarations hold would otherwise pick one of them.
+  if (conflicting) return NO_MEMBER
   const candidates = new Set<SymbolId>()
   for (const { file, name, rest } of names) {
     const id = memberId(ctx, file, name, rest)
@@ -253,11 +263,13 @@ function specifierTargetOf(
 
 /**
  * Where a module's export of a name is declared: in the module, or where its re-exports lead.
- * `declared` holds one site, or several where star exports disagree; `namespace` is a module
- * exported whole under the name; `outside` is a chain that left the workspace.
+ * `declared` holds one site, or each default export of a module declaring several; `conflict`
+ * holds the declarations star exports disagree on; `namespace` is a module exported whole under
+ * the name; `outside` is a chain that left the workspace.
  */
 export type ExportAnswer =
   | { readonly kind: "declared"; readonly sites: readonly ExportSite[] }
+  | { readonly kind: "conflict"; readonly sites: readonly ExportSite[] }
   | { readonly kind: "namespace"; readonly file: string }
   | { readonly kind: "outside" }
   | { readonly kind: "none" }
@@ -270,18 +282,28 @@ interface ExportSite {
 const NO_ANSWER: ExportAnswer = { kind: "none" }
 const OUTSIDE: ExportAnswer = { kind: "outside" }
 
-/** The declarations an imported name reaches through its module's re-exports. */
+/**
+ * The declarations an imported name reaches through its module's re-exports, or null where star
+ * exports disagree on it, whose declarations go to the trace.
+ */
 function declarationsOf(
   ctx: ResolveTargetContext,
   entry: ImportedName,
   trace: ResolutionTrace,
-): ImportedName[] {
+): ImportedName[] | null {
   let { file, name, rest } = entry
   for (;;) {
     const answer = exportAnswerOf(ctx.run, ctx.caller.language, file, name)
     switch (answer.kind) {
       case "declared":
         return answer.sites.map((site) => ({ file: site.file, name: site.name, rest }))
+      case "conflict":
+        trace.conflictingExport = true
+        for (const site of answer.sites) {
+          const id = memberId(ctx, site.file, site.name, [])
+          if (id !== null) trace.ambiguousCandidates.add(id)
+        }
+        return null
       case "outside":
         trace.reexportedFromOutside = true
         return []
@@ -318,16 +340,17 @@ function answerExport(
   language: string,
   file: string,
   name: string,
-  asking: Set<string>,
+  visited: Set<string>,
 ): Answered {
   // Neither a language id nor a path holds NUL, and the name comes last: the key splits one way.
   const key = `${language}\0${file}\0${name}`
   const cached = run.exportAnswers.get(key)
   if (cached !== undefined) return { answer: cached, whole: true }
-  if (asking.has(key)) return { answer: NO_ANSWER, whole: false }
-  asking.add(key)
-  const answered = searchExport(run, language, file, name, asking)
-  asking.delete(key)
+  // What a revisit could find, the first visit found and handed up to the search's answer, so
+  // each module and name is asked once per search however many paths lead to it.
+  if (visited.has(key)) return { answer: NO_ANSWER, whole: false }
+  visited.add(key)
+  const answered = searchExport(run, language, file, name, visited)
   if (answered.whole) run.exportAnswers.set(key, answered.answer)
   return answered
 }
@@ -337,7 +360,7 @@ function searchExport(
   language: string,
   file: string,
   name: string,
-  asking: Set<string>,
+  visited: Set<string>,
 ): Answered {
   const declared = declaredExport(run.table, file, name)
   if (declared !== null) return { answer: declared, whole: true }
@@ -352,10 +375,10 @@ function searchExport(
     if (reexport.imported === NAMESPACE_EXPORT) {
       return { answer: { kind: "namespace", file: target }, whole: true }
     }
-    return answerExport(run, language, target, reexport.imported, asking)
+    return answerExport(run, language, target, reexport.imported, visited)
   }
   if (name === DEFAULT_EXPORT_NAME) return { answer: NO_ANSWER, whole: true }
-  return starExport(run, language, file, name, edges, asking)
+  return starExport(run, language, file, name, edges, visited)
 }
 
 function starExport(
@@ -364,7 +387,7 @@ function starExport(
   file: string,
   name: string,
   edges: readonly ImportEdge[],
-  asking: Set<string>,
+  visited: Set<string>,
 ): Answered {
   const found: ExportAnswer[] = []
   let outside = false
@@ -376,7 +399,7 @@ function starExport(
       outside ||= !isRelativeSpecifier(edge.source)
       continue
     }
-    const answered = answerExport(run, language, target, name, asking)
+    const answered = answerExport(run, language, target, name, visited)
     whole &&= answered.whole
     if (answered.answer.kind === "outside") outside = true
     else if (answered.answer.kind !== "none") found.push(answered.answer)
@@ -384,10 +407,8 @@ function starExport(
   const [only, ...others] = distinctAnswers(found)
   if (only === undefined) return { answer: outside ? OUTSIDE : NO_ANSWER, whole }
   if (others.length === 0) return { answer: only, whole }
-  const sites = [only, ...others].flatMap((answer) =>
-    answer.kind === "declared" ? answer.sites : [],
-  )
-  return { answer: { kind: "declared", sites }, whole }
+  const sites = [only, ...others].flatMap((answer) => ("sites" in answer ? answer.sites : []))
+  return { answer: { kind: "conflict", sites }, whole }
 }
 
 // Two star exports of one module, or of two barrels over it, agree.
@@ -395,8 +416,8 @@ function distinctAnswers(answers: readonly ExportAnswer[]): ExportAnswer[] {
   const byKey = new Map<string, ExportAnswer>()
   for (const answer of answers) {
     const key =
-      answer.kind === "declared"
-        ? answer.sites.map((site) => `${site.file}\0${site.name}`).join("\n")
+      "sites" in answer
+        ? `${answer.kind}\0${answer.sites.map((site) => `${site.file}\0${site.name}`).join("\n")}`
         : answer.kind === "namespace"
           ? `*\0${answer.file}`
           : answer.kind

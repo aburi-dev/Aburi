@@ -63,7 +63,8 @@ function isSignatureOpening(source: string, at: number): boolean {
   return source[at] === "<" && /^<(\s|[\p{ID_Start}$_])/u.test(source.slice(at, at + 2))
 }
 
-// After an opening bracket, a separator or an operator, the `<` continues the expression or type.
+// After an operator or an opening bracket the `<` continues the expression or type, and after a
+// separator the member above has already ended.
 function followsMember(source: string, lineStart: number): boolean {
   const at = lastCodeIndex(source, lineStart)
   const last = source[at]

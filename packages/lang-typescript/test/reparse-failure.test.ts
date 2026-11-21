@@ -10,15 +10,19 @@ vi.mock("../src/reparse", async (importActual) => ({
 
 describe("a reparse that throws", () => {
   it.each([
-    ["an import() type", 'export const b = g<typeof import("./m")>()\n'],
-    ["a generic call signature on its own line", "type S = {\n  (): A\n  <U>(u: U): U\n}\n"],
+    ["an import() type", 'export const b = g<typeof import("./m")>()\n', "import() types"],
+    [
+      "a generic call signature on its own line",
+      "type S = {\n  (): A\n  <U>(u: U): U\n}\n",
+      "generic call signatures",
+    ],
   ])(
     "keeps the first parse of %s and names the failed pass beside its errors",
-    async (_label, source) => {
+    async (_label, source, pass) => {
       const result = await parseSource(source)
       expect(result.tree).not.toBeNull()
       expect(result.errors[0]).toEqual({
-        message: "reparse failed, keeping the first parse: out of memory",
+        message: `reparse of ${pass} failed, keeping the parse without it: out of memory`,
         line: 1,
         column: 1,
         recoverable: true,

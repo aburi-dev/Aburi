@@ -69,6 +69,24 @@ describe("the files an import of a workspace package by its name can load", () =
       [`${ROOT}/src/lib/sort.ts`],
     ],
     [
+      "the pattern with the longest prefix, written first",
+      "@acme/kit/lib/sort",
+      { exports: { "./lib/*": "./src/lib/*.ts", "./*": "./*.js" } },
+      [`${ROOT}/src/lib/sort.ts`],
+    ],
+    [
+      "the longer of two patterns with one prefix",
+      "@acme/kit/lib/sort.js",
+      { exports: { "./lib/*": "./src/lib/*", "./lib/*.js": "./src/lib/*.ts" } },
+      [`${ROOT}/src/lib/sort.ts`],
+    ],
+    [
+      "the longer of two patterns with one prefix, written first",
+      "@acme/kit/lib/sort.js",
+      { exports: { "./lib/*.js": "./src/lib/*.ts", "./lib/*": "./src/lib/*" } },
+      [`${ROOT}/src/lib/sort.ts`],
+    ],
+    [
       "an exact subpath ahead of a pattern",
       "@acme/kit/lib/sort",
       { exports: { "./lib/*": "./src/lib/*.ts", "./lib/sort": "./src/sort.ts" } },
@@ -79,6 +97,12 @@ describe("the files an import of a workspace package by its name can load", () =
       "@acme/kit",
       { typings: "./kit.d.ts", main: "index.js", module: "./esm/index.js", types: "./index.d.ts" },
       [`${ROOT}/index.js`, `${ROOT}/esm/index.js`, `${ROOT}/index.d.ts`, `${ROOT}/kit.d.ts`, ROOT],
+    ],
+    [
+      "`main` past an `exports` of `null`",
+      "@acme/kit",
+      { exports: null, main: "./index.js" },
+      [`${ROOT}/index.js`, ROOT],
     ],
     [
       "a subpath under a package with no `exports`",

@@ -86,6 +86,10 @@ describe("a generic call signature written on the line after a member", () => {
   it.each([
     ["a broken parameter list", lines("export interface I {", "  (): A", "  <U>(u: U: U", "}")],
     ["an unclosed type", lines("export type S = {", "  (): A", "  <U>(u: U): U")],
+    [
+      "a signature at the start of its line, whose only blank is the line break",
+      lines("export interface F {", "(): A", "<U>(u: U): U", "}"),
+    ],
   ])("still reports %s", async (_label, source) => {
     expect(await parseErrorsOf(source)).not.toEqual([])
   })
@@ -98,8 +102,10 @@ describe("a generic call signature written on the line after a member", () => {
     ["a comparison continued from the line above", lines("const x = a <", "  b(c)")],
     ["a generic arrow after `=`", lines("const f =", "  <T>(t: T) => t")],
     ["JSX children", lines("const e = (", "  <div>", "    <span>{a}</span>", "  </div>", ")")],
-  ])("leaves %s as it parses", async (_label, source) => {
+  ])("leaves %s as it parses, in a file broken elsewhere", async (_label, source) => {
     const path = source.includes("<div>") ? "src/a.tsx" : "src/a.ts"
     expect(await parseErrorsOf(source, path)).toEqual([])
+    const line = source.split("\n").length
+    expect(await parseErrorsOf(`${source}f(a b)\n`, path)).toEqual([`${line}:5 syntax error`])
   })
 })

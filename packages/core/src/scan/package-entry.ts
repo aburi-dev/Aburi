@@ -1,20 +1,16 @@
 import { type PackageEntryFields, packageName, type WorkspacePackage } from "../component-manifest"
 
 /**
- * The workspace paths an import of a workspace package by its name can load, most likely first:
- * the targets `exports` gives the subpath, every condition's in the order the manifest writes
- * them, as a source condition is commonly written ahead of the built files; without `exports`,
- * `main`, `module`, `types` and `typings`, then the package's own directory, or the subpath
- * under it. Each is a path to probe as a relative specifier's, so `./index.js` finds `index.ts`.
+ * The workspace paths an import of a workspace package by its name can load, each to probe as a
+ * relative specifier's, so `./index.js` finds `index.ts`. The scan cannot know which condition a
+ * consumer resolves, so it tries every target in the order the manifest writes them.
  */
 export function packageEntryPaths(pkg: WorkspacePackage, specifier: string): string[] {
   if (packageName(specifier) !== pkg.name) return []
   const subpath = `.${specifier.slice(pkg.name.length)}`
   const entry = pkg.entry ?? {}
   const leaves =
-    entry.exports === undefined
-      ? legacyEntries(entry, subpath)
-      : exportedEntries(entry.exports, subpath)
+    entry.exports == null ? legacyEntries(entry, subpath) : exportedEntries(entry.exports, subpath)
   const paths: string[] = []
   for (const leaf of leaves) {
     const path = packagePath(pkg.root, leaf)

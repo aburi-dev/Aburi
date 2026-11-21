@@ -47,6 +47,14 @@ interface Hop {
   readonly imported: string
 }
 
+function packagesByName(
+  packages: readonly WorkspacePackage[],
+): ReadonlyMap<string, WorkspacePackage | null> {
+  const byName = new Map<string, WorkspacePackage | null>()
+  for (const pkg of packages) byName.set(pkg.name, byName.has(pkg.name) ? null : pkg)
+  return byName
+}
+
 /** Where a specifier leads: a workspace file, out of the workspace, or nowhere the resolver could say. */
 type Target = { readonly file: string } | "outside" | "fault"
 
@@ -61,7 +69,8 @@ export class ImportOrigins {
   readonly #input: ImportOriginsInput
   readonly #files: ReadonlyMap<string, DiscoveredFile>
   readonly #knownFiles: ReadonlySet<string>
-  readonly #workspacePackages: ReadonlyMap<string, WorkspacePackage>
+  /** By name; null for a name several manifests share, which leaves no way to tell them apart. */
+  readonly #workspacePackages: ReadonlyMap<string, WorkspacePackage | null>
   readonly #resolvers = new Map<Language, ImportResolver | "none" | "fault">()
   readonly #edges = new AsyncMemo<string, readonly ImportEdge[]>()
   readonly #targets = new AsyncMemo<string, Target>()
@@ -71,7 +80,7 @@ export class ImportOrigins {
     this.#input = input
     this.#files = new Map(input.files.map((file) => [file.path, file]))
     this.#knownFiles = new Set(this.#files.keys())
-    this.#workspacePackages = new Map(input.workspacePackages.map((pkg) => [pkg.name, pkg]))
+    this.#workspacePackages = packagesByName(input.workspacePackages)
   }
 
   remember(path: string, edges: readonly ImportEdge[]): void {
@@ -148,8 +157,8 @@ export class ImportOrigins {
 
   #packagePaths(specifier: string): readonly string[] {
     const name = packageName(specifier)
-    const pkg = name === null ? undefined : this.#workspacePackages.get(name)
-    return pkg === undefined ? [] : packageEntryPaths(pkg, specifier)
+    const pkg = name === null ? null : this.#workspacePackages.get(name)
+    return pkg == null ? [] : packageEntryPaths(pkg, specifier)
   }
 
   // An origin names a package outside the workspace, so a workspace package's name ends the chain.

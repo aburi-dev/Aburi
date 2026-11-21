@@ -54,7 +54,7 @@ export interface ImportEdge {
    * `default`, save those it declares or re-exports by name itself. Absent for `export type *`,
    * which exports no value, and for every other edge.
    */
-  reexportsAll?: boolean
+  reexportsAll?: true
   /**
    * Set by the scan, never by the language plugin, and only for a name a decorator in the file
    * binds while a framework plugin is loaded. Keyed by that name as the edge's module exports it,

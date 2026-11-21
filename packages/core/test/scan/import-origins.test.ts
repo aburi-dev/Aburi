@@ -1,8 +1,10 @@
 import {
   decorator,
   importEdge,
+  namespaceReexportEdge,
   noopRegistry,
   recordingLogger,
+  reexportEdge,
   spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
@@ -14,7 +16,7 @@ import type {
   LanguagePlugin,
 } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { type ParsePoolFactory, serializeCanonical, splitAliasedImportName } from "../../src"
+import { type ParsePoolFactory, serializeCanonical } from "../../src"
 import {
   extractorPool,
   fileCandidate,
@@ -51,21 +53,6 @@ const importsDecorate = (source: string): Module => ({
 /** An import that binds names and republishes none of them. */
 function named(source: string, ...symbols: string[]): ImportEdge {
   return importEdge({ source, symbols })
-}
-
-/** `export { … } from source`, each entry written `name` or `name as exported`. */
-function reexporting(source: string, ...entries: string[]): ImportEdge {
-  const bindings = entries.map(splitAliasedImportName)
-  return importEdge({
-    source,
-    symbols: bindings.map((binding) => binding.imported),
-    reexports: bindings.map((binding) => ({ imported: binding.imported, exported: binding.local })),
-  })
-}
-
-/** `export * as exported from source`. */
-function namespaceReexport(source: string, exported: string): ImportEdge {
-  return importEdge({ source, symbols: "*", reexports: [{ imported: "*", exported }] })
 }
 
 interface Recorder {
@@ -161,7 +148,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a path alias to a barrel that re-exports a package",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       [["@app/common", { Decorate: "@vendor/kit" }]],
     ],
@@ -169,8 +156,8 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a relative barrel two re-exports deep",
       {
         [CONSUMER]: importsDecorate("./barrel.stub"),
-        "src/barrel.stub": { imports: [reexporting("./inner.stub", "Decorate")] },
-        "src/inner.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+        "src/barrel.stub": { imports: [reexportEdge("./inner.stub", "Decorate")] },
+        "src/inner.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       [["./barrel.stub", { Decorate: "@vendor/kit" }]],
     ],
@@ -181,7 +168,7 @@ describe("scan — where a decorator's imported name is declared", () => {
           imports: [named("@app/common", "Decorate as D")],
           decorators: [decorator({ name: "D" })],
         },
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       [["@app/common", { Decorate: "@vendor/kit" }]],
     ],
@@ -192,7 +179,7 @@ describe("scan — where a decorator's imported name is declared", () => {
           imports: [importEdge({ source: "@app/common", symbols: "*", namespaceBinding: "ns" })],
           decorators: [decorator({ name: "Decorate", qualifier: "ns" })],
         },
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       [["@app/common", { Decorate: "@vendor/kit" }]],
     ],
@@ -200,7 +187,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a barrel that re-exports another name as the imported one",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Inner as Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Inner as Decorate")] },
       },
       [["@app/common", { Decorate: "@vendor/kit" }]],
     ],
@@ -210,8 +197,8 @@ describe("scan — where a decorator's imported name is declared", () => {
         [CONSUMER]: importsDecorate("@app/common"),
         [BARREL]: {
           imports: [
-            reexporting("@vendor/other", "Decorate as Other"),
-            reexporting("@vendor/kit", "Decorate"),
+            reexportEdge("@vendor/other", "Decorate as Other"),
+            reexportEdge("@vendor/kit", "Decorate"),
           ],
         },
       },
@@ -240,7 +227,7 @@ describe("scan — where a decorator's imported name is declared", () => {
           imports: [named("@app/common", "kit")],
           decorators: [decorator({ name: "Decorate", qualifier: "kit" })],
         },
-        [BARREL]: { imports: [namespaceReexport("@vendor/kit", "kit")] },
+        [BARREL]: { imports: [namespaceReexportEdge("@vendor/kit", "kit")] },
       },
       [["@app/common", { kit: "@vendor/kit" }]],
     ],
@@ -268,7 +255,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "the first path the resolver gives that the workspace holds",
       {
         [CONSUMER]: importsDecorate("@app/fallback"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       [["@app/fallback", { Decorate: "@vendor/kit" }]],
     ],
@@ -282,7 +269,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a barrel that re-exports the name under another one",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate as Other")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate as Other")] },
       },
     ],
     [
@@ -303,7 +290,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a barrel that declares the name itself",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@vendor/kit", "Other")] },
+        [BARREL]: { imports: [reexportEdge("@vendor/kit", "Other")] },
       },
     ],
     [
@@ -313,23 +300,23 @@ describe("scan — where a decorator's imported name is declared", () => {
           imports: [named("@app/common", "kit")],
           decorators: [decorator({ name: "Decorate", qualifier: "kit" })],
         },
-        [BARREL]: { imports: [namespaceReexport("./own.stub", "kit")] },
-        "libs/common/own.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [BARREL]: { imports: [namespaceReexportEdge("./own.stub", "kit")] },
+        "libs/common/own.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
     ],
     [
       "a re-export of a relative module the workspace does not hold",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("./missing.stub", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("./missing.stub", "Decorate")] },
       },
     ],
     [
       "two barrels re-exporting the name from each other",
       {
         [CONSUMER]: importsDecorate("./a.stub"),
-        "src/a.stub": { imports: [reexporting("./b.stub", "Decorate")] },
-        "src/b.stub": { imports: [reexporting("./a.stub", "Decorate")] },
+        "src/a.stub": { imports: [reexportEdge("./b.stub", "Decorate")] },
+        "src/b.stub": { imports: [reexportEdge("./a.stub", "Decorate")] },
       },
     ],
     ["a workspace package's name", { [CONSUMER]: importsDecorate(SHARED) }],
@@ -362,7 +349,7 @@ describe("scan — where a decorator's imported name is declared", () => {
       "a barrel that re-exports the name from a workspace package",
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting(SHARED, "Decorate")] },
+        [BARREL]: { imports: [reexportEdge(SHARED, "Decorate")] },
       },
     ],
     [
@@ -385,7 +372,7 @@ describe("scan — where a decorator's imported name is declared", () => {
         imports: [named("@vendor/kit", "Decorate"), named("@app/common", "helper")],
         decorators: decorated,
       },
-      [BARREL]: { imports: [reexporting("@vendor/util", "helper")] },
+      [BARREL]: { imports: [reexportEdge("@vendor/util", "helper")] },
     })
     expect(originsOf(seen.get(CONSUMER))).toEqual([
       ["@vendor/kit", { Decorate: "@vendor/kit" }],
@@ -404,7 +391,7 @@ describe("scan — where a decorator's imported name is declared", () => {
         "b.stub": consumer,
         "c.stub": consumer,
         "d.stub": consumer,
-        [barrel]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+        [barrel]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
       },
       moduleLanguage({
         recorder,
@@ -427,8 +414,8 @@ describe("scan — where a decorator's imported name is declared", () => {
         imports: [named("@app/common", "Decorate"), named("./z-barrel.stub", "Decorate")],
         decorators: decorated,
       },
-      [BARREL]: { imports: [reexporting("./kit.stub", "Decorate")] },
-      "src/z-barrel.stub": { imports: [reexporting("./kit.stub", "Decorate")] },
+      [BARREL]: { imports: [reexportEdge("./kit.stub", "Decorate")] },
+      "src/z-barrel.stub": { imports: [reexportEdge("./kit.stub", "Decorate")] },
     })
     await scanStubs(workspace.root, { languages: [moduleLanguage({ recorder })] })
 
@@ -440,7 +427,7 @@ describe("scan — where a decorator's imported name is declared", () => {
     const recorder = newRecorder()
     await writeModules({
       [CONSUMER]: { imports: [named("./z-barrel.stub", "Decorate")] },
-      "src/z-barrel.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+      "src/z-barrel.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
     })
     await scanStubs(workspace.root, { languages: [moduleLanguage({ recorder })] })
 
@@ -451,7 +438,7 @@ describe("scan — where a decorator's imported name is declared", () => {
   it("charges a barrel's parse to the barrel, not to the file whose chain reached it", async () => {
     await writeModules({
       [CONSUMER]: importsDecorate("./z-barrel.stub"),
-      "src/z-barrel.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+      "src/z-barrel.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
     })
     const framework = stubFrameworkPlugin()
     const result = await scanStubs(workspace.root, {
@@ -517,7 +504,7 @@ describe("scan — a language's import resolver that fails", () => {
     const seen = await importsSeen(
       {
         [CONSUMER]: importsDecorate("@app/common"),
-        [BARREL]: { imports: [reexporting("@app/inner", "Decorate")] },
+        [BARREL]: { imports: [reexportEdge("@app/inner", "Decorate")] },
       },
       moduleLanguage({
         resolve: async (specifier) => {
@@ -553,7 +540,7 @@ describe("scan — a language's import resolver that fails", () => {
         {
           [CONSUMER]: importsDecorate("@app/common"),
           "src/second.stub": importsDecorate("@app/common"),
-          [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+          [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
         },
         moduleLanguage({ createResolver }),
         logger,
@@ -578,7 +565,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
     "a/early.stub": importsDecorate("@app/late"),
     // Extracted before its importers, and every one of them reaches the same hop, which the
     // resolver fails on.
-    [BARREL]: { imports: [reexporting("@broken/inner", "Decorate")] },
+    [BARREL]: { imports: [reexportEdge("@broken/inner", "Decorate")] },
     [UNPARSABLE]: {},
     [CONSUMER]: importsDecorate("@app/common"),
     "src/b.stub": importsDecorate("@app/common"),
@@ -588,7 +575,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
     "src/f.stub": importsDecorate("@app/late"),
     // Fails on the specifier src/e.stub fails on, which is a failure of its own.
     "src/g.stub": importsDecorate("@broken/kit"),
-    [LATE_BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+    [LATE_BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
   }
   // Like a build config read once per resolver, which says what is wrong with it the first time.
   const resolver = (ctx: ImportResolverContext): ImportResolver => {
@@ -703,7 +690,7 @@ describe("scan — the context a language's import resolver is created with", ()
   const modules: Modules = {
     [CONSUMER]: importsDecorate("@app/common"),
     "src/second.stub": importsDecorate("@app/common"),
-    [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
+    [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
   }
 
   async function installedRootsSeen(

@@ -1,25 +1,17 @@
-import { importEdge } from "@aburi/test-support"
+import {
+  importEdge,
+  namespaceReexportEdge,
+  reexportEdge,
+  starReexportEdge,
+} from "@aburi/test-support"
 import type { ImportEdge, Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { type ResolveCallGraphInput, resolveCallGraph } from "../src/callgraph"
-import { type ImportClause, withCalls } from "./fixtures/callgraph"
+import { edgesOf, type ImportClause, withCalls } from "./fixtures/callgraph"
 import { makeSymbol } from "./fixtures/ir"
 
 /** Each module's import edges, by file. */
 type Modules = Readonly<Record<string, readonly ImportClause[]>>
-
-/** `export { … } from source`, each name written `imported` or `imported as exported`. */
-function reexport(source: string, ...names: string[]): ImportClause {
-  const entries = names.map((name) => {
-    const [imported = name, exported = imported] = name.split(" as ")
-    return { imported, exported }
-  })
-  return { source, symbols: entries.map((entry) => entry.imported), reexports: entries }
-}
-
-function reexportAll(source: string): ImportClause {
-  return { source, symbols: "*", reexportsAll: true }
-}
 
 function importing(source: string, ...names: string[]): ImportClause {
   return { source, symbols: names }
@@ -48,8 +40,6 @@ function resolveThrough(
 
 type Result = ReturnType<typeof resolveCallGraph>
 
-const edgesOf = (result: Result) =>
-  result.edges.map((edge) => [edge.from, edge.to, edge.confidence])
 const bucketsOf = (result: Result) => result.diagnostics.map((d) => [d.bucket, d.candidates])
 
 const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
@@ -59,14 +49,17 @@ describe("a call through a barrel", () => {
     [
       "a named re-export",
       "X",
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexport("./x", "X")] },
+      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexportEdge("./x", "X")] },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
     ],
     [
       "a renaming re-export",
       "X",
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexport("./x", "Y as X")] },
+      {
+        "src/a.ts": [importing("./barrel", "X")],
+        "src/barrel.ts": [reexportEdge("./x", "Y as X")],
+      },
       ["ts:src/x.ts#Y", "ts:src/x.ts#X"],
       "ts:src/x.ts#Y",
     ],
@@ -75,7 +68,7 @@ describe("a call through a barrel", () => {
       "X",
       {
         "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexport("./x", "default as X")],
+        "src/barrel.ts": [reexportEdge("./x", "default as X")],
       },
       ["ts:src/x.ts#<default>", "ts:src/x.ts#X"],
       "ts:src/x.ts#<default>",
@@ -83,7 +76,7 @@ describe("a call through a barrel", () => {
     [
       "a star re-export",
       "X",
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexportAll("./x")] },
+      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [starReexportEdge("./x")] },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
     ],
@@ -92,8 +85,8 @@ describe("a call through a barrel", () => {
       "X",
       {
         "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexportAll("./inner")],
-        "src/inner.ts": [reexport("./x", "X")],
+        "src/barrel.ts": [starReexportEdge("./inner")],
+        "src/inner.ts": [reexportEdge("./x", "X")],
       },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
@@ -101,14 +94,17 @@ describe("a call through a barrel", () => {
     [
       "a directory's index",
       "X",
-      { "src/a.ts": [importing("./lib", "X")], "src/lib/index.ts": [reexportAll("./x")] },
+      { "src/a.ts": [importing("./lib", "X")], "src/lib/index.ts": [starReexportEdge("./x")] },
       ["ts:src/lib/x.ts#X"],
       "ts:src/lib/x.ts#X",
     ],
     [
       "an alias of the barrel's name",
       "Z",
-      { "src/a.ts": [importing("./barrel", "X as Z")], "src/barrel.ts": [reexport("./x", "X")] },
+      {
+        "src/a.ts": [importing("./barrel", "X as Z")],
+        "src/barrel.ts": [reexportEdge("./x", "X")],
+      },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
     ],
@@ -117,7 +113,7 @@ describe("a call through a barrel", () => {
       "Z",
       {
         "src/a.ts": [importing("./barrel", "default as Z")],
-        "src/barrel.ts": [reexport("./x", "X as default")],
+        "src/barrel.ts": [reexportEdge("./x", "X as default")],
       },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
@@ -127,7 +123,7 @@ describe("a call through a barrel", () => {
       "b.X",
       {
         "src/a.ts": [{ source: "./barrel", symbols: "*", namespaceBinding: "b" }],
-        "src/barrel.ts": [reexportAll("./x")],
+        "src/barrel.ts": [starReexportEdge("./x")],
       },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
@@ -137,9 +133,7 @@ describe("a call through a barrel", () => {
       "ns.f",
       {
         "src/a.ts": [importing("./barrel", "ns")],
-        "src/barrel.ts": [
-          { source: "./x", symbols: "*", reexports: [{ imported: "*", exported: "ns" }] },
-        ],
+        "src/barrel.ts": [namespaceReexportEdge("./x", "ns")],
       },
       ["ts:src/x.ts#f"],
       "ts:src/x.ts#f",
@@ -147,7 +141,7 @@ describe("a call through a barrel", () => {
     [
       "the barrel's own declaration ahead of its star re-exports",
       "X",
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexportAll("./x")] },
+      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [starReexportEdge("./x")] },
       ["ts:src/barrel.ts#X", "ts:src/x.ts#X"],
       "ts:src/barrel.ts#X",
     ],
@@ -156,7 +150,7 @@ describe("a call through a barrel", () => {
       "X",
       {
         "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexportAll("./x"), reexport("./y", "X")],
+        "src/barrel.ts": [starReexportEdge("./x"), reexportEdge("./y", "X")],
       },
       ["ts:src/x.ts#X", "ts:src/y.ts#X"],
       "ts:src/y.ts#X",
@@ -166,8 +160,8 @@ describe("a call through a barrel", () => {
       "X",
       {
         "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexportAll("./x"), reexportAll("./y")],
-        "src/y.ts": [reexportAll("./x")],
+        "src/barrel.ts": [starReexportEdge("./x"), starReexportEdge("./y")],
+        "src/y.ts": [starReexportEdge("./x")],
       },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
@@ -177,7 +171,7 @@ describe("a call through a barrel", () => {
       "X",
       {
         "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexportAll("lodash"), reexportAll("./x")],
+        "src/barrel.ts": [starReexportEdge("lodash"), starReexportEdge("./x")],
       },
       ["ts:src/x.ts#X"],
       "ts:src/x.ts#X",
@@ -191,7 +185,7 @@ describe("a call through a barrel", () => {
     const run = makeSymbol("ts:src/x.ts#X.run", { kind: "method" })
     const result = resolveThrough(
       { "src/a.ts": "X.run" },
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexport("./x", "X")] },
+      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexportEdge("./x", "X")] },
       [...classes("ts:src/x.ts#X"), run],
     )
     expect(edgesOf(result)).toEqual([["ts:src/a.ts#caller", run.id, "high"]])
@@ -200,7 +194,7 @@ describe("a call through a barrel", () => {
   it("follows a bare specifier the barrel's language maps into the workspace", () => {
     const result = resolveThrough(
       { "src/a.ts": "X" },
-      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexport("@app/x", "X")] },
+      { "src/a.ts": [importing("./barrel", "X")], "src/barrel.ts": [reexportEdge("@app/x", "X")] },
       classes("ts:src/lib/x.ts#X"),
       { specifierPaths: new Map([["src/barrel.ts", new Map([["@app/x", ["src/lib/x"]]])]]) },
     )
@@ -213,8 +207,8 @@ describe("a call through a barrel", () => {
       {
         "src/a.ts": [importing("./one", "X")],
         "src/b.ts": [importing("./two", "X")],
-        "src/one.ts": [reexportAll("./two"), reexportAll("./x")],
-        "src/two.ts": [reexportAll("./one")],
+        "src/one.ts": [starReexportEdge("./two"), starReexportEdge("./x")],
+        "src/two.ts": [starReexportEdge("./one")],
       },
       classes("ts:src/x.ts#X"),
     )
@@ -224,17 +218,111 @@ describe("a call through a barrel", () => {
     ])
   })
 
-  it("leaves a name two star re-exports disagree on unresolved, bucketed `ambiguous`", () => {
+  const disagreeing: Modules = {
+    "src/a.ts": [importing("./barrel", "X")],
+    "src/barrel.ts": [starReexportEdge("./x"), starReexportEdge("./y")],
+  }
+
+  it.each<[string, string, Modules, IRSymbol[], string[]]>([
+    [
+      "a call of the name",
+      "X",
+      disagreeing,
+      classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+      ["ts:src/x.ts#X", "ts:src/y.ts#X"],
+    ],
+    [
+      "a member only one of them declares",
+      "X.run",
+      disagreeing,
+      [
+        ...classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+        makeSymbol("ts:src/x.ts#X.run", { kind: "method" }),
+      ],
+      ["ts:src/x.ts#X", "ts:src/y.ts#X"],
+    ],
+    [
+      "a member neither declares",
+      "X.run",
+      disagreeing,
+      classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+      ["ts:src/x.ts#X", "ts:src/y.ts#X"],
+    ],
+    [
+      "a barrel that re-exports the conflict by name",
+      "X",
+      {
+        "src/a.ts": [importing("./outer", "X")],
+        "src/outer.ts": [reexportEdge("./barrel", "X")],
+        "src/barrel.ts": [starReexportEdge("./x"), starReexportEdge("./y")],
+      },
+      classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+      ["ts:src/x.ts#X", "ts:src/y.ts#X"],
+    ],
+    [
+      "a namespace against a declaration",
+      "X.f",
+      {
+        "src/a.ts": [importing("./barrel", "X")],
+        "src/barrel.ts": [starReexportEdge("./spaces"), starReexportEdge("./y")],
+        "src/spaces.ts": [namespaceReexportEdge("./m", "X")],
+      },
+      [...classes("ts:src/y.ts#X"), makeSymbol("ts:src/m.ts#f", { kind: "function" })],
+      ["ts:src/y.ts#X"],
+    ],
+    [
+      "two namespaces",
+      "X.f",
+      {
+        "src/a.ts": [importing("./barrel", "X")],
+        "src/barrel.ts": [starReexportEdge("./one"), starReexportEdge("./two")],
+        "src/one.ts": [namespaceReexportEdge("./m", "X")],
+        "src/two.ts": [namespaceReexportEdge("./n", "X")],
+      },
+      ["ts:src/m.ts#f", "ts:src/n.ts#f"].map((id) => makeSymbol(id, { kind: "function" })),
+      [],
+    ],
+  ])(
+    "leaves a name two star re-exports disagree on unresolved, `ambiguous`, for %s",
+    (_label, target, modules, callees, candidates) => {
+      const result = resolveThrough({ "src/a.ts": target }, modules, callees)
+      expect(result.edges).toEqual([])
+      expect(bucketsOf(result)).toEqual([["ambiguous", candidates]])
+    },
+  )
+
+  it("takes no default export through a star re-export", () => {
     const result = resolveThrough(
       { "src/a.ts": "X" },
       {
-        "src/a.ts": [importing("./barrel", "X")],
-        "src/barrel.ts": [reexportAll("./x"), reexportAll("./y")],
+        "src/a.ts": [importing("./barrel", "default as X")],
+        "src/barrel.ts": [starReexportEdge("./x")],
       },
-      classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+      classes("ts:src/x.ts#<default>"),
     )
     expect(result.edges).toEqual([])
-    expect(bucketsOf(result)).toEqual([["ambiguous", ["ts:src/x.ts#X", "ts:src/y.ts#X"]]])
+    expect(bucketsOf(result)).toEqual([["no-match", []]])
+  })
+
+  it("asks each barrel once per search where every barrel re-exports every other", () => {
+    const barrels = Array.from({ length: 12 }, (_, index) => `src/b${index}.ts`)
+    const modules: Modules = Object.fromEntries([
+      ["src/a.ts", [importing("./b0", "X", "Y")]],
+      ...barrels.map((file, index) => [
+        file,
+        [
+          ...barrels
+            .filter((other) => other !== file)
+            .map((other) => starReexportEdge(`./${other.slice(4, -3)}`)),
+          ...(index === barrels.length - 1 ? [starReexportEdge("./x")] : []),
+        ],
+      ]),
+    ])
+    const calls = { "src/a.ts": "X" }
+    const found = resolveThrough(calls, modules, classes("ts:src/x.ts#X"))
+    expect(edgesOf(found)).toEqual([["ts:src/a.ts#caller", "ts:src/x.ts#X", "high"]])
+    const missing = resolveThrough({ "src/a.ts": "Y" }, modules, classes("ts:src/x.ts#X"))
+    expect(bucketsOf(missing)).toEqual([["no-match", []]])
   })
 
   it.each<[string, Modules]>([
@@ -242,14 +330,14 @@ describe("a call through a barrel", () => {
       "a named re-export of a package",
       {
         "src/a.ts": [importing("./barrel", "sortBy")],
-        "src/barrel.ts": [reexport("lodash", "sortBy")],
+        "src/barrel.ts": [reexportEdge("lodash", "sortBy")],
       },
     ],
     [
       "a star re-export of a package no other star re-export answers for",
       {
         "src/a.ts": [importing("./barrel", "sortBy")],
-        "src/barrel.ts": [reexportAll("lodash"), reexportAll("./x")],
+        "src/barrel.ts": [starReexportEdge("lodash"), starReexportEdge("./x")],
       },
     ],
   ])("buckets a chain that leaves the workspace through %s `external`", (_label, modules) => {
@@ -263,22 +351,22 @@ describe("a call through a barrel", () => {
       "barrels that re-export it from each other",
       {
         "src/a.ts": [importing("./one", "Logger")],
-        "src/one.ts": [reexportAll("./two")],
-        "src/two.ts": [reexport("./one", "Logger")],
+        "src/one.ts": [starReexportEdge("./two")],
+        "src/two.ts": [reexportEdge("./one", "Logger")],
       },
     ],
     [
       "a relative specifier naming no file",
       {
         "src/a.ts": [importing("./barrel", "Logger")],
-        "src/barrel.ts": [reexport("./missing", "Logger")],
+        "src/barrel.ts": [reexportEdge("./missing", "Logger")],
       },
     ],
     [
       "a module that exports another name",
       {
         "src/a.ts": [importing("./barrel", "Logger")],
-        "src/barrel.ts": [reexport("./x", "Other")],
+        "src/barrel.ts": [reexportEdge("./x", "Other")],
       },
     ],
     [
@@ -312,7 +400,10 @@ describe("a call through a barrel", () => {
   it("ends the search at a re-exported class that lacks the member", () => {
     const result = resolveThrough(
       { "src/a.ts": "Logger.log" },
-      { "src/a.ts": [importing("./barrel", "Logger")], "src/barrel.ts": [reexportAll("./logger")] },
+      {
+        "src/a.ts": [importing("./barrel", "Logger")],
+        "src/barrel.ts": [starReexportEdge("./logger")],
+      },
       [
         ...classes("ts:src/logger.ts#Logger"),
         makeSymbol("ts:src/far.ts#Logger.log", { kind: "method", component: "billing" }),

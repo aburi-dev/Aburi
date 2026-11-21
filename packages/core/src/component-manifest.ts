@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { toNfc } from "./codepoints"
+import { isRecord } from "./collections"
 import { CoreError } from "./errors"
 import { unnameableSite } from "./id"
 import { compareCodeUnit } from "./order"
@@ -141,7 +142,7 @@ export interface NpmManifest extends ManifestIdentity {
   typings?: string
 }
 
-async function readJsonManifest(path: string): Promise<NpmManifest | null> {
+async function readJsonManifest(path: string): Promise<Readonly<Record<string, unknown>> | null> {
   let raw: string
   try {
     raw = await readFile(path, "utf8")
@@ -154,8 +155,7 @@ async function readJsonManifest(path: string): Promise<NpmManifest | null> {
     )
   }
   const parsed = parseManifestJson(raw, path)
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null
-  return parsed as NpmManifest
+  return isRecord(parsed) ? parsed : null
 }
 
 export function collectFrameworks(manifest: NpmManifest | null): string[] {

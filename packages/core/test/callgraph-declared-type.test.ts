@@ -1,9 +1,9 @@
-import { importEdge, symbolId } from "@aburi/test-support"
+import { importEdge, starReexportEdge, symbolId } from "@aburi/test-support"
 import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
 import { type ResolveCallGraphInput, resolveCallGraph } from "../src/callgraph"
-import { type ImportClause, importsOf, withCalls } from "./fixtures/callgraph"
+import { edgesOf, type ImportClause, importsOf, withCalls } from "./fixtures/callgraph"
 import { makeSymbol, type SymbolOverrides } from "./fixtures/ir"
 
 const CALLER = "ts:src/service.ts#UserService.byId"
@@ -67,7 +67,7 @@ describe("a call through a receiver of a declared type", () => {
     const result = resolve(symbols, {
       importsByFile: new Map([
         ["src/service.ts", [importEdge({ source: "./data", symbols: ["UserRepository"] })]],
-        ["src/data/index.ts", [importEdge({ source: "./repo", symbols: "*", reexportsAll: true })]],
+        ["src/data/index.ts", [starReexportEdge("./repo")]],
       ]),
       moduleFiles: new Map([["ts", new Set(["src/data/index.ts"])]]),
     })
@@ -197,18 +197,15 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
     })
   }
 
-  const edgesOf = (result: ReturnType<typeof resolveCallGraph>) =>
-    result.edges.map((edge) => [edge.to, edge.confidence])
-
   it("resolves to the member the class declares, at medium confidence", () => {
     const result = resolveThis(service)
-    expect(edgesOf(result)).toEqual([[OWN, "medium"]])
+    expect(edgesOf(result)).toEqual([[CALLER, OWN, "medium"]])
     expect(result.diagnostics).toEqual([])
   })
 
   it("takes a language server's hint first, which reads the members the class inherits", () => {
     const result = resolveThis(service, { kind: "this", to: BASE })
-    expect(edgesOf(result)).toEqual([[BASE, "high"]])
+    expect(edgesOf(result)).toEqual([[CALLER, BASE, "high"]])
     expect(result.lspHintUsage).toEqual({ consumed: 1, kindMismatch: 0, targetDropped: 0 })
   })
 
@@ -222,7 +219,7 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
     ],
   ] as const)("reads the class's own member when the hint %s", (_case, kind, to, rejected) => {
     const result = resolveThis(service, { kind, to })
-    expect(edgesOf(result)).toEqual([[OWN, "medium"]])
+    expect(edgesOf(result)).toEqual([[CALLER, OWN, "medium"]])
     expect(result.lspHintUsage).toEqual({ consumed: 0, ...rejected })
   })
 

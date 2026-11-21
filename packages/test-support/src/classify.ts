@@ -22,6 +22,25 @@ export function importEdge(
   return { symbols: [], line: 1, dynamic: false, ...overrides }
 }
 
+/** `export { … } from source`, each name written `imported` or `imported as exported`. */
+export function reexportEdge(source: string, ...names: string[]): ImportEdge {
+  const entries = names.map((name) => {
+    const [imported = name, exported = imported] = name.split(" as ")
+    return { imported, exported }
+  })
+  return importEdge({ source, symbols: entries.map((entry) => entry.imported), reexports: entries })
+}
+
+/** `export * from source`. */
+export function starReexportEdge(source: string): ImportEdge {
+  return importEdge({ source, symbols: "*", reexportsAll: true })
+}
+
+/** `export * as exported from source`. */
+export function namespaceReexportEdge(source: string, exported: string): ImportEdge {
+  return importEdge({ source, symbols: "*", reexports: [{ imported: "*", exported }] })
+}
+
 function makeOwner(overrides: Partial<OwnerSummary> = {}): OwnerSummary {
   return {
     id: symbolId("ts:test.ts#Owner"),

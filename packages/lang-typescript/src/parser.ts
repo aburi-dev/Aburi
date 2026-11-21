@@ -6,10 +6,10 @@ import type { ParseError, ParseResult, SourceFile } from "@aburi/types"
 import { Language, type Node, Parser, type Tree } from "web-tree-sitter"
 import { walkDescendants } from "./ast-helpers"
 import { callSignatureSeparators } from "./call-signature-separator"
-import { importTypePatches, rememberImportTypes } from "./import-type-reparse"
+import { type ImportTypePatch, importTypePatches, rememberImportTypes } from "./import-type-reparse"
 import { extractImports, isTypeStarKeyword } from "./imports"
 import { jsxStringCommentPatches } from "./jsx-string-comment"
-import { reparsePatched } from "./reparse"
+import { type Patch, reparsePatched } from "./reparse"
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -125,34 +125,44 @@ function repairedOrFirst(
   source: string,
 ): { tree: Tree | null; errors: ParseError[] } {
   if (first === null || !first.rootNode.hasError) return { tree: first, errors: [] }
-  let repaired: Tree | null
-  try {
-    repaired = repairedTree(parser, first, source)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    const message = `reparse failed, keeping the first parse: ${reason}`
-    return { tree: first, errors: [{ message, line: 1, column: 1, recoverable: true }] }
-  }
-  if (repaired === null) return { tree: first, errors: [] }
-  first.delete()
-  return { tree: repaired, errors: [] }
-}
-
-function repairedTree(parser: Parser, first: Tree, source: string): Tree | null {
-  const importTypes = importTypePatches(first)
-  const patches = [
-    ...importTypes,
-    ...callSignatureSeparators(first, source),
-    ...jsxStringCommentPatches(source),
+  let importTypes: readonly ImportTypePatch[] = []
+  const repairs: readonly (readonly [string, () => readonly Patch[]])[] = [
+    [
+      "import() types",
+      () => {
+        importTypes = importTypePatches(first)
+        return importTypes
+      },
+    ],
+    ["generic call signatures", () => callSignatureSeparators(first, source)],
+    ["JSX strings opening with <!--", () => jsxStringCommentPatches(source)],
   ]
-  if (patches.length === 0) return null
-  const repaired = reparsePatched(parser, first, source, patches, damageOf)
-  if (repaired === null) return null
+  const errors: ParseError[] = []
+  let best = first
+  let kept: readonly Patch[] = []
+  // One repair at a time, each kept only where it leaves the tree less broken than those before.
+  for (const [name, patchesOf] of repairs) {
+    try {
+      const patches = patchesOf()
+      if (patches.length === 0) continue
+      const repaired = reparsePatched(parser, best, source, [...kept, ...patches], damageOf)
+      if (repaired === null) continue
+      if (best !== first) best.delete()
+      best = repaired.tree
+      kept = repaired.patches
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      const message = `reparse of ${name} failed, keeping the parse without it: ${reason}`
+      errors.push({ message, line: 1, column: 1, recoverable: true })
+    }
+  }
+  if (best === first) return { tree: first, errors }
   rememberImportTypes(
-    repaired.tree,
-    importTypes.filter((patch) => repaired.patches.includes(patch)),
+    best,
+    importTypes.filter((patch) => kept.includes(patch)),
   )
-  return repaired.tree
+  first.delete()
+  return { tree: best, errors }
 }
 
 function pickGrammarForPath(path: string): string {

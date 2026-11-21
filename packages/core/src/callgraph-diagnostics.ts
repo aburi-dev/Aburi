@@ -34,7 +34,7 @@ export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCa
   if (input.dynamicReceiver || input.trace.unnamedReceiver) {
     return { ...base, bucket: "dynamic", candidates: [] }
   }
-  if (input.trace.ambiguousCandidates.size > 0) {
+  if (input.trace.ambiguousCandidates.size > 0 || input.trace.conflictingExport) {
     return {
       ...base,
       bucket: "ambiguous",

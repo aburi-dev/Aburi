@@ -321,6 +321,11 @@ describe("a call through `this` carries no type where the class does not declare
     ],
     ["a member of a field", classOf("  events: Hub", "  m() { this.events.bus.emit() }"), "C.m"],
     [
+      "a method whose `this` parameter declares another type",
+      classOf("  events: EventEmitter2", '  m(this: Other) { this.events.emit("a") }'),
+      "C.m",
+    ],
+    [
       "a field behind a non-null assertion",
       classOf("  events!: EventEmitter2", '  m() { this.events!.emit("a") }'),
       "C.m",
@@ -432,6 +437,11 @@ describe("a call of a member of `this` in an instance member carries the class's
       "N.C.m",
     ],
     ["an object literal's method", "export const o = {\n  m() { this.n() },\n}", "o.m"],
+    [
+      "a method whose `this` parameter declares another type",
+      classOf("  m(/* bound */ this: Other, x: number) { [x].map(() => this.n()) }"),
+      "C.m",
+    ],
     [
       "a `function` inside a method, which binds its own `this`",
       classOf("  m() { return function () { this.n() } }"),
