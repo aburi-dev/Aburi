@@ -45,13 +45,55 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # The runner changes between runs, so the commit the previous run measured is rebuilt here
+      # and measured beside this one: only that comparison separates the code from the hardware.
+      - name: Build the commit the previous run measured
+        id: baseline
+        # Without the baseline the sweep still runs, comparing across runners only.
+        continue-on-error: true
+        run: |
+          previous="$(ls benchmarks/public-repos/results/????-??-??.json 2>/dev/null | sort | tail -1)"
+          if [ -z "$previous" ]; then
+            echo "No previous results file; the report compares against nothing." >&2
+            exit 0
+          fi
+          # Parsed before it is handed on, so a file that is not JSON leaves the sweep comparing nothing.
+          commit="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).commit ?? ""' "$previous")"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          if [ -z "$commit" ]; then
+            echo "$previous records no commit; the report compares across runners only." >&2
+            exit 0
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          baseline="$RUNNER_TEMP/aburi-baseline"
+          git fetch --no-tags --depth=1 origin "$commit"
+          git worktree add --detach "$baseline" "$commit"
+          cd "$baseline"
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter='./packages/*'
+          echo "dir=$baseline" >> "$GITHUB_OUTPUT"
+
+      - name: Warn that the previous run's commit was not measured
+        if: steps.baseline.outcome == 'failure'
+        run: echo "::warning title=No same-runner comparison::The step that builds the commit the previous run measured failed, so the report has no same-runner columns. See that step's log."
+
       - name: Run the benchmark
         env:
           ONLY: ${{ inputs.only }}
           RUNS: ${{ inputs.runs || '3' }}
+          PREVIOUS: ${{ steps.baseline.outputs.previous }}
+          BASELINE: ${{ steps.baseline.outputs.dir }}
+          BASELINE_OUTCOME: ${{ steps.baseline.outcome }}
+          BASELINE_COMMIT: ${{ steps.baseline.outputs.commit }}
         run: |
           args=(--work-dir "$RUNNER_TEMP/aburi-bench-work" --runs "$RUNS")
           if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          if [ -n "$PREVIOUS" ]; then args+=(--previous "$PREVIOUS"); fi
+          if [ -n "$BASELINE" ]; then
+            args+=(--baseline "$BASELINE")
+          elif [ "$BASELINE_OUTCOME" = failure ] && [ -n "$BASELINE_COMMIT" ]; then
+            args+=(--baseline-failed "$BASELINE_COMMIT")
+          fi
           node benchmarks/public-repos/run.mjs "${args[@]}"
 
       - name: Upload the results
@@ -66,6 +108,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
+          BASELINE: ${{ steps.baseline.outputs.dir }}
         run: |
           report="$(git status --porcelain benchmarks/public-repos/results | awk '$NF ~ /[0-9]\.md$/ { print $NF }' | sort | tail -1)"
           if [ -z "$report" ]; then
@@ -87,8 +130,12 @@ jobs:
           {
             echo "Measured by the \`Benchmark\` workflow on \`$HEAD_SHA\`."
             echo
-            echo "What moved, and whether the runner or the code moved it, is not written yet."
+            echo "What moved is not written up yet."
             echo
+            if [ -n "$BASELINE" ]; then
+              echo "The same-runner columns measure the previous run's commit on this runner, so they show what the code moved; the across-runner columns also move with the runner."
+              echo
+            fi
             cat "$report"
           } > "$RUNNER_TEMP/benchmark-pr-body.md"
           gh pr create \

@@ -19,14 +19,7 @@ import {
   scanFaults,
   validateCensus,
 } from "./census-report.mjs"
-import {
-  aburiCommit,
-  aburiVersion,
-  assertRunnable,
-  CLI_ENTRY,
-  git,
-  REPO_ROOT,
-} from "./checkout.mjs"
+import { aburiCommit, aburiVersion, assertRunnable, cliEntry, git, REPO_ROOT } from "./checkout.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CENSUS_PATH = resolve(HERE, "no-match/sample.json")
@@ -53,7 +46,7 @@ async function scanClone(repo, workDir) {
   if (head !== repo.head) {
     throw new Error(`${dir} is at ${head}, not the pinned ${repo.head}; the census reads the pin.`)
   }
-  const { runScan } = await import(pathToFileURL(CLI_ENTRY).href)
+  const { runScan } = await import(pathToFileURL(cliEntry()).href)
   const outputDir = await mkdtemp(resolve(tmpdir(), "aburi-census-"))
   try {
     const report = await runScan({

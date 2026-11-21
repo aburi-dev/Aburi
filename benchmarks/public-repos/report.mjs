@@ -4,11 +4,14 @@ import { DEFAULT_WORK_DIR, requireCount, requireValue } from "./args.mjs"
 
 const COMPLETED_EXIT_CODES = new Set([0, 3])
 
-export function scanRunFault(measurement, irWritten) {
+function runFault(measurement) {
   if (measurement.wallMs == null) return measurement.failure ?? "no measurement line"
   if (!COMPLETED_EXIT_CODES.has(measurement.exitCode)) return `exit ${measurement.exitCode}`
-  if (!irWritten) return "no IR was written"
   return null
+}
+
+export function scanRunFault(measurement, irWritten) {
+  return runFault(measurement) ?? (irWritten ? null : "no IR was written")
 }
 
 export function median(values) {
@@ -18,14 +21,16 @@ export function median(values) {
 }
 
 export function summariseScans(runs, options = {}) {
+  const { totalFiles = null, warnings = "" } = options
   for (const [index, entry] of runs.entries()) {
     const fault = scanRunFault(entry.measurement, entry.irWritten)
-    if (fault) return { failed: "scan", fault: `run ${index + 1} of ${runs.length}: ${fault}` }
+    if (fault) {
+      return { failed: "scan", fault: `run ${index + 1} of ${runs.length}: ${fault}`, warnings }
+    }
   }
   const wallMsSamples = runs.map((entry) => entry.measurement.wallMs)
   const hashes = runs.map((entry) => entry.hash)
   const wallMsMedian = median(wallMsSamples)
-  const { totalFiles = null, warnings = "" } = options
   const exitCodes = runs.map((entry) => entry.measurement.exitCode)
   return {
     runs: runs.length,
@@ -65,6 +70,9 @@ export function parseArgs(argv) {
     warmup: 1,
     diff: true,
     workDir: DEFAULT_WORK_DIR,
+    baseline: null,
+    baselineFailed: null,
+    previous: null,
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -73,9 +81,94 @@ export function parseArgs(argv) {
     else if (arg === "--warmup") options.warmup = requireCount(argv, ++i, "--warmup", 0)
     else if (arg === "--no-diff") options.diff = false
     else if (arg === "--work-dir") options.workDir = resolve(requireValue(argv, ++i, "--work-dir"))
-    else throw new Error(`Unknown flag: ${arg}`)
+    else if (arg === "--baseline") options.baseline = resolve(requireValue(argv, ++i, "--baseline"))
+    else if (arg === "--previous") options.previous = resolve(requireValue(argv, ++i, "--previous"))
+    else if (arg === "--baseline-failed") {
+      options.baselineFailed = requireValue(argv, ++i, "--baseline-failed")
+    } else throw new Error(`Unknown flag: ${arg}`)
+  }
+  if (options.baseline !== null && options.baselineFailed !== null) {
+    throw new Error("--baseline and --baseline-failed both name the baseline build; pass one.")
   }
   return options
+}
+
+export function readSweep(text, path) {
+  let sweep
+  try {
+    sweep = JSON.parse(text)
+  } catch (error) {
+    throw new Error(`--previous ${path} is not JSON: ${error.message}`)
+  }
+  const isObject = (value) => typeof value === "object" && value !== null
+  const refuse = (why) => {
+    throw new Error(`--previous ${path} is not a sweep's results file: ${why}.`)
+  }
+  const missing = [
+    typeof sweep?.startedAt === "string" ? null : "startedAt",
+    isObject(sweep?.environment) ? null : "environment",
+    Array.isArray(sweep?.results) ? null : "results",
+  ].filter((field) => field !== null)
+  if (missing.length > 0) refuse(`it has no ${missing.join(", ")}`)
+  const malformed = sweep.results.findIndex(
+    (entry) =>
+      !isObject(entry) ||
+      typeof entry.id !== "string" ||
+      (!entry.failed && (typeof entry.head !== "string" || !isObject(entry.scan))),
+  )
+  if (malformed !== -1) {
+    refuse(`results[${malformed}] needs an id, and a head and a scan unless it failed`)
+  }
+  return sweep
+}
+
+export function previousResultFor(previous, repo) {
+  const result = previous?.results.find((entry) => entry.id === repo.id)
+  if (result === undefined || result.failed || result.head !== repo.head) return null
+  const { irHash, irHashes } = result.scan
+  return {
+    scanWallMsMedian: result.scan.wallMsMedian,
+    diff:
+      result.base === repo.base && result.diff
+        ? { wallMs: result.diff.wallMs, exitCode: result.diff.exitCode }
+        : null,
+    irHashes: irHashes ?? (irHash === undefined ? [] : [irHash]),
+  }
+}
+
+export function reproducesPrevious(baselineScan, previousResult) {
+  if (previousResult === null || baselineScan.failed) return null
+  // A previous sweep that wrote two IRs, or kept no hash, recorded no single IR to reproduce.
+  const recorded = new Set(previousResult.irHashes)
+  if (recorded.size !== 1) return null
+  return baselineScan.irHashes.every((hash) => recorded.has(hash))
+}
+
+// Flipping the order each round keeps a drift through the sweep from favouring the build run second.
+export function scanSchedule(builds, warmup, runs) {
+  return Array.from({ length: warmup + runs }, (_, round) =>
+    (round % 2 === 0 ? builds : builds.toReversed()).map((build) => ({
+      build,
+      warm: round < warmup,
+    })),
+  ).flat()
+}
+
+export function comparedFields(previous, repo, baseline) {
+  const before = previousResultFor(previous, repo)
+  const fields = {}
+  if (previous !== null) {
+    fields.previous =
+      before === null ? null : { scanWallMsMedian: before.scanWallMsMedian, diff: before.diff }
+  }
+  if (baseline === null) return fields
+  if (baseline.failed) {
+    fields.baseline = baseline
+    return fields
+  }
+  const scan = summariseScans(baseline.runs, { warnings: baseline.warnings })
+  fields.baseline = scan.failed ? scan : { scan, reproduced: reproducesPrevious(scan, before) }
+  return fields
 }
 
 function formatMiB(kb) {
@@ -101,6 +194,32 @@ function row(cells) {
 
 function dashes(count) {
   return Array.from({ length: count }, () => "—")
+}
+
+function formatChange(beforeMs, afterMs) {
+  if (beforeMs == null || afterMs == null) return "—"
+  const percent = ((afterMs - beforeMs) / beforeMs) * 100
+  const sign = percent < 0 ? "−" : "+"
+  return `${formatSeconds(beforeMs)} → ${formatSeconds(afterMs)} s (${sign}${Math.abs(percent).toFixed(0)}%)`
+}
+
+function formatDiffChange(before, after) {
+  if (before == null || after == null) return "—"
+  const faults = [before, after].map(runFault)
+  if (faults.every((fault) => fault === null)) return formatChange(before.wallMs, after.wallMs)
+  const [from, to] = [before, after].map((diff, side) =>
+    faults[side] === null ? `${formatSeconds(diff.wallMs)} s` : `✗ ${faults[side]}`,
+  )
+  return `${from} → ${to}`
+}
+
+function formatFailure({ failed, fault }) {
+  const cell = fault ? fault.replace(/\s+/g, " ").replaceAll("|", "\\|") : ""
+  return `✗ ${failed}${cell ? ` (${cell})` : ""}`
+}
+
+function formatRun(environment) {
+  return `${environment.cpus}× ${environment.cpuModel} · Node ${environment.node}`
 }
 
 function formatExitCodes(scan) {
@@ -142,8 +261,7 @@ export function renderReport(report) {
   lines.push("|---|---:|---:|---:|---:|---:|---:|---:|---:|:--:|:--:|")
   for (const result of results) {
     if (result.failed) {
-      const fault = result.fault ? ` (${result.fault})` : ""
-      lines.push(row([`\`${result.id}\``, ...dashes(8), `✗ ${result.failed}${fault}`, "—"]))
+      lines.push(row([`\`${result.id}\``, ...dashes(8), formatFailure(result), "—"]))
       continue
     }
     const { scan, metrics } = result
@@ -255,6 +373,75 @@ export function renderReport(report) {
       )
     }
   }
+  if (report.previous || report.baseline) lines.push(...renderComparison(report))
   lines.push("")
   return `${lines.join("\n")}\n`
+}
+
+function renderComparison(report) {
+  const { previous, baseline, environment, results } = report
+  const lines = ["", "## Against the previous run", ""]
+  const measuredBaseline = baseline !== undefined && !baseline.failed
+  if (baseline?.failed) {
+    lines.push(
+      `**Same runner**: not measured — building \`${baseline.commit.slice(0, 8)}\` on this runner ` +
+        "failed, see the baseline step's log.",
+    )
+    lines.push("")
+  } else if (baseline) {
+    lines.push(
+      `**Same runner**: \`${baseline.commit.slice(0, 8)}\`${baseline.dirty ? " + uncommitted changes" : ""} ` +
+        "was rebuilt on this runner and measured interleaved with this build, scan by scan, with " +
+        "the same runs and warmup and the order flipped each round. The diff is one run of each, " +
+        "back to back, so its change is far noisier than the scan median's. **Previous IRs** says " +
+        "whether it wrote, at every run, the IR the previous run recorded for the repository (n/a " +
+        "where the previous run recorded no single IR at this head).",
+    )
+    lines.push("")
+  }
+  if (previous) {
+    lines.push(
+      `**Across runners**: the ${previous.startedAt.slice(0, 10)} run measured ` +
+        `${previous.commit ? `\`${previous.commit.slice(0, 8)}\`` : "an unrecorded commit"}` +
+        `${previous.dirty ? " + uncommitted changes" : ""} on ${formatRun(previous.environment)}; ` +
+        `this run is on ${formatRun(environment)}. A wall time that moved here may have moved with the runner.`,
+    )
+    lines.push("")
+  }
+  const sameRunner = measuredBaseline
+    ? ["Scan, same runner", "Diff, same runner", "Previous IRs"]
+    : []
+  const acrossRunners = previous ? ["Scan, across runners", "Diff, across runners"] : []
+  if (sameRunner.length + acrossRunners.length === 0) return lines.slice(0, -1)
+  lines.push(row(["Repo", ...sameRunner, ...acrossRunners]))
+  lines.push(`|---|${measuredBaseline ? "---:|---:|:--:|" : ""}${previous ? "---:|---:|" : ""}`)
+  for (const result of results) {
+    if (result.failed) {
+      lines.push(row([`\`${result.id}\``, ...dashes(sameRunner.length + acrossRunners.length)]))
+      continue
+    }
+    lines.push(
+      row([
+        `\`${result.id}\``,
+        ...(measuredBaseline ? sameRunnerCells(result) : []),
+        ...(previous
+          ? [
+              formatChange(result.previous?.scanWallMsMedian, result.scan.wallMsMedian),
+              formatDiffChange(result.previous?.diff, result.diff),
+            ]
+          : []),
+      ]),
+    )
+  }
+  return lines
+}
+
+function sameRunnerCells({ baseline, scan, diff }) {
+  if (baseline === undefined) return dashes(3)
+  if (baseline.failed) return [formatFailure(baseline), "—", "—"]
+  return [
+    formatChange(baseline.scan.wallMsMedian, scan.wallMsMedian),
+    formatDiffChange(baseline.diff, diff),
+    baseline.reproduced == null ? "n/a" : baseline.reproduced ? "✓" : "✗",
+  ]
 }
