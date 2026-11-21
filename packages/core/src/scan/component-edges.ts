@@ -1,7 +1,7 @@
 import type { Component, ComponentId, Dependency, ImportEdge } from "@aburi/types"
 import { dependencyKey } from "../call-site"
 import { dirname, isRelativeSpecifier, joinPosix } from "../callgraph-specifier"
-import { NPM_MANIFEST, type WorkspacePackage } from "../component-manifest"
+import { NPM_MANIFEST, packageName, type WorkspacePackage } from "../component-manifest"
 import { compareCodeUnit } from "../order"
 import { buildComponentAttribution, type ComponentAttribution } from "./attribute"
 
@@ -91,14 +91,6 @@ function packageClaims(
     else claimants.add(owner)
   }
   return claims
-}
-
-function packageName(specifier: string): string | null {
-  const [first, second] = specifier.split("/")
-  if (first === undefined || first.length === 0) return null
-  if (!first.startsWith("@")) return first
-  if (second === undefined || second.length === 0) return null
-  return `${first}/${second}`
 }
 
 // A name two Components' manifests claim decides neither, so no arrow is drawn for it.

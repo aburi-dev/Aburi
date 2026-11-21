@@ -129,62 +129,116 @@ describe("scan — decorator provenance through @aburi/framework-nestjs", () => 
       ["Controller", "nest", true],
     ])
   })
+})
 
-  it("says it is less sure about a namespace import from a competing library", async () => {
+describe("scan — a decorator from a package outside the workspace", () => {
+  const SHARED = "@tsed/shared"
+
+  it.each([
+    ["by name", `import { Controller } from "routing-controllers"`, "Controller"],
+    ["renamed on import", `import { Controller as Route } from "routing-controllers"`, "Route"],
+    ["by a default import", `import Controller from "routing-controllers"`, "Controller"],
+    ["through a namespace import", `import * as tsed from "@tsed/common"`, "tsed.Controller"],
+    [
+      "through a receiver a default import binds",
+      `import tsed from "@tsed/common"`,
+      "tsed.Controller",
+    ],
+    ["from @angular/core", `import { Injectable } from "@angular/core"`, "Injectable"],
+  ])(
+    "refuses a class decorator imported %s, which is another framework's",
+    async (_case, importLine, written) => {
+      await workspace.writeSource(
+        "src/x.controller.ts",
+        `${importLine}\n\n@${written}("/x")\nexport class XController {}\n`,
+      )
+
+      const controller = symbolNamed(await scanWorkspace(), "XController")
+      expect(controller.extKind).toBeNull()
+      expect(controller.decorators.map((d) => d.boundary ?? false)).toEqual([false])
+    },
+  )
+
+  it("rates at medium the decorators of a package that may wrap NestJS's", async () => {
     await workspace.writeSource(
-      "src/d6.controller.ts",
+      "src/w.controller.ts",
       [
-        `import * as tsed from "@tsed/common"`,
+        `import { Controller } from "@acme/nest-kit"`,
+        `import { TypedRoute } from "@nestia/core"`,
         ``,
-        `@tsed.Controller("/d6")`,
-        `export class D6Controller {`,
-        `  find() { return null }`,
+        `@Controller("/w")`,
+        `export class WController {`,
+        `  @TypedRoute.Get("/a") a() { return null }`,
         `}`,
         ``,
       ].join("\n"),
     )
 
     const result = await scanWorkspace()
-    const controller = symbolNamed(result, "D6Controller")
-    expect(controller.extKind).toBe("framework:nestjs:controller")
-    expect(controller.confidence).toBe("medium")
+    expect(
+      ["WController", "WController.a"].map((name) => {
+        const symbol = symbolNamed(result, name)
+        return [name, symbol.extKind, symbol.confidence]
+      }),
+    ).toEqual([
+      ["WController", "framework:nestjs:controller", "medium"],
+      ["WController.a", "framework:nestjs:route", "medium"],
+    ])
   })
 
-  it("reads a receiver bound by a default import, not only a namespace one", async () => {
+  it("still classifies the NestJS decorators beside one it refuses", async () => {
     await workspace.writeSource(
-      "src/d7.controller.ts",
+      "src/y.controller.ts",
       [
-        `import tsed from "@tsed/common"`,
+        `import { Controller, Post } from "@nestjs/common"`,
+        `import { Get } from "routing-controllers"`,
         ``,
-        `@tsed.Controller("/d7")`,
-        `export class D7Controller {}`,
-        ``,
-      ].join("\n"),
-    )
-
-    const result = await scanWorkspace()
-    const controller = symbolNamed(result, "D7Controller")
-    expect(controller.extKind).toBe("framework:nestjs:controller")
-    expect(controller.confidence).toBe("medium")
-  })
-
-  it("classifies a decorator from a competing library, but says it is less sure", async () => {
-    await workspace.writeSource(
-      "src/d3.controller.ts",
-      [
-        `import { Controller } from "routing-controllers"`,
-        ``,
-        `@Controller("/d3")`,
-        `export class D3Controller {`,
-        `  find() { return null }`,
+        `@Controller("/y")`,
+        `export class YController {`,
+        `  @Get("/a") a() { return null }`,
+        `  @Post("/b") b() { return null }`,
         `}`,
         ``,
       ].join("\n"),
     )
 
     const result = await scanWorkspace()
-    const controller = symbolNamed(result, "D3Controller")
-    expect(controller.extKind).toBe("framework:nestjs:controller")
-    expect(controller.confidence).toBe("medium")
+    expect(
+      ["YController", "YController.a", "YController.b"].map((name) => {
+        const symbol = symbolNamed(result, name)
+        return [name, symbol.extKind, symbol.confidence]
+      }),
+    ).toEqual([
+      ["YController", "framework:nestjs:controller", "high"],
+      ["YController.a", null, "high"],
+      ["YController.b", "framework:nestjs:route", "high"],
+    ])
   })
+
+  it.each([
+    ["by its name", `import { Controller } from "${SHARED}"`, "Controller"],
+    ["by a path under it", `import { Controller } from "${SHARED}/decorators"`, "Controller"],
+    ["through a namespace import", `import * as shared from "${SHARED}"`, "shared.Controller"],
+    ["through a receiver it binds by name", `import { nest } from "${SHARED}"`, "nest.Controller"],
+  ])(
+    "rates a @Controller from a workspace package in another framework's scope, imported %s, at medium",
+    async (_case, importLine, written) => {
+      await workspace.writeSource(
+        "src/z.controller.ts",
+        `${importLine}\n\n@${written}("/z")\nexport class ZController {}\n`,
+      )
+
+      const result = await scanWith(
+        workspace.root,
+        { languages: [langTypescriptPlugin], frameworks: [nestjsFrameworkPlugin] },
+        {},
+        { workspacePackages: [{ name: SHARED, root: "packages/shared" }] },
+      )
+      const controller = symbolNamed(result, "ZController")
+      expect([controller.extKind, controller.confidence]).toEqual([
+        "framework:nestjs:controller",
+        "medium",
+      ])
+    },
+  )
 })

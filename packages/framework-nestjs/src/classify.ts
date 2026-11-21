@@ -56,6 +56,7 @@ function classifyClass(
     assertDecoratorName(decorator.name, symbol.id)
     assertDecoratorQualifier(decorator.qualifier, decorator.name, symbol.id)
     const resolved = resolveDecoratorName(decorator, names)
+    if (resolved === null) continue
     const hit = classifyClassDecorator(resolved.canonical)
     if (hit === undefined) continue
     boundaries[boundaryKey(decorator)] = true
@@ -85,7 +86,9 @@ function classifyMethod(
   for (const decorator of symbol.decorators) {
     assertDecoratorName(decorator.name, symbol.id)
     assertDecoratorQualifier(decorator.qualifier, decorator.name, symbol.id)
-    const { canonical, confidence } = resolveDecoratorName(decorator, names)
+    const resolved = resolveDecoratorName(decorator, names)
+    if (resolved === null) continue
+    const { canonical, confidence } = resolved
     if (!isMethodBoundaryDecorator(canonical)) continue
     boundaries[boundaryKey(decorator)] = true
     if (NESTJS_HTTP_METHOD_DECORATORS.has(canonical) || NESTJS_PATTERN_DECORATORS.has(canonical)) {

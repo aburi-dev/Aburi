@@ -52,9 +52,10 @@ export interface ImportEdge {
   /**
    * Set by the scan, never by the language plugin, and only for a name a decorator in the file
    * binds while a framework plugin is loaded. Keyed by that name as the edge's module exports it,
-   * the first bare specifier the module's `reexports` lead to that no workspace file answers, which
-   * may be a workspace package the package manager links. A name without a key may be declared
-   * anywhere: in the workspace, or behind a re-export the scan could not follow.
+   * the bare specifier outside the workspace the name comes through, on the edge itself or on the
+   * `reexports` of the modules it leads to: one that no workspace file answers and that names no
+   * workspace package. A name without a key may be declared anywhere: in the workspace, in a
+   * workspace package, or behind a re-export the scan could not follow.
    */
   origins?: ReadonlyMap<string, string>
 }

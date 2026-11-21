@@ -14,6 +14,7 @@ import {
   resolveRelativeSpecifier,
 } from "../callgraph-specifier"
 import { toNfc } from "../codepoints"
+import { packageName } from "../component-manifest"
 import { decoratorReference, splitAliasedImportName } from "../import-edge"
 import type { DiscoveredFile } from "./discover"
 import {
@@ -34,6 +35,7 @@ export interface ImportOriginsInput {
   workspaceRoot: string
   installedRoot?: string
   files: readonly DiscoveredFile[]
+  workspacePackageNames: readonly string[]
   router: LanguageRouter
   loadSource(file: DiscoveredFile): Promise<SourceFile>
   record(event: ExtractionEvent): void
@@ -58,6 +60,7 @@ export class ImportOrigins {
   readonly #input: ImportOriginsInput
   readonly #files: ReadonlyMap<string, DiscoveredFile>
   readonly #knownFiles: ReadonlySet<string>
+  readonly #workspacePackages: ReadonlySet<string>
   readonly #resolvers = new Map<Language, ImportResolver | "none" | "fault">()
   readonly #edges = new AsyncMemo<string, readonly ImportEdge[]>()
   readonly #targets = new AsyncMemo<string, Target>()
@@ -67,6 +70,7 @@ export class ImportOrigins {
     this.#input = input
     this.#files = new Map(input.files.map((file) => [file.path, file]))
     this.#knownFiles = new Set(this.#files.keys())
+    this.#workspacePackages = new Set(input.workspacePackageNames)
   }
 
   remember(path: string, edges: readonly ImportEdge[]): void {
@@ -83,7 +87,7 @@ export class ImportOrigins {
       const origins = new Map<string, string>()
       for (const name of names) {
         const origin = await this.#externalOrigin(file.path, edge.source, name)
-        if (origin !== null && origin !== edge.source) origins.set(name, origin)
+        if (origin !== null) origins.set(name, origin)
       }
       if (origins.size > 0) originsByEdge.set(edge, origins)
     }
@@ -120,7 +124,7 @@ export class ImportOrigins {
       const key = `${from}\0${source}`
       const target = await this.#targets.get(key, () => this.#resolveTarget(from, source))
       if (target === "fault") return null
-      if (target === "outside") return isRelativeSpecifier(hop.source) ? null : hop.source
+      if (target === "outside") return this.#isForeign(source) ? source : null
       // A namespace of a workspace module: which member the decorator reads is not carried here.
       if (hop.imported === NAMESPACE) return null
       const state = `${target.file}\0${hop.imported}`
@@ -135,6 +139,13 @@ export class ImportOrigins {
       from = file
       hop = next
     }
+  }
+
+  // The core reads no package's entry points, so a workspace package's name ends the chain unread.
+  #isForeign(specifier: string): boolean {
+    if (isRelativeSpecifier(specifier)) return false
+    const name = packageName(specifier)
+    return name !== null && !this.#workspacePackages.has(name)
   }
 
   async #resolveTarget(fromFile: string, specifier: string): Promise<Target> {

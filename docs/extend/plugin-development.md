@@ -290,10 +290,21 @@ import type {
   SymbolClassification,
 } from "@aburi/types"
 
-/** Written identifier → the exported name it resolves to, and whether you own the module. */
+type From = "mine" | "unknown" | "theirs"
+
+// Frameworks of their own whose decorators share your names. Any other package may wrap yours.
+const OTHER_FRAMEWORKS = ["othertool", "@other/"]
+
+function isOtherFramework(specifier: string): boolean {
+  return OTHER_FRAMEWORKS.some((entry) =>
+    entry.endsWith("/") ? specifier.startsWith(entry) : specifier === entry || specifier.startsWith(`${entry}/`),
+  )
+}
+
+/** Written identifier → the exported name it resolves to, and where its module is. */
 function importedNames(imports: readonly ImportEdge[], filePath: string) {
   const origin = { plugin: "framework-mytool", filePath }
-  const names = new Map<string, { imported: string; mine: boolean }>()
+  const names = new Map<string, { imported: string; from: From }>()
   for (const edge of imports) {
     // Validate every edge before answering, or the throw depends on import order.
     assertImportEdgeSource(edge, origin)
@@ -301,9 +312,15 @@ function importedNames(imports: readonly ImportEdge[], filePath: string) {
     for (const raw of edge.symbols) {
       const binding = splitAliasedImportName(raw)
       assertImportBinding(binding, raw, edge, origin)
-      // A workspace barrel's re-export is traced to the module that declares the name.
-      const declaredIn = edge.origins?.get(binding.imported) ?? edge.source
-      names.set(binding.local, { imported: binding.imported, mine: declaredIn.startsWith("@mytool/") })
+      // The scan keys a name it traced outside the workspace, through any barrels, to the package
+      // it ends at. A name without a key may sit in a barrel it could not follow.
+      const outside = edge.origins?.get(binding.imported)
+      const from: From = (outside ?? edge.source).startsWith("@mytool/")
+        ? "mine"
+        : outside !== undefined && isOtherFramework(outside)
+          ? "theirs"
+          : "unknown"
+      names.set(binding.local, { imported: binding.imported, from })
     }
   }
   return names
@@ -329,9 +346,10 @@ class MyFrameworkPlugin implements FrameworkPlugin {
       // A default import arrives as `"default as Widget"`: `default` is in no vocabulary, so
       // the written name is the only evidence of which decorator it is.
       const exported = origin.imported === DEFAULT_EXPORT_NAME ? d.name : origin.imported
-      if (exported !== "Widget") return false
-      // Same name, someone else's module. Classify, but say you are less sure.
-      confidence = origin.mine ? "high" : "medium"
+      // Same name, another framework's package: not yours.
+      if (exported !== "Widget" || origin.from === "theirs") return false
+      // Same name, a module that may re-export yours. Classify, but say you are less sure.
+      confidence = origin.from === "mine" ? "high" : "medium"
       return true
     })
     // Return null to abstain; the next framework plugin gets a turn.
@@ -386,13 +404,16 @@ Contracts:
   wrote, and read `ImportEdge.origins` for provenance before `ImportEdge.source`.
   Matching the written name alone loses `import { Widget as W }` and claims a
   `@Widget` that came from some other library. A default import's imported name
-  is `default`, so match its written name instead. When a decorator's import
-  reaches a workspace barrel, relative or through a path alias, the scan follows
-  the barrel's re-exports and records on `origins` the module outside the
-  workspace that the name comes from. When neither field names a module you own,
-  classify at `confidence: "medium"` rather than refusing, because a barrel the
-  scan could not follow, such as one that re-exports through `export *`, looks
-  like a foreign package. See the
+  is `default`, so match its written name instead. The scan follows a decorator's
+  import through the workspace's barrels, relative or through a path alias, and
+  records on `origins` the package outside the workspace that the name comes
+  from, even when that is the edge's own specifier; a name with no key ended
+  inside the workspace or where the scan could not follow it. Refuse a decorator
+  only when `origins` names a package you know as another framework with
+  decorators of the same names. For any other module you do not own, classify at
+  `confidence: "medium"`: a package outside the workspace may re-export or wrap
+  yours, and a barrel the scan could not follow, such as one that re-exports
+  through `export *`, has no key at all. See the
   [language plugin spec](../design/lang-plugin.md#522-matching-a-decorator-against-the-import-edges).
 - `ctx.imports` is the live array the pipeline reports as the file's imports, not a copy.
   Read it, memoize on its identity if you like, and never mutate it.

@@ -391,6 +391,20 @@ describe("reportScanIncidents — a package.json value that gave no publicApi en
   })
 })
 
+describe("reportScanIncidents — a workspace package manifest it could not read", () => {
+  it("names the manifest, why, and what an import of the package now reads as", () => {
+    const lines = incidentLinesFrom({
+      unreadPackageManifests: [
+        { manifestPath: "packages/legacy/package.json", reason: "Unexpected token n" },
+      ],
+    })
+
+    expect(lines).toEqual([
+      "⚠ packages/legacy/package.json could not be read (Unexpected token n), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.",
+    ])
+  })
+})
+
 function ignoredMain(
   value: string,
   reason: IgnoredPublicApiReason,

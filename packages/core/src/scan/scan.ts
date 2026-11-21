@@ -81,7 +81,12 @@ export interface ScanInput {
   logger?: Logger
   workspaceManagers?: readonly WorkspaceManager[]
   components?: readonly Component[]
-  /** What a bare import specifier is matched against to find the Component it imports. */
+  /**
+   * Every package of the workspace: what a bare import specifier is matched against to find the
+   * Component it imports, and to tell a workspace package from one outside the workspace. Left out,
+   * every package imported by its name, with no `paths` key mapping it, reads as one outside the
+   * workspace, and `ImportEdge.origins` names it as the package a decorator comes from.
+   */
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }
   lspServerFactory?: ServerFactory
@@ -141,6 +146,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     files: discovered.files,
     config: input.config,
     components: input.components ?? [],
+    workspacePackageNames: (input.workspacePackages ?? []).map(({ name }) => name),
     languages: input.languages,
     frameworks: input.frameworks,
     effects: input.effects,

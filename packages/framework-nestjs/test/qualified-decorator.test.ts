@@ -73,10 +73,22 @@ describe("classifyNestjsSymbol — a decorator written through a receiver", () =
       "high",
     ],
     [
-      "a namespace import of a barrel that re-exports the leaf from a competing library",
-      "rc",
+      "a namespace bound twice, the edge traced to a competing library first",
+      "ns",
       [
-        reexported(makeNamespaceImport("@app/common", "rc"), {
+        reexported(makeNamespaceImport("routing-controllers", "ns", 1), {
+          Controller: "routing-controllers",
+        }),
+        makeNamespaceImport("./x", "ns", 2),
+      ],
+      "medium",
+    ],
+    [
+      "a namespace bound twice, the edge traced to a competing library second",
+      "ns",
+      [
+        makeNamespaceImport("./x", "ns", 1),
+        reexported(makeNamespaceImport("routing-controllers", "ns", 2), {
           Controller: "routing-controllers",
         }),
       ],
@@ -115,6 +127,36 @@ describe("classifyNestjsSymbol — a decorator written through a receiver", () =
       expect(result?.confidence ?? "high").toBe(confidence)
     },
   )
+
+  it.each([
+    [
+      "a namespace import the scan traced to a competing library",
+      "rc",
+      [
+        reexported(makeNamespaceImport("routing-controllers", "rc"), {
+          Controller: "routing-controllers",
+        }),
+      ],
+    ],
+    [
+      "a namespace import of a barrel that re-exports the leaf from a competing library",
+      "rc",
+      [
+        reexported(makeNamespaceImport("@app/common", "rc"), {
+          Controller: "routing-controllers",
+        }),
+      ],
+    ],
+    [
+      "a receiver bound by name, which the scan traced to a competing library",
+      "tsed",
+      [reexported(makeImport("@tsed/common", ["tsed"]), { tsed: "@tsed/common" })],
+    ],
+  ])("refuses a qualified @Controller read through %s", (_label, qualifier, imports) => {
+    const controller = decorator({ name: "Controller", qualifier })
+
+    expect(classifyDecorated("class", [controller], imports)).toBeNull()
+  })
 
   it("names a qualified route after its leaf, which a namespace import cannot rename", () => {
     expect(

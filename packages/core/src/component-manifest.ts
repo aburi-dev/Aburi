@@ -68,6 +68,20 @@ export interface WorkspacePackage {
   root: string
 }
 
+/**
+ * The package a bare specifier imports: `@scope/name` for a scoped one, otherwise its first segment.
+ * `null` for one no package can be named by: a subpath import (`#x`), private to the importing
+ * package, and a bundler's alias spelled with an empty scope (`@/x`) or a `~`.
+ */
+export function packageName(specifier: string): string | null {
+  const [first, second] = specifier.split("/")
+  if (first === undefined || first.length === 0) return null
+  if (first.startsWith("#") || first === "@" || first.startsWith("~")) return null
+  if (!first.startsWith("@")) return first
+  if (second === undefined || second.length === 0) return null
+  return `${first}/${second}`
+}
+
 export async function readWorkspacePackages(
   workspaceRoot: string,
   roots: readonly string[],
