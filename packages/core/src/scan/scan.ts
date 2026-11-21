@@ -80,7 +80,9 @@ export interface ScanInput {
   components?: readonly Component[]
   /**
    * Every package of the workspace: what a bare import specifier is matched against to find the
-   * Component it imports, and to tell a workspace package from one outside the workspace.
+   * Component it imports, and to tell a workspace package from one outside the workspace. Left out,
+   * every package imported by its name, with no `paths` key mapping it, reads as one outside the
+   * workspace, and `ImportEdge.origins` names it as the package a decorator comes from.
    */
   workspacePackages?: readonly WorkspacePackage[]
   generator?: { name: string; version: string }

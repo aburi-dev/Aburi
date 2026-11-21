@@ -20,6 +20,12 @@ export type CoverageFault =
     }
   | { kind: "below-floor"; parsedFiles: number; totalFiles: number; floor: number }
 
+/** The manifest of a workspace package no Component holds, which could not be read. */
+export interface UnreadPackageManifest {
+  manifestPath: string
+  reason: string
+}
+
 export interface PluginNamedFramework {
   component: string
   value: string
@@ -63,6 +69,7 @@ export interface ScanReport {
   fellBackToSingleComponent: boolean
   pluginNamedFrameworks: readonly PluginNamedFramework[]
   ignoredPublicApi: readonly IgnoredPublicApi[]
+  unreadPackageManifests: readonly UnreadPackageManifest[]
   loadedPlugins: readonly string[]
   strayPluginOptions: readonly StrayPluginOptions[]
   exitCode: ExitCode

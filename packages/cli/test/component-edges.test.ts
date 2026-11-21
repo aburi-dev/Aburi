@@ -3,6 +3,7 @@ import { dependency, errorFrom, symbolNamed, useScratchWorkspace } from "@aburi/
 import type { IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { CliError, runScan } from "../src"
+import { resolveManagers, resolveWorkspacePackages } from "../src/commands/scan-components"
 import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("component-edges")
@@ -17,7 +18,7 @@ async function scan(config: Record<string, unknown> = {}) {
   const report = await runScan({ cwd: workspace.root, format: "both", outputDir: "out" })
   const ir = JSON.parse(await readFile(report.irPath ?? "", "utf8")) as IR
   const workspaceMd = await readFile(report.workspaceMdPath ?? "", "utf8")
-  return { edges: ir.dependencies.filter((edge) => edge.via === "import"), workspaceMd }
+  return { edges: ir.dependencies.filter((edge) => edge.via === "import"), workspaceMd, report }
 }
 
 describe("aburi scan — Component edges from imports between workspace packages", () => {
@@ -82,24 +83,45 @@ describe("aburi scan — Component edges from imports between workspace packages
     await writeFileAt(workspace.root, "packages/legacy/package.json", "{ name: ")
     await writeFileAt(workspace.root, "apps/web/src/index.ts", "export const page = 1\n")
 
-    const { edges } = await scan({ components: [{ id: "web", roots: ["apps/web"] }] })
+    const { edges, report } = await scan({ components: [{ id: "web", roots: ["apps/web"] }] })
 
     expect(edges).toEqual([])
+    expect(report.unreadPackageManifests.map(({ manifestPath }) => manifestPath)).toEqual([
+      "packages/legacy/package.json",
+    ])
   })
 })
 
 describe("aburi scan — a workspace package no Component holds", () => {
-  it("is still a workspace package to a decorator imported from it by name", async () => {
+  it("is read apart from the others, so a manifest it cannot read costs only its own name", async () => {
+    await writeFileAt(workspace.root, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n")
+    await writeFileAt(workspace.root, "packages/legacy/package.json", "{ name: ")
+    await writePackage("packages/shared", "@acme/shared", "export const format = String\n")
+
+    const managers = await resolveManagers({}, workspace.root)
+    const { packages, unreadManifests } = await resolveWorkspacePackages(
+      workspace.root,
+      managers,
+      [],
+    )
+
+    expect(packages).toEqual([{ name: "@acme/shared", root: "packages/shared" }])
+    expect(unreadManifests.map(({ manifestPath }) => manifestPath)).toEqual([
+      "packages/legacy/package.json",
+    ])
+  })
+
+  it("is still a workspace package to a decorator imported from it, in another framework's scope", async () => {
     await writeFileAt(workspace.root, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n")
     await writePackage(
       "packages/shared",
-      "@acme/shared",
+      "@tsed/shared",
       'export { Controller } from "@nestjs/common"\n',
     )
     await writeFileAt(
       workspace.root,
       "apps/api/src/x.controller.ts",
-      'import { Controller } from "@acme/shared"\n\n@Controller("/x")\nexport class XController {}\n',
+      'import { Controller } from "@tsed/shared"\n\n@Controller("/x")\nexport class XController {}\n',
     )
     await writeConfig(workspace.root, {
       ...TYPESCRIPT,

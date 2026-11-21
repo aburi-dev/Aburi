@@ -132,7 +132,7 @@ describe("scan — decorator provenance through @aburi/framework-nestjs", () => 
 })
 
 describe("scan — a decorator from a package outside the workspace", () => {
-  const SHARED = "@acme/shared"
+  const SHARED = "@tsed/shared"
 
   it.each([
     ["by name", `import { Controller } from "routing-controllers"`, "Controller"],
@@ -144,8 +144,9 @@ describe("scan — a decorator from a package outside the workspace", () => {
       `import tsed from "@tsed/common"`,
       "tsed.Controller",
     ],
+    ["from @angular/core", `import { Injectable } from "@angular/core"`, "Injectable"],
   ])(
-    "refuses a @Controller imported %s, which is not NestJS's",
+    "refuses a class decorator imported %s, which is another framework's",
     async (_case, importLine, written) => {
       await workspace.writeSource(
         "src/x.controller.ts",
@@ -157,6 +158,33 @@ describe("scan — a decorator from a package outside the workspace", () => {
       expect(controller.decorators.map((d) => d.boundary ?? false)).toEqual([false])
     },
   )
+
+  it("rates at medium the decorators of a package that may wrap NestJS's", async () => {
+    await workspace.writeSource(
+      "src/w.controller.ts",
+      [
+        `import { Controller } from "@acme/nest-kit"`,
+        `import { TypedRoute } from "@nestia/core"`,
+        ``,
+        `@Controller("/w")`,
+        `export class WController {`,
+        `  @TypedRoute.Get("/a") a() { return null }`,
+        `}`,
+        ``,
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+    expect(
+      ["WController", "WController.a"].map((name) => {
+        const symbol = symbolNamed(result, name)
+        return [name, symbol.extKind, symbol.confidence]
+      }),
+    ).toEqual([
+      ["WController", "framework:nestjs:controller", "medium"],
+      ["WController.a", "framework:nestjs:route", "medium"],
+    ])
+  })
 
   it("still classifies the NestJS decorators beside one it refuses", async () => {
     await workspace.writeSource(
@@ -188,24 +216,29 @@ describe("scan — a decorator from a package outside the workspace", () => {
   })
 
   it.each([
-    ["by its name", SHARED],
-    ["by a path under it", `${SHARED}/decorators`],
-  ])("rates a @Controller from a workspace package, named %s, at medium", async (_case, source) => {
-    await workspace.writeSource(
-      "src/z.controller.ts",
-      `import { Controller } from "${source}"\n\n@Controller("/z")\nexport class ZController {}\n`,
-    )
+    ["by its name", `import { Controller } from "${SHARED}"`, "Controller"],
+    ["by a path under it", `import { Controller } from "${SHARED}/decorators"`, "Controller"],
+    ["through a namespace import", `import * as shared from "${SHARED}"`, "shared.Controller"],
+    ["through a receiver it binds by name", `import { nest } from "${SHARED}"`, "nest.Controller"],
+  ])(
+    "rates a @Controller from a workspace package in another framework's scope, imported %s, at medium",
+    async (_case, importLine, written) => {
+      await workspace.writeSource(
+        "src/z.controller.ts",
+        `${importLine}\n\n@${written}("/z")\nexport class ZController {}\n`,
+      )
 
-    const result = await scanWith(
-      workspace.root,
-      { languages: [langTypescriptPlugin], frameworks: [nestjsFrameworkPlugin] },
-      {},
-      { workspacePackages: [{ name: SHARED, root: "packages/shared" }] },
-    )
-    const controller = symbolNamed(result, "ZController")
-    expect([controller.extKind, controller.confidence]).toEqual([
-      "framework:nestjs:controller",
-      "medium",
-    ])
-  })
+      const result = await scanWith(
+        workspace.root,
+        { languages: [langTypescriptPlugin], frameworks: [nestjsFrameworkPlugin] },
+        {},
+        { workspacePackages: [{ name: SHARED, root: "packages/shared" }] },
+      )
+      const controller = symbolNamed(result, "ZController")
+      expect([controller.extKind, controller.confidence]).toEqual([
+        "framework:nestjs:controller",
+        "medium",
+      ])
+    },
+  )
 })

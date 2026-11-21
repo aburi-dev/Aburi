@@ -14,23 +14,42 @@ export function isNestjsModule(source: string): boolean {
   return source.startsWith(NESTJS_SCOPE)
 }
 
+// Frameworks of their own whose decorators share NestJS's names. Any other package outside the
+// workspace may wrap NestJS's, as `@nestia/core` does, so it is not refused.
+const OTHER_FRAMEWORKS: readonly string[] = [
+  "@angular/",
+  "@decorators/",
+  "@foal/",
+  "@inversifyjs/",
+  "@midwayjs/",
+  "@overnightjs/",
+  "@tsed/",
+  "@tsoa/",
+  "routing-controllers",
+  "tsoa",
+]
+
+function isOtherFrameworkModule(source: string): boolean {
+  return OTHER_FRAMEWORKS.some((entry) =>
+    entry.endsWith("/")
+      ? source.startsWith(entry)
+      : source === entry || source.startsWith(`${entry}/`),
+  )
+}
+
 /** How far an edge's module is trusted to be NestJS's, best first. */
-type Provenance = "nestjs" | "unfollowed" | "foreign"
+type Provenance = "nestjs" | "unknown" | "other-framework"
 
-const RANK: Readonly<Record<Provenance, number>> = { nestjs: 0, unfollowed: 1, foreign: 2 }
+const RANK: Readonly<Record<Provenance, number>> = { nestjs: 0, unknown: 1, "other-framework": 2 }
 
-// Only the scan's origins place a module outside the workspace; a specifier as written may name a
-// barrel or a workspace package.
 const CONFIDENCE: Readonly<Record<Provenance, Confidence | null>> = {
   nestjs: "high",
-  unfollowed: "medium",
-  foreign: null,
+  unknown: "medium",
+  "other-framework": null,
 }
 
 interface NameOrigin {
   readonly imported: string
-  /** The module specifier the name came from, kept so a downgrade can say which module caused it. */
-  readonly source: string
   readonly provenance: Provenance
 }
 
@@ -67,22 +86,21 @@ export function readImportedNames(
       assertImportBinding(binding, raw, edge, origin)
       const provenance = provenanceOf(edge, binding.imported)
       const earlier = names.get(binding.local)
-      if (earlier !== undefined && RANK[earlier.provenance] < RANK[provenance]) continue
-      names.set(binding.local, {
-        imported: binding.imported,
-        source: edge.origins?.get(binding.imported) ?? edge.source,
-        provenance,
-      })
+      if (earlier !== undefined && RANK[earlier.provenance] <= RANK[provenance]) continue
+      names.set(binding.local, { imported: binding.imported, provenance })
     }
   }
 
   return { names, namespaces }
 }
 
+// Only a module the scan placed outside the workspace is refused: a specifier as written may be a
+// path alias to the project's own files.
 function provenanceOf(edge: NamespaceOrigin, name: string): Provenance {
   const origin = edge.origins?.get(name)
-  if (origin !== undefined) return isNestjsModule(origin) ? "nestjs" : "foreign"
-  return isNestjsModule(edge.source) ? "nestjs" : "unfollowed"
+  if (origin === undefined) return isNestjsModule(edge.source) ? "nestjs" : "unknown"
+  if (isNestjsModule(origin)) return "nestjs"
+  return isOtherFrameworkModule(origin) ? "other-framework" : "unknown"
 }
 
 export interface ResolvedDecoratorName {
@@ -90,7 +108,7 @@ export interface ResolvedDecoratorName {
   confidence: Confidence
 }
 
-/** `null` for a decorator the scan traced to a module outside the workspace that is not NestJS's. */
+/** `null` for a decorator the scan traced to another framework's package outside the workspace. */
 export function resolveDecoratorName(
   decorator: Pick<Decorator, "name" | "qualifier">,
   bindings: ImportedBindings,

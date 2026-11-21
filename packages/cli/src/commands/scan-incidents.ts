@@ -45,6 +45,7 @@ export function reportScanIncidents(
   reportCoverageFault(report.coverageFault, sayIncident)
   reportPluginNamedFrameworks(report.pluginNamedFrameworks, sayIncident)
   reportIgnoredPublicApi(report.ignoredPublicApi, sayIncident)
+  reportUnreadPackageManifests(report.unreadPackageManifests, sayIncident)
   reportStrayPluginOptions(report, warn, said)
   reportUnrepresentable(report.unrepresentableFiles, sayIncident, warn)
   reportTreeReleaseFailures(report.treeReleaseFailures, sayIncident, warn)
@@ -209,6 +210,17 @@ function reportIgnoredPublicApi(
   for (const { component, manifestPath, field, value, reason } of ignored) {
     sayIncident(
       `Component "${component}": ${manifestPath}#${field} is ${JSON.stringify(value)}, ${IGNORED_PUBLIC_API_BECAUSE[reason]}, so it gives no publicApi entry.`,
+    )
+  }
+}
+
+function reportUnreadPackageManifests(
+  unread: ScanReport["unreadPackageManifests"],
+  sayIncident: SayIncident,
+): void {
+  for (const { manifestPath, reason } of unread) {
+    sayIncident(
+      `${manifestPath} could not be read (${reason}), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.`,
     )
   }
 }

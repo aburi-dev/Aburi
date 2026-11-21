@@ -124,7 +124,11 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     workspaceRoot,
     plugins.languages,
   )
-  const workspacePackages = await resolveWorkspacePackages(workspaceRoot, managers, components)
+  const { packages: workspacePackages, unreadManifests } = await resolveWorkspacePackages(
+    workspaceRoot,
+    managers,
+    components,
+  )
   const fellBackToSingleComponent =
     declaredComponents(config) === undefined && managers.workspaces.length === 0
 
@@ -219,6 +223,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     fellBackToSingleComponent,
     pluginNamedFrameworks: pluginNamedFrameworks(config, plugins.registry),
     ignoredPublicApi,
+    unreadPackageManifests: unreadManifests,
     loadedPlugins,
     strayPluginOptions: strayPluginOptions(config, loadedPlugins, loaded.syntheticPlugins),
     exitCode:

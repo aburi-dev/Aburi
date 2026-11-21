@@ -90,13 +90,13 @@ describe("aburi diff <base>..<head> — a path alias from a workspace package's 
     expect((await diffOfLastCommit()).symbols).toMatchObject([
       {
         status: "changed",
-        before: { id: controller, extKind: "framework:nestjs:controller" },
-        after: { extKind: null },
+        before: { id: controller, confidence: "high" },
+        after: { confidence: "medium" },
       },
       {
         status: "changed",
-        before: { id: `${controller}.list`, extKind: "framework:nestjs:route" },
-        after: { extKind: null },
+        before: { id: `${controller}.list`, confidence: "high" },
+        after: { confidence: "medium" },
       },
     ])
   })

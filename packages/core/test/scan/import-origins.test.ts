@@ -335,6 +335,30 @@ describe("scan — where a decorator's imported name is declared", () => {
     ["a workspace package's name", { [CONSUMER]: importsDecorate(SHARED) }],
     ["a path under a workspace package", { [CONSUMER]: importsDecorate(`${SHARED}/decorators`) }],
     [
+      "a namespace import of a workspace package a qualified decorator reads through",
+      {
+        [CONSUMER]: {
+          imports: [importEdge({ source: SHARED, symbols: "*", namespaceBinding: "shared" })],
+          decorators: [decorator({ name: "Decorate", qualifier: "shared" })],
+        },
+      },
+    ],
+    [
+      "a receiver a workspace package binds by name",
+      {
+        [CONSUMER]: {
+          imports: [named(SHARED, "kit")],
+          decorators: [decorator({ name: "Decorate", qualifier: "kit" })],
+        },
+      },
+    ],
+    [
+      "a subpath import, private to the importing package",
+      { [CONSUMER]: importsDecorate("#decorators") },
+    ],
+    ["a bundler alias with an empty scope", { [CONSUMER]: importsDecorate("@/common") }],
+    ["a bundler alias spelled with a tilde", { [CONSUMER]: importsDecorate("~/common") }],
+    [
       "a barrel that re-exports the name from a workspace package",
       {
         [CONSUMER]: importsDecorate("@app/common"),

@@ -18,7 +18,7 @@ const LIBRARIES: Readonly<Record<string, string>> = {
   "libs/layered/src/index.ts": `export { Controller } from "./nest"\n`,
   "libs/layered/src/nest.ts": `export { Controller } from "@nestjs/common"\n`,
   "libs/foreign/src/index.ts": `export { Controller } from "routing-controllers"\n`,
-  "libs/linked/src/index.ts": `export { Controller } from "@acme/shared"\n`,
+  "libs/linked/src/index.ts": `export { Controller } from "@tsed/shared"\n`,
   "libs/star/src/index.ts": `export * from "@nestjs/common"\n`,
   "libs/own/src/index.ts": OWN_CONTROLLER,
   "libs/renamed-first/src/index.ts": `export { Controller as NestController } from "@nestjs/common"\nexport { Controller } from "../../own/src"\n`,
@@ -38,7 +38,7 @@ const scanWorkspace = () =>
     workspace.root,
     { languages: [langTypescriptPlugin], frameworks: [nestjsFrameworkPlugin] },
     {},
-    { workspacePackages: [{ name: "@acme/shared", root: "packages/shared" }] },
+    { workspacePackages: [{ name: "@tsed/shared", root: "packages/shared" }] },
   )
 
 describe("scan — a NestJS decorator re-exported through a workspace barrel", () => {
@@ -152,6 +152,12 @@ describe("scan — a NestJS decorator re-exported through a workspace barrel", (
       "Controller",
       "medium",
     ],
+    [
+      "an alias to no file in the workspace, which resolves outside it",
+      `import { Controller } from "@app/missing"`,
+      "Controller",
+      "medium",
+    ],
   ])("rates a controller imported from %s", async (_case, importLine, written, confidence) => {
     await workspace.writeSource(
       "src/x.controller.ts",
@@ -175,11 +181,6 @@ describe("scan — a NestJS decorator re-exported through a workspace barrel", (
       "that barrel through a namespace import",
       `import * as foreign from "@app/foreign"`,
       "foreign.Controller",
-    ],
-    [
-      "an alias to no file in the workspace, which resolves outside it",
-      `import { Controller } from "@app/missing"`,
-      "Controller",
     ],
   ])("refuses a controller imported from %s", async (_case, importLine, written) => {
     await workspace.writeSource(

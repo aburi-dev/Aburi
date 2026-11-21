@@ -4,6 +4,7 @@ import {
   type CoreErrorCode,
   type DetectComponentsResult,
   type DetectManagersResult,
+  describeThrown,
   detectComponents,
   detectManagers,
   languageFileDropPatterns,
@@ -19,7 +20,7 @@ import type { Component, Config, LanguagePlugin } from "@aburi/types"
 import { CliError, errorMessage } from "../errors"
 import { frameworkIdForPlugin } from "../plugin-catalog"
 import type { LoadedPlugins } from "../plugin-loader"
-import type { PluginNamedFramework } from "./scan-report"
+import type { PluginNamedFramework, UnreadPackageManifest } from "./scan-report"
 
 export function declaredComponents(config: Partial<Config>): Config["components"] | undefined {
   const declared = config.components
@@ -63,11 +64,16 @@ export async function resolveComponents(
   }
 }
 
+export interface ResolvedWorkspacePackages {
+  packages: WorkspacePackage[]
+  unreadManifests: UnreadPackageManifest[]
+}
+
 export async function resolveWorkspacePackages(
   workspaceRoot: string,
   managers: DetectManagersResult,
   components: readonly Component[],
-): Promise<WorkspacePackage[]> {
+): Promise<ResolvedWorkspacePackages> {
   const attribute = buildComponentAttribution(components)
   const roots = [
     ...managers.workspaces.map((candidate) => candidate.relativeRoot),
@@ -85,12 +91,32 @@ export async function resolveWorkspacePackages(
   } catch (error) {
     throw componentResolutionFailure(error)
   }
-  // A package no Component holds is the end of no edge, so only its name is wanted, and a manifest
-  // that cannot be read names a package no install could have linked.
-  const named = await Promise.all(
-    [...unheld].map((root) => readWorkspacePackages(workspaceRoot, [root]).catch(() => [])),
-  )
-  return [...packages, ...named.flat()]
+  // A package no Component holds is the end of no edge, so a manifest that cannot be read costs
+  // only its name, and the others are still read.
+  const named = await Promise.all([...unheld].map((root) => readUnheldPackage(workspaceRoot, root)))
+  return {
+    packages: [...packages, ...named.flatMap((read) => read.packages)],
+    unreadManifests: named.flatMap((read) => read.unreadManifests),
+  }
+}
+
+async function readUnheldPackage(
+  workspaceRoot: string,
+  root: string,
+): Promise<ResolvedWorkspacePackages> {
+  try {
+    return { packages: await readWorkspacePackages(workspaceRoot, [root]), unreadManifests: [] }
+  } catch (error) {
+    if (!(error instanceof CoreError) || error.code !== "workspace-manifest-malformed") {
+      throw componentResolutionFailure(error)
+    }
+    return {
+      packages: [],
+      unreadManifests: [
+        { manifestPath: `${root}/${NPM_MANIFEST}`, reason: describeThrown(error.cause ?? error) },
+      ],
+    }
+  }
 }
 
 function componentFromConfig(entry: NonNullable<Config["components"]>[number]): Component {

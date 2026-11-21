@@ -253,6 +253,7 @@ calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambi
 ```
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
 ⚠ Component "sdk": packages/sdk/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.
+⚠ packages/legacy/package.json could not be read (EACCES: permission denied), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.
 ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
@@ -281,6 +282,13 @@ naming the component, its manifest, the field and the value. The IR holds the en
 gives none leaves it looking like that of a package that declared nothing; a component
 `aburi.json` declares is not detected, and has none of these lines. Like the `frameworks` line
 they keep their scan's label, since each describes the IR that scan wrote.
+
+The unread-manifest lines follow them, one per `package.json` at a `workspace.managers[].roots`
+entry that no Component holds and that cannot be read or parsed ([ir-schema.md](./ir-schema.md)
+§11.3). The scan goes on without it, since no edge ends at that package, but the package's name no
+longer tells the decorator trace a workspace package from one outside the workspace
+([lang-plugin.md](./lang-plugin.md) §5.2.4), and nothing in the IR says so. They keep their scan's
+label too.
 
 The `pluginOptions` line follows them, one per key that names no loaded plugin or the plugin of a
 `frameworkHints` entry ([config.md](./config.md) §5.4), for the same reason: the IR records the

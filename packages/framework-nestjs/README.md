@@ -21,6 +21,14 @@ Boundary decorators mark the containing method Symbol as an observable entry
 point — `@aburi/core`'s drop rules exempt these from the "empty body / no rules"
 drop path so route handlers always survive into the IR.
 
+A decorator is matched on the name it was imported under, and graded by where
+the scan traced it: `high` from `@nestjs/*`, `medium` from any other module, and
+not classified at all from another framework whose decorators share these names
+(`routing-controllers`, `tsoa`, and the packages under `@angular/`,
+`@decorators/`, `@foal/`, `@inversifyjs/`, `@midwayjs/`, `@overnightjs/`,
+`@tsed/` and `@tsoa/`). A decorator no import binds is taken at its written
+name, at `high`.
+
 ## Install
 
 ```bash

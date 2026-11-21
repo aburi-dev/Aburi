@@ -64,6 +64,16 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
       "medium",
       [makeImport("./x", ["Controller"], 1), foreign("routing-controllers", 2)],
     ],
+    [
+      "bound twice, the NestJS edge before one traced to a competing library",
+      "high",
+      [makeImport(NEST, ["Controller"], 1), foreign("routing-controllers", 2)],
+    ],
+    [
+      "bound twice, the NestJS edge after one traced to a competing library",
+      "high",
+      [foreign("routing-controllers", 1), makeImport(NEST, ["Controller"], 2)],
+    ],
   ])("rates @Controller %s at %s", (_label, confidence, imports) => {
     expect(rated(classifyDecorated("class", ["Controller"], imports))).toEqual([
       "framework:nestjs:controller",
@@ -91,6 +101,58 @@ describe("classifyNestjsSymbol — how far a bare decorator's import is trusted"
     ],
   ])("refuses @Controller the scan traced to a competing library, %s", (_label, imports) => {
     expect(classifyDecorated("class", ["Controller"], imports)).toBeNull()
+  })
+
+  it.each([
+    "routing-controllers",
+    "routing-controllers/decorator/Controller",
+    "tsoa",
+    "@tsoa/runtime",
+    "@tsed/common",
+    "@angular/core",
+    "@midwayjs/core",
+    "@foal/core",
+    "@overnightjs/core",
+    "@decorators/express",
+    "@inversifyjs/http-core",
+  ])("refuses @Controller the scan traced to %s, another framework's package", (source) => {
+    expect(classifyDecorated("class", ["Controller"], [foreign(source)])).toBeNull()
+  })
+
+  it.each([
+    ["a package that builds on NestJS's", "@nestia/core"],
+    ["a registry package", "@acme/nest-kit"],
+    ["a package named like another framework", "routing-controllers-extra"],
+    ["a scope named like another framework's", "@tsedx/common"],
+  ])(
+    "rates @Controller the scan traced outside the workspace to %s at medium",
+    (_label, source) => {
+      expect(rated(classifyDecorated("class", ["Controller"], [foreign(source)]))).toEqual([
+        "framework:nestjs:controller",
+        "medium",
+      ])
+    },
+  )
+
+  it("takes the first of two edges that rank alike, whichever name each imports", () => {
+    const imports = [
+      makeImport("./a", ["Controller as Decorate"], 1),
+      makeImport("./b", ["Injectable as Decorate"], 2),
+    ]
+
+    expect(rated(classifyDecorated("class", ["Decorate"], imports))).toEqual([
+      "framework:nestjs:controller",
+      "medium",
+    ])
+  })
+
+  it("keeps a class's provider when the scan refuses only its other decorator", () => {
+    const imports = [foreign("routing-controllers", 1), makeImport(NEST, ["Injectable"], 2)]
+
+    expect(rated(classifyDecorated("class", ["Controller", "Injectable"], imports))).toEqual([
+      "framework:nestjs:provider",
+      "high",
+    ])
   })
 
   it("keeps a method's route when the scan refuses only its other decorator", () => {
