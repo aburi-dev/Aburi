@@ -9,6 +9,7 @@ import type {
   SourceFile,
   VocabRegistry,
 } from "@aburi/types"
+import type { WorkspacePackage } from "../component-manifest"
 import { CoreError, REPORT_BUG } from "../errors"
 import { buildComponentAttribution } from "./attribute"
 import type { DiscoveredFile } from "./discover"
@@ -28,8 +29,8 @@ export interface ExtractionJob {
   readonly files: readonly DiscoveredFile[]
   readonly config: Config
   readonly components: readonly Component[]
-  /** The `package.json#name` of each workspace package. */
-  readonly workspacePackageNames: readonly string[]
+  /** Each workspace package's name, root and entry points. */
+  readonly workspacePackages: readonly WorkspacePackage[]
 }
 
 export interface ExtractionPlugins {
@@ -88,7 +89,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
     workspaceRoot: job.workspaceRoot,
     ...(job.installedRoot === undefined ? {} : { installedRoot: job.installedRoot }),
     files: job.files,
-    workspacePackageNames: job.workspacePackageNames,
+    workspacePackages: job.workspacePackages,
     router,
     loadSource: (file) => loadSourceFile(job.workspaceRoot, file),
     record,

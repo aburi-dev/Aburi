@@ -82,7 +82,23 @@ function withRepublished(
 }
 
 function isTypeOnly(node: Node): boolean {
-  return node.children.some((child) => child?.type === "type")
+  return node.children.some(
+    (child) => child !== null && (child.type === "type" || isTypeStarKeyword(child)),
+  )
+}
+
+/**
+ * The `type` of TypeScript 5.0's `export type * from` and `export type * as ns from`, which the
+ * grammar has no rule for and parks in an ERROR between `export` and the rest of the statement.
+ */
+export function isTypeStarKeyword(node: Node): boolean {
+  if (!node.isError || node.childCount !== 1 || node.child(0)?.type !== "type") return false
+  const statement = node.parent
+  if (statement?.type !== "export_statement" || statement.childForFieldName("source") === null) {
+    return false
+  }
+  const next = node.nextSibling?.type
+  return node.previousSibling?.type === "export" && (next === "*" || next === "namespace_export")
 }
 
 /** The clause's value specifiers: a type-only one exports nothing a decorator or call can name. */
@@ -192,7 +208,8 @@ function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
 
   const clauseNode = findChild(node, "export_clause")
   if (clauseNode === null) {
-    return { source, symbols: "*", line, dynamic: false }
+    const edge: ImportEdge = { source, symbols: "*", line, dynamic: false }
+    return isTypeOnly(node) ? edge : { ...edge, reexportsAll: true }
   }
   const names: string[] = []
   for (const spec of clauseNode.namedChildren) {
@@ -253,7 +270,7 @@ function dedupeEdges(edges: readonly ImportEdge[]): ImportEdge[] {
     const symbolsKey =
       edge.symbols === "*" ? '"*"' : JSON.stringify([...edge.symbols].sort(compareCodeUnit))
     const reexportsKey = JSON.stringify(edge.reexports ?? [])
-    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}`
+    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}\t${edge.reexportsAll === true}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(edge)

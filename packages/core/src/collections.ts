@@ -17,3 +17,7 @@ export function countBy<T, K>(items: Iterable<T>, keyOf: (item: T) => K): Map<K,
   }
   return counts
 }
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}

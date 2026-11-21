@@ -14,10 +14,20 @@ export interface ResolutionTrace {
   ambiguousCandidates: Set<SymbolId>
   parameterShadow: boolean
   unnamedReceiver: boolean
+  /** A re-export the head's import leads through names a bare specifier outside the workspace. */
+  reexportedFromOutside: boolean
+  /** The head's import reaches a name its module's star exports disagree on. */
+  conflictingExport: boolean
 }
 
 export function newTrace(): ResolutionTrace {
-  return { ambiguousCandidates: new Set(), parameterShadow: false, unnamedReceiver: false }
+  return {
+    ambiguousCandidates: new Set(),
+    parameterShadow: false,
+    unnamedReceiver: false,
+    reexportedFromOutside: false,
+    conflictingExport: false,
+  }
 }
 
 export function collectParameterNames(symbol: IRSymbol): ReadonlySet<string> {
@@ -46,6 +56,10 @@ export interface ResolutionRun {
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
   mappedTargets: Map<string, string | null>
+  /** Every file's import edges, which say what a module re-exports. */
+  importsByFile: ReadonlyMap<string, readonly ImportEdge[]>
+  /** By language, file and name: where a module's export of the name is declared. */
+  exportAnswers: Map<string, ExportAnswer>
 }
 
 export interface ResolveTargetContext {
@@ -167,7 +181,16 @@ function resolveInImportScope(
   tail: readonly string[],
   trace: ResolutionTrace,
 ): BoundHead | null {
-  const { names, renamed } = importedNamesOf(ctx, head, tail)
+  const imported = importedNamesOf(ctx, head, tail)
+  const renamed = imported.renamed
+  let conflicting = false
+  const names = imported.names.flatMap((entry) => {
+    const reached = declarationsOf(ctx, entry, trace)
+    if (reached === null) conflicting = true
+    return reached ?? []
+  })
+  // A member only some of the disagreeing declarations hold would otherwise pick one of them.
+  if (conflicting) return NO_MEMBER
   const candidates = new Set<SymbolId>()
   for (const { file, name, rest } of names) {
     const id = memberId(ctx, file, name, rest)
@@ -217,34 +240,222 @@ function importedNamesOf(
       if (local !== head) continue
       if (imported !== local) renamed = true
       const file = importTargetOf(ctx, edge)
-      if (file === null) continue
-      if (imported !== DEFAULT_EXPORT_NAME) names.push({ file, name: imported, rest: tail })
-      else for (const name of defaultExportsOf(ctx, file)) names.push({ file, name, rest: tail })
+      if (file !== null) names.push({ file, name: imported, rest: tail })
     }
   }
   return { names, renamed }
 }
 
 function importTargetOf(ctx: ResolveTargetContext, edge: ImportEdge): string | null {
-  return isRelativeSpecifier(edge.source)
-    ? resolveRelativeSpecifierOnce(ctx, edge.source)
-    : mappedTargetOf(ctx.run, ctx.caller, edge.source)
+  return specifierTargetOf(ctx.run, ctx.caller.language, ctx.caller.source.file, edge.source)
+}
+
+function specifierTargetOf(
+  run: ResolutionRun,
+  language: string,
+  fromFile: string,
+  specifier: string,
+): string | null {
+  return isRelativeSpecifier(specifier)
+    ? relativeTargetOf(run, language, fromFile, specifier)
+    : mappedTargetOf(run, language, fromFile, specifier)
+}
+
+/**
+ * Where a module's export of a name is declared: in the module, or where its re-exports lead.
+ * `declared` holds one site, or each default export of a module declaring several; `conflict`
+ * holds the declarations star exports disagree on; `namespace` is a module exported whole under
+ * the name; `outside` is a chain that left the workspace.
+ */
+export type ExportAnswer =
+  | { readonly kind: "declared"; readonly sites: readonly ExportSite[] }
+  | { readonly kind: "conflict"; readonly sites: readonly ExportSite[] }
+  | { readonly kind: "namespace"; readonly file: string }
+  | { readonly kind: "outside" }
+  | { readonly kind: "none" }
+
+interface ExportSite {
+  readonly file: string
+  readonly name: string
+}
+
+const NO_ANSWER: ExportAnswer = { kind: "none" }
+const OUTSIDE: ExportAnswer = { kind: "outside" }
+
+/**
+ * The declarations an imported name reaches through its module's re-exports, or null where star
+ * exports disagree on it, whose declarations go to the trace.
+ */
+function declarationsOf(
+  ctx: ResolveTargetContext,
+  entry: ImportedName,
+  trace: ResolutionTrace,
+): ImportedName[] | null {
+  let { file, name, rest } = entry
+  for (;;) {
+    const answer = exportAnswerOf(ctx.run, ctx.caller.language, file, name)
+    switch (answer.kind) {
+      case "declared":
+        return answer.sites.map((site) => ({ file: site.file, name: site.name, rest }))
+      case "conflict":
+        trace.conflictingExport = true
+        for (const site of answer.sites) {
+          const id = memberId(ctx, site.file, site.name, [])
+          if (id !== null) trace.ambiguousCandidates.add(id)
+        }
+        return null
+      case "outside":
+        trace.reexportedFromOutside = true
+        return []
+      case "none":
+        return name === DEFAULT_EXPORT_NAME ? [] : [{ file, name, rest }]
+      case "namespace": {
+        const [member, ...more] = rest
+        if (member === undefined) return []
+        file = answer.file
+        name = member
+        rest = more
+      }
+    }
+  }
+}
+
+function exportAnswerOf(
+  run: ResolutionRun,
+  language: string,
+  file: string,
+  name: string,
+): ExportAnswer {
+  return answerExport(run, language, file, name, new Set()).answer
+}
+
+interface Answered {
+  readonly answer: ExportAnswer
+  /** False when a cycle cut the search short, so the answer holds for this search alone. */
+  readonly whole: boolean
+}
+
+function answerExport(
+  run: ResolutionRun,
+  language: string,
+  file: string,
+  name: string,
+  visited: Set<string>,
+): Answered {
+  // Neither a language id nor a path holds NUL, and the name comes last: the key splits one way.
+  const key = `${language}\0${file}\0${name}`
+  const cached = run.exportAnswers.get(key)
+  if (cached !== undefined) return { answer: cached, whole: true }
+  // What a revisit could find, the first visit found and handed up to the search's answer, so
+  // each module and name is asked once per search however many paths lead to it.
+  if (visited.has(key)) return { answer: NO_ANSWER, whole: false }
+  visited.add(key)
+  const answered = searchExport(run, language, file, name, visited)
+  if (answered.whole) run.exportAnswers.set(key, answered.answer)
+  return answered
+}
+
+function searchExport(
+  run: ResolutionRun,
+  language: string,
+  file: string,
+  name: string,
+  visited: Set<string>,
+): Answered {
+  const declared = declaredExport(run.table, file, name)
+  if (declared !== null) return { answer: declared, whole: true }
+  const edges = (run.importsByFile.get(file) ?? []).filter((edge) => !edge.dynamic)
+  for (const edge of edges) {
+    const reexport = edge.reexports?.find((entry) => entry.exported === name)
+    if (reexport === undefined) continue
+    const target = specifierTargetOf(run, language, file, edge.source)
+    if (target === null) {
+      return { answer: isRelativeSpecifier(edge.source) ? NO_ANSWER : OUTSIDE, whole: true }
+    }
+    if (reexport.imported === NAMESPACE_EXPORT) {
+      return { answer: { kind: "namespace", file: target }, whole: true }
+    }
+    return answerExport(run, language, target, reexport.imported, visited)
+  }
+  if (name === DEFAULT_EXPORT_NAME) return { answer: NO_ANSWER, whole: true }
+  return starExport(run, language, file, name, edges, visited)
+}
+
+function starExport(
+  run: ResolutionRun,
+  language: string,
+  file: string,
+  name: string,
+  edges: readonly ImportEdge[],
+  visited: Set<string>,
+): Answered {
+  const found: ExportAnswer[] = []
+  let outside = false
+  let whole = true
+  for (const edge of edges) {
+    if (edge.reexportsAll !== true) continue
+    const target = specifierTargetOf(run, language, file, edge.source)
+    if (target === null) {
+      outside ||= !isRelativeSpecifier(edge.source)
+      continue
+    }
+    const answered = answerExport(run, language, target, name, visited)
+    whole &&= answered.whole
+    if (answered.answer.kind === "outside") outside = true
+    else if (answered.answer.kind !== "none") found.push(answered.answer)
+  }
+  const [only, ...others] = distinctAnswers(found)
+  if (only === undefined) return { answer: outside ? OUTSIDE : NO_ANSWER, whole }
+  if (others.length === 0) return { answer: only, whole }
+  const sites = [only, ...others].flatMap((answer) => ("sites" in answer ? answer.sites : []))
+  return { answer: { kind: "conflict", sites }, whole }
+}
+
+// Two star exports of one module, or of two barrels over it, agree.
+function distinctAnswers(answers: readonly ExportAnswer[]): ExportAnswer[] {
+  const byKey = new Map<string, ExportAnswer>()
+  for (const answer of answers) {
+    const key =
+      "sites" in answer
+        ? `${answer.kind}\0${answer.sites.map((site) => `${site.file}\0${site.name}`).join("\n")}`
+        : answer.kind === "namespace"
+          ? `*\0${answer.file}`
+          : answer.kind
+    if (!byKey.has(key)) byKey.set(key, answer)
+  }
+  return [...byKey.values()]
+}
+
+const NAMESPACE_EXPORT = "*"
+
+function declaredExport(table: SymbolTable, file: string, name: string): ExportAnswer | null {
+  if (name === DEFAULT_EXPORT_NAME) {
+    const names = defaultExportsOf(table, file)
+    return names.length === 0
+      ? null
+      : { kind: "declared", sites: names.map((declared) => ({ file, name: declared })) }
+  }
+  const declares =
+    table.topLevelByFile.get(file)?.has(name) === true ||
+    table.memberOwnersByFile.get(file)?.has(name) === true
+  return declares ? { kind: "declared", sites: [{ file, name }] } : null
 }
 
 const NO_FILES: ReadonlySet<string> = new Set()
 
-/** The first path the caller's language maps a bare specifier to that is a file with Symbols. */
+/** The first path a file's language maps a bare specifier to that is a file the scan read. */
 export function mappedTargetOf(
   run: ResolutionRun,
-  caller: Pick<IRSymbol, "language" | "source">,
+  language: string,
+  fromFile: string,
   specifier: string,
 ): string | null {
-  const paths = run.specifierPaths.get(caller.source.file)?.get(specifier)
+  const paths = run.specifierPaths.get(fromFile)?.get(specifier)
   if (paths === undefined) return null
-  const key = `${caller.language}\0${caller.source.file}\0${specifier}`
+  const key = `${language}\0${fromFile}\0${specifier}`
   const cached = run.mappedTargets.get(key)
   if (cached !== undefined) return cached
-  const knownFiles = run.table.filesByLanguage.get(caller.language) ?? NO_FILES
+  const knownFiles = run.table.filesByLanguage.get(language) ?? NO_FILES
   let resolved: string | null = null
   for (const path of paths) {
     resolved = resolveRelativeSpecifier({
@@ -259,9 +470,9 @@ export function mappedTargetOf(
   return resolved
 }
 
-function defaultExportsOf(ctx: ResolveTargetContext, file: string): string[] {
+function defaultExportsOf(table: SymbolTable, file: string): string[] {
   const found: string[] = []
-  for (const bucket of ctx.run.table.topLevelByFile.get(file)?.values() ?? []) {
+  for (const bucket of table.topLevelByFile.get(file)?.values() ?? []) {
     for (const symbol of bucket) {
       if (
         symbol.name === DEFAULT_EXPORT_QNAME ||
@@ -274,24 +485,28 @@ function defaultExportsOf(ctx: ResolveTargetContext, file: string): string[] {
   return found
 }
 
-function resolveRelativeSpecifierOnce(ctx: ResolveTargetContext, specifier: string): string | null {
-  const language = ctx.caller.language
-  const fromDirectory = dirname(ctx.caller.source.file)
+function relativeTargetOf(
+  run: ResolutionRun,
+  language: string,
+  fromFile: string,
+  specifier: string,
+): string | null {
+  const fromDirectory = dirname(fromFile)
   // Neither a language id nor a path holds NUL and the specifier comes last: the key splits one way.
   const key = `${language}\0${fromDirectory}\0${specifier}`
-  const cached = ctx.run.relativeTargets.get(key)
+  const cached = run.relativeTargets.get(key)
   if (cached !== undefined) return cached
-  const knownFiles = ctx.run.table.filesByLanguage.get(language)
+  const knownFiles = run.table.filesByLanguage.get(language)
   const resolved =
     knownFiles === undefined
       ? null
       : resolveRelativeSpecifier({
           fromDirectory,
           specifier,
-          extensions: ctx.run.extensions,
+          extensions: run.extensions,
           knownFiles,
         })
-  ctx.run.relativeTargets.set(key, resolved)
+  run.relativeTargets.set(key, resolved)
   return resolved
 }
 

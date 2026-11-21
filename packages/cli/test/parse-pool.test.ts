@@ -97,7 +97,7 @@ async function poolOver(
     files: files.map((file) => ({ path: relativePath(file), fsPath: file, size: file.length })),
     config,
     components: [],
-    workspacePackageNames: [],
+    workspacePackages: [],
   }
   const pool = createParsePool(job, {
     size,
