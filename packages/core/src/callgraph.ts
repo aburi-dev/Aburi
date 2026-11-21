@@ -57,6 +57,11 @@ export interface ResolveCallGraphInput {
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
    */
   specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
+  /**
+   * By language: every file the scan read, Symbols or not, so that a specifier naming a barrel
+   * that only re-exports still reaches it.
+   */
+  moduleFiles?: ReadonlyMap<string, ReadonlySet<string>>
 }
 
 export interface ResolveCallGraphResult {
@@ -73,11 +78,13 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const run: ResolutionRun = {
-    table: buildSymbolTable(input.symbols),
+    table: buildSymbolTable(input.symbols, input.moduleFiles),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),
     mappedTargets: new Map(),
+    importsByFile: input.importsByFile,
+    exportAnswers: new Map(),
   }
 
   const nextSymbols: IRSymbol[] = []
@@ -126,7 +133,8 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
               imports,
               trace,
               dynamicReceiver: dynamicCallSites.has(callSiteKey),
-              reachesWorkspace: (specifier) => mappedTargetOf(run, symbol, specifier) !== null,
+              reachesWorkspace: (specifier) =>
+                mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
             }),
           )
           return call

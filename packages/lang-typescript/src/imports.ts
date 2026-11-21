@@ -208,7 +208,8 @@ function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
 
   const clauseNode = findChild(node, "export_clause")
   if (clauseNode === null) {
-    return { source, symbols: "*", line, dynamic: false }
+    const edge: ImportEdge = { source, symbols: "*", line, dynamic: false }
+    return isTypeOnly(node) ? edge : { ...edge, reexportsAll: true }
   }
   const names: string[] = []
   for (const spec of clauseNode.namedChildren) {
@@ -269,7 +270,7 @@ function dedupeEdges(edges: readonly ImportEdge[]): ImportEdge[] {
     const symbolsKey =
       edge.symbols === "*" ? '"*"' : JSON.stringify([...edge.symbols].sort(compareCodeUnit))
     const reexportsKey = JSON.stringify(edge.reexports ?? [])
-    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}`
+    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}\t${edge.reexportsAll === true}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(edge)

@@ -16,6 +16,7 @@ import {
 } from "@aburi/types"
 import { resolveCallGraph } from "../callgraph"
 import { type SerializeOptions, serializeCanonical } from "../canonical"
+import { groupBy } from "../collections"
 import type { WorkspacePackage } from "../component-manifest"
 import { CoreError } from "../errors"
 import { logicFingerprint } from "../fingerprint"
@@ -43,7 +44,7 @@ import {
 } from "./extract-files"
 import { markGeneratedFiles, withGeneratedCallCensus } from "./generated-files"
 import type { TreeReleaseFailure } from "./pipeline"
-import { buildLanguageRouter } from "./route"
+import { buildLanguageRouter, type LanguageRouter } from "./route"
 import { markTestFiles } from "./test-files"
 import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
 import type { UndeclaredVocabOccurrence } from "./vocab"
@@ -185,6 +186,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     dynamicCallSites: extracted.dynamicCallSites,
     declaredReceiverTypes: extracted.declaredReceiverTypes,
     specifierPaths: extracted.specifierPaths,
+    moduleFiles: moduleFilesOf(extracted.importsByFile.keys(), router),
   })
   const symbolEdges = projectSymbolEdges(callGraph.edges)
   const componentEdges = componentImportEdges({
@@ -343,4 +345,15 @@ export function languageFileDropPatterns(languages: readonly LanguagePlugin[]): 
     if (language.fileDropPatterns) patterns.push(...language.fileDropPatterns)
   }
   return patterns
+}
+
+function moduleFilesOf(paths: Iterable<string>, router: LanguageRouter): Map<string, Set<string>> {
+  const routed = [...paths].flatMap((path) => {
+    const language = router.route(path)?.manifest.languageId
+    return language === undefined ? [] : [{ path, language }]
+  })
+  const byLanguage = groupBy(routed, (file) => file.language)
+  return new Map(
+    [...byLanguage].map(([language, files]) => [language, new Set(files.map((f) => f.path))]),
+  )
 }

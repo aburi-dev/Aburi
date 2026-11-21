@@ -16,7 +16,11 @@ export interface SymbolTable {
   byWorkspace: ReadonlyMap<Language, ByName>
 }
 
-export function buildSymbolTable(symbols: readonly IRSymbol[]): SymbolTable {
+/** `moduleFiles` adds, by language, files the scan read that hold no Symbol, such as a barrel. */
+export function buildSymbolTable(
+  symbols: readonly IRSymbol[],
+  moduleFiles: ReadonlyMap<Language, ReadonlySet<FilePath>> = new Map(),
+): SymbolTable {
   const kept = symbols.filter((symbol) => !symbol.dropped)
   const byName = (group: readonly IRSymbol[]) => groupBy(group, (symbol) => symbol.name)
   const keptByLanguage = groupBy(kept, (symbol) => symbol.language)
@@ -34,10 +38,7 @@ export function buildSymbolTable(symbols: readonly IRSymbol[]): SymbolTable {
       topLevelPerFile(symbols.filter(listsItsMembers)),
       (owners) => new Set(owners.map((symbol) => symbol.name)),
     ),
-    filesByLanguage: mapValues(
-      groupBy(symbols, (symbol) => symbol.language),
-      (perLanguage) => new Set(perLanguage.map((symbol) => symbol.source.file)),
-    ),
+    filesByLanguage: filesByLanguageOf(symbols, moduleFiles),
     byComponent: mapValues(keptByLanguage, (perLanguage) =>
       mapValues(
         groupBy(perLanguage, (symbol) => componentKeyOf(symbol.component)),
@@ -64,4 +65,19 @@ export function componentKeyOf(component: string | null | undefined): ComponentK
 
 function mapValues<K, V, W>(map: ReadonlyMap<K, V>, transform: (value: V) => W): Map<K, W> {
   return new Map([...map].map(([key, value]) => [key, transform(value)]))
+}
+
+function filesByLanguageOf(
+  symbols: readonly IRSymbol[],
+  moduleFiles: ReadonlyMap<Language, ReadonlySet<FilePath>>,
+): Map<Language, ReadonlySet<FilePath>> {
+  const files = mapValues(
+    groupBy<IRSymbol, Language>(symbols, (symbol) => symbol.language),
+    (perLanguage): ReadonlySet<FilePath> =>
+      new Set(perLanguage.map((symbol) => symbol.source.file)),
+  )
+  for (const [language, paths] of moduleFiles) {
+    files.set(language, new Set([...(files.get(language) ?? []), ...paths]))
+  }
+  return files
 }

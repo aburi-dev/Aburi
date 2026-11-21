@@ -1,4 +1,4 @@
-import { symbolId } from "@aburi/test-support"
+import { importEdge, symbolId } from "@aburi/test-support"
 import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
@@ -19,9 +19,7 @@ const typed = (type: string, target = TARGET) =>
 
 function resolve(
   symbols: readonly IRSymbol[],
-  options: Omit<Partial<ResolveCallGraphInput>, "importsByFile"> & {
-    imports?: ImportClause[]
-  } = {},
+  options: Partial<ResolveCallGraphInput> & { imports?: ImportClause[] } = {},
 ) {
   const { imports = [], ...input } = options
   return resolveCallGraph({
@@ -62,6 +60,20 @@ describe("a call through a receiver of a declared type", () => {
     expect(result.edges.map((edge) => [edge.to, edge.confidence])).toEqual([[find, "medium"]])
     expect(result.symbols[0]?.calls[0]?.resolved).toBe(find)
     expect(result.diagnostics).toEqual([])
+  })
+
+  it("resolves to the member of a class a barrel re-exports", () => {
+    const symbols = repository("src/data/repo.ts")
+    const result = resolve(symbols, {
+      importsByFile: new Map([
+        ["src/service.ts", [importEdge({ source: "./data", symbols: ["UserRepository"] })]],
+        ["src/data/index.ts", [importEdge({ source: "./repo", symbols: "*", reexportsAll: true })]],
+      ]),
+      moduleFiles: new Map([["ts", new Set(["src/data/index.ts"])]]),
+    })
+    expect(result.edges.map((edge) => [edge.to, edge.confidence])).toEqual([
+      [symbols[1]?.id, "medium"],
+    ])
   })
 
   it("reads the type's instance member, not a static one of the same name", () => {

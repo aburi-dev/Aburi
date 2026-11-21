@@ -43,7 +43,7 @@ describe("an escaped specifier names the module the author wrote", () => {
     [
       "a wildcard re-export",
       `export * from "${BACKSLASH}x2E/e"`,
-      { source: "./e", symbols: "*", line: 1, dynamic: false },
+      { source: "./e", symbols: "*", line: 1, dynamic: false, reexportsAll: true },
     ],
     [
       "a require-equals",

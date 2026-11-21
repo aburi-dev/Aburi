@@ -427,13 +427,25 @@ describe("scan — where a decorator's imported name is declared", () => {
         imports: [named("@app/common", "Decorate"), named("./z-barrel.stub", "Decorate")],
         decorators: decorated,
       },
-      [BARREL]: { imports: [reexporting("@vendor/kit", "Decorate")] },
-      "src/z-barrel.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+      [BARREL]: { imports: [reexporting("./kit.stub", "Decorate")] },
+      "src/z-barrel.stub": { imports: [reexporting("./kit.stub", "Decorate")] },
     })
     await scanStubs(workspace.root, { languages: [moduleLanguage({ recorder })] })
 
     expect(recorder.resolversCreated).toBe(0)
     expect(recorder.parsed).toEqual([BARREL, CONSUMER, "src/z-barrel.stub"])
+  })
+
+  it("asks the resolver for a barrel's bare re-exports, which a call through it follows", async () => {
+    const recorder = newRecorder()
+    await writeModules({
+      [CONSUMER]: { imports: [named("./z-barrel.stub", "Decorate")] },
+      "src/z-barrel.stub": { imports: [reexporting("@vendor/kit", "Decorate")] },
+    })
+    await scanStubs(workspace.root, { languages: [moduleLanguage({ recorder })] })
+
+    expect(recorder.resolversCreated).toBe(1)
+    expect(recorder.parsed).toEqual([CONSUMER, "src/z-barrel.stub"])
   })
 
   it("charges a barrel's parse to the barrel, not to the file whose chain reached it", async () => {

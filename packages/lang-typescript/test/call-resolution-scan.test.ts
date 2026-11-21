@@ -150,26 +150,37 @@ describe("scan — calls through a default import", () => {
     })
   })
 
-  it("leaves the default exports import scope does not reach unresolved, as known limits, over a namesake", async () => {
+  it("leaves a static member of an anonymous default class unresolved, over a namesake", async () => {
     const result = await callsFromMain(
       {
         "src/anon-class.ts": "export default class {\n  static run() { return 3 }\n}\n",
         "src/namesake.ts": "export class Anon {\n  run() { return 5 }\n}\n",
+      },
+      ['import Anon from "./anon-class"'],
+      ["Anon.run()"],
+    )
+    expect(result).toEqual({
+      resolved: [["Anon.run", null]],
+      unresolved: [["Anon.run", "no-match"]],
+    })
+  })
+
+  it("reaches a default export a barrel re-exports, as its default or by name", async () => {
+    const result = await callsFromMain(
+      {
         "src/impl.ts": "export default function impl() { return 4 }\n",
         "src/barrel.ts": 'export { default } from "./impl"\n',
         "src/renamed-barrel.ts": 'export { default as impl } from "./impl"\n',
       },
-      [
-        'import Anon from "./anon-class"',
-        'import viaBarrel from "./barrel"',
-        'import { impl } from "./renamed-barrel"',
-      ],
-      ["Anon.run()", "viaBarrel()", "impl()"],
+      ['import viaBarrel from "./barrel"', 'import { impl } from "./renamed-barrel"'],
+      ["viaBarrel()", "impl()"],
     )
-    const targets = ["Anon.run", "viaBarrel", "impl"]
     expect(result).toEqual({
-      resolved: targets.map((target) => [target, null]),
-      unresolved: targets.map((target) => [target, "no-match"]),
+      resolved: [
+        ["viaBarrel", "ts:src/impl.ts#impl"],
+        ["impl", "ts:src/impl.ts#impl"],
+      ],
+      unresolved: [],
     })
   })
 })
@@ -411,6 +422,43 @@ describe("scan — a call through a tsconfig path alias", () => {
       unresolved: [
         ["gone", "no-match"],
         ["sortBy", "external"],
+      ],
+    })
+  })
+})
+
+describe("scan — a call through a barrel", () => {
+  it("reaches the declaration the barrel's re-exports lead to, and buckets a package's `external`", async () => {
+    const result = await callsFromMain(
+      {
+        "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "@lib/*": ["libs/*"] } } }),
+        "src/lib/index.ts": [
+          'export * from "./format"',
+          'export { total as sum } from "./math"',
+          'export { Tax } from "@lib/tax"',
+          'export { sortBy } from "lodash"',
+          'export type * from "./types"',
+          "",
+        ].join("\n"),
+        "src/lib/format.ts": "export function format() { return 1 }\n",
+        "src/lib/math.ts": "export function total() { return 2 }\n",
+        "src/lib/types.ts": "export function typed() { return 3 }\n",
+        "libs/tax.ts": "export class Tax { static rate() { return 4 } }\n",
+      },
+      ['import { format, sum, Tax, sortBy, typed } from "./lib"'],
+      ["format()", "sum()", "Tax.rate()", "sortBy()", "typed()"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["format", "ts:src/lib/format.ts#format"],
+        ["sum", "ts:src/lib/math.ts#total"],
+        ["Tax.rate", "ts:libs/tax.ts#Tax::rate"],
+        ["sortBy", null],
+        ["typed", null],
+      ],
+      unresolved: [
+        ["sortBy", "external"],
+        ["typed", "no-match"],
       ],
     })
   })

@@ -106,8 +106,13 @@ describe("what a module exports through an edge", () => {
       [{ source: "./m", symbols: "*", reexports: [reexport("*", "ns")] }],
     ],
     [
-      "nothing for `export *`, which names nothing",
+      "every name of the module for `export *`",
       "export * from './m'",
+      [{ source: "./m", symbols: "*", reexportsAll: true }],
+    ],
+    [
+      "nothing for `export type *`, which exports no value",
+      "export type * from './m'",
       [{ source: "./m", symbols: "*" }],
     ],
     [
@@ -179,6 +184,14 @@ describe("two imports of one module on one line", () => {
       [
         { source: "./x", symbols: "*", line: 1, dynamic: false },
         { source: "./x", symbols: "*", line: 1, dynamic: false, namespaceBinding: "N" },
+      ],
+    ],
+    [
+      "a star re-export and a side-effect import",
+      "export * from './x'; import './x'",
+      [
+        { source: "./x", symbols: "*", line: 1, dynamic: false, reexportsAll: true },
+        { source: "./x", symbols: "*", line: 1, dynamic: false },
       ],
     ],
   ])("stay apart as %s", async (_label, source, edges) => {
