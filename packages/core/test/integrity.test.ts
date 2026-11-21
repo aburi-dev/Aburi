@@ -67,6 +67,16 @@ describe("checkIRIntegrity", () => {
         ir.symbols = [makeSymbol("ts:src/a.ts#foo", { component: "billing" })]
       },
     ],
+    [
+      "a test file whose Symbols all carry inTestFile, beside a file whose Symbols carry none",
+      (ir) => {
+        ir.symbols = [
+          makeSymbol("ts:src/a.test.ts#a", { inTestFile: true }),
+          makeSymbol("ts:src/a.test.ts#b", { inTestFile: true }),
+          makeSymbol("ts:src/a.ts#c"),
+        ]
+      },
+    ],
   ])("accepts %s", (_what, build) => {
     expect(checkIRIntegrity(irWith(build))).toEqual([])
   })
@@ -142,6 +152,19 @@ describe("checkIRIntegrity", () => {
         ir.symbols = [makeSymbol("ts:src/a.ts#foo", { extKind: "fponly" })]
       },
     ],
+    ...(["inTestFile", "inGeneratedFile"] as const).map(
+      (mark): [string, number, (ir: IR) => void] => [
+        `a file only some of whose Symbols carry ${mark}`,
+        23,
+        (ir) => {
+          ir.symbols = [
+            makeSymbol("ts:src/a.ts#a"),
+            makeSymbol("ts:src/a.ts#b", { [mark]: true }),
+            makeSymbol("ts:src/a.ts#c"),
+          ]
+        },
+      ],
+    ),
   ])("flags %s under invariant %i", (_what, invariant, build) => {
     expect(violationsOf(irWith(build), invariant)).toHaveLength(1)
   })

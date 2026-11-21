@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@aburi/github-action": "workspace:*",
+    "@aburi/types": "workspace:*",
     "vitest": "catalog:"
   }
 }

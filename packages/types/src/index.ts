@@ -1,3 +1,4 @@
+export { authoredCallCensus } from "./call-census"
 export type { UnresolvedCallBucket, UnresolvedCallDiagnostic } from "./diagnostics"
 export type {
   ComponentOverride,
@@ -36,6 +37,7 @@ export type {
 } from "./generated/diff"
 export type {
   Call,
+  CallCensus,
   CallResolutionStats,
   Component,
   ComponentId,

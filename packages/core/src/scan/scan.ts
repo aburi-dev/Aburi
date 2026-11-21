@@ -41,6 +41,7 @@ import {
   type ParseErrorRecord,
   type ParsePoolFactory,
 } from "./extract-files"
+import { markGeneratedFiles, withGeneratedCallCensus } from "./generated-files"
 import type { TreeReleaseFailure } from "./pipeline"
 import { buildLanguageRouter } from "./route"
 import { markTestFiles } from "./test-files"
@@ -196,16 +197,19 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     symbols: callGraph.symbols,
     edges: callGraph.edges,
   })
-  const propagatedSymbols = markTestFiles(
-    propagation.symbols.map((s) =>
-      s.dropped
-        ? s
-        : {
-            ...s,
-            fingerprint: { ...s.fingerprint, logic: logicFingerprint(s) },
-          },
+  const propagatedSymbols = markGeneratedFiles(
+    markTestFiles(
+      propagation.symbols.map((s) =>
+        s.dropped
+          ? s
+          : {
+              ...s,
+              fingerprint: { ...s.fingerprint, logic: logicFingerprint(s) },
+            },
+      ),
+      input.config,
     ),
-    input.config,
+    extracted.fileContents,
   )
 
   const skipped = [...discovered.skipped, ...extracted.skipped].sort(compareBy((file) => file.path))
@@ -221,7 +225,11 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
       enrichment.stats === undefined
         ? undefined
         : withHintUsage(enrichment.stats, callGraph.lspHintUsage),
-    callResolution: callGraph.stats,
+    callResolution: withGeneratedCallCensus(
+      callGraph.stats,
+      propagatedSymbols,
+      callGraph.diagnostics,
+    ),
   })
 
   const workspace: IR["workspace"] = {

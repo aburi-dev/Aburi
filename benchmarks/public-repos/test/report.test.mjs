@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  authoredCalls,
   comparedFields,
   countRecoverableParseErrors,
   parseArgs,
@@ -386,6 +387,82 @@ describe("renderReport — the Diff table", () => {
       "|---|---:|---:|---:|---:|---:|---:|---:|",
     ])
     expect(table.join("\n")).not.toContain("size cap")
+  })
+})
+
+describe("authoredCalls", () => {
+  const buckets = (noMatch, external) => ({
+    localScope: 0,
+    external,
+    dynamic: 0,
+    ambiguous: 0,
+    noMatch,
+  })
+
+  it("leaves out the calls of generated files, bucket by bucket", () => {
+    const census = {
+      totalCalls: 20,
+      resolvedCalls: 5,
+      unresolved: buckets(10, 5),
+      generated: { totalCalls: 12, resolvedCalls: 1, unresolved: buckets(8, 3) },
+    }
+    expect(authoredCalls(census)).toEqual({
+      totalCalls: 8,
+      resolvedCalls: 4,
+      unresolved: buckets(2, 2),
+      generatedCalls: 12,
+    })
+  })
+
+  it("counts no generated call for a census without the block, and nothing for no census", () => {
+    const census = { totalCalls: 3, resolvedCalls: 2, unresolved: buckets(1, 0) }
+    expect(authoredCalls(census)).toEqual({ ...census, generatedCalls: 0 })
+    expect(authoredCalls(null)).toBeNull()
+  })
+})
+
+describe("renderReport — the Call resolution table", () => {
+  function sweep(...metrics) {
+    return {
+      startedAt: "2026-11-01T00:00:00.000Z",
+      generator: "0.6.0",
+      options: { runs: 1, warmup: 0, diff: false },
+      environment: { node: "v24.0.0", cpus: 4, cpuModel: "CPU", totalMemGiB: 16 },
+      results: metrics.map(([id, generatedCalls]) => ({
+        id,
+        scan: { wallMsMedian: 1000, peakRssKb: 120_000, exitCode: 0, warnings: "" },
+        metrics: {
+          components: 1,
+          totalCalls: 200,
+          resolvedCalls: 50,
+          dependencies: 40,
+          skippedFiles: 0,
+          skippedByReason: {},
+          ...(generatedCalls === undefined ? {} : { generatedCalls }),
+        },
+      })),
+    }
+  }
+
+  function resolutionTable(report) {
+    const lines = renderReport(report).split("\n")
+    return lines.slice(lines.indexOf("## Call resolution and losses") + 2)
+  }
+
+  it("counts the generated files' calls beside the authored code's rate", () => {
+    expect(resolutionTable(sweep(["shadcn-ui", 15_485], ["hono", 0])).slice(0, 4)).toEqual([
+      "| Repo | Components | Calls | Resolved | Resolved % | Generated calls | Deps | Parse errors | Files lost | Reasons |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| `shadcn-ui` | 1 | 200 | 50 | 25.0% | 15485 | 40 | 0 | 0 | — |",
+      "| `hono` | 1 | 200 | 50 | 25.0% | 0 | 40 | 0 | 0 | — |",
+    ])
+  })
+
+  it("leaves the column out of a sweep recorded before generated files were counted apart", () => {
+    expect(resolutionTable(sweep(["hono"])).slice(0, 2)).toEqual([
+      "| Repo | Components | Calls | Resolved | Resolved % | Deps | Parse errors | Files lost | Reasons |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    ])
   })
 })
 

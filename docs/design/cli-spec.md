@@ -795,6 +795,14 @@ The glyphs are added, removed, changed, moved and moved+changed, in that order.
 
 The second line is the head IR's `stats.callResolution` ([`call-resolution.md`](./call-resolution.md) §8.1). It answers "is the Slice View below missing edges?" without a second command. Buckets with a count of zero are omitted; when nothing is unresolved the line reads `calls N · resolved N · unresolved 0`.
 
+When the census holds a `generated` block ([`ir-schema.md`](./ir-schema.md) §5.9), the line counts the authored code — each number, buckets included, less the block's — and ends with the generated files' calls:
+
+```
+calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambiguous 3 · no-match 14); generated files: calls 15485 · resolved 0
+```
+
+The line is read as the health of the call graph a reviewer is looking at, and a build script's output, which nobody reviews, would otherwise set it. The generated count stays on the line so the calls it leaves out are still accounted for.
+
 A head IR produced before the counter existed cannot be back-filled, so the line is omitted rather than printed as zeroes — zeroes would assert a clean call graph the run never observed. Omitting it silently would be its own failure, though: the reviewer would read the Slice View without knowing the signal that explains a suspicious singleton is absent. A one-line note therefore goes to **stderr** (§18.2 — stdout carries result data only), naming the cause and pointing at a re-scan of the head revision.
 
 The `unknown` count is appended to the first line when there is one — `+5 -3 ~12 ↔2 ⤴1 · ?2 unknown` — and omitted otherwise, so the line a reviewer skims on every PR does not grow a permanent `?0`. It qualifies the counts beside it: the added and removed totals are smaller than the truth by that much.
@@ -892,6 +900,8 @@ A workflow that kept `--fail-on removed` across the release that narrowed it wou
 #### Test code
 
 `--fail-on-scope non-test` makes every clause count only the changes whose Symbol carries no `inTestFile` — the Symbols of the files the head config's `testFiles` does not name ([`config.md`](./config.md) §4.1, [`ir-schema.md`](./ir-schema.md) §5.7). For a pair it is the head Symbol's mark, as the report places the entry by the head's file: a helper moved out of a test file into the code under test counts, one moved the other way does not. A fixture deleted, renamed or rewritten then trips no gate, while the same change to the code it tests does. The default, `all`, counts every change, as the gate always has.
+
+Neither scope reads `inGeneratedFile` ([`ir-schema.md`](./ir-schema.md) §5.9). A change of a generated file counts as any other change does, under `non-test` too unless the file is also test code: a method a regenerated client lost is an API its callers lost, whoever wrote it, so a `--fail-on removed` gate trips on it while the report counts it on one line ([`markdown-projection.md`](./markdown-projection.md) §6.2). A generated test file is test code to the gate, and `non-test` leaves it out, though the report lists it with the generated files rather than the test files.
 
 The scope narrows the clauses rather than adding one, so `--fail-on removed --fail-on-scope non-test` reads as it is meant: fail on a removal outside the tests. Given without `--fail-on`, it has nothing to narrow and the diff exits as it would without it. The tripped line says it counted that way, and names only the Symbols it counted:
 

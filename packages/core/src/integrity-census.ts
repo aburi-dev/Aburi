@@ -1,4 +1,10 @@
-import type { DeclinedCall, IR, Symbol as IRSymbol } from "@aburi/types"
+import type {
+  CallCensus,
+  DeclinedCall,
+  IR,
+  Symbol as IRSymbol,
+  UnresolvedCallBuckets,
+} from "@aburi/types"
 import type { IntegrityViolation } from "./errors"
 
 export function checkSkippedFilesCensus(ir: IR, out: IntegrityViolation[]): void {
@@ -38,42 +44,95 @@ export function checkSkippedFilesCensus(ir: IR, out: IntegrityViolation[]): void
 
 export function checkCallResolutionStatsCensus(ir: IR, out: IntegrityViolation[]): void {
   const stats = ir.stats.callResolution
-  if (stats === undefined) return
+  const generated = ir.symbols.filter((symbol) => symbol.inGeneratedFile === true)
+  if (stats === undefined) {
+    if (generated.length > 0) {
+      out.push({
+        invariant: 15,
+        subject: "stats.callResolution",
+        message: `${generated.length} Symbol(s) carry inGeneratedFile but the Document has no stats.callResolution; the scan that marks a file writes the census beside it`,
+      })
+    }
+    return
+  }
+  checkCensus("stats.callResolution", stats, countCalls(ir.symbols), out)
 
+  if (stats.generated === undefined) {
+    if (generated.length > 0) {
+      out.push({
+        invariant: 15,
+        subject: "stats.callResolution.generated",
+        message: `${generated.length} Symbol(s) carry inGeneratedFile but stats.callResolution has no generated census, so their calls count as authored code's`,
+      })
+    }
+    return
+  }
+  if (generated.length === 0) {
+    out.push({
+      invariant: 15,
+      subject: "stats.callResolution.generated",
+      message: "stats.callResolution.generated is present but no Symbol carries inGeneratedFile",
+    })
+  }
+  checkCensus("stats.callResolution.generated", stats.generated, countCalls(generated), out)
+  for (const bucket of Object.keys(stats.unresolved) as (keyof UnresolvedCallBuckets)[]) {
+    if (stats.generated.unresolved[bucket] > stats.unresolved[bucket]) {
+      out.push({
+        invariant: 15,
+        subject: "stats.callResolution.generated.unresolved",
+        message: `the generated census counts ${stats.generated.unresolved[bucket]} ${bucket} call(s) of the ${stats.unresolved[bucket]} the whole counts`,
+      })
+    }
+  }
+}
+
+interface CallCount {
+  totalCalls: number
+  resolvedCalls: number
+}
+
+function countCalls(symbols: readonly IRSymbol[]): CallCount {
   let totalCalls = 0
   let resolvedCalls = 0
-  for (const symbol of ir.symbols) {
+  for (const symbol of symbols) {
     totalCalls += symbol.calls.length
     for (const call of symbol.calls) if (call.resolved !== null) resolvedCalls++
   }
+  return { totalCalls, resolvedCalls }
+}
 
-  if (stats.totalCalls !== totalCalls) {
+function checkCensus(
+  subject: string,
+  census: CallCensus,
+  carried: CallCount,
+  out: IntegrityViolation[],
+): void {
+  if (census.totalCalls !== carried.totalCalls) {
     out.push({
       invariant: 15,
-      subject: "stats.callResolution.totalCalls",
-      message: `stats.callResolution.totalCalls is ${stats.totalCalls} but symbols[] carry ${totalCalls} call sites`,
+      subject: `${subject}.totalCalls`,
+      message: `${subject}.totalCalls is ${census.totalCalls} but symbols[] carry ${carried.totalCalls} call sites`,
     })
   }
-  if (stats.resolvedCalls !== resolvedCalls) {
+  if (census.resolvedCalls !== carried.resolvedCalls) {
     out.push({
       invariant: 15,
-      subject: "stats.callResolution.resolvedCalls",
-      message: `stats.callResolution.resolvedCalls is ${stats.resolvedCalls} but symbols[] carry ${resolvedCalls} resolved calls`,
+      subject: `${subject}.resolvedCalls`,
+      message: `${subject}.resolvedCalls is ${census.resolvedCalls} but symbols[] carry ${carried.resolvedCalls} resolved calls`,
     })
   }
-
-  const { unresolved } = stats
+  const { unresolved } = census
   const bucketed =
     unresolved.localScope +
     unresolved.external +
     unresolved.dynamic +
     unresolved.ambiguous +
     unresolved.noMatch
-  if (bucketed !== stats.totalCalls - stats.resolvedCalls) {
+  if (bucketed !== census.totalCalls - census.resolvedCalls) {
     out.push({
       invariant: 15,
-      subject: "stats.callResolution.unresolved",
-      message: `bucket counts sum to ${bucketed} but totalCalls - resolvedCalls is ${stats.totalCalls - stats.resolvedCalls}`,
+      subject: `${subject}.unresolved`,
+      message: `bucket counts sum to ${bucketed} but totalCalls - resolvedCalls is ${census.totalCalls - census.resolvedCalls}`,
     })
   }
 }

@@ -20,6 +20,8 @@ import {
   renderSyntaxOnly,
   renderUnknown,
 } from "./entries"
+import { splitDependencies } from "./folded-dependencies"
+import { renderGeneratedFiles } from "./generated-files"
 import {
   indexChanged,
   indexConfidence,
@@ -28,10 +30,11 @@ import {
   indexSymbols,
   indexUnknown,
 } from "./names-only"
+import { byOrigin } from "./origin"
 import { partition } from "./partition"
 import { assemble, foldedSection, plainSection, type Section } from "./size-cap"
 import { renderSliceView } from "./slice-view"
-import { inTestFile, renderTestFiles, splitDependencies } from "./test-files"
+import { renderTestFiles } from "./test-files"
 
 export interface ProjectDiffOptions {
   readonly maxBytes?: number
@@ -53,22 +56,25 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     )
   }
   const listed = listedChanges(diff.symbols, options.statuses)
-  const everyTestChange = diff.symbols.filter(inTestFile)
-  const testChanges = listed.filter(inTestFile)
-  const dependencies = splitDependencies(diff.dependencies, everyTestChange, testChanges)
+  const every = byOrigin(diff.symbols)
+  const shown = byOrigin(listed)
+  const fromGenerated = splitDependencies(diff.dependencies, every.generated, shown.generated)
+  const fromTests = splitDependencies(fromGenerated.kept, every.test, shown.test)
   const heading = [
     `# Aburi diff: ${titleRef(diff.base.ref)}..${titleRef(diff.head.ref)}`,
     "",
-    `**Summary**: ${summaryLine(diff, everyTestChange.length)}`,
+    `**Summary**: ${summaryLine(diff, every.test.length, every.generated.length)}`,
     "",
-    ...filterNote(options.statuses, diff.symbols.length - listed.length, dependencies.leftOut),
+    ...filterNote(options.statuses, diff.symbols.length - listed.length, {
+      tests: fromTests.leftOut,
+      generated: fromGenerated.leftOut,
+    }),
   ]
-  const outsideTests = listed.filter((change) => !inTestFile(change))
-  const buckets = partition(outsideTests)
-  const shown = new Set(outsideTests)
+  const buckets = partition(shown.authored)
+  const listedAuthored = new Set(shown.authored)
   const hiddenIds = new Set(
     diff.symbols
-      .filter((change) => !shown.has(change))
+      .filter((change) => !listedAuthored.has(change))
       .map((change) => representativeSymbol(change).id),
   )
   // A Slice with no members, or with one no change names, is left for the Slice View to refuse.
@@ -102,7 +108,7 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
       `${buckets.moved.length} moved (no semantic change)`,
     ),
     plainSection("## 🧱 Component changes", renderComponentChanges(diff)),
-    plainSection("## 🔗 Dependency changes", renderDependencyChanges(dependencies.kept)),
+    plainSection("## 🔗 Dependency changes", renderDependencyChanges(fromTests.kept)),
     foldedSection(
       "## 💧 Dropped changes",
       renderDroppedToggled(buckets.droppedToggled),
@@ -120,8 +126,12 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     ),
     foldedSection(
       "## 🧪 Test files",
-      renderTestFiles(testChanges, dependencies.inTests),
-      counted(testChanges.length, "symbol in a test file", "symbols in test files"),
+      renderTestFiles(shown.test, fromTests.folded),
+      counted(shown.test.length, "symbol in a test file", "symbols in test files"),
+    ),
+    plainSection(
+      "## ⚙ Generated files",
+      renderGeneratedFiles(shown.generated, fromGenerated.folded),
     ),
   ].filter((entry): entry is Section => entry !== null)
 
@@ -151,17 +161,22 @@ function listedChanges(
 function filterNote(
   statuses: readonly SymbolChangeStatus[] | undefined,
   leftOut: number,
-  edgesLeftOut: number,
+  edgesLeftOut: { readonly tests: number; readonly generated: number },
 ): string[] {
   if (statuses === undefined || leftOut === 0) return []
   const names = SYMBOL_CHANGE_STATUSES.filter((status) => statuses.includes(status)).map(inlineCode)
   const listed =
     names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
   const changes = counted(leftOut, "other Symbol change", "other Symbol changes")
+  const edges = edgesLeftOut.tests + edgesLeftOut.generated
+  const origin = [
+    ...(edgesLeftOut.tests === 0 ? [] : ["test code"]),
+    ...(edgesLeftOut.generated === 0 ? [] : ["generated files"]),
+  ].join(" and ")
   const omitted =
-    edgesLeftOut === 0
+    edges === 0
       ? `${changes} ${leftOut === 1 ? "is" : "are"} left out of this report; the Summary counts ${leftOut === 1 ? "it" : "them"}.`
-      : `${changes} and ${counted(edgesLeftOut, "dependency change", "dependency changes")} from test code are left out of this report; the Summary counts the Symbol ${leftOut === 1 ? "change" : "changes"}.`
+      : `${changes} and ${counted(edges, "dependency change", "dependency changes")} from ${origin} are left out of this report; the Summary counts the Symbol ${leftOut === 1 ? "change" : "changes"}.`
   return [`> ℹ **Only ${listed} changes are listed.** ${omitted}`, ""]
 }
 
@@ -180,7 +195,7 @@ function titleRef(ref: string): string {
   return COMMIT_SHA.test(ref) ? ref : inlineCode(ref)
 }
 
-function summaryLine(diff: DiffResult, inTests: number): string {
+function summaryLine(diff: DiffResult, inTests: number, inGenerated: number): string {
   const summary = diff.summary
   const duplicates = summary.removedDuplicates ?? 0
   const removed =
@@ -189,7 +204,9 @@ function summaryLine(diff: DiffResult, inTests: number): string {
     `+${summary.added} added · -${summary.removed} ${removed} · ~${summary.changed} changed · ${summary.moved} moved · ${summary.movedChanged} moved+changed`,
     diff,
   )
-  return inTests === 0 ? line : `${line} · ${inTests} in test files`
+  const tests = inTests === 0 ? "" : ` · ${inTests} in test files`
+  const generated = inGenerated === 0 ? "" : ` · ${inGenerated} in generated files`
+  return `${line}${tests}${generated}`
 }
 
 function withUnknown(line: string, diff: DiffResult): string {

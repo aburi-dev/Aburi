@@ -74,6 +74,7 @@ export function checkIRIntegrity(document: unknown): IntegrityViolation[] {
   checkWorkspaceLanguages(ir, violations)
   checkUnicodeNormalization(ir, violations)
   checkDeclinedCallsStayCalls(ir, violations)
+  checkFileMarksAgree(ir, violations)
 
   return violations
 }
@@ -273,6 +274,28 @@ function checkDroppedSymbolHasReason(ir: IR, out: IntegrityViolation[]): void {
         invariant: 5,
         subject: symbol.id,
         message: "dropped=true requires a non-empty dropReason",
+      })
+    }
+  }
+}
+
+const FILE_MARKS = ["inTestFile", "inGeneratedFile"] as const
+
+function checkFileMarksAgree(ir: IR, out: IntegrityViolation[]): void {
+  for (const mark of FILE_MARKS) {
+    const perFile = new Map<string, { marked: number; of: number }>()
+    for (const symbol of ir.symbols) {
+      const tally = perFile.get(symbol.source.file) ?? { marked: 0, of: 0 }
+      tally.of++
+      if (symbol[mark] === true) tally.marked++
+      perFile.set(symbol.source.file, tally)
+    }
+    for (const [file, { marked, of }] of perFile) {
+      if (marked === 0 || marked === of) continue
+      out.push({
+        invariant: 23,
+        subject: file,
+        message: `${marked} of the ${of} Symbols of "${file}" carry ${mark}; the mark describes the file, so all of them carry it or none does`,
       })
     }
   }

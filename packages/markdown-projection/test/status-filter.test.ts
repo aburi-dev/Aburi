@@ -1,21 +1,20 @@
 import {
+  added,
   changed,
   dependency,
   emptySummary,
   headings,
   makeDiff,
+  removed,
   sectionOf,
   sliceOf,
   symbolAt,
   withCallsTo,
 } from "@aburi/test-support"
-import type { DiffResult, Symbol as IRSymbol, SymbolChange, SymbolChangeStatus } from "@aburi/types"
+import type { DiffResult, SymbolChangeStatus } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { ProjectionInvariantError, projectDiff } from "../src"
 import { bytes } from "./markdown"
-
-const added = (symbol: IRSymbol): SymbolChange => ({ status: "added", symbol })
-const removed = (symbol: IRSymbol): SymbolChange => ({ status: "removed", symbol })
 
 const checkout = symbolAt("src/checkout.ts", "checkout", 3)
 const total = symbolAt("src/total.ts", "total", 7)
