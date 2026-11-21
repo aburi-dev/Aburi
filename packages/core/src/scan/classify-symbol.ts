@@ -1,8 +1,10 @@
 import type {
+  Call,
   Confidence,
   Decorator,
   DropHint,
   ExtKind,
+  FrameworkCall,
   FrameworkClassifyContext,
   FrameworkPlugin,
   LanguagePlugin,
@@ -10,6 +12,7 @@ import type {
   SymbolCandidate,
   SymbolClassification,
 } from "@aburi/types"
+import { toNfc } from "../codepoints"
 import { normalizeFingerprintString } from "../fingerprint/string"
 import { decideSymbolDrop } from "./drop-b"
 
@@ -18,6 +21,7 @@ export interface FrameworkMergeResult {
   confidence: Confidence
   extKindBy: string | null
   middleware: string[]
+  calls: Call[]
 }
 
 function decoratorBoundaryKey(decorator: Decorator): string {
@@ -54,9 +58,15 @@ export function mergeFrameworkClassification(
       middleware: (result.middleware ?? [])
         .map(normalizeFingerprintString)
         .filter((name) => name.length > 0),
+      calls: (result.calls ?? []).flatMap(frameworkCall),
     }
   }
-  return { candidate, confidence: "high", extKindBy: extractedBy, middleware: [] }
+  return { candidate, confidence: "high", extKindBy: extractedBy, middleware: [], calls: [] }
+}
+
+function frameworkCall({ target, line }: FrameworkCall): Call[] {
+  const normalized = toNfc(target)
+  return normalized.trim().length === 0 ? [] : [{ target: normalized, line, resolved: null }]
 }
 
 function mergeDerivedBy(current: readonly string[], addition: string): string[] {

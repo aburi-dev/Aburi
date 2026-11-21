@@ -1,6 +1,12 @@
+import { makeCall } from "@aburi/test-support"
 import type { Confidence, FrameworkPlugin, ImportEdge, SymbolCandidate } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { extractOneSymbol, stubCandidate, stubFrameworkPlugin } from "../fixtures/plugins"
+import {
+  extractOneSymbol,
+  stubCandidate,
+  stubEffectsPlugin,
+  stubFrameworkPlugin,
+} from "../fixtures/plugins"
 
 function classifying(name: string, extKind: string, derivedBy = `${name}:hit`): FrameworkPlugin {
   return stubFrameworkPlugin(name, { classifySymbol: () => ({ extKind, derivedBy }) })
@@ -129,6 +135,62 @@ describe("runFilePipeline — framework classification", () => {
     expect(symbols[0]).not.toHaveProperty("middleware")
   })
 
+  it("adds the winning classification's calls by line, after the body's on a shared line, in NFC and without blank targets", async () => {
+    const framework = stubFrameworkPlugin("framework-procedure", {
+      classifySymbol: () => ({
+        extKind: "framework:trpc:procedure",
+        derivedBy: "framework-procedure:hit",
+        calls: [
+          { target: "protectedProcedure", line: 2 },
+          { target: "", line: 3 },
+          { target: "  ", line: 3 },
+          { target: "caf\u0065\u0301", line: 1 },
+        ],
+      }),
+    })
+    const body = {
+      rules: [],
+      calls: [makeCall({ target: "protectedProcedure.mutation", line: 2 })],
+    }
+
+    const { symbols } = await extractOneSymbol({ frameworks: [framework], body })
+
+    expect(symbols[0]?.calls).toEqual([
+      { target: "caf\u00e9", line: 1, resolved: null },
+      { target: "protectedProcedure.mutation", line: 2, resolved: null },
+      { target: "protectedProcedure", line: 2, resolved: null },
+    ])
+  })
+
+  it("keeps the added calls as calls, past the Category C drop and every effect plugin", async () => {
+    const framework = stubFrameworkPlugin("framework-procedure", {
+      classifySymbol: () => ({
+        extKind: "framework:trpc:procedure",
+        derivedBy: "framework-procedure:hit",
+        calls: [
+          { target: "console.log", line: 1 },
+          { target: "prisma.user.findMany", line: 2 },
+        ],
+      }),
+    })
+    const classifiesEverything = stubEffectsPlugin("effects-everything", () => ({
+      effectId: "db.read",
+      confidence: "high",
+      derivedBy: "effects-everything:any",
+    }))
+
+    const { symbols } = await extractOneSymbol({
+      frameworks: [framework],
+      effects: [classifiesEverything],
+    })
+
+    expect(symbols[0]?.calls.map((call) => call.target)).toEqual([
+      "console.log",
+      "prisma.user.findMany",
+    ])
+    expect(symbols[0]?.effects).toEqual([])
+  })
+
   it.each<[string, readonly FrameworkPlugin[], Confidence]>([
     [
       "the winning classifier's confidence",
@@ -174,12 +236,13 @@ describe("runFilePipeline — drop decisions", () => {
     expect(symbols[0]?.dropReason).toBe("dropper says so")
   })
 
-  it("keeps no middleware on a dropped Symbol, as it keeps no rules", async () => {
+  it("keeps no middleware and no added call on a dropped Symbol, as it keeps no rules", async () => {
     const framework = stubFrameworkPlugin("framework-route", {
       classifySymbol: () => ({
         extKind: "framework:express:route",
         derivedBy: "framework-route:hit",
         middleware: ["requireAdmin"],
+        calls: [{ target: "requireAdmin", line: 1 }],
       }),
       symbolDropHint: () => ({ reason: "generated", category: "B" }),
     })
@@ -188,6 +251,7 @@ describe("runFilePipeline — drop decisions", () => {
 
     expect(symbols[0]?.dropped).toBe(true)
     expect(symbols[0]).not.toHaveProperty("middleware")
+    expect(symbols[0]?.calls).toEqual([])
   })
 
   it.each<[string, SymbolCandidate, readonly FrameworkPlugin[], string | null]>([

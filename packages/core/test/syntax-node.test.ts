@@ -24,6 +24,7 @@ function node(overrides: Partial<SyntaxNode> = {}): SyntaxNode {
     namedChildren: [],
     children: [],
     childForFieldName: () => null,
+    startPosition: { row: 0 },
     ...overrides,
   }
 }
@@ -80,6 +81,7 @@ describe("asSyntaxNode", () => {
     ["namedChildren", null],
     ["children", "not an array"],
     ["childForFieldName", "not a function"],
+    ["startPosition", { row: "1" }],
   ])("returns null when `%s` is not the shape tree-sitter gives it", (field, value) => {
     expect(asSyntaxNode({ ...node(), [field]: value })).toBeNull()
   })

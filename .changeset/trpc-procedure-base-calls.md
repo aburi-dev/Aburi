@@ -1,0 +1,9 @@
+---
+"@aburi/framework-trpc": minor
+---
+
+Link a procedure to what it is built on. A procedure or base procedure now calls the base procedure its chain starts from and each middleware a `.use(…)` or `.concat(…)` on its chain is handed by name or member path, so `deletePost = protectedProcedure.use(isAdmin).mutation(…)` resolves to `protectedProcedure` and `isAdmin`. An effect either one performs, such as a session read in the base procedure's middleware, is a propagated effect of the procedure, and `aburi explain` on the base procedure lists the procedures built on it under Called by. A factory call (`requireRole("admin")`, or `createProcedure("read")` at the start of the chain) was a call already, and an inline middleware, a spread and a computed member add none. Nor does a middleware composed inside the `.use(…)` (`use(isAuthed.unstable_pipe(isAdmin))`): its only call is `isAuthed.unstable_pipe`, which resolves to nothing, so the effects of `isAuthed` and `isAdmin` do not reach the procedure.
+
+On the pinned benchmark repositories this adds 3 calls on `trpc`, all resolved to base procedures, and 20 on `cal-com`, 18 of them resolved (11 to base procedures, 5 to middleware, 2 to middleware built with `unstable_pipe`, which the plugin does not classify); the two left unresolved name base procedures imported through a workspace package name. No fingerprint moves on either, since none of those base procedures or middleware performs an effect the scan classifies.
+
+A procedure that inherits an effect this way has a new `logic` fingerprint with no change to its source, so an `aburi diff` against an IR an earlier version wrote reports it as changed; one that scans both sides with this version does not. A guard removed from a base procedure is still a change to the base procedure alone: rules do not propagate.

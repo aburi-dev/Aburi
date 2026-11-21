@@ -96,6 +96,7 @@ export type {
   ExtKindVocab,
   ExtractionContext,
   FileSummary,
+  FrameworkCall,
   FrameworkClassifyContext,
   FrameworkManifest,
   FrameworkPlugin,

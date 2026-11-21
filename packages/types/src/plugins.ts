@@ -247,6 +247,20 @@ export interface SymbolClassification {
   confidence?: Confidence
   /** The middleware the Symbol runs ahead of its handler, in the order they run. */
   middleware?: readonly string[]
+  /**
+   * What the framework calls on the Symbol's behalf that its body does not, such as the base
+   * procedure a tRPC procedure is built on. The core appends them to the Symbol's calls, past the
+   * Category C drop and the effect plugins, and resolves them as it resolves the body's.
+   */
+  calls?: readonly FrameworkCall[]
+}
+
+/** A Symbol the framework runs by reference, recorded as a call written where the reference is. */
+export interface FrameworkCall {
+  /** What a call through the reference would target, e.g. `isAdmin` or `auth.required`. */
+  target: string
+  /** 1-based. */
+  line: number
 }
 
 export interface LanguageCapabilities {

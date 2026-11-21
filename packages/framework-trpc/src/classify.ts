@@ -11,6 +11,7 @@ import {
 } from "@aburi/core"
 import {
   COMPUTED_TARGET_SEGMENT,
+  type FrameworkCall,
   type FrameworkClassifyContext,
   type OpaqueAstNode,
   type SymbolCandidate,
@@ -19,6 +20,7 @@ import {
 import { type Chain, readChain } from "./chain"
 import { TRPC_DERIVED_BY_PREFIX, type TrpcExtKind } from "./ext-kinds"
 import { hasTrpcServerImport } from "./imports"
+import { referenceCalls } from "./references"
 
 type TrpcRole = TrpcExtKind extends `${typeof TRPC_DERIVED_BY_PREFIX}:${infer Role}` ? Role : never
 
@@ -52,7 +54,9 @@ export function classifyTrpcSymbol(
   const importsTrpc = hasTrpcServerImport(ctx.imports)
   const role = chain === null ? null : roleOf(chain, importsTrpc)
   if (chain === null || role === null) return null
-  const middleware = BUILDS_A_PROCEDURE.has(role) ? chainMiddleware(chain) : []
+  const { middleware, calls } = BUILDS_A_PROCEDURE.has(role)
+    ? builtOn(chain)
+    : { middleware: [], calls: [] }
   return {
     extKind: `${TRPC_DERIVED_BY_PREFIX}:${role}` satisfies TrpcExtKind,
     derivedBy: `${TRPC_DERIVED_BY_PREFIX}:${role}:${chain.name}`,
@@ -60,18 +64,32 @@ export function classifyTrpcSymbol(
     // makes them tRPC's.
     confidence: importsTrpc ? "high" : "medium",
     ...(middleware.length > 0 ? { middleware } : {}),
+    ...(calls.length > 0 ? { calls } : {}),
   }
+}
+
+interface BuiltOn {
+  readonly middleware: readonly string[]
+  readonly calls: readonly FrameworkCall[]
 }
 
 // A base procedure the chain starts from runs its middleware first, as the builder a `concat`
 // joins runs its own where the call is written.
-function chainMiddleware(chain: Chain): string[] {
-  const base = readsInstanceProcedure(chain) ? [] : [chain.root]
-  if (chain.call === null) return base
-  const steps = chainCalls(chain.call)
-    .toReversed()
-    .filter((step) => MIDDLEWARE_STEPS.has(calleeName(step)?.leaf ?? ""))
-  return [...base, ...middlewareNames(steps.flatMap(argumentsOf))]
+function builtOn(chain: Chain): BuiltOn {
+  const onBase = !readsInstanceProcedure(chain)
+  const handlers =
+    chain.call === null
+      ? []
+      : chainCalls(chain.call)
+          .toReversed()
+          .filter((step) => MIDDLEWARE_STEPS.has(calleeName(step)?.leaf ?? ""))
+          .flatMap(argumentsOf)
+  return {
+    middleware: [...(onBase ? [chain.root] : []), ...middlewareNames(handlers)],
+    calls: referenceCalls(
+      onBase && chain.rootReference !== null ? [chain.rootReference, ...handlers] : handlers,
+    ),
+  }
 }
 
 function roleOf(chain: Chain, importsTrpc: boolean): TrpcRole | null {

@@ -170,7 +170,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     for (const written of candidates) {
       if (deadline.expired()) return abandonedFile()
 
-      const { candidate, confidence, extKindBy, middleware } = mergeFrameworkClassification(
+      const { candidate, confidence, extKindBy, middleware, calls } = mergeFrameworkClassification(
         written,
         frameworks,
         frameworkCtx,
@@ -241,7 +241,9 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           component,
           rules: body.rules,
           effects: classifiedEffects,
-          calls: keptCalls,
+          // Last among a shared line's calls, as the stable sort by line keeps them: a Call has no
+          // column to place them by.
+          calls: [...keptCalls, ...calls],
           middleware,
           normalizedAstString: normalized,
           confidence,
