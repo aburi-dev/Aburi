@@ -233,7 +233,7 @@ export interface EffectClassification {
  * It carries no `effectId`: an answer holding both keys fails the run.
  */
 export interface EffectDecline {
-  /** Plugin-defined reason, e.g. `"effects-plugin:trpc:server-file-query"`. */
+  /** Plugin-defined reason, e.g. `"effects-plugin:trpc:procedure-query"`. */
   declined: string
 }
 

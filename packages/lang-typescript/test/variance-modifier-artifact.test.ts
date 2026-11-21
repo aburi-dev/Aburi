@@ -267,7 +267,7 @@ describe("the Symbols are the same with the modifiers as without them", () => {
     const body = bodyOf(withModifiers)
     expect(bodyOf(withoutModifiers)).toBe(body)
     expect(normalizeAst(withModifiers)).toBe(
-      `${body} (type_parameters "<" (type_parameter (type_identifier "in")) ">")`,
+      `${body} (type_parameters "<" (type_parameter (type_identifier "in")) (ERROR (identifier "out") (identifier "T")) ">")`,
     )
     expect(normalizeAst(withoutModifiers)).toBe(
       `${body} (type_parameters "<" (type_parameter (type_identifier "T")) ">")`,
@@ -278,6 +278,23 @@ describe("the Symbols are the same with the modifiers as without them", () => {
     expect(await callsOf(WITH_MODIFIERS, "ts:src/a.ts#E.m")).toEqual(["inner"])
     expect(await callsOf(WITH_MODIFIERS, "ts:src/a.ts#after")).toEqual(["post"])
   })
+
+  const astOf = async (source: string) => {
+    const [symbol] = await symbolsOf(source)
+    if (symbol === undefined) throw new Error("no Symbol in fixture")
+    return normalizeAst(symbol)
+  }
+
+  // The name the grammar could not place is in the ERROR recovery left beside the parameter.
+  it.each([
+    ["a type alias", "export type F<out T> = () => void", "export type F<out U> = () => void"],
+    ["a class", "export class E<in out T> { m() {} }", "export class E<in out U> { m() {} }"],
+  ])(
+    "tells an annotated parameter of %s renamed in `normalizeAst`",
+    async (_label, before, after) => {
+      expect(await astOf(after)).not.toBe(await astOf(before))
+    },
+  )
 })
 
 describe("where the rule stops", () => {
@@ -292,29 +309,5 @@ describe("where the rule stops", () => {
     ["`in out` before a parameter named `out`", "export interface Z<in out> { v: out }"],
   ])("drops the modifier on %s, which only `tsc`'s checker refuses", async (_label, source) => {
     expect(await parseErrorsOf(source)).toEqual([])
-  })
-
-  const astOf = async (source: string) => {
-    const [symbol] = await symbolsOf(source)
-    if (symbol === undefined) throw new Error("no Symbol in fixture")
-    return normalizeAst(symbol)
-  }
-
-  it("cannot tell an annotated type alias's parameters apart in `normalizeAst`", async () => {
-    expect(await astOf("export type F<out T> = () => void")).toBe(
-      await astOf("export type F<out U> = () => void"),
-    )
-    expect(await astOf("export type F<T> = () => void")).not.toBe(
-      await astOf("export type F<U> = () => void"),
-    )
-  })
-
-  it("cannot tell an annotated class's parameters apart in `normalizeAst` either", async () => {
-    expect(await astOf("export class E<in out T> { m() {} }")).toBe(
-      await astOf("export class E<in out U> { m() {} }"),
-    )
-    expect(await astOf("export class E<T> { m() {} }")).not.toBe(
-      await astOf("export class E<U> { m() {} }"),
-    )
   })
 })

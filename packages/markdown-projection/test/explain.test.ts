@@ -253,7 +253,7 @@ describe("projectSymbolExplain — ## Declined effects", () => {
       }),
     ],
     calls: [
-      call({ target: "client.user.byId.query", line: 9 }),
+      call({ target: "t.procedure.query", line: 9 }),
       call({ target: "db.execute", line: 3 }),
     ],
   })
@@ -268,12 +268,7 @@ describe("projectSymbolExplain — ## Declined effects", () => {
   it("names each call this Symbol's plugins declined, by line, after its effects", () => {
     const md = projectSymbolExplain(owner, {
       declinedCalls: [
-        declined(
-          "client.user.byId.query",
-          9,
-          "effects-trpc",
-          "effects-plugin:trpc:server-file-query",
-        ),
+        declined("t.procedure.query", 9, "effects-trpc", "effects-plugin:trpc:procedure-query"),
         declined("db.execute", 3, "effects-drizzle", "effects-plugin:drizzle:raw-sql"),
         declined("db.execute", 3, "effects-custom", "raw `sql`"),
         declined("other.call", 1, "effects-trpc", "elsewhere", "ts:src/other.ts#other"),
@@ -290,7 +285,7 @@ describe("projectSymbolExplain — ## Declined effects", () => {
       "",
       "- `db.execute` (L3) [effects-custom]: `` raw `sql` ``",
       "- `db.execute` (L3) [effects-drizzle]: `effects-plugin:drizzle:raw-sql`",
-      "- `client.user.byId.query` (L9) [effects-trpc]: `effects-plugin:trpc:server-file-query`",
+      "- `t.procedure.query` (L9) [effects-trpc]: `effects-plugin:trpc:procedure-query`",
       "",
     ])
   })

@@ -46,7 +46,7 @@ Hash inputs are serialized as JSON before being fed to SHA-256. Serialization fo
 3. Array element order **follows the rules specified in this document** (default: preserve input order)
 4. Numbers follow the JSON standard (no decimal point on integers, `NaN` / `Infinity` not allowed)
 5. String escaping follows the JSON standard; characters other than ASCII control characters are emitted as-is (no `\uXXXX` required)
-6. A key whose value is absent (`undefined`) is not written at all. `null` is a value and is written, as `extKind`'s is. The parameter markers of §3.1 rely on the first: a parameter that carries neither serializes to `{"type":…}` alone
+6. A key whose value is absent (`undefined`) is not written at all. `null` is a value and is written, as `extKind`'s is. The parameter keys of §3.1 rely on the first: a parameter with no marker, modifier or decorator serializes to `{"type":…}` alone
 
 Encode as UTF-8, then pass to SHA-256.
 
@@ -74,7 +74,9 @@ Represents the symbol's **externally observable contract**. Changes when the "pu
     "inputs": [{
       "type": <canonical(input.type)>,
       "optional": true,                         // only when input.optional is true
-      "rest": true                              // only when input.rest is true
+      "rest": true,                             // only when input.rest is true
+      "modifiers": [<input.modifiers[i]>],      // only when non-empty; input order preserved
+      "decorators": [<canonical(input.decorators[i])>]  // only when non-empty; sorted (alpha)
     }],                                         // name excluded, input order preserved
     "outputs": [<canonical(output)>],           // input order preserved
     "throws": [<canonical(throw)>],             // sorted (alpha)
@@ -87,7 +89,7 @@ Represents the symbol's **externally observable contract**. Changes when the "pu
 
 `language` is **not included in the input**. It is already separated by the `<language>:` prefix inside Symbol.id, and by design `language` never changes between Symbols with the same ID. The fingerprint represents only the API surface of a single Symbol.
 
-`optional` and `rest` are what a caller sees of a parameter's form besides its type ([ir-schema.md](./ir-schema.md) §7). Each is written only when `true`, and by §2.3 rule 6 an absent marker writes nothing, so a parameter with neither contributes the same bytes whether or not its Document knows of the fields. A `false` written against the Class B rule hashes as absent.
+`optional` and `rest` are what a caller sees of a parameter's form besides its type ([ir-schema.md](./ir-schema.md) §7). Each is written only when `true`, and a `false` written against the Class B rule hashes as absent. `modifiers` and `decorators` are what the parameter is to its class and to a framework: a parameter property's `private` → `public` adds a member callers can read, and `@Inject(A)` → `@Inject(B)` or `@Param("id")` → `@Param("key")` changes what the parameter is handed. Each is written only when it holds an entry, and a `[]` written against the Class B rule hashes as absent. By §2.3 rule 6 an absent key writes nothing, so a parameter with none of the four contributes the same bytes whether or not its Document knows of the fields. A parameter's decorators are sorted, as a Symbol's are: the frameworks that read them keep each decorator's metadata apart, so for either kind a reorder is not a contract change (§3.4), and a parameter's still reaches `syntax` through its parameter list ([lang-plugin.md](./lang-plugin.md) LP8p1). Its modifiers keep source order, which TypeScript fixes (an accessibility modifier, then `override`, then `readonly`), so sorting them would tell nothing apart.
 
 ### 3.2 Formula
 
@@ -123,9 +125,10 @@ Examples:
 - Changing `signature.inputs[].name` does not change `api` (parameter names are not part of the contract)
 - Changing only a default's **value** (`limit = 10` → `limit = 20`) does not change `api`: omitting the argument stays legal either way, so the value is not part of the api contract. The IR records that a default exists (`optional`) and not what it is. What the default runs is read with the body instead ([lang-plugin.md](./lang-plugin.md) LP20d), so a default that calls something reaches `logic`
 - Changing local variable names, the function body, or rules/effects does not change `api`
-- Reordering the **occurrence order** of decorators does not change `api` (because of the sort convention)
+- Reordering the **occurrence order** of a Symbol's decorators, or of a parameter's, does not change `api` (both are sorted, §3.1)
 - **Changing only the class-scope portion of `Symbol.name` (`InvoiceService.createInvoice` → `BillingService.createInvoice`) does not change `api`** (the last segment is the same)
 - Breaking a type over lines, or joining it back onto one line, does not change `api`: `| A | B` ↔ `A | B`, `Array<` … `| A` … `| B` … `>` ↔ `Array<A | B>`, `(` … `a: A,` … `) => void` ↔ `(a: A) => void`, `{` … `a: A` … `b: B` … `}` ↔ `{ a: A; b: B }`. A formatter that breaks a type adds the line breaks, a trailing comma before a closing bracket and a union's leading `|`, drops an object type's `;` between members, and undoes each of these when it joins the type, so the language plugin records each type as it reads on one line ([lang-plugin.md](./lang-plugin.md) LP11e). It is the plugin's to do rather than the fingerprint's: the canonical string sees only text, where telling a union's operator from a `|` inside a string literal type takes the grammar, and the recorded text is also what the diff's delta rows and its rename pairing compare
+- Breaking a parameter decorator's arguments over lines, adding a trailing comma to them or a comment inside them does not change `api`: `@Inject(` … `TOKEN,` … `)` ↔ `@Inject(TOKEN)` ↔ `@Inject(/* legacy */ TOKEN)`. The language plugin records a parameter's decorator as it reads on one line, as it does a type ([lang-plugin.md](./lang-plugin.md) LP11f)
 - Exporting a declaration under its own name by an export clause instead of the `export` keyword (`export function f` → `function f` with `export { f }`), or reordering the names a clause exports it under, does not change `api` (§3.8)
 
 ### 3.5 Guaranteed change conditions
@@ -133,6 +136,7 @@ Examples:
 - `visibility` changes → changes
 - A parameter becomes optional or required, gains or loses a default, or becomes or stops being a rest parameter → changes (`signature.inputs[].optional` / `.rest`, [ir-schema.md](./ir-schema.md) §7). A default's value does not (§3.4)
 - Any of `signature.inputs[].type` / `outputs` / `throws` changes → changes
+- A parameter property's modifier, or a parameter's decorator, is added, removed or changed → changes (`signature.inputs[].modifiers` / `.decorators`). Reordering a parameter's decorators does not (§3.4)
 - Adding / removing a decorator or changing its arguments → changes (whether boundary or non-boundary)
 - `shortName` change (= renaming the method/function itself) → changes
 - `async` / `generator` flag change → changes
@@ -242,7 +246,7 @@ These are explicitly declared as "not yet guaranteed". A field rename appearing 
 
 By design, the order of effects can carry meaning (transaction boundaries, idempotency, retry safety). Discarding order would give "DB write before event publish" and "event publish before DB write" the same fingerprint, making refactoring-induced bugs undetectable in the diff.
 
-As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise.
+As a trade-off, "unintended reordering" also shows up in the diff, but a miss was judged more costly than noise. A pure reorder pairs every effect with its counterpart, so `delta.effects` holds nothing; `delta.effectsReordered` ([`diff-algorithm.md`](./diff-algorithm.md) §5.2.4) flags it, and the report lists both orders.
 
 The order kept is source order (§4.1), which is the order effects run in only for calls written one after another. A language plugin writes a call before the calls inside it ([lang-plugin.md](./lang-plugin.md) §5.1), so `x.save(y.publish())` hashes as `[x.save, y.publish]` although `y.publish` runs first, and rewriting it as `x.save(); y.publish()` leaves `logic` where it was.
 
@@ -258,7 +262,7 @@ Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct 
 
 ## 5. `syntax` fingerprint
 
-Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head and a function's parameter list ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1). Changes on any structural change other than formatting.
+Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head, a function's parameter list and a member's own modifiers ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1, LP8p2). Changes on any structural change other than formatting.
 
 ### 5.1 Input fields
 
@@ -272,6 +276,7 @@ The language plugin generates a **normalized AST string** per Symbol and compute
 4. Is an S-expression representing node kinds and child-node structure, plus every unnamed token except the punctuation a formatter adds, drops or swaps without changing the program: string delimiters, an optional `;`, a trailing `,`, a union's or an intersection's leading `|` or `&` (`| A | B` reads as `A | B`, without the extra level the parser gives the leading form), the parentheses around an arrow function's lone parameter (`x => …` reads as `(x) => …`, with the levels the parser gives the parenthesised form), and brackets the structure already implies. Punctuation that is the only record of something is not a formatter's, and stays in: the commas that make a hole in a JavaScript array (`[, x]` against `[x]`)
 5. Includes identifier and literal values (concrete values, not structure alone)
 6. Contains nothing the parser inserted: a MISSING node, the parser's repair of a broken file, is treated as unwritten
+7. Contains what the parser skipped: an ERROR node, the text of a broken file the parser could not place, is serialized with its tokens, including where the parser marks it an extra as it marks a comment. Comments, `<!--` ones included, are the only extras left out. An ERROR that holds no token is a run of characters the parser could not lex, which it merges into one leaf across whitespace and line breaks, so it is serialized as one `(ERROR "…")` per whitespace-separated piece of its text. An ERROR whose every child is left out (string delimiters, `;`, `,`, parentheses, brackets and braces, comments, MISSING nodes) contributes nothing, so a stray `)` changes nothing. A leading `|` or `&` keeps its level when an ERROR that contributes something sits beside it, since reducing the level to its operand would drop the ERROR. An ERROR is read wherever it sits in the parts this string describes, and anywhere else in a function's or a class's head: in a return type or a function's type parameters, which the api axis rebuilds from tokens that leave an extra out, and between the head's parts (`extends A B`, `f() B {}`). The head of a declaration described by its body alone, such as an interface, is read by neither axis, and an ERROR in it is not either
 
 Item 4 is what keeps `a + b` and `a - b` apart. Most parsers hold an operator or a `let` / `const` keyword as an unnamed token rather than a node, so a string built from node kinds alone reads either edit as no change — and because an operator outside a rule's text reaches neither `api` nor `logic`, the Symbol would be reported as unchanged on every axis.
 
@@ -312,7 +317,8 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 - Renaming an identifier → changes (`syntax` is structure-based, not meaning-based, so identifiers are treated as part of the structure)
 - Changing a literal → changes
 - Changing an operator, a declaration keyword (`let` / `const`), a modifier or a primitive type → changes
-- Changing a function's parameter list where the api axis does not read it — a parameter's name, a destructuring pattern, a default's value → changes. The api input reads a parameter's type and form only (§3.1), so the language plugin's normalized string covers the list as well as the body ([lang-plugin.md](./lang-plugin.md) LP8p1). The list goes in whole, so an edit to a parameter's type or form changes `syntax` as well as `api`; a return type or a type parameter, outside the list, changes `api` alone
+- Changing a function's parameter list where the api axis does not read it — a parameter's name, a destructuring pattern, a default's value, the order of its decorators → changes. The api input reads a parameter's type, form, modifiers and decorators only (§3.1), so the language plugin's normalized string covers the list as well as the body ([lang-plugin.md](./lang-plugin.md) LP8p1). The list goes in whole, so an edit to a parameter's type, form, modifier or decorator changes `syntax` as well as `api`; a return type or a type parameter, outside the list, changes `api` alone
+- Changing a member's own modifiers where neither its id nor the api axis reads them — `override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor` → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
 
 ### 5.5 Uses of the syntax fingerprint
 
@@ -380,13 +386,14 @@ The reference implementation and every language plugin must pass the following t
 |---|---|---|
 | A1 | Change `signature.inputs[].name` | api unchanged |
 | A2 | Change the body (rules/effects) | api unchanged |
-| A3 | Reorder decorators (distinct decorators) | api unchanged |
+| A3 | Reorder decorators (distinct decorators), a Symbol's or a parameter's | api unchanged; a parameter's reorder changes syntax (§5.4) |
 | A12 | Change only the class-scope portion of `Symbol.name` (`Old.method` → `New.method`) | api unchanged |
 | A13 | Change `language` (never happens in practice; defensive) | api unchanged (`language` is not part of the input) |
 | A22 | Change `signature.inputs[].name` from `ids` to `...ids` | api unchanged (A1's case: rest-ness is `rest`, and a marker spelled into `name` reaches no axis) |
 | A23 | Change only the value of a parameter's default (`limit = 10` → `limit = 20`) | `signature.inputs` and api unchanged (the IR records that a default exists, as `optional`, and not its value); syntax changes (S5b) |
 | A24 | Join a parameter type broken over lines onto one line: `\| ClassProvider \| FactoryProvider` → `ClassProvider \| FactoryProvider`, `Array<` … `\| A` … `\| B` … `>` → `Array<A \| B>`, `(` … `request: Request,` … `) => void` → `(request: Request) => void` | api unchanged (LP11e records each spelling as the one-line text) |
 | A25 | Export a declaration under its own name by a clause instead of the keyword, or reorder the names a clause exports it under | api unchanged (§3.8) |
+| A28 | Break a parameter decorator's arguments over lines, or write a comment inside them: `@Inject(` … `TOKEN,` … `)` → `@Inject(TOKEN)`, `@Inject(/* legacy */ TOKEN)` → `@Inject(TOKEN)` | api unchanged (LP11f records each spelling as the one-line text) |
 
 ### 7.3 api change conditions
 
@@ -404,6 +411,7 @@ The reference implementation and every language plugin must pass the following t
 | A20 | Toggle `signature.inputs[].optional` (absent ↔ `true`) | api changes |
 | A21 | Toggle `signature.inputs[].rest` (absent ↔ `true`) | api changes |
 | A26 | Change the names a module exports a declaration under (`export { handler as GET }` → `export { handler as DELETE }`, `export default function Page` → `export function Page`) | api changes (§3.8) |
+| A27 | Change a parameter property's modifier (`private s` → `public s`, `readonly` dropped) or a parameter's decorator (`@Inject(A)` → `@Inject(B)`, `@Param("id")` → `@Param("key")`) | api changes on the member the parameter belongs to |
 
 ### 7.4 logic invariance conditions
 
@@ -454,6 +462,8 @@ The reference implementation and every language plugin must pass the following t
 | S5 | Change a literal | syntax changes |
 | S5a | Change an operator, a declaration keyword, a modifier or a primitive type (`a + b` → `a - b`, `let` → `const`, `private` → `public`, `number` → `string`) | syntax changes |
 | S5b | Change a destructuring parameter's pattern (`{ a: b }` → `{ c: b }`, `[, b]` → `[b]`) or a parameter's default value (`limit = 20` → `limit = 10`) | syntax changes; api unchanged (A1, A23) |
+| S5c | In a file with a syntax error, change the text the parser could not place (`type T = \| A B` → `\| X B`, `save(a b)` → `save(a c)`, `f(): Map<A B, C>` → `Map<A X, C>`, `class K extends A B` → `extends A X`) | syntax changes; a comment added there, a stray `)` or the spacing inside a run the parser could not lex (`# #` → `#   #`) does not (§5.1 item 7) |
+| S5d | Add `override` to a method or an accessor, make it optional (`m()` → `m?()`), turn it into a getter (`m()` → `get m()`), or add `readonly` / `override` / `accessor` / `?` to a field holding a function | syntax changes on the member as well as its class; api unchanged |
 
 ### 7.7.1 syntax test criteria every language plugin must satisfy
 
@@ -557,7 +567,9 @@ export function apiFingerprint(sym) {
     inputs: sym.signature.inputs.map(i => ({
       type: canonical(i.type),
       ...(i.optional === true ? { optional: true } : {}),  // §3.1: only when true
-      ...(i.rest === true ? { rest: true } : {})
+      ...(i.rest === true ? { rest: true } : {}),
+      ...(i.modifiers?.length > 0 ? { modifiers: [...i.modifiers] } : {}),  // §3.1: only when non-empty
+      ...(i.decorators?.length > 0 ? { decorators: i.decorators.map(canonical).sort() } : {})
     })),
     outputs: sym.signature.outputs.map(canonical),
     throws: [...sym.signature.throws].map(canonical).sort(),

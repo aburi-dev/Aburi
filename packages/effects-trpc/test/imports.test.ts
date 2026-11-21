@@ -1,7 +1,6 @@
 import { importEdge } from "@aburi/test-support"
 import type { ImportEdge } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { hasTrpcServerImport } from "../src/imports"
 import { hasTrpcClientImport } from "../src/index"
 
 const PATH = "src/client.ts"
@@ -55,32 +54,6 @@ describe("hasTrpcClientImport", () => {
   it("throws even when a broken ImportEdge sits after a legitimate match", () => {
     expect(() => hasTrpcClientImport([edge("@trpc/client", 1), edge("", 2)], PATH)).toThrow(
       /ImportEdge\.source is empty/,
-    )
-  })
-})
-
-describe("hasTrpcServerImport", () => {
-  it.each(["@trpc/server", "@trpc/server/adapters/next", "@trpc/server/adapters/fetch"])(
-    "returns true for %s",
-    (source) => {
-      expect(hasTrpcServerImport([edge(source)], PATH)).toBe(true)
-    },
-  )
-
-  it.each(["@trpc/client", "@trpc/react-query", "@trpc/next", "@trpc/server-mock"])(
-    "returns false for %s",
-    (source) => {
-      expect(hasTrpcServerImport([edge(source)], PATH)).toBe(false)
-    },
-  )
-
-  it("returns false when the import list is empty", () => {
-    expect(hasTrpcServerImport([], PATH)).toBe(false)
-  })
-
-  it("throws on an empty ImportEdge.source, naming the plugin, the file, and the line", () => {
-    expect(() => hasTrpcServerImport([edge("", 4)], PATH)).toThrow(
-      `effects-trpc (${PATH}, line 4): ImportEdge.source is empty`,
     )
   })
 })

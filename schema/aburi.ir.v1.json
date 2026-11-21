@@ -442,7 +442,7 @@
         "reason": {
           "type": "string",
           "minLength": 1,
-          "description": "Why the plugin declined, in its own words, e.g. 'effects-plugin:trpc:server-file-query'."
+          "description": "Why the plugin declined, in its own words, e.g. 'effects-plugin:trpc:procedure-query'."
         }
       }
     },
@@ -642,6 +642,18 @@
                 "minItems": 1,
                 "items": { "type": "string", "minLength": 1 },
                 "description": "The identifiers a destructuring parameter binds, in source order, read as a destructuring declaration is; the call resolver treats each as a parameter. Class B: writers MUST omit the key for a parameter that is a single name and for a pattern that binds no name, never emit as []."
+              },
+              "modifiers": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "enum": ["public", "private", "protected", "override", "readonly"] },
+                "description": "The modifiers written on a parameter (a parameter property's, in valid TypeScript), in source order: `constructor(private readonly repo: Repo)` gives [\"private\", \"readonly\"]. Each makes the parameter a member of the class, and the accessibility modifier says who can read it. Hashed by the api fingerprint. Class B: writers MUST omit the key for a parameter written with none, never emit as []."
+              },
+              "decorators": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "The decorators written on the parameter, in source order, each as its text after `@` reads on one line, without comments, layout or a trailing comma: `@Inject(TOKEN)` gives `Inject(TOKEN)`, and so does `@Inject(\\n  TOKEN,\\n)`. A parameter's decorator decides what a framework hands the parameter (`@Body()`, `@Param(\"id\")`, `@Inject(X)`). Hashed by the api fingerprint. Class B: writers MUST omit the key for a parameter without one, never emit as []."
               }
             }
           }

@@ -176,14 +176,14 @@ describe("a Symbol several declarations wrote describes each of them once", () =
       "C",
     ],
     [
-      "an interface, then a class with a head",
+      "an interface, then a class with a head, which leads",
       [
         "export interface C { z: number }",
         "export abstract class C<T> extends Base { m() { a() } }",
       ],
       [
-        ["export interface C { z: number }"],
         ["export abstract class C<T> extends Base { m() { a() } }"],
+        ["export interface C { z: number }"],
       ],
       "C",
     ],

@@ -69,12 +69,21 @@ describe("a class with no method is data", () => {
 
   it.each([
     [
-      "constants",
+      "a class of constants is merged with an interface",
       "export class P { static readonly A = 1 }\nexport interface P { b: string }",
       B("pure constants"),
     ],
-    ["a DTO", "export class P { a: string = '' }\nexport interface P { m(): void }", B("pure DTO")],
-  ])("reads only the class bodies of %s merged with an interface", async (_label, source, hint) => {
+    [
+      "a DTO is merged with an interface",
+      "export class P { a: string = '' }\nexport interface P { m(): void }",
+      B("pure DTO"),
+    ],
+    [
+      "an interface is merged with a DTO written after it",
+      "export interface P { m(): void }\nexport class P { a: string = '' }",
+      B("pure DTO"),
+    ],
+  ])("reads only the class bodies where %s", async (_label, source, hint) => {
     expect(await hintOf(source, "ts:src/a.ts#P")).toEqual(hint)
   })
 })
@@ -118,6 +127,59 @@ describe("what a member beside a field makes of the class", () => {
 
     expect(await parseErrorsOf(source)).toEqual([])
     expect(await hintOf(source, "ts:src/a.ts#C")).toEqual(B("pure constants"))
+  })
+})
+
+describe("a parameter default is code its function carries", () => {
+  const workspace = useScratchWorkspace("parameter-default")
+
+  it.each([
+    ["a function with a default holding a call", "export function g(x = f()) {}", "g", null],
+    ["an arrow with a default holding a call", "export const g = (x = f()) => {}", "g", null],
+    ["a method with a default holding a call", "export class C { m(x = f()) {} }", "C.m", null],
+    ["a method with a default constructing", "export class C { m(x = new Map()) {} }", "C.m", null],
+    [
+      "a constructor with a default holding a call",
+      "export class C { constructor(x = f()) {} }",
+      "C.constructor",
+      null,
+    ],
+    [
+      "a field's wrapped function with a default holding a call",
+      "export class C { handle = withAuth((x = count()) => {}) }",
+      "C.handle",
+      null,
+    ],
+    [
+      "a destructured parameter with a default holding a call",
+      "export function g({ a = f() } = {}) {}",
+      "g",
+      null,
+    ],
+    ["a function with a literal default", "export function g(x = 1) {}", "g", B("empty body")],
+    ["a function with an object default", "export function g({ a } = {}) {}", "g", B("empty body")],
+    // A parameter's decorator runs where the class is defined, so its call stays on the class.
+    [
+      "a method with a parameter decorator holding a call",
+      "export class C { m(@Inject(t()) x) {} }",
+      "C.m",
+      B("empty body"),
+    ],
+  ])("hints an empty body on %s", async (_label, source, name, hint) => {
+    expect(await hintOf(source, `ts:src/a.ts#${name}`)).toEqual(hint)
+  })
+
+  it("scans the default's call onto the function", async () => {
+    await workspace.writeSource(
+      "src/a.ts",
+      "export function g(x = f()) {}\nfunction f() { return 1 }\n",
+    )
+    const g = symbolById({ ir: await scanWithoutWarnings(workspace.root) }, "ts:src/a.ts#g")
+
+    expect([g.dropped, g.calls.map((c) => [c.target, c.resolved])]).toEqual([
+      false,
+      [["f", "ts:src/a.ts#f"]],
+    ])
   })
 })
 

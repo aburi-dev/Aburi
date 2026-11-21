@@ -82,23 +82,23 @@ describe("aburi explain — the calls an effect plugin declined", () => {
     })
     await writeScannedWorkspace(workspace.root, {
       symbols: [
-        calling(GET_USER, "client.user.byId.query", 3),
-        calling(GET_USERS, "client.user.list.query", 4),
+        calling(GET_USER, "t.procedure.query", 3),
+        calling(GET_USERS, "t.procedure.input.query", 4),
       ],
       declinedCalls: [
         {
           plugin: "effects-trpc",
           symbolId: GET_USER.id,
-          target: "client.user.byId.query",
+          target: "t.procedure.query",
           line: 3,
-          reason: "effects-plugin:trpc:server-file-query",
+          reason: "effects-plugin:trpc:procedure-query",
         },
         {
           plugin: "effects-trpc",
           symbolId: GET_USERS.id,
-          target: "client.user.list.query",
+          target: "t.procedure.input.query",
           line: 4,
-          reason: "effects-plugin:trpc:server-file-query",
+          reason: "effects-plugin:trpc:procedure-query",
         },
       ],
     })
@@ -113,9 +113,9 @@ describe("aburi explain — the calls an effect plugin declined", () => {
     expect(outcome).toMatchObject({ kind: "single", exitCode: EXIT.SUCCESS })
     const markdown = outcome.kind === "single" ? outcome.markdown : ""
     expect(markdown).toContain(
-      "- `client.user.byId.query` (L3) [effects-trpc]: `effects-plugin:trpc:server-file-query`",
+      "- `t.procedure.query` (L3) [effects-trpc]: `effects-plugin:trpc:procedure-query`",
     )
-    expect(markdown).not.toContain("client.user.list.query")
+    expect(markdown).not.toContain("t.procedure.input.query")
   })
 })
 

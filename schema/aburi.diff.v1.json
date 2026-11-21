@@ -262,6 +262,10 @@
         "confidenceChanged":  { "type": "boolean" },
         "rules":      { "$ref": "#/$defs/ArrayDelta" },
         "effects":    { "$ref": "#/$defs/ArrayDelta" },
+        "effectsReordered": {
+          "type": "boolean",
+          "description": "Whether the locally detected effects both sides hold appear in a different order, each read by its target as the `logic` fingerprint reads it. The fingerprint hashes them in source order, so a reorder moves it, and a pure reorder pairs every entry and leaves `effects` empty. Propagated effects are left out, since the fingerprint reads their targets sorted. Optional only so a diff written before it existed stays valid: a current writer always emits it, `false` included. The orders themselves are on `before` and `after`."
+        },
         "calls":      { "$ref": "#/$defs/ArrayDelta" },
         "decorators": { "$ref": "#/$defs/ArrayDelta" },
         "exportedAs": { "$ref": "#/$defs/ArrayDelta" },

@@ -88,6 +88,15 @@ describe("apiFingerprint ignores", () => {
       method({ decorators: [NOT_FOUND, OK] }),
     ],
     [
+      "the order of a parameter's decorators",
+      withSignature({
+        inputs: [{ name: "repo", type: "Repo", decorators: ["Optional()", "Inject(REPO)"] }],
+      }),
+      withSignature({
+        inputs: [{ name: "repo", type: "Repo", decorators: ["Inject(REPO)", "Optional()"] }],
+      }),
+    ],
+    [
       "the class the member sits in",
       method({ name: "Old.createInvoice" }),
       method({ name: "New.createInvoice" }),
@@ -147,6 +156,32 @@ describe("apiFingerprint moves with", () => {
       "optional against rest, which are two contracts",
       withSignature({ inputs: [{ name: "dto", type: "CreateInvoiceDto", optional: true }] }),
       withSignature({ inputs: [{ name: "dto", type: "CreateInvoiceDto", rest: true }] }),
+    ],
+    [
+      "a parameter property's accessibility",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["private"] }],
+      }),
+      withSignature({ inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["public"] }] }),
+    ],
+    [
+      "a parameter becoming a parameter property",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", modifiers: ["readonly"] }],
+      }),
+      method(),
+    ],
+    [
+      "a parameter decorator's argument",
+      withSignature({ inputs: [{ name: "id", type: "string", decorators: ['Param("id")'] }] }),
+      withSignature({ inputs: [{ name: "id", type: "string", decorators: ['Param("userId")'] }] }),
+    ],
+    [
+      "an added parameter decorator",
+      withSignature({
+        inputs: [{ name: "dto", type: "CreateInvoiceDto", decorators: ["Body()"] }],
+      }),
+      method(),
     ],
     [
       "the order of parameters",

@@ -146,6 +146,44 @@ describe("classifyPrismaCall — a model segment that names nothing", () => {
   })
 })
 
+describe("classifyPrismaCall — a model segment that is a client word", () => {
+  it.each([
+    "this.db.delete",
+    "this.db.update",
+    "this.database.findMany",
+    "services.orm.create",
+    "this.tx.upsert",
+    "this.trx.deleteMany",
+    "this.prisma.create",
+    "this.drizzle.delete",
+    "this.conn.delete",
+    "ctx.connection.update",
+  ])(
+    "returns null for %s, with no client in front of it, so another ORM can claim it",
+    (target) => {
+      expect(classifyPrismaCall(makeCall({ target, argumentCount: 1 }), ctx)).toBeNull()
+    },
+  )
+
+  it.each([
+    ["prisma.dbLog.create", "db.write", "whose model only mentions a client word"],
+    ["tx.ormMapping.findMany", "db.read", "whose model only mentions a client word"],
+    ["prisma.database.findMany", "db.read", "whose model is a client word behind a client"],
+    ["this.prisma.tx.create", "db.write", "whose model is a client word behind a client"],
+    ["prisma.db.create", "db.write", "whose model is a client word behind a client"],
+    [
+      "this.prismaService.connection.findMany",
+      "db.read",
+      "whose model is a client word behind a client",
+    ],
+  ])("still classifies %s at high, %s", (target, effectId) => {
+    expect(classifyPrismaCall(makeCall({ target }), ctx)).toMatchObject({
+      effectId,
+      confidence: "high",
+    })
+  })
+})
+
 describe("classifyPrismaCall — calls that are not Prisma's", () => {
   it.each([
     ["no import at all", []],

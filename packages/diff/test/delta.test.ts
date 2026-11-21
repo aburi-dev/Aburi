@@ -24,6 +24,8 @@ function symbolWith(overrides: Partial<IRSymbol>, seed: string): IRSymbol {
   return makeSymbol({ id: "ts:src/a.ts#Foo", name: "Foo", fingerprint: fp(seed), ...overrides })
 }
 
+type SignatureInput = Signature["inputs"][number]
+
 const NOTHING = { added: [], removed: [], modified: [] }
 
 describe("lineFuzz", () => {
@@ -240,6 +242,77 @@ describe("effects", () => {
   })
 })
 
+describe("effects that appear in another order", () => {
+  const save = effect({ id: "db.write", target: "a.save", plugin: "effects-prisma", line: 2 })
+  const emit = effect({
+    id: "event.publish",
+    target: "events.emit",
+    plugin: "effects-nest",
+    line: 3,
+  })
+  const audit = effect({
+    id: "db.write",
+    target: "audit.create",
+    plugin: "effects-prisma",
+    line: 4,
+  })
+  const create = effect({ id: "db.write", target: "c.create", plugin: "effects-prisma", line: 5 })
+  const viaCallee = (target: string) =>
+    effect({
+      id: "db.read",
+      target,
+      plugin: "effects-prisma",
+      propagated: true,
+      derivedFrom: ["ts:src/b.ts#b"],
+    })
+  const effectsOf = (base: Effect[], head: Effect[]) => {
+    const delta = computeSymbolDelta(
+      symbolWith({ effects: base }, "a"),
+      symbolWith({ effects: head }, "b"),
+    )
+    return { reordered: delta.effectsReordered, effects: delta.effects }
+  }
+
+  it("flags a swap that pairs every entry, so the logic change has something to name", () => {
+    expect(effectsOf([save, emit], [emit, save])).toEqual({ reordered: true, effects: NOTHING })
+  })
+
+  it.each([
+    ["an effect moved past a repeat of another", [save, emit, save], [save, save, emit]],
+    [
+      "the entries both sides hold, past one added and one removed",
+      [audit, save, emit],
+      [emit, save, create],
+    ],
+    [
+      "two targets that traded places while one's id changed",
+      [save, emit],
+      [emit, { ...save, id: "db.delete" }],
+    ],
+  ])("flags %s", (_label, base, head) => {
+    expect(effectsOf(base, head).reordered).toBe(true)
+  })
+
+  it.each([
+    ["the same order", [save, emit], [save, emit]],
+    ["an effect added between them", [save, emit], [save, audit, emit]],
+    ["the first of three removed", [save, emit, audit], [emit, audit]],
+    [
+      "two effects on one target that traded places, one plugin's and another's",
+      [save, { ...save, id: "x-audit:record", plugin: "audit" }],
+      [{ ...save, id: "x-audit:record", plugin: "audit" }, save],
+    ],
+    [
+      "propagated effects in another order",
+      [viaCallee("x"), viaCallee("y")],
+      [viaCallee("y"), viaCallee("x")],
+    ],
+    ["a local effect moved past a propagated one", [save, viaCallee("x")], [viaCallee("x"), save]],
+  ])("does not flag %s", (_label, base, head) => {
+    expect(effectsOf(base, head).reordered).toBe(false)
+  })
+})
+
 describe("calls", () => {
   const callDelta = (base: IRSymbol["calls"], head: IRSymbol["calls"]) =>
     computeSymbolDelta(symbolWith({ calls: base }, "a"), symbolWith({ calls: head }, "b"), {
@@ -399,16 +472,40 @@ describe("signature", () => {
     })
   })
 
-  it.each([
-    ["turns optional", { optional: true } as const],
-    ["turns into a rest parameter", { rest: true } as const],
-  ])("reports an input that %s as modified, since the api moved with it", (_, form) => {
+  it.each<[string, Partial<SignatureInput>, Partial<SignatureInput>]>([
+    ["turns optional", {}, { optional: true }],
+    ["turns into a rest parameter", {}, { rest: true }],
+    ["turns into a parameter property", {}, { modifiers: ["private"] }],
+    ["changes its accessibility", { modifiers: ["private"] }, { modifiers: ["public"] }],
+    ["gains a decorator", {}, { decorators: ["Inject(TOKEN)"] }],
+    [
+      "changes a decorator's argument",
+      { decorators: ["Inject(A)"] },
+      { decorators: ["Inject(B)"] },
+    ],
+  ])("reports an input that %s as modified, since the api moved with it", (_, from, to) => {
     expect(
       signatureDelta(
-        sig({ inputs: [{ name: "x", type: "string" }] }),
-        sig({ inputs: [{ name: "x", type: "string", ...form }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...from }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...to }] }),
       )?.inputs,
-    ).toEqual({ added: [], removed: [], modified: [{ name: "x", type: "string", ...form }] })
+    ).toEqual({ added: [], removed: [], modified: [{ name: "x", type: "string", ...to }] })
+  })
+
+  it.each<[string, Partial<SignatureInput>, Partial<SignatureInput>]>([
+    [
+      "reorders its decorators",
+      { decorators: ["Optional()", "Inject(T)"] },
+      { decorators: ["Inject(T)", "Optional()"] },
+    ],
+    ["writes no modifier and no decorator as empty lists", {}, { modifiers: [], decorators: [] }],
+  ])("reports nothing for an input that %s, which the api reads alike", (_, from, to) => {
+    expect(
+      signatureDelta(
+        sig({ inputs: [{ name: "x", type: "string", ...from }] }),
+        sig({ inputs: [{ name: "x", type: "string", ...to }] }),
+      )?.inputs,
+    ).toEqual(NOTHING)
   })
 
   it("does not compare the bindings a plugin read out of a destructuring input", () => {
