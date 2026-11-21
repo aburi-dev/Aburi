@@ -137,6 +137,18 @@ describe("a const whose value is a call walks the call", () => {
       "ready",
       ["connect.then", "connect", "warm"],
     ],
+    [
+      "a timer named in parentheses",
+      "export const t = (setTimeout)(() => { tick() }, 1)",
+      "t",
+      ["setTimeout", "tick"],
+    ],
+    [
+      "a transaction a method opens",
+      "export const seeded = db.transaction(async (tx: any) => { write(tx) })",
+      "seeded",
+      ["db.transaction", "write"],
+    ],
   ])(
     "walks the callback handed to %s with the call, as one that runs or schedules it",
     async (_label, source, name, targets) => {
@@ -151,15 +163,33 @@ describe("a const whose value is a call walks the call", () => {
   it.each([
     ["Array.from", "export const xs = Array.from(ys, (y: any) => y.id)", "xs"],
     ["compareBy", "export const byId = compareBy((item: any) => item.id)", "byId"],
-  ])(
-    "reads the function handed to %s as a body, since only a name decides",
-    async (_label, source, name) => {
-      const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
+    ["a point-free map", "export const toNames = map((u: any) => u.active && u.admin)", "toNames"],
+    [
+      "lodash's once, handed the function alone",
+      "export const init = once(() => { load() })",
+      "init",
+    ],
+    ["an index that spells no name", "export const r = p[k](() => { a() })", "r"],
+    [
+      "a transaction named bare",
+      "export const create = transaction(async (input: any) => { save(input) })",
+      "create",
+    ],
+  ])("reads the function handed to %s as a body, as a wrapper's", async (_label, source, name) => {
+    const symbol = await symbolOf(source, `ts:src/a.ts#${name}`)
 
-      expect(symbol.derivedBy).toContain("call-argument-function")
-      expect(symbol.mergedDeclarations).toHaveLength(1)
-    },
-  )
+    expect(symbol.derivedBy).toContain("call-argument-function")
+    expect(symbol.mergedDeclarations).toHaveLength(1)
+  })
+
+  it("keeps a wrapper's function as the body when the chain also continues it", async () => {
+    const source = "export const h = withAuth(() => { a() }).then(() => { b() })"
+    const symbol = await symbolOf(source, "ts:src/a.ts#h")
+
+    expect(symbol.derivedBy).toContain("call-argument-function")
+    expect(symbol.mergedDeclarations?.map((d) => d.bodyNode?.text)).toEqual(["{ a() }"])
+    expect(await callsOf(source, "ts:src/a.ts#h")).toEqual(["withAuth.then", "withAuth", "a", "b"])
+  })
 
   it("reads a handed concise arrow's expression as its return value", async () => {
     const { rules } = await walkOf(

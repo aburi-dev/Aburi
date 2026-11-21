@@ -52,8 +52,8 @@ export function memberSymbolSegment(classNode: Node, member: Node): string | nul
 }
 
 /**
- * Bodies read as running when the member is called, not on construction or definition: the tree
- * cannot tell a wrapper from a call that runs its argument at once.
+ * Bodies read as running when the member is called, not on construction or definition: a call
+ * handed a function is taken for a wrapper unless its name says it runs or schedules it.
  */
 export type HeldFunction =
   | { readonly kind: "function"; readonly fn: Node }

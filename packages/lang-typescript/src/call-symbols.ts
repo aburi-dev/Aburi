@@ -1,4 +1,10 @@
-import { chainCalls, readStaticString, unwrapValue, walkReceiverChain } from "@aburi/core"
+import {
+  chainCalls,
+  readStaticString,
+  unwrapValue,
+  walkReceiverChain,
+  writtenChildren,
+} from "@aburi/core"
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type ExtractionContext,
@@ -27,30 +33,48 @@ const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "disable",
 ])
 
+interface RunnerSpelling {
+  readonly asAMethodOnly: boolean
+  readonly fewestArguments: number
+}
+
+const ANY_SPELLING: RunnerSpelling = { asAMethodOnly: false, fewestArguments: 1 }
+// Called bare, these names are RxJS's, Ramda's and lodash/fp's point-free builders, or an app's
+// own wrapper.
+const AS_A_METHOD: RunnerSpelling = { asAMethodOnly: true, fewestArguments: 1 }
+// A listener comes after its event; lodash's `once(fn)`, handed the function alone, wraps it.
+const AFTER_AN_EVENT: RunnerSpelling = { asAMethodOnly: false, fewestArguments: 2 }
+
 // Each runs the function it is handed at once, or registers it to run later, by what the name
 // means across the libraries that use it; read as wrappers, their callbacks would leave the code
 // whose construction runs them.
-const RUNS_OR_SCHEDULES_ITS_ARGUMENT: ReadonlySet<string> = new Set([
-  "then",
-  "catch",
-  "finally",
-  "setTimeout",
-  "setInterval",
-  "setImmediate",
-  "queueMicrotask",
-  "subscribe",
-  "on",
-  "once",
-  "addListener",
-  "effect",
-  "reaction",
-  "autorun",
-  "watch",
-  "map",
-  "filter",
-  "forEach",
-  "reduce",
-  "$transaction",
+const RUNS_OR_SCHEDULES_ITS_ARGUMENT: ReadonlyMap<string, RunnerSpelling> = new Map([
+  ["then", AS_A_METHOD],
+  ["catch", AS_A_METHOD],
+  ["finally", AS_A_METHOD],
+  ["setTimeout", ANY_SPELLING],
+  ["setInterval", ANY_SPELLING],
+  ["setImmediate", ANY_SPELLING],
+  ["queueMicrotask", ANY_SPELLING],
+  ["subscribe", ANY_SPELLING],
+  ["on", AFTER_AN_EVENT],
+  ["once", AFTER_AN_EVENT],
+  ["addListener", AFTER_AN_EVENT],
+  ["addEventListener", AFTER_AN_EVENT],
+  ["effect", ANY_SPELLING],
+  ["reaction", ANY_SPELLING],
+  ["autorun", ANY_SPELLING],
+  ["watch", ANY_SPELLING],
+  ["map", AS_A_METHOD],
+  ["flatMap", AS_A_METHOD],
+  ["filter", AS_A_METHOD],
+  ["find", AS_A_METHOD],
+  ["some", AS_A_METHOD],
+  ["every", AS_A_METHOD],
+  ["forEach", AS_A_METHOD],
+  ["reduce", AS_A_METHOD],
+  ["$transaction", ANY_SPELLING],
+  ["transaction", AS_A_METHOD],
 ])
 
 export interface CallExtractionState {
@@ -169,20 +193,26 @@ function wrappedHandlers(call: Node): Node[] {
 }
 
 function runsOrSchedulesItsArgument(call: Node): boolean {
-  const name = calleeName(call)
-  return name !== null && RUNS_OR_SCHEDULES_ITS_ARGUMENT.has(name)
+  const written = call.childForFieldName("function")
+  const callee = written === null ? null : calleeName(unwrapValue(written))
+  const spelling = callee === null ? undefined : RUNS_OR_SCHEDULES_ITS_ARGUMENT.get(callee.name)
+  if (callee === null || spelling === undefined) return false
+  if (spelling.asAMethodOnly && !callee.method) return false
+  return writtenChildren(argumentsOf(call)).length >= spelling.fewestArguments
 }
 
-function calleeName(call: Node): string | null {
-  const callee = call.childForFieldName("function")
-  switch (callee?.type) {
+function calleeName(callee: Node): { name: string; method: boolean } | null {
+  switch (callee.type) {
     case "identifier":
-      return callee.text
-    case "member_expression":
-      return callee.childForFieldName("property")?.text ?? null
+      return { name: callee.text, method: false }
+    case "member_expression": {
+      const property = callee.childForFieldName("property")
+      return property === null ? null : { name: property.text, method: true }
+    }
     case "subscript_expression": {
       const index = callee.childForFieldName("index")
-      return index === null ? null : readStaticString(unwrapValue(index))
+      const name = index === null ? null : readStaticString(unwrapValue(index))
+      return name === null ? null : { name, method: true }
     }
     default:
       return null

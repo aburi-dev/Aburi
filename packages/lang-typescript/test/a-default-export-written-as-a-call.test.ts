@@ -62,6 +62,18 @@ describe("a default export written as a call", () => {
       ["store.subscribe", "q"],
       UNHANDED,
     ],
+    [
+      "a promise continued behind a non-null assertion",
+      "export default p.then!(() => { warm() })",
+      ["p.then!", "warm"],
+      UNHANDED,
+    ],
+    [
+      "a wrapper whose result a promise continues",
+      "export default withAuth(() => { a() }).then(() => { b() })",
+      ["withAuth.then", "withAuth", "a", "b"],
+      HANDED,
+    ],
   ])("walks %s, with the call that makes the value", async (_label, source, calls, derivedBy) => {
     expect(await idsOf(source)).toEqual([DEFAULT])
     expect(await callsOf(source, DEFAULT)).toEqual(calls)

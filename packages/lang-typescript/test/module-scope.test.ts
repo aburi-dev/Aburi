@@ -168,4 +168,31 @@ describe("a function a const's initializer or a default export runs in place", (
       "r",
     ])
   })
+
+  it.each([
+    [
+      "a const",
+      "export const h = (async () => { q() })().then(() => { r() })",
+      "h",
+      "export-keyword",
+      ["<computed>.then", "<computed>", "q", "r"],
+    ],
+    [
+      "a default export",
+      "export default (async () => { q() })().catch((e) => { r(e) })",
+      "<default>",
+      "export-default",
+      ["<computed>.catch", "<computed>", "q", "r"],
+    ],
+  ])(
+    "walks a promise continuing it with the call, for %s",
+    async (_label, source, name, exported, calls) => {
+      const id = `ts:src/a.ts#${name}`
+      const symbol = await symbolOf(source, id)
+
+      expect(symbol.derivedBy).toEqual(["invoked-function", exported])
+      expect(symbol.mergedDeclarations).toHaveLength(1)
+      expect(await callsOf(source, id)).toEqual(calls)
+    },
+  )
 })

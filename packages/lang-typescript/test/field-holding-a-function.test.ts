@@ -219,6 +219,34 @@ describe("a field holding a function handed to a call is a member Symbol", () =>
       ["a"],
       ["debounce", "delay"],
     ],
+    [
+      "a function handed through an index that spells no name",
+      "  ready = p[k](() => { a() })",
+      "ready",
+      ["a"],
+      ["p.<computed>"],
+    ],
+    [
+      "a function lodash's once wraps, handed alone",
+      "  init = once(() => { this.load() })",
+      "init",
+      ["this.load"],
+      ["once"],
+    ],
+    [
+      "a function lodash's once wraps, a comment beside it",
+      "  init = once(/* on first call */ () => { this.load() })",
+      "init",
+      ["this.load"],
+      ["once"],
+    ],
+    [
+      "a function a point-free map is handed",
+      "  toNames = map((u) => { pick(u) })",
+      "toNames",
+      ["pick"],
+      ["map"],
+    ],
   ])("walks %s", async (_label, field, member, onMember, onClass) => {
     const source = classOf(field)
 
@@ -322,6 +350,52 @@ describe("a field handed to a call that runs or schedules its callback stays on 
       "continues through an index",
       '  ready = p["finally"](() => { done() })',
       ["p.finally", "done"],
+    ],
+    [
+      "continues through an index in parentheses",
+      '  ready = p[("finally")](() => { done() })',
+      ["p.<computed>", "done"],
+    ],
+    [
+      "registers it on a timer named in parentheses",
+      "  timer = (setInterval)(() => { tick() }, 1000)",
+      ["setInterval", "tick"],
+    ],
+    [
+      "continues a promise with it behind a non-null assertion",
+      "  ready = p.then!(() => { warm() })",
+      ["p.then!", "warm"],
+    ],
+    [
+      "continues a promise with it behind a type assertion",
+      "  ready = (p.then as Then)(() => { warm() })",
+      ["p.then", "warm"],
+    ],
+    [
+      "registers it on a timer for a static field",
+      "  static timer = setInterval(() => { tick() }, 1000)",
+      ["setInterval", "tick"],
+    ],
+    [
+      "registers it on a timer, parameter defaults and all",
+      "  timer = setInterval((x = dflt()) => { tick(x) }, 1000)",
+      ["setInterval", "dflt", "tick"],
+    ],
+    [
+      "listens once with it, after an event",
+      '  ready = emitter.once("ready", () => { start() })',
+      ["emitter.once", "start"],
+    ],
+    [
+      "listens with it on an element",
+      '  off = el.addEventListener("click", () => { press() })',
+      ["el.addEventListener", "press"],
+    ],
+    ["finds with it", "  first = xs.find((x) => x.ok)", ["xs.find"]],
+    [
+      "runs it in a transaction a method opens",
+      "  migrate = this.db.transaction(async (tx) => { write(tx) })",
+      ["this.db.transaction", "write"],
     ],
   ])("when the call %s, keeping the class", async (_label, field, onClass) => {
     const source = classOf(field)

@@ -57,6 +57,12 @@ describe("a registration call's inline handler is its body", () => {
       "ts:src/a.ts#app__listen__d0",
       ["boot"],
     ],
+    [
+      "a handler a listener call earlier in the chain is handed",
+      'app.on(READY, () => { a() }).get("/y", (req, res) => { b() })',
+      "ts:src/a.ts#app__get__$y__d0",
+      ["a", "b"],
+    ],
   ])("walks %s", async (_label, source, id, targets) => {
     expect(await callsOf(source, id)).toEqual(targets)
   })
@@ -124,6 +130,7 @@ describe("a registration call's inline handler is its body", () => {
     ['app.get("/x", () => { a() })', "ts:src/a.ts#app__get__$x__d0", false],
     ["app.listen(3000)", "ts:src/a.ts#app__listen__d0", false],
     ["app.use(() => { a() }, () => { b() })", "ts:src/a.ts#app__use__d0", true],
+    ['app.on(READY, () => { a() }).get("/y", () => { b() })', "ts:src/a.ts#app__get__$y__d0", true],
   ])("writes the merged key on `%s` only for a second handler", async (source, id, merged) => {
     expect("mergedDeclarations" in (await symbolOf(source, id))).toBe(merged)
   })
