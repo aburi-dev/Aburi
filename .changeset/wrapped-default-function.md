@@ -1,5 +1,0 @@
----
-"@aburi/lang-typescript": minor
----
-
-Give an anonymous default export written behind a wrapper the Symbol its bare spelling gets. `export default (() => { … })`, `export default (async function () { … })` and `export default (async () => { … }) satisfies Handler` are the anonymous `<default>` function, and `export default (class { … })` the `<default>` class, where each used to extract nothing, so the function's calls, rules and effects were on no Symbol. A function or class expression's own name binds nothing in the module, so `export default (function Handler() { … })` and `export default (class C { … })` are `<default>` too, the class holding its members' calls, where the bare declarations are `Handler` and `C`. A call through a default import of such a module, unresolved (`no-match`) until now, resolves to it. An `aburi diff` against an IR an earlier version wrote reports these Symbols as added (`--fail-on added`), and their callers' `logic` moves with the effects they now inherit.

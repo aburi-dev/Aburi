@@ -1,5 +1,19 @@
 # @aburi/diff
 
+## 0.9.0
+
+### Minor Changes
+
+- f8f49e2: Name a logic change that only reorders a Symbol's effects. `SymbolDelta` gains `effectsReordered`, true when the locally detected effects both sides hold appear in a different order, each read by its target as the `logic` fingerprint reads it; propagated effects, which the fingerprint reads sorted, are left out. The `logic` fingerprint reads effects in source order, so swapping `await prisma.account.update(…)` and `await prisma.audit.create(…)` moved it while every effect paired and `delta.effects` held nothing: the report said `logic fingerprint changed; no field-level detail was recorded`, and `--fail-on logic-changed` tripped with nothing to say why. The report now writes ``- effects reordered: db.write `prisma.account.update`, db.write `prisma.audit.create` → db.write `prisma.audit.create`, db.write `prisma.account.update` `` after the effect rows. The field is optional in the schema so older diffs stay valid, and this version always writes it, `false` included.
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- f500b3e: Record what a parameter is written with beside its type. A `Signature.inputs` entry gains `modifiers` (`public`, `private`, `protected`, `override`, `readonly`, in source order) for a constructor's parameter property and `decorators` (each as its text after `@` reads on one line, so a formatter breaking its arguments over lines changes nothing) for a decorated parameter, both omitted when there are none. The api fingerprint hashes them, a parameter's decorators sorted as a Symbol's are, so `constructor(private s: S)` turning `public s`, or `@Param("id")` turning `@Query("id")`, is an api change on the member where it used to move only its `syntax`. `aburi diff` names such an input as `modified`, comparing its decorators in any order, refuses an IR whose `modifiers` or `decorators` is not a list of strings, and the report prints the input as written: `@Inject(TOKEN) private readonly repo: Repo`.
+  
+  A constructor with a parameter property and a method with a decorated parameter get a new `api` fingerprint with no change to their source: 29 of the 5,580 Symbols in this repository, every one a constructor or a NestJS handler, and no `logic` or `syntax` fingerprint moves. Rescan the base rather than comparing against a stored IR. `aburi diff <base>..<head>` scans both sides with the installed plugin and is unaffected.
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.8.0
 
 ### Minor Changes
