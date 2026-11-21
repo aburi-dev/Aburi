@@ -29,6 +29,8 @@ interface ApiParameter {
   type: string
   optional?: true
   rest?: true
+  modifiers?: string[]
+  decorators?: string[]
 }
 
 export function apiFingerprint(symbol: IRSymbol): string {
@@ -89,5 +91,11 @@ function canonicalizeParameter(input: Signature["inputs"][number]): ApiParameter
   const out: ApiParameter = { type: normalizeFingerprintString(input.type) }
   if (input.optional === true) out.optional = true
   if (input.rest === true) out.rest = true
+  if (input.modifiers !== undefined && input.modifiers.length > 0) {
+    out.modifiers = [...input.modifiers]
+  }
+  if (input.decorators !== undefined && input.decorators.length > 0) {
+    out.decorators = input.decorators.map(normalizeFingerprintString).sort(compareCodeUnit)
+  }
   return out
 }

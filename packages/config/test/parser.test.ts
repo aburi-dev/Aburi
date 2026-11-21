@@ -104,6 +104,10 @@ describe("parseConfig", () => {
       },
     ],
     [
+      "a testFiles entry that negates the default list",
+      { $schema: CONFIG_SCHEMA_URL, testFiles: ["...", "!..."] },
+    ],
+    [
       "maxFileSizeBytes below the schema minimum",
       { $schema: CONFIG_SCHEMA_URL, maxFileSizeBytes: 512 },
     ],

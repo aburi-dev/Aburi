@@ -98,6 +98,8 @@ const SIGNATURE: RecordSpec = {
     optional: optional(bool),
     rest: optional(bool),
     bindings: optional(strs),
+    modifiers: optional(strs),
+    decorators: optional(strs),
   }),
   outputs: strs,
   throws: strs,

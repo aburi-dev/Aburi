@@ -129,23 +129,26 @@ describe("checkIRIntegrity — documents that are not shaped like a Document", (
     ])
   })
 
-  it("checks a destructuring parameter's bindings when they are present", () => {
-    const symbol = makeSymbol("ts:src/a.ts#foo", {
-      signature: sig({ inputs: [{ name: "{ save }", type: "Deps", bindings: ["save"] }] }),
-    }) as unknown as Record<string, unknown>
+  it.each([
+    ["bindings", ["save"]],
+    ["modifiers", ["private"]],
+    ["decorators", ["Inject(TOKEN)"]],
+  ])("checks a parameter's %s when they are present", (field, written) => {
+    const symbol = makeSymbol("ts:src/a.ts#foo") as unknown as Record<string, unknown>
+    symbol.signature = { ...sig(), inputs: [{ name: "s", type: "S", [field]: written }] }
     expect(shapeViolations(withField("symbols", [symbol]))).toEqual([])
 
     symbol.signature = {
       ...sig(),
       inputs: [
-        { name: "{ save }", type: "Deps", bindings: "save" },
-        { name: "[a, b]", type: "", bindings: ["a", 7] },
+        { name: "s", type: "S", [field]: written[0] },
+        { name: "t", type: "T", [field]: [...written, 7] },
       ],
     }
     const violations = shapeViolations(withField("symbols", [symbol]))
     expect(violations.map((v) => v.subject)).toEqual([
       "symbols[0].signature.inputs[0]",
-      "symbols[0].signature.inputs[1].bindings[1]",
+      `symbols[0].signature.inputs[1].${field}[1]`,
     ])
   })
 

@@ -16,11 +16,13 @@ export const DEFAULT_TEST_FILES: readonly string[] = [
   "**/e2e/**",
 ]
 
+const DEFAULT_TEST_FILES_ENTRY = "..."
+
 export function markTestFiles(
   symbols: readonly IRSymbol[],
   config: Pick<Config, "testFiles">,
 ): IRSymbol[] {
-  const isTestFile = testFileMatcher(config.testFiles ?? DEFAULT_TEST_FILES)
+  const isTestFile = testFileMatcher(testFilePatterns(config.testFiles))
   if (isTestFile === null) return [...symbols]
   const verdicts = new Map<string, boolean>()
   return symbols.map((symbol) => {
@@ -32,6 +34,13 @@ export function markTestFiles(
     }
     return inTestFile ? { ...symbol, inTestFile: true } : symbol
   })
+}
+
+function testFilePatterns(testFiles: readonly string[] | undefined): readonly string[] {
+  if (testFiles === undefined) return DEFAULT_TEST_FILES
+  return testFiles.flatMap((pattern) =>
+    pattern === DEFAULT_TEST_FILES_ENTRY ? DEFAULT_TEST_FILES : [pattern],
+  )
 }
 
 /**

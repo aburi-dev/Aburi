@@ -166,6 +166,50 @@ describe("an edit to what a caller passes or gets is an api change", () => {
   )
 })
 
+describe("an edit to a parameter's modifier or decorator is an api change on its member", () => {
+  const service = (parameter: string) =>
+    `export class C {\n  constructor(${parameter}) {}\n\n  run() {\n    use()\n  }\n}\n`
+  const controller = (parameter: string) =>
+    `export class C {\n  find(${parameter}) {\n    use(id)\n  }\n}\n`
+
+  it.each([
+    [
+      "a parameter property made public",
+      service("private s: string"),
+      service("public s: string"),
+      "C.constructor",
+    ],
+    [
+      "`readonly` dropped",
+      service("private readonly s: string"),
+      service("private s: string"),
+      "C.constructor",
+    ],
+    [
+      "an injection token swapped",
+      service("@Inject(A) private s: S"),
+      service("@Inject(B) private s: S"),
+      "C.constructor",
+    ],
+    [
+      "a route parameter renamed",
+      controller('@Param("id") id: string'),
+      controller('@Param("key") id: string'),
+      "C.find",
+    ],
+  ])("reports %s", async (_label, before, after, name) => {
+    const diff = await diffOfEdit(workspace, FILE, before, after)
+    const changed = changedSymbols(diff)
+
+    expect(changed.map((c) => c.name).sort()).toEqual(["C", name])
+    expect(changed.find((c) => c.name === name)).toMatchObject({
+      apiChanged: true,
+      logicChanged: false,
+      syntaxChanged: true,
+    })
+  })
+})
+
 describe("an edit to the names a declaration is exported under is an api change", () => {
   it.each([
     [
@@ -212,7 +256,7 @@ describe("an edit to the names a declaration is exported under is an api change"
   })
 })
 
-describe("an edit to a parameter's name, pattern or default value is a syntax-only change", () => {
+describe("an edit to a parameter's name, pattern, default value or decorator order is a syntax-only change", () => {
   it.each([
     ["a default's value", withParams("limit = 20"), withParams("limit = 10"), ["f"]],
     [
@@ -249,6 +293,12 @@ describe("an edit to a parameter's name, pattern or default value is a syntax-on
       "a constructor's default",
       "export class C {\n  constructor(a = 1) {\n    use(a)\n  }\n}\n",
       "export class C {\n  constructor(a = 2) {\n    use(a)\n  }\n}\n",
+      ["C", "C.constructor"],
+    ],
+    [
+      "the order of a constructor parameter's decorators",
+      "export class C {\n  constructor(@Optional() @Inject(T) private s: S) {}\n}\n",
+      "export class C {\n  constructor(@Inject(T) @Optional() private s: S) {}\n}\n",
       ["C", "C.constructor"],
     ],
     [
@@ -355,6 +405,96 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
   })
 })
 
+describe("an edit to a member's own modifier moves the member", () => {
+  const member = (head: string, rest = "m() {\n    use()\n  }") =>
+    `export class C extends B {\n  ${head}${rest}\n}\n`
+  const GETTER = "get m() {\n    return use()\n  }"
+  const FIELD = "m = () => {\n    use()\n  }"
+  const accessorPair = (setterHead: string) =>
+    `${GETTER}\n  ${setterHead}set m(v) {\n    use(v)\n  }`
+
+  it.each([
+    ["`override` added to a method", member(""), member("override ")],
+    ["a method made optional", member(""), member("", "m?() {\n    use()\n  }")],
+    ["a method made a getter", member("", "m() {\n    return use()\n  }"), member("", GETTER)],
+    ["`override` added to an accessor", member("", GETTER), member("override ", GETTER)],
+    [
+      "`override` added to the setter of an accessor pair",
+      member("", accessorPair("")),
+      member("", accessorPair("override ")),
+    ],
+    [
+      "`readonly` added to a field holding a function",
+      member("", FIELD),
+      member("readonly ", FIELD),
+    ],
+    [
+      "`override` added to a field holding a function",
+      member("", FIELD),
+      member("override ", FIELD),
+    ],
+    [
+      "a field holding a function made optional",
+      member("", FIELD),
+      member("", FIELD.replace("m =", "m? =")),
+    ],
+    [
+      "`accessor` added to a field holding a function",
+      member("", FIELD),
+      member("accessor ", FIELD),
+    ],
+    [
+      "`readonly` added to a field holding a function behind `as`",
+      member("", "m = (() => {\n    use()\n  }) as Handler"),
+      member("readonly ", "m = (() => {\n    use()\n  }) as Handler"),
+    ],
+    [
+      "`readonly` added to a field holding a function behind `satisfies`",
+      member("", "m = (() => {\n    use()\n  }) satisfies Handler"),
+      member("readonly ", "m = (() => {\n    use()\n  }) satisfies Handler"),
+    ],
+  ])("reports %s on the member and its class", async (_label, before, after) => {
+    const diff = await diffOfEdit(workspace, FILE, before, after)
+    const changed = changedSymbols(diff)
+
+    expect(changed.map((c) => c.name).sort()).toEqual(["C", "C.m"])
+    for (const c of changed) expect(c).toMatchObject(SYNTAX_ONLY)
+  })
+})
+
+describe("an edit inside a part the parser recovered is a syntax-only change", () => {
+  it.each([
+    [
+      "a name in a broken call",
+      FILE,
+      "export function f() {\n  save(a b)\n}\n",
+      "export function f() {\n  save(a c)\n}\n",
+    ],
+    [
+      "a name in a broken return type",
+      FILE,
+      "export function f(): Map<A B, C> {\n  return m\n}\n",
+      "export function f(): Map<A X, C> {\n  return m\n}\n",
+    ],
+    [
+      "a name in a broken class heritage",
+      FILE,
+      "export class K extends A B {\n  m() {}\n}\n",
+      "export class K extends A X {\n  m() {}\n}\n",
+    ],
+    [
+      "the text after a bare `&` in JSX",
+      "src/a.tsx",
+      "export function F() {\n  render(<p>Subscription & Billing</p>)\n}\n",
+      "export function F() {\n  render(<p>Subscription & Invoices</p>)\n}\n",
+    ],
+  ])("reports %s", async (_label, file, before, after) => {
+    const diff = await diffOfEdit(workspace, file, before, after)
+
+    expect(changedSymbols(diff)).toMatchObject([SYNTAX_ONLY])
+  })
+})
+
 describe("a formatting edit is no change", () => {
   it.each([
     [
@@ -446,6 +586,36 @@ describe("a formatting edit is no change", () => {
       check('user.age < 18 || user.banned || user.role === "guest"'),
       check("", "    user.age < 18 ||", "    user.banned ||", '    user.role === "guest"', "  "),
       1,
+    ],
+    [
+      "a wrapper put around an anonymous default export",
+      "export default async (id: string) => {\n  q(id)\n}\n",
+      "export default (async (id: string) => {\n  q(id)\n}) satisfies Handler\n",
+      1,
+    ],
+    [
+      "the type a wrapped default export satisfies",
+      "export default (async () => {\n  q()\n}) satisfies A\n",
+      "export default (async () => {\n  q()\n}) satisfies B\n",
+      1,
+    ],
+    [
+      "a constructor broken one parameter per line, each decorator above its modifiers",
+      "export class Repo {\n  constructor(@Inject(DB) private readonly db: Db, @Optional() private log?: Log) {}\n}\n",
+      "export class Repo {\n  constructor(\n    @Inject(DB)\n    private readonly db: Db,\n    @Optional()\n    private log?: Log,\n  ) {}\n}\n",
+      2,
+    ],
+    [
+      "a parameter decorator's arguments broken over lines with a trailing comma",
+      "export class Repo {\n  constructor(@Inject(DB, { optional: true }) private db: Db) {}\n}\n",
+      "export class Repo {\n  constructor(\n    @Inject(\n      DB,\n      {optional: true},\n    )\n    private db: Db,\n  ) {}\n}\n",
+      2,
+    ],
+    [
+      "a comment written into a parameter decorator",
+      "export class Repo {\n  constructor(@Inject(DB) private db: Db) {}\n}\n",
+      "export class Repo {\n  constructor(@Inject(/* legacy */ DB) private db: Db) {}\n}\n",
+      2,
     ],
     [
       "a method's union parameter joined onto one line, on the method as well as its class",

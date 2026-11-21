@@ -11,6 +11,10 @@ type Host = (params: string) => [source: string, id: string]
 const inFunction: Host = (params) => [`export function f(${params}) {}`, "ts:src/a.ts#f"]
 const inMethod: Host = (params) => [`export class C {\n  m(${params}) {}\n}`, "ts:src/a.ts#C.m"]
 const inArrow: Host = (params) => [`export const g = (${params}) => 0`, "ts:src/a.ts#g"]
+const inConstructor: Host = (params) => [
+  `export class C {\n  constructor(${params}) {}\n}`,
+  "ts:src/a.ts#C.constructor",
+]
 
 async function inputsOf(params: string, host: Host = inFunction): Promise<Input[] | undefined> {
   const [source, id] = host(params)
@@ -48,18 +52,57 @@ const FORMS: Array<[string, string, Input]> = [
   [
     "a decorated optional parameter",
     "@Query() q?: string",
-    { name: "q", type: "string", optional: true },
+    { name: "q", type: "string", optional: true, decorators: ["Query()"] },
   ],
   [
     "a decorated defaulted parameter property",
     "@Inject() private x = 5",
-    { name: "x", type: "", optional: true },
+    { name: "x", type: "", optional: true, modifiers: ["private"], decorators: ["Inject()"] },
   ],
-  ["a parameter property", "private readonly x: T", { name: "x", type: "T" }],
+  [
+    "two decorators either side of a comment",
+    "@Optional() /* c */ @Inject(TOKEN) protected s: string",
+    {
+      name: "s",
+      type: "string",
+      modifiers: ["protected"],
+      decorators: ["Optional()", "Inject(TOKEN)"],
+    },
+  ],
+  [
+    "a comment between a decorator and a modifier",
+    "@Inject(TOKEN) /* c */ protected s: S",
+    { name: "s", type: "S", modifiers: ["protected"], decorators: ["Inject(TOKEN)"] },
+  ],
+  [
+    "a decorator broken over lines with a trailing comma",
+    "@Inject(\n    TOKEN,\n  ) private s: S",
+    { name: "s", type: "S", modifiers: ["private"], decorators: ["Inject(TOKEN)"] },
+  ],
+  [
+    "a decorator with comments among its arguments",
+    "@Inject(/* legacy */ A /* c */, B) s: S",
+    { name: "s", type: "S", decorators: ["Inject(A, B)"] },
+  ],
+  [
+    "a decorator whose object argument is broken over lines",
+    "@Use({\n    a: 1,\n  }) s: S",
+    { name: "s", type: "S", decorators: ["Use({a: 1})"] },
+  ],
+  [
+    "a decorator whose strings hold spacing and commas",
+    `@Use('a ,  b', \`c,\n  \${ d }\`) s: S`,
+    { name: "s", type: "S", decorators: [`Use('a ,  b', \`c,\n  \${ d }\`)`] },
+  ],
+  [
+    "a parameter property",
+    "private readonly x: T",
+    { name: "x", type: "T", modifiers: ["private", "readonly"] },
+  ],
   [
     "an optional parameter property",
     "public override readonly y?: T",
-    { name: "y", type: "T", optional: true },
+    { name: "y", type: "T", optional: true, modifiers: ["public", "override", "readonly"] },
   ],
 ]
 
@@ -68,10 +111,18 @@ describe("readParameters — the form of a parameter", () => {
     ["a function", inFunction],
     ["a class method", inMethod],
     ["an arrow", inArrow],
+    ["a constructor", inConstructor],
   ])("in %s", (_host, host) => {
     it.each(FORMS)("records %s", async (_label, params, expected) => {
       expect(await inputsOf(params, host)).toStrictEqual([expected])
     })
+  })
+
+  it("gives each parameter only the decorators written on it", async () => {
+    expect(await inputsOf('@Param("id") id: string, @Body() dto: D', inMethod)).toStrictEqual([
+      { name: "id", type: "string", decorators: ['Param("id")'] },
+      { name: "dto", type: "D", decorators: ["Body()"] },
+    ])
   })
 
   it("marks an optional parameter and a defaulted one alike, since a caller may omit either", async () => {

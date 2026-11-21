@@ -8,16 +8,28 @@ import {
   type Visibility,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild, hasChildOfType, hasExportModifier, statementParent } from "./ast-helpers"
+import { findChild, hasChildOfType, statementParent } from "./ast-helpers"
 import { hasPrivateName } from "./class-members"
 
 export function exportEvidence(node: Node): string[] {
-  if (isDefaultExport(node)) return [EXPORT_DEFAULT_DERIVED_BY]
-  return hasExportModifier(node) ? [EXPORT_KEYWORD_DERIVED_BY] : []
+  return statementExportEvidence(statementParent(node))
+}
+
+// Takes the statement: a wrapped default export's value has the wrapper, not the statement, for a
+// parent.
+export function statementExportEvidence(statement: Node | null): string[] {
+  if (statement?.type !== "export_statement") return []
+  return [
+    isDefaultExportStatement(statement) ? EXPORT_DEFAULT_DERIVED_BY : EXPORT_KEYWORD_DERIVED_BY,
+  ]
 }
 
 export function topLevelVisibility(node: Node): Visibility {
-  return exportEvidence(node).length > 0 ? "public" : "internal"
+  return exportVisibility(exportEvidence(node))
+}
+
+export function exportVisibility(evidence: readonly string[]): Visibility {
+  return evidence.length > 0 ? "public" : "internal"
 }
 
 export function memberVisibility(member: Node): Visibility {
@@ -37,11 +49,13 @@ function accessibilityOf(node: Node): Visibility {
   }
 }
 
-/** The `default` an `export_statement` is written with is an anonymous token, hence the child scan. */
 export function isDefaultExport(node: Node): boolean {
-  const parent = statementParent(node)
-  if (parent === null || parent.type !== "export_statement") return false
-  return hasChildOfType(parent, "default")
+  return isDefaultExportStatement(statementParent(node))
+}
+
+/** The `default` an `export_statement` is written with is an anonymous token, hence the child scan. */
+export function isDefaultExportStatement(statement: Node | null): boolean {
+  return statement?.type === "export_statement" && hasChildOfType(statement, "default")
 }
 
 export function promoteDetachedExports(
@@ -102,7 +116,7 @@ function detachedExportsByLocalName(root: Node): ReadonlyMap<string, readonly Ex
       }
       continue
     }
-    if (!hasChildOfType(stmt, "default")) continue
+    if (!isDefaultExportStatement(stmt)) continue
     const value = stmt.childForFieldName("value")
     if (value === null) continue
     const inner = unwrapValue(value)

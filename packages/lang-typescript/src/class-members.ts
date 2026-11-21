@@ -23,6 +23,11 @@ function admitSegment(candidate: string, privateName = false): string | null {
   return isQnameSegment(candidate, { privateName }) ? candidate : null
 }
 
+// A class expression's own name binds nothing in the module, so only a binding names its members.
+function namesItsMembers(classNode: Node): boolean {
+  return classNode.type === "class" ? isHeldByBinding(classNode) : nameFieldText(classNode) !== null
+}
+
 function isHeldByBinding(classNode: Node): boolean {
   let value = classNode
   while (value.parent !== null && unwrapValue(value.parent).id === classNode.id)
@@ -37,7 +42,7 @@ function isHeldByBinding(classNode: Node): boolean {
 }
 
 export function memberSymbolSegment(classNode: Node, member: Node): string | null {
-  if (nameFieldText(classNode) === null && !isHeldByBinding(classNode)) return null
+  if (!namesItsMembers(classNode)) return null
   const segment = memberNameSegment(member)
   if (segment === null) return null
   if (member.type === "method_definition") return segment

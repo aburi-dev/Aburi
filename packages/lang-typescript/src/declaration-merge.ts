@@ -29,8 +29,13 @@ export function makeCandidateSink(): CandidateSink {
   }
 }
 
+// A class is what exists at run time; an interface or type of its name only describes it.
 function leadOf(group: readonly SymbolCandidate<Node>[]): SymbolCandidate<Node> | null {
-  return group.find((declaration) => !isOverloadSignature(declaration.fullNode)) ?? null
+  return (
+    group.find((declaration) => declaration.kind === "class") ??
+    group.find((declaration) => !isOverloadSignature(declaration.fullNode)) ??
+    null
+  )
 }
 
 function isOverloadSignature(node: Node): boolean {

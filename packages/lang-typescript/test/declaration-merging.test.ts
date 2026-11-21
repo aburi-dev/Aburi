@@ -1,9 +1,15 @@
+import { symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { idsOf, normalizedOf, symbolOf, symbolsOf, walkOf } from "./fixtures/ctx"
+import { scanWithoutWarnings } from "./fixtures/scan"
 
 const TWO_ENUMS = ["export enum E { A }", "export enum E { B }"].join("\n")
 
 const CLASS_AND_NAMESPACE = "export class C {}\nexport namespace C { export const a = 1 }"
+
+const INTERFACE = "export interface P { extra(): void }"
+
+const CLASS = "export class P {\n  on() { go() }\n}"
 
 const CLASS_AND_NAMESPACE_MEMBER = [
   "export class C {",
@@ -64,14 +70,6 @@ describe("merged declarations are one Symbol", () => {
     expect(symbol.derivedBy).toContain("export-keyword")
   })
 
-  it("keeps the boundary evidence of a class an interface was declared before", async () => {
-    const source = ["export interface P {}", "@Controller()", "export class P {}"].join("\n")
-    const symbol = await symbolOf(source, "ts:src/a.ts#P")
-
-    expect(symbol.kind).toBe("interface")
-    expect(symbol.decorators.map((d) => d.name)).toEqual(["Controller"])
-  })
-
   it("puts a reopened enum's members into the fingerprint input", async () => {
     const one = await normalizedOf("export enum E { A }", "ts:src/a.ts#E")
     const two = await normalizedOf(TWO_ENUMS, "ts:src/a.ts#E")
@@ -125,6 +123,75 @@ describe("merged declarations are one Symbol", () => {
       expect("mergedDeclarations" in symbol).toBe(false)
     }
   })
+})
+
+describe("a class leads the declarations merged with it, whichever is written first", () => {
+  const HELD_CLASS = "export const P = class {\n  on() { go() }\n}"
+
+  it.each([
+    ["after an interface", [INTERFACE, CLASS], [2, 4]],
+    ["before an interface", [CLASS, INTERFACE], [1, 3]],
+    [
+      "after a type alias, held by a binding",
+      ["export type P = InstanceType<typeof P>", HELD_CLASS],
+      [2, 4],
+    ],
+  ])("takes the kind and range of a class written %s", async (_label, declarations, lines) => {
+    const symbol = await symbolOf(declarations.join("\n"), "ts:src/a.ts#P")
+
+    expect([symbol.kind, symbol.source.startLine, symbol.source.endLine]).toEqual([
+      "class",
+      ...lines,
+    ])
+    expect(symbol.mergedDeclarations).toHaveLength(1)
+    expect(symbol.derivedBy).toContain("declaration-merged")
+  })
+
+  it("keeps the decorators of a class an interface was declared before", async () => {
+    const source = [INTERFACE, "@Controller()", CLASS].join("\n")
+    const symbol = await symbolOf(source, "ts:src/a.ts#P")
+
+    expect(symbol.kind).toBe("class")
+    expect(symbol.decorators.map((d) => d.name)).toEqual(["Controller"])
+  })
+
+  it("moves the class's normalized string with an edit to the interface written before it", async () => {
+    const before = await normalizedOf([INTERFACE, CLASS].join("\n"), "ts:src/a.ts#P")
+    const after = await normalizedOf(
+      [INTERFACE.replace("extra", "other"), CLASS].join("\n"),
+      "ts:src/a.ts#P",
+    )
+
+    expect(after).not.toBe(before)
+  })
+
+  it("leaves an interface merged with no class an interface", async () => {
+    const symbol = await symbolOf(`${INTERFACE}\nexport namespace P {}`, "ts:src/a.ts#P")
+
+    expect(symbol.kind).toBe("interface")
+  })
+})
+
+describe("scan — a class merged with an interface", () => {
+  const workspace = useScratchWorkspace("class-and-interface")
+
+  it.each([
+    ["after", [INTERFACE, CLASS]],
+    ["before", [CLASS, INTERFACE]],
+  ])(
+    "keeps a class written %s its interface, and resolves `new` to it",
+    async (_label, declarations) => {
+      const use = ["export function use() {", "  new P()", "}"]
+      await workspace.writeSource("src/a.ts", [...declarations, ...use, ""].join("\n"))
+      const ir = await scanWithoutWarnings(workspace.root)
+      const { kind, dropped } = symbolById({ ir }, "ts:src/a.ts#P")
+
+      expect([kind, dropped]).toEqual(["class", false])
+      expect(
+        symbolById({ ir }, "ts:src/a.ts#use").calls.map((c) => [c.target, c.resolved]),
+      ).toEqual([["P", "ts:src/a.ts#P"]])
+    },
+  )
 })
 
 describe("a namespace merged into a class declares static members", () => {
