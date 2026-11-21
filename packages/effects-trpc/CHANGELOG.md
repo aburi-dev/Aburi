@@ -1,5 +1,16 @@
 # @aburi/effects-trpc
 
+## 0.6.0
+
+### Minor Changes
+
+- f957adf: Decline a `query` by its chain instead of by the file's `@trpc/server` import. In a file that imports a tRPC client, a `query` of three or more segments whose chain starts from a name that is `procedure` or ends in `Procedure`, or reads `procedure` straight off its root (`publicProcedure.input(s).query(fn)`, `t.procedure.query(fn)`), is declined as `effects-plugin:trpc:procedure-query`: the naming convention `@aburi/framework-trpc` reads a procedure by, applied after a leading `this` is stripped. Every other `query` of three or more segments is classified as the client call it is shaped like, so `client.user.byId.query({ id })` in a file that also imports `@trpc/server` — a server-side test, a script, a Next.js file beside an adapter import — is now `network.rpc` where it used to be declined. So is a `query` that is not tRPC's in such a file, as it already was in a file that imports only a client: `ctx.db.query(sql)` inside a resolver is `network.rpc` tagged `query:db`. The `effects-plugin:trpc:server-file-query` reason is no longer written. A base procedure bound under another name (`const authed = t.procedure.use(auth)`) and queried in a file that imports a tRPC client reads as a client call, and a router key named `procedure` (`client.procedure.list.query`) is declined.
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- Updated dependencies: `@aburi/plugin-registry@0.8.0`, `@aburi/types@0.9.0`
+
 ## 0.5.0
 
 ### Minor Changes
