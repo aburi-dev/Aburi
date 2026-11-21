@@ -844,7 +844,12 @@ with its version and type, and each that both loaded under another type, version
 revision, ordered by name. The same source scanned with another plugin set is another IR — an
 effect plugin that only the base loaded leaves its `db.write` effects on the base side alone, and
 every Symbol that carried one reads as `changed` — so without the line a reviewer has no way to
-tell that wave from an edit. It is a warning, not a gate, and `diff.json` holds nothing of it. Ref
+tell that wave from an edit. When a plugin records a grammar revision on each side and the two
+differ, the line adds that every Symbol parsed by that plugin can read as a syntax-only change
+under the other grammar, naming each such plugin once, since the syntax fingerprint is computed over
+the grammar's tree ([`fingerprint.md`](./fingerprint.md) §5.6). A plugin recorded as a language on
+one side only is named among the differences but not in that sentence. It is a warning, not a
+gate, and `diff.json` holds nothing of it. Ref
 mode never says it: both scans load the head's plugins (§6.4 step 3). A `frameworkHints` entry
 records its `hint-<name>` plugin at version `0.0.0` whatever its rules say, so the line names an
 entry added or removed but not one whose rules were edited.
@@ -1527,17 +1532,21 @@ Running together changes nothing the run says or decides:
   as in a sequential run: the head's log is held while the base scan runs and written once it is
   through. The `pluginOptions` line is still said once.
 - **Failures.** Which failure ends the run, and with which exit code, is the one a sequential run
-  would report. A base scan that fails ends the run with its own error once the head scan has
-  stopped too, and what the head said or threw is discarded, as a sequential run would never have
-  started it. Until then the run says nothing, since the head's log is still held. A head scan that
+  would report. A base scan that fails stops the head scan and ends the run with its own error once
+  the head has stopped, and what the head said or threw is discarded, as a sequential run would
+  never have started it. The head stops at its next file while it extracts or enriches through
+  LSP, whether on its own thread or from its parser pool, and otherwise at its next phase
+  boundary: once it has found its files, and before it resolves its calls. A head past that last
+  boundary finishes, writing its IR under the run's temporary directory, before it stops. Until
+  the head has stopped the run says nothing, since the head's log is still held. A head scan that
   fails waits for the base, whose failure, if it has one, comes first.
 - **Artefacts and stdout.** `diff.json`, `diff.md` and the glyph line are byte for byte the
   sequential run's.
 
 A failure of the base's thread rather than of its scan has no sequential counterpart, and ends the
 run with exit `1` (§9), naming the base ref and `--no-parallel-scans`. Like a failing base scan it
-waits for the head scan to stop, and the worktree and the temporary directory are removed as on any
-other failure:
+stops the head scan and waits for it, and the worktree and the temporary directory are removed as on
+any other failure:
 
 - a plugin that calls `process.exit()` ends the thread, not the process;
 - an error thrown outside the scan's own handling, from a timer for instance, reaches the thread's
@@ -1713,10 +1722,10 @@ a command's option, not a global one (§3).
 | CL56 | `aburi diff … --fail-on removed` over a removed duplicate of a head Symbol, over a removal that duplicates nothing, and over eleven of the second kind | exit 0 for the duplicate, with the stderr line naming it as uncounted, and exit 3 under `--fail-on removed:duplicate`, which names it under its tripped line and adds no such line; exit 3 for the other, stderr naming it on an indented line under `--fail-on removed tripped (observed: 1 removed)`; for eleven, ten ids and `… and 1 more` (§6.7) |
 | CL57 | `aburi diff … --fail-on removed --fail-on-scope non-test` over the removal of a Symbol that carries `inTestFile` alone; the same with `--fail-on-scope all`; and over that removal beside the removal of a Symbol that carries none | exit 0; exit 3 with `--fail-on removed tripped (observed: 1 removed)`; exit 3 with `--fail-on removed tripped (observed: 1 removed outside test files)` naming the second Symbol alone. A pair counts under `non-test` when its head Symbol carries no mark, whatever the base's (§6.7) |
 | CL58 | `aburi diff … --fail-on-scope tests` | exit 2, `--fail-on-scope must be one of: all \| non-test`, before either IR is read |
-| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped, and leaves no temporary directory (§14.1) |
+| CL59 | `aburi diff main..HEAD --parallel-scans`, where both scans finish, where a scan leaves a file out, where the base scan stops, where the head scan stops, and where both stop | The two scans are in flight at the same time, and the exit code, stdout, stderr (the per-file log in its place among the rest) and the report are those of the same run under `--no-parallel-scans`, which has only one in flight at a time; `runDiff` rejects with the same error either way. A base that stops ends the run with the base's error, whatever the head did, once the head has stopped at its next file or phase boundary, and leaves no temporary directory (§14.1) |
 | CL60 | `aburi diff main..HEAD --parallel-scans` where a plugin on the base's thread calls `process.exit(7)`, or throws from a timer | exit 1, stderr naming the base ref, what ended the thread and `--no-parallel-scans`; no worktree but the main checkout and no temporary directory left (§14.1) |
 | CL61 | `aburi diff --base <ir> --head <ir> --no-parallel-scans` | The exit code, stdout and stderr of the same run without it |
-| CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line |
+| CL62 | `aburi diff --base <ir> --head <ir>` where only the base records `effects-prisma`, where only the head does, where both record `lang-typescript` at other versions or grammar revisions, and where both record the same plugins in another order | One stderr line, `⚠ The base and head IRs were made with different plugins: <differences>.`, naming each difference once in name order, and the exit code and `diff.json` of the same run over equal plugin lists; for the reordered lists, no such line. The line says, once, that every Symbol parsed by a plugin can read as a syntax-only change, naming each plugin whose grammar revision differs while it is a language on both sides: for a grammar that moved at the same version, beside another plugin's difference, and for two plugins at once; it says nothing of the kind for a plugin recorded as a language on one side only |
 | CL63 | `aburi scan` over a detected component whose `package.json` has `"main": "./"`, or `exports: {".": "./src/ok.js", "./": "./"}`; and over a `package.json` with `"main": "./lib/"` whose component `aburi.json` declares | exit 0, with one `⚠ Component "<id>": <manifest>#<field> is "<value>", <why>, so it gives no publicApi entry.` line on stderr for the detected component, naming `main` or `exports["./"]`; nothing on stderr for the declared one |
 | CL64 | `aburi diff HEAD~1..HEAD`, run from the repository root and from a subdirectory, where both refs hold symbolic links that git wrote as plain files, two with a source extension (one named outside ASCII), one without and one to a directory; where only the head adds them, with `core.symlinks` `false` and with it turned `true` after they were checked out; and, where links can be created, with both refs holding them as links | The first: one warning for each side naming the two links with a source extension, as written from the repository root, and the exit code the run has without them. The second: the head's warning alone. The third: no warning |
 | CL66 | `aburi diff … --quiet` | stdout the glyph line alone, `· ?N unknown` included when the diff has one; the same artefacts, stderr and exit code as without it |

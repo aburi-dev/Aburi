@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aburi.dev/schema/aburi.plugin.v1.json",
   "title": "Aburi Plugin Manifest",
-  "description": "Plugin manifest declaring extension vocabulary contributed to Aburi. A manifest file is validated against this schema by @aburi/plugin-registry's loadPluginManifest / parsePluginManifest. At plugin load time the CLI does not apply the schema: it hands the plugin's manifest object to the registry, which checks the types of name, version and provides, reserved and per-type namespaces, xPrefix, languageId and conflicts with the manifests already registered.",
+  "description": "Plugin manifest declaring extension vocabulary contributed to Aburi. A manifest file is validated against this schema by @aburi/plugin-registry's loadPluginManifest / parsePluginManifest. At plugin load time the CLI does not apply the schema: it hands the plugin's manifest object to the registry, which checks the types of name, version and provides, reserved and per-type namespaces, xPrefix, languageId, grammarRevision and conflicts with the manifests already registered.",
   "type": "object",
   "additionalProperties": false,
   "required": ["$schema", "engines", "name", "provides", "type", "version"],
@@ -29,6 +29,11 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*$",
       "description": "(type=lang only) The <language> token every Symbol id this plugin mints opens with (e.g., 'ts' for 'ts:src/a.ts#f'). No two loaded plugins may declare the same one, and 'slice' is reserved. The registry requires it of a type=lang manifest; the schema leaves it optional so that lang manifests written before the field remain valid v1 documents."
+    },
+    "grammarRevision": {
+      "type": "string",
+      "pattern": "^[\\w./@-]+@\\d+\\.\\d+\\.\\d+(?:[-+][\\w.-]+)?$",
+      "description": "(type=lang only) The exact grammar the plugin parses with, as '<grammar-package>@<MAJOR.MINOR.PATCH>' (e.g., 'tree-sitter-typescript@0.23.2'). The scan records it in the IR's generator.plugins[].grammarRevision, so that two IRs say whether their syntax fingerprints were computed over one grammar. A lang manifest that declares none is recorded as '<name>@<version>' without build metadata, its manifest's version standing for its grammar: that holds only while the version changes with every grammar change."
     },
     "version": {
       "type": "string",
@@ -59,11 +64,12 @@
   },
   "allOf": [
     {
-      "description": "type=effects: only x-* effects/effectPrefixes allowed; no framework:*/fp:*/oop:*/meta:* extKinds. languageId and wasmHeapPerWorkerMB are lang-only and must be absent.",
+      "description": "type=effects: only x-* effects/effectPrefixes allowed; no framework:*/fp:*/oop:*/meta:* extKinds. languageId, grammarRevision and wasmHeapPerWorkerMB are lang-only and must be absent.",
       "if": { "properties": { "type": { "const": "effects" } } },
       "then": {
         "properties": {
           "languageId": false,
+          "grammarRevision": false,
           "provides": {
             "type": "object",
             "properties": {
@@ -82,11 +88,12 @@
       }
     },
     {
-      "description": "type=framework: only framework:* extKinds; no x-* effects. languageId and wasmHeapPerWorkerMB are lang-only and must be absent.",
+      "description": "type=framework: only framework:* extKinds; no x-* effects. languageId, grammarRevision and wasmHeapPerWorkerMB are lang-only and must be absent.",
       "if": { "properties": { "type": { "const": "framework" } } },
       "then": {
         "properties": {
           "languageId": false,
+          "grammarRevision": false,
           "provides": {
             "type": "object",
             "properties": {

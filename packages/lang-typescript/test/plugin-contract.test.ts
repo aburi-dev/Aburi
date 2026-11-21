@@ -1,5 +1,6 @@
+import { createRequire } from "node:module"
 import { extractFile } from "@aburi/test-harness"
-import { relativePath } from "@aburi/test-support"
+import { irSchemaViolations, relativePath, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import {
   langTypescriptManifest,
@@ -8,6 +9,9 @@ import {
   TYPESCRIPT_FILE_EXTENSIONS,
 } from "../src/index"
 import { idsOf } from "./fixtures/ctx"
+import { scanWithoutWarnings } from "./fixtures/scan"
+
+const workspace = useScratchWorkspace("plugin-contract")
 
 describe("the manifest's languageId", () => {
   it("is the prefix the plugin writes onto every Symbol id, not the manifest name", async () => {
@@ -15,6 +19,25 @@ describe("the manifest's languageId", () => {
 
     expect(langTypescriptPlugin.manifest.languageId).toBe("ts")
     expect(ids).toEqual(["ts:src/a.ts#alpha"])
+  })
+})
+
+describe("the manifest's grammarRevision", () => {
+  it("records the package the vendored grammars are copied from, at its installed version", async () => {
+    const vendored = createRequire(import.meta.url)("@vscode/tree-sitter-wasm/package.json") as {
+      version: string
+    }
+    await workspace.writeSource("src/a.ts", "export function alpha() {}\n")
+
+    const ir = await scanWithoutWarnings(workspace.root)
+
+    expect(ir.generator.plugins).toContainEqual(
+      expect.objectContaining({
+        name: "lang-typescript",
+        grammarRevision: `@vscode/tree-sitter-wasm@${vendored.version}`,
+      }),
+    )
+    expect(irSchemaViolations(ir)).toEqual([])
   })
 })
 

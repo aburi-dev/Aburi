@@ -209,12 +209,13 @@ function reportOf(
 }
 
 /** `runScan` for one side on this thread, its end reported however it ended. */
-async function scanHere(side: SideScan, log: LogWrite): Promise<ScanReport> {
+async function scanHere(side: SideScan, log: LogWrite, signal?: AbortSignal): Promise<ScanReport> {
   try {
     return await runScan({
       ...side.options,
       log,
       ...(side.report === undefined ? {} : { progress: side.report.progress }),
+      ...(signal === undefined ? {} : { signal }),
     })
   } finally {
     side.report?.scanned()
@@ -232,7 +233,8 @@ async function scanInTurn(base: SideScan, head: SideScan, log: LogWrite): Promis
 /**
  * The base on a thread of its own while the head runs here. What the run says, and which failure
  * ends it, is what `scanInTurn` would have: the head's log is held until the base is through, and
- * a base that fails waits for the head and discards it, as the head would never have started.
+ * a base that fails stops the head and discards it, as the head would never have started. The head
+ * still writes under the run's temporary directory until it stops, so the cleanup waits for it.
  */
 async function scanTogether(
   base: SideScan,
@@ -241,7 +243,8 @@ async function scanTogether(
   baseThread: Omit<ThreadedScan, "progress">,
 ): Promise<ScannedSides> {
   const headLog = heldLog(log)
-  const headScan = scanHere(head, headLog.write)
+  const stopHead = new AbortController()
+  const headScan = scanHere(head, headLog.write, stopHead.signal)
   const headStopped = headScan.then(
     () => undefined,
     () => undefined,
@@ -259,6 +262,7 @@ async function scanTogether(
     }
     baseIR = await base.read(baseScan)
   } catch (error) {
+    stopHead.abort()
     await headStopped
     throw error
   }

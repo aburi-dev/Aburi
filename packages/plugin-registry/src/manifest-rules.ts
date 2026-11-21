@@ -1,4 +1,5 @@
 import {
+  GRAMMAR_REVISION_PATTERN,
   LANGUAGE_ID_GRAMMAR,
   LANGUAGE_ID_PATTERN,
   type PluginManifest,
@@ -22,6 +23,7 @@ export function validateManifestRules(m: PluginManifest, granted: string | null)
   validateTypeNamespaces(m)
   validateXPrefix(m)
   validateLanguageId(m)
+  validateGrammarRevision(m)
   validateOwnDuplicates(m)
 }
 
@@ -170,6 +172,30 @@ function validateLanguageId(m: PluginManifest): void {
       "reserved-namespace",
       [m.name],
       declared,
+    )
+  }
+}
+
+function validateGrammarRevision(m: PluginManifest): void {
+  const declared: unknown = m.grammarRevision
+  if (declared === undefined) return
+  const shown = JSON.stringify(declared)
+  if (m.type !== "lang") {
+    raise(
+      `Plugin "${m.name}" (type ${m.type}) declares grammarRevision ${shown} but only lang-type ` +
+        `plugins parse with a grammar.`,
+      "namespace-type-mismatch",
+      [m.name],
+      typeof declared === "string" ? declared : shown,
+    )
+  }
+  if (typeof declared !== "string" || !GRAMMAR_REVISION_PATTERN.test(declared)) {
+    raise(
+      `Plugin "${m.name}" declares grammarRevision ${shown}, but a grammar revision is ` +
+        `"<grammar-package>@<MAJOR.MINOR.PATCH>", e.g. "tree-sitter-typescript@0.23.2".`,
+      "manifest-invalid",
+      [m.name],
+      typeof declared === "string" ? declared : shown,
     )
   }
 }

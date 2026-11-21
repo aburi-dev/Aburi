@@ -19,7 +19,9 @@ type DataOnly<T> = {
  * function; `log`, `progress` and `incidents` stay with the caller, which decides where a scan's
  * lines go and when its incidents are said.
  */
-export type PortableScanOptions = DataOnly<Omit<ScanOptions, "log" | "progress" | "incidents">>
+export type PortableScanOptions = DataOnly<
+  Omit<ScanOptions, "log" | "progress" | "signal" | "incidents">
+>
 
 export interface ThreadedScan {
   /** How a failure of the thread itself names the scan, as `base ref "main"`. */

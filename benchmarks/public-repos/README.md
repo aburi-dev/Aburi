@@ -33,11 +33,14 @@ node benchmarks/public-repos/run.mjs        # every repo, 1 warmup + 3 measured 
 | `--warmup <n>` | Discarded runs before measuring (default 1 — the first run pays the page-cache miss) |
 | `--no-diff` | Skip the `aburi diff base..head` measurement |
 | `--work-dir <path>` | Where clones live (default `$TMPDIR/aburi-bench-work`) |
+| `--previous <results.json>` | A previous sweep's results file, whose medians the report compares with across runners |
+| `--baseline <aburi checkout>` | Another built Aburi checkout, measured beside this one on this machine (see below) |
+| `--baseline-failed <commit>` | The commit a `--baseline` checkout could not be built at; the report says the same-runner comparison was not measured |
 
-Every flag value is checked before the build and the clones are paid for, and an
-`--only` id `repos.json` does not carry is an error rather than a filter: a sweep
-that quietly measured one repository where two were asked for is not the sweep in
-the report header.
+Every flag value is checked before the build and the clones are paid for, a
+`--previous` file's shape included, and an `--only` id `repos.json` does not carry
+is an error rather than a filter: a sweep that quietly measured one repository
+where two were asked for is not the sweep in the report header.
 
 Results land in `results/<date>.json` (every sample and every counter) and
 `results/<date>.md` (the tables worth reading), rewritten after each repository
@@ -56,9 +59,10 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
 
 ## What the harness does per repo
 
-1. Check the clone out at the pinned `head`, and `git clean -xfd` it — keeping
-   `.aburi/` and `aburi.json`, which are the harness's own and have to outlive the
-   checkout.
+1. Check the clone out at the pinned `base` and then at `head`, and `git clean -xfd`
+   it — keeping `.aburi/` and `aburi.json`, which are the harness's own and have to
+   outlive the checkout. Checking the base out first fetches its blobs into the
+   partial clone, so the measured diff never waits on the network.
 2. Run `aburi init` (measured) and keep what it detected.
 3. Rewrite the detected plugin refs to `file://` URLs for this checkout's built
    plugins. A benchmark clone has no `node_modules`, and installing the workspace
@@ -78,6 +82,24 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
    the `diff.md` it writes, which has no size cap, goes in the Diff table: a report
    over the 65,507 bytes the GitHub Action posts by default reaches a pull request
    shortened, and the timing columns cannot show a report that grew.
+
+With `--baseline`, the baseline build runs `aburi init` first, into a config of
+its own beside the clone (`<work-dir>/<repo>.baseline.json`) pointing at its own
+plugins, and writes its IRs beside the clone too (`<work-dir>/<repo>.baseline-out/`),
+so neither build's IR sits in the tree the other scans. Step 4 then runs each build
+once per round after the same warmup, and flips which goes first every round —
+baseline, this build, this build, baseline — so a page cache that warms or a
+neighbour that wakes through the sweep does not favour the build that always ran
+second. The baseline's IR hashes are checked against the ones `--previous` recorded
+for the repository at the same head, which says whether that commit still writes
+the IR its own run wrote; where that run recorded no single IR, the report says n/a.
+
+Step 6 runs this build's diff and then, when every baseline scan counted, the
+baseline's. Each is a single run, back to back, so the diff's same-runner change is
+far noisier than the scan median's. A failed scan of this build ends the repository
+there, the baseline's numbers with it, since there is nothing left to compare them
+with. A fault on the baseline's side, in its own runs or in the harness around them,
+is recorded against the baseline alone and leaves this build's numbers standing.
 
 Each measurement runs in its own process (`bench-child.mjs`) so
 `process.resourceUsage().maxRSS` reports the peak RSS of that run alone. The
@@ -136,8 +158,21 @@ from the commit it runs on, keeps its work directory in the runner's temporary
 space, uploads `results/` as an artifact, and opens a pull request holding the new
 `results/<date>.{json,md}` with the rendered tables as its body.
 
-The pull request is where the reading happens. A wall time that moved may mean the
-code moved or may mean the runner did — the counters are what carry across runners,
-and the workflow deliberately does not decide which one it was. Fixing the runner to
-`ubuntu-latest` and the commits to `repos.json` is what keeps the comparison honest;
-neither changes without a reason written down.
+`ubuntu-latest` does not pin a CPU, and `node-version: 24` does not pin a minor
+release, so a wall time compared across runs moves with the runner as well as the
+code. The workflow therefore reads the newest `results/*.json`, checks the commit it
+recorded out into a worktree, builds it, and passes both to the sweep (`--previous`,
+`--baseline`). The report's **Against the previous run** section then gives two
+changes per repository: the same-runner one, previous commit → this commit on this
+runner, which is the code's; and the across-runners one, the previous run's numbers →
+this run's, labelled as crossing runners and naming both CPUs and Node versions. A
+previous results file that records no commit leaves the sweep comparing across
+runners only. So does a baseline that fails to build, and then the run carries a
+warning and the report says the same-runner comparison was not measured
+(`--baseline-failed`) rather than dropping its columns unexplained.
+
+The pull request is where the reading happens. The counters are what carry across
+runners, and the same-runner column is what separates the code from the hardware;
+the workflow does not decide what a move means. The pins in `repos.json`, and
+measuring both commits on one runner, are what keep the comparison honest; a pin
+does not change without a reason written down.

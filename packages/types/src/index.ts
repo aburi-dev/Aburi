@@ -81,6 +81,7 @@ export type {
   PluginManifest,
   Provides,
 } from "./generated/plugin"
+export { GRAMMAR_REVISION_PATTERN } from "./grammar-revision"
 export { LANGUAGE_ID_GRAMMAR, LANGUAGE_ID_PATTERN, RESERVED_LANGUAGE_IDS } from "./language-id"
 export type {
   BodyExtraction,

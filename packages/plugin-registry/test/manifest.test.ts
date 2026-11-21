@@ -40,6 +40,16 @@ describe("parsePluginManifest", () => {
     expect(parsePluginManifest(JSON.stringify(written), "inline").languageId).toBeUndefined()
   })
 
+  it.each(["@vscode/tree-sitter-wasm@0.3.1", "@oxc-project/parser@2.1.0+sha.abc123"])(
+    "accepts a lang manifest whose grammarRevision is %s",
+    (grammarRevision) => {
+      const manifest = langManifest({ grammarRevision })
+      expect(parsePluginManifest(JSON.stringify(manifest), "inline").grammarRevision).toBe(
+        grammarRevision,
+      )
+    },
+  )
+
   it("accepts a manifest naming the host the schema was served from before aburi.dev", () => {
     const earlier = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
     const manifest = { ...langManifest(), $schema: earlier }
@@ -67,6 +77,16 @@ describe("parsePluginManifest", () => {
     ["a languageId outside the token grammar", langManifest({ languageId: "TS" })],
     ["an effects plugin declaring a languageId", { ...effectsManifest(), languageId: "ts" }],
     ["a framework plugin declaring a languageId", { ...frameworkManifest(), languageId: "ts" }],
+    ["a grammarRevision with no version", langManifest({ grammarRevision: "tree-sitter-ts" })],
+    ["a null grammarRevision", { ...langManifest(), grammarRevision: null }],
+    [
+      "an effects plugin declaring a grammarRevision",
+      { ...effectsManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+    ],
+    [
+      "a framework plugin declaring a grammarRevision",
+      { ...frameworkManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+    ],
   ])("refuses %s against the schema, naming the plugin and carrying ajv's errors", async (_, m) => {
     const caught = await refusalOf(JSON.stringify(m))
     expect(caught).toMatchObject({ code: "manifest-invalid", plugins: [m.name] })

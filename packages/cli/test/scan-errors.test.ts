@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -82,5 +83,18 @@ describe("runScan — an error the core's scan throws", () => {
     thrown.error = fault
 
     await expect(scanWorkspace()).rejects.toBe(fault)
+  })
+})
+
+describe("runScan — a signal aborted before it starts", () => {
+  it("rejects with the signal's reason before it reaches the core's scan or makes its output directory", async () => {
+    thrown.error = coded("EACCES")
+    const reason = new Error("the other scan failed")
+    const outputDir = resolve(workspace.root, "out")
+
+    const scanned = runScan({ cwd: workspace.root, outputDir, signal: AbortSignal.abort(reason) })
+
+    await expect(scanned).rejects.toBe(reason)
+    expect(existsSync(outputDir)).toBe(false)
   })
 })

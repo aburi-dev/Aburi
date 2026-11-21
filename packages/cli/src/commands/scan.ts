@@ -89,6 +89,11 @@ export interface ScanOptions {
   logLevel?: LogLevel
   log?: LogWrite
   progress?: (progress: ScanProgress) => void
+  /**
+   * Checked before the run loads its config, then by the core's scan, which rejects with its
+   * reason once it is aborted.
+   */
+  signal?: AbortSignal
   incidents?: {
     warn: WarnFn
     label?: string
@@ -101,6 +106,7 @@ export interface ScanOptions {
 }
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
+  options.signal?.throwIfAborted()
   requireWorkerCount(options.concurrency)
   const cwd = options.cwd ?? process.cwd()
   const workspaceRoot = await resolveWorkspaceRoot(cwd)
@@ -161,6 +167,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         logger,
       }),
       ...(options.progress === undefined ? {} : { onProgress: options.progress }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     })
   } catch (error) {
     if (isPluginSetFault(error)) {
