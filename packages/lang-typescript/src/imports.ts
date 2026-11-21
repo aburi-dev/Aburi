@@ -82,7 +82,23 @@ function withRepublished(
 }
 
 function isTypeOnly(node: Node): boolean {
-  return node.children.some((child) => child?.type === "type")
+  return node.children.some(
+    (child) => child !== null && (child.type === "type" || isTypeStarKeyword(child)),
+  )
+}
+
+/**
+ * The `type` of TypeScript 5.0's `export type * from` and `export type * as ns from`, which the
+ * grammar has no rule for and parks in an ERROR between `export` and the rest of the statement.
+ */
+export function isTypeStarKeyword(node: Node): boolean {
+  if (!node.isError || node.childCount !== 1 || node.child(0)?.type !== "type") return false
+  const statement = node.parent
+  if (statement?.type !== "export_statement" || statement.childForFieldName("source") === null) {
+    return false
+  }
+  const next = node.nextSibling?.type
+  return node.previousSibling?.type === "export" && (next === "*" || next === "namespace_export")
 }
 
 /** The clause's value specifiers: a type-only one exports nothing a decorator or call can name. */

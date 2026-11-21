@@ -1,32 +1,24 @@
 import { decodeStringLiteralOrRaw } from "@aburi/core"
-import type { Node, Parser, Tree } from "web-tree-sitter"
+import type { Node, Tree } from "web-tree-sitter"
+import type { Patch } from "./reparse"
 
-export function reparseImportTypes(
-  parser: Parser,
-  tree: Tree,
-  source: string,
-  errorCount: (tree: Tree) => number,
-): Tree | null {
-  let spans = maskableImportTypes(tree)
-  while (spans.length > 0) {
-    const candidate = parseMasked(parser, source, spans)
-    if (candidate === null) return null
-    let adopted = false
-    try {
-      const kept = spans.filter((span) => readsAsType(candidate, span))
-      if (kept.length < spans.length) {
-        spans = kept
-        continue
-      }
-      if (errorCount(candidate) >= errorCount(tree)) return null
-      MASKS.set(candidate, new Map(spans.map((span) => [span.start, span.specifier])))
-      adopted = true
-      return candidate
-    } finally {
-      if (!adopted) candidate.delete()
-    }
-  }
-  return null
+/** Each import() type the grammar cannot place, as an identifier of its length. */
+export function importTypePatches(tree: Tree): ImportTypePatch[] {
+  return maskableImportTypes(tree).map((span) => ({
+    ...span,
+    text: "$".padEnd(span.end - span.start, "_"),
+    holds: (candidate) => readsAsType(candidate, span),
+  }))
+}
+
+export interface ImportTypePatch extends Patch {
+  readonly specifier: string
+}
+
+/** Lets the import reader take the masked identifiers of `tree` for the import() types they are. */
+export function rememberImportTypes(tree: Tree, patches: readonly ImportTypePatch[]): void {
+  if (patches.length === 0) return
+  MASKS.set(tree, new Map(patches.map((patch) => [patch.start, patch.specifier])))
 }
 
 export function maskedImportSpecifier(node: Node): string | undefined {
@@ -72,20 +64,6 @@ function maskableSpecifier(node: Node): string | null {
   if (first?.type !== "string" || /[\r\n\u2028\u2029]/.test(node.text)) return null
   const specifier = decodeStringLiteralOrRaw(first)
   return specifier === "" ? null : specifier
-}
-
-function parseMasked(parser: Parser, source: string, spans: readonly Span[]): Tree | null {
-  let masked = ""
-  let from = 0
-  for (const { start, end } of spans) {
-    masked += source.slice(from, start) + "$".padEnd(end - start, "_")
-    from = end
-  }
-  masked += source.slice(from)
-  let parsing = true
-  const tree = parser.parse((index) => (parsing ? masked : source).slice(index))
-  parsing = false
-  return tree
 }
 
 function readsAsType(tree: Tree, span: Span): boolean {

@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url"
 import type { ParseError, ParseResult, SourceFile } from "@aburi/types"
 import { Language, type Node, Parser, type Tree } from "web-tree-sitter"
 import { walkDescendants } from "./ast-helpers"
-import { reparseImportTypes } from "./import-type-reparse"
-import { extractImports } from "./imports"
+import { callSignatureSeparators } from "./call-signature-separator"
+import { importTypePatches, rememberImportTypes } from "./import-type-reparse"
+import { extractImports, isTypeStarKeyword } from "./imports"
+import { reparsePatched } from "./reparse"
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -124,15 +126,34 @@ function repairedOrFirst(
   if (first === null || !first.rootNode.hasError) return { tree: first, errors: [] }
   let repaired: Tree | null
   try {
-    repaired = reparseImportTypes(parser, first, source, (t) => collectParseErrors(t).length)
+    repaired = repairedTree(parser, first, source)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    const message = `import() type reparse failed, keeping the first parse: ${reason}`
+    const message = `reparse failed, keeping the first parse: ${reason}`
     return { tree: first, errors: [{ message, line: 1, column: 1, recoverable: true }] }
   }
   if (repaired === null) return { tree: first, errors: [] }
   first.delete()
   return { tree: repaired, errors: [] }
+}
+
+function repairedTree(parser: Parser, first: Tree, source: string): Tree | null {
+  const importTypes = importTypePatches(first)
+  const patches = [...importTypes, ...callSignatureSeparators(first, source)]
+  if (patches.length === 0) return null
+  const repaired = reparsePatched(
+    parser,
+    first,
+    source,
+    patches,
+    (t) => collectParseErrors(t).length,
+  )
+  if (repaired === null) return null
+  rememberImportTypes(
+    repaired.tree,
+    importTypes.filter((patch) => repaired.patches.includes(patch)),
+  )
+  return repaired.tree
 }
 
 function pickGrammarForPath(path: string): string {
@@ -160,7 +181,8 @@ function collectParseErrors(tree: Tree): ParseError[] {
       node.isError &&
       (isJsxEntityArtifact(node) ||
         isVarianceModifierArtifact(node) ||
-        isTaggedTemplateEscapeArtifact(node))
+        isTaggedTemplateEscapeArtifact(node) ||
+        isTypeStarKeyword(node))
     ) {
       continue
     }
