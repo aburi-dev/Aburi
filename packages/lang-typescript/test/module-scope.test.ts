@@ -151,8 +151,8 @@ describe("a function a const's initializer or a default export runs in place", (
   })
 
   it.each([
-    ["a member access", "export const h = (async () => { q() })().then(() => { r() })"],
-    ["an index", 'export const h = (async () => { q() })()["then"](() => { r() })'],
+    ["a member access", "export const h = (async () => { q() })().pipe(() => { r() })"],
+    ["an index", 'export const h = (async () => { q() })()["pipe"](() => { r() })'],
   ])("leads the functions the rest of the chain is handed, through %s", async (_label, source) => {
     const symbol = await symbolOf(source, "ts:src/a.ts#h")
 
@@ -162,10 +162,37 @@ describe("a function a const's initializer or a default export runs in place", (
       "export-keyword",
     ])
     expect(await callsOf(source, "ts:src/a.ts#h")).toEqual([
-      "<computed>.then",
+      "<computed>.pipe",
       "<computed>",
       "q",
       "r",
     ])
   })
+
+  it.each([
+    [
+      "a const",
+      "export const h = (async () => { q() })().then(() => { r() })",
+      "h",
+      "export-keyword",
+      ["<computed>.then", "<computed>", "q", "r"],
+    ],
+    [
+      "a default export",
+      "export default (async () => { q() })().catch((e) => { r(e) })",
+      "<default>",
+      "export-default",
+      ["<computed>.catch", "<computed>", "q", "r"],
+    ],
+  ])(
+    "walks a promise continuing it with the call, for %s",
+    async (_label, source, name, exported, calls) => {
+      const id = `ts:src/a.ts#${name}`
+      const symbol = await symbolOf(source, id)
+
+      expect(symbol.derivedBy).toEqual(["invoked-function", exported])
+      expect(symbol.mergedDeclarations).toHaveLength(1)
+      expect(await callsOf(source, id)).toEqual(calls)
+    },
+  )
 })

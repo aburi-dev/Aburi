@@ -1,4 +1,10 @@
-import { chainCalls, readStaticString, unwrapValue, walkReceiverChain } from "@aburi/core"
+import {
+  chainCalls,
+  readStaticString,
+  unwrapValue,
+  walkReceiverChain,
+  writtenChildren,
+} from "@aburi/core"
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type ExtractionContext,
@@ -25,6 +31,50 @@ const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "set",
   "enable",
   "disable",
+])
+
+interface RunnerSpelling {
+  readonly asAMethodOnly: boolean
+  readonly fewestArguments: number
+}
+
+const ANY_SPELLING: RunnerSpelling = { asAMethodOnly: false, fewestArguments: 1 }
+// Called bare, these names are RxJS's, Ramda's and lodash/fp's point-free builders, or an app's
+// own wrapper.
+const AS_A_METHOD: RunnerSpelling = { asAMethodOnly: true, fewestArguments: 1 }
+// A listener comes after its event; lodash's `once(fn)`, handed the function alone, wraps it.
+const AFTER_AN_EVENT: RunnerSpelling = { asAMethodOnly: false, fewestArguments: 2 }
+
+// Each runs the function it is handed at once, or registers it to run later, by what the name
+// means across the libraries that use it; read as wrappers, their callbacks would leave the code
+// whose construction runs them.
+const RUNS_OR_SCHEDULES_ITS_ARGUMENT: ReadonlyMap<string, RunnerSpelling> = new Map([
+  ["then", AS_A_METHOD],
+  ["catch", AS_A_METHOD],
+  ["finally", AS_A_METHOD],
+  ["setTimeout", ANY_SPELLING],
+  ["setInterval", ANY_SPELLING],
+  ["setImmediate", ANY_SPELLING],
+  ["queueMicrotask", ANY_SPELLING],
+  ["subscribe", ANY_SPELLING],
+  ["on", AFTER_AN_EVENT],
+  ["once", AFTER_AN_EVENT],
+  ["addListener", AFTER_AN_EVENT],
+  ["addEventListener", AFTER_AN_EVENT],
+  ["effect", ANY_SPELLING],
+  ["reaction", ANY_SPELLING],
+  ["autorun", ANY_SPELLING],
+  ["watch", ANY_SPELLING],
+  ["map", AS_A_METHOD],
+  ["flatMap", AS_A_METHOD],
+  ["filter", AS_A_METHOD],
+  ["find", AS_A_METHOD],
+  ["some", AS_A_METHOD],
+  ["every", AS_A_METHOD],
+  ["forEach", AS_A_METHOD],
+  ["reduce", AS_A_METHOD],
+  ["$transaction", ANY_SPELLING],
+  ["transaction", AS_A_METHOD],
 ])
 
 export interface CallExtractionState {
@@ -80,7 +130,14 @@ export function visitCallStatement(
   }
 }
 
+/** The functions handed directly to the calls on a value's spine that hand them back to run later. */
 export function wrappedFunctions(value: Node): Node[] {
+  const call = unwrapValue(value)
+  return call.type === "call_expression" ? wrappedHandlers(call) : []
+}
+
+/** Every function handed directly to a call on the value's spine, whatever the call does with it. */
+export function handedFunctions(value: Node): Node[] {
   const call = unwrapValue(value)
   return call.type === "call_expression" ? inlineHandlers(call) : []
 }
@@ -102,7 +159,7 @@ export function callBodies(value: Node, holder: Node): CallBodies {
   // it resolves to, not a function wrapping the ones it is handed, so the functions it is handed are
   // walked with the call, not as functions of their own.
   const invoked = invokedBody(call)
-  const handed = awaited ? [] : inlineHandlers(call)
+  const handed = awaited ? [] : wrappedHandlers(call)
   return {
     bodies: [holder, ...(invoked === null ? [] : [invoked]), ...handed],
     evidence: [
@@ -128,8 +185,43 @@ export function layOutBodies(
 }
 
 function inlineHandlers(call: Node): Node[] {
+  return functionsHandedTo(chainCalls(call))
+}
+
+function wrappedHandlers(call: Node): Node[] {
+  return functionsHandedTo(chainCalls(call).filter((step) => !runsOrSchedulesItsArgument(step)))
+}
+
+function runsOrSchedulesItsArgument(call: Node): boolean {
+  const written = call.childForFieldName("function")
+  const callee = written === null ? null : calleeName(unwrapValue(written))
+  const spelling = callee === null ? undefined : RUNS_OR_SCHEDULES_ITS_ARGUMENT.get(callee.name)
+  if (callee === null || spelling === undefined) return false
+  if (spelling.asAMethodOnly && !callee.method) return false
+  return writtenChildren(argumentsOf(call)).length >= spelling.fewestArguments
+}
+
+function calleeName(callee: Node): { name: string; method: boolean } | null {
+  switch (callee.type) {
+    case "identifier":
+      return { name: callee.text, method: false }
+    case "member_expression": {
+      const property = callee.childForFieldName("property")
+      return property === null ? null : { name: property.text, method: true }
+    }
+    case "subscript_expression": {
+      const index = callee.childForFieldName("index")
+      const name = index === null ? null : readStaticString(unwrapValue(index))
+      return name === null ? null : { name, method: true }
+    }
+    default:
+      return null
+  }
+}
+
+function functionsHandedTo(steps: readonly Node[]): Node[] {
   const bodies: Node[] = []
-  for (const step of chainCalls(call)) {
+  for (const step of steps) {
     const args = argumentsOf(step)
     if (args === null) continue
     for (const argument of args.namedChildren) {

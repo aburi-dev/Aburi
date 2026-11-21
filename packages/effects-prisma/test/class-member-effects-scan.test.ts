@@ -139,6 +139,20 @@ describe("scan — constructing a class", () => {
       "a field initialiser",
       ["private client = new PrismaClient()", "seeded = this.client.user.create({ data: {} })"],
     ],
+    [
+      "a callback a field hands to a timer",
+      [
+        "private client = new PrismaClient()",
+        "timer = setInterval(() => { this.client.user.create({ data: {} }) }, 1000)",
+      ],
+    ],
+    [
+      "a callback a field continues a promise with",
+      [
+        "private client = new PrismaClient()",
+        "ready = this.client.$connect().then(() => { this.client.user.create({ data: {} }) })",
+      ],
+    ],
   ])("keeps a write run by %s on the class, so instantiating it says so", async (_form, body) => {
     await workspace.writeSource(
       "src/seeder.ts",
@@ -162,6 +176,36 @@ describe("scan — constructing a class", () => {
     expect(symbolById(result, "ts:src/boot.ts#boot").effects).toMatchObject([
       { id: "db.write", propagated: true, derivedFrom: ["ts:src/seeder.ts#Seeder"] },
     ])
+  })
+
+  it("gives a listener's write to the class, not to the disposer it calls later", async () => {
+    await workspace.writeSource(
+      "src/seeder.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        "",
+        "export class Seeder {",
+        "  private client = new PrismaClient()",
+        "  constructor(private readonly emitter: any) {}",
+        '  off = this.emitter.on("tick", () => { this.client.user.create({ data: {} }) })',
+        "  close() {",
+        "    this.off()",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    await writeBoot("Seeder", "./seeder", "emitter")
+
+    const result = await scanWorkspace()
+    const close = symbolById(result, "ts:src/seeder.ts#Seeder.close")
+
+    expect(result.ir.symbols.map((s) => s.id)).not.toContain("ts:src/seeder.ts#Seeder.off")
+    expect(symbolById(result, "ts:src/seeder.ts#Seeder").effects.map((e) => e.id)).toEqual([
+      "db.write",
+    ])
+    expect(close.calls.map((c) => [c.target, c.resolved])).toEqual([["this.off", null]])
+    expect(close.effects).toEqual([])
   })
 
   it("keeps a static block's write on a class of fields, so instantiating it says so", async () => {
