@@ -374,6 +374,17 @@ Contracts:
   that are middleware to `middlewareNames(nodes)` from `@aburi/core`, which
   names them as `framework-express` and `framework-trpc` do and leaves inline
   functions out: their bodies are already the Symbol's.
+- A plugin can also return `calls`: what the framework runs on the Symbol's
+  behalf by reference, which its body does not call, such as the base procedure
+  a tRPC procedure is built on. Each entry is a `FrameworkCall`, `{ target, line }`:
+  `target` spelled as a call through the reference would be (`isAdmin`,
+  `auth.required`), and `line` 1-based, `node.startPosition.row + 1` for the
+  node the reference is written as. The pipeline appends them to `Symbol.calls`,
+  after the body's calls on a line both share, and resolves them as it resolves
+  the body's, so the callee's effects propagate to the Symbol.
+- `asSyntaxNode` returns `null` for a node without a numeric `startPosition.row`,
+  so a language plugin must hand over nodes that carry one, or every framework
+  plugin that reads its nodes classifies nothing.
 - Any `extKind` or `derivedBy` you emit must be declared in your manifest's
   `extKindPrefixes` / `derivedByPrefixes`.
 - Match a decorator on the name it was **imported** under, not the one the source

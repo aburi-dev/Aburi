@@ -2,9 +2,8 @@ import { decodeStringLiteral, isQnameSegment, type SyntaxNode, unwrapValue } fro
 import type { FrameworkCall } from "@aburi/types"
 
 /**
- * The calls a chain makes through the names it is handed: each name or member path, at the line
- * it is written on. A call is left out, being one the Symbol's body already makes, and so is
- * anything a name does not spell, which no Symbol answers.
+ * A call is left out, being one the Symbol's body already makes, and so is anything a name does
+ * not spell, which no Symbol answers.
  */
 export function referenceCalls(nodes: readonly SyntaxNode[]): FrameworkCall[] {
   return nodes.flatMap((written) => {
@@ -24,8 +23,8 @@ function referenceTarget(node: SyntaxNode): string | null {
   return head === null || segment === null ? null : `${head}.${segment}`
 }
 
-// Read as a call target reads a member, so the resolver matches the reference as it would a call
-// through it.
+// A dotted name and a string key are spelled as a call target spells them, so the resolver matches
+// the reference as it would a call through it.
 function memberSegment(member: SyntaxNode): string | null {
   if (member.type === "member_expression") {
     const property = member.childForFieldName("property")

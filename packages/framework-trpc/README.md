@@ -83,10 +83,11 @@ middleware, so line breaks, comments and quote style do not reach it:
 name spells.
 
 What a base procedure adds is named on the base procedure itself: removing
-`.use(isAuthed)` from `protectedProcedure = t.procedure.use(isAuthed)` is a
-logic change to `protectedProcedure` alone. The plugin reads one declaration at
-a time, so it cannot follow `protectedProcedure` to the chain that built it,
-and what is built on it names `protectedProcedure` as before.
+`.use(isAuthed)` from `protectedProcedure = t.procedure.use(isAuthed)` changes
+the `middleware` of `protectedProcedure` alone. The plugin reads one
+declaration at a time, so the `middleware` of what is built on it names
+`protectedProcedure` as before, not `isAuthed`. What the call to
+`protectedProcedure` carries to them is in the next paragraph.
 
 The base procedure and the middleware handed over by name are also the
 Symbol's calls, which `@aburi/core` resolves as it resolves the calls written
@@ -104,6 +105,15 @@ computed member, which names no Symbol. The edge carries effects, not rules: a
 guard removed from `protectedProcedure` changes `protectedProcedure` alone, and
 the report lists a procedure built on it only when the change moves an effect
 the procedure inherits.
+
+Not linked today:
+
+- A middleware composed inside the `.use(…)` or `.concat(…)` that hands it
+  over (`t.procedure.use(isAuthed.unstable_pipe(isAdmin))`,
+  `.concat(other.use(x))`). The only call recorded is the body's
+  `isAuthed.unstable_pipe`, a method no Symbol declares, so neither `isAuthed`
+  nor `isAdmin` has an edge and their effects do not reach the procedure.
+  Declare the composed middleware as a `const` and hand that name over.
 
 Not named today:
 

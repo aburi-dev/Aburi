@@ -434,17 +434,17 @@ describe("scan — the calls a procedure makes through what it is built on", () 
   const HEADER = [
     SERVER_IMPORT,
     `import * as auth from "./auth"`,
-    `import { createProcedure, isAdmin, protectedProcedure, requireRole } from "./trpc"`,
+    `import { authedProcedure, createProcedure, isAdmin, protectedProcedure, requireRole } from "./trpc"`,
   ]
 
-  /** `"<target> L<line> → <id>"` per call of `subject` that resolves, in `calls[]` order. */
-  async function resolvedCallsOf(initializer: string): Promise<string[]> {
+  async function subjectOf(initializer: string): Promise<IRSymbol> {
     await workspace.writeSource(
       "src/trpc.ts",
       [
         SERVER_IMPORT,
         "const t = initTRPC.create()",
         "export const protectedProcedure = t.procedure.use(({ next }) => next())",
+        "export const authedProcedure = t.procedure.use(({ next }) => next())",
         "export const isAdmin = t.middleware(({ next }) => next())",
         "export function requireRole(role: string) { return isAdmin }",
         "export function createProcedure(permission: string) { return protectedProcedure }",
@@ -461,7 +461,12 @@ describe("scan — the calls a procedure makes through what it is built on", () 
       "src/server.ts",
       [...HEADER, `export const subject = ${initializer}`].join("\n"),
     )
-    return symbolNamed({ ir: await scanWorkspace() }, "subject").calls.flatMap((call) =>
+    return symbolNamed({ ir: await scanWorkspace() }, "subject")
+  }
+
+  /** `"<target> L<line> → <id>"` per call of `subject` that resolves, in `calls[]` order. */
+  async function resolvedCallsOf(initializer: string): Promise<string[]> {
+    return (await subjectOf(initializer)).calls.flatMap((call) =>
       call.resolved === null ? [] : [`${call.target} L${call.line} → ${call.resolved}`],
     )
   }
@@ -496,12 +501,29 @@ describe("scan — the calls a procedure makes through what it is built on", () 
       ["createProcedure L4 → ts:src/trpc.ts#createProcedure"],
     ],
     [
-      "nothing for the instance's procedure, an inline middleware, a spread or a computed member",
-      "t.procedure.use(({ next }) => next()).use(...isAdmin).use(auth[isAdmin]).query(list)",
-      [],
+      "the base procedure and the builder a concat joins",
+      "protectedProcedure.concat(authedProcedure).query(list)",
+      [
+        "protectedProcedure L4 → ts:src/trpc.ts#protectedProcedure",
+        "authedProcedure L4 → ts:src/trpc.ts#authedProcedure",
+      ],
     ],
   ])("records %s", async (_label, initializer, calls) => {
     expect(await resolvedCallsOf(initializer)).toEqual(calls)
+  })
+
+  it("records only the body's calls for the instance's procedure, an inline middleware, a spread or a computed member", async () => {
+    const subject = await subjectOf(
+      "t.procedure.use(({ next }) => next()).use(...isAdmin).use(auth[isAdmin]).query(list)",
+    )
+
+    expect(subject.calls.map((call) => call.target)).toEqual([
+      "t.procedure.use.use.use.query",
+      "t.procedure.use.use.use",
+      "t.procedure.use.use",
+      "t.procedure.use",
+      "next",
+    ])
   })
 
   it("records each at the line it is written on, among the body's calls by line", async () => {

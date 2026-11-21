@@ -241,7 +241,8 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
           component,
           rules: body.rules,
           effects: classifiedEffects,
-          // Appended rather than interleaved: no column says where on a shared line they were written.
+          // Last among a shared line's calls, as the stable sort by line keeps them: a Call has no
+          // column to place them by.
           calls: [...keptCalls, ...calls],
           middleware,
           normalizedAstString: normalized,

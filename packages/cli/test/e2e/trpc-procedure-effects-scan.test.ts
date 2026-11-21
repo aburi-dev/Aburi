@@ -50,7 +50,10 @@ describe("scan — tRPC procedures whose resolvers reach a database", () => {
 })
 
 describe("scan — a procedure built on a base procedure and a named middleware", () => {
-  const trpcFile = (sessionRead: string) =>
+  const trpcFile = (
+    sessionRead: string,
+    guard = '  if (!ctx.sessionId) throw new Error("UNAUTHORIZED")',
+  ) =>
     [
       'import { initTRPC } from "@trpc/server"',
       'import { PrismaClient } from "@prisma/client"',
@@ -59,6 +62,7 @@ describe("scan — a procedure built on a base procedure and a named middleware"
       "const prisma = new PrismaClient()",
       "",
       "export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {",
+      guard,
       `  await ${sessionRead}`,
       "  return next()",
       "})",
@@ -116,6 +120,19 @@ describe("scan — a procedure built on a base procedure and a named middleware"
 
     expect(diff.slices.map((slice) => slice.members)).toEqual([
       ["ts:src/server/post.ts#deletePost", "ts:src/server/trpc.ts#protectedProcedure"],
+    ])
+  })
+
+  it("leaves the procedure out of the Slice when only the base's guard changes", async () => {
+    const sessionRead = "prisma.session.findUnique({ where: { id: ctx.sessionId } })"
+    const base = await scanWorkspace()
+    await workspace.writeSource("src/server/trpc.ts", trpcFile(sessionRead, ""))
+    const head = await scanWorkspace()
+
+    const diff = diffIRs(base.ir, head.ir)
+
+    expect(diff.slices.map((slice) => slice.members)).toEqual([
+      ["ts:src/server/trpc.ts#protectedProcedure"],
     ])
   })
 })

@@ -66,7 +66,7 @@ export function mergeFrameworkClassification(
 
 function frameworkCall({ target, line }: FrameworkCall): Call[] {
   const normalized = toNfc(target)
-  return normalized.length === 0 ? [] : [{ target: normalized, line, resolved: null }]
+  return normalized.trim().length === 0 ? [] : [{ target: normalized, line, resolved: null }]
 }
 
 function mergeDerivedBy(current: readonly string[], addition: string): string[] {

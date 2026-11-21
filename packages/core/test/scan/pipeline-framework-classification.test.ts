@@ -135,7 +135,7 @@ describe("runFilePipeline — framework classification", () => {
     expect(symbols[0]).not.toHaveProperty("middleware")
   })
 
-  it("appends the calls the winning classification adds after the body's, NFC and without empty targets", async () => {
+  it("adds the winning classification's calls by line, after the body's on a shared line, in NFC and without blank targets", async () => {
     const framework = stubFrameworkPlugin("framework-procedure", {
       classifySymbol: () => ({
         extKind: "framework:trpc:procedure",
@@ -143,6 +143,7 @@ describe("runFilePipeline — framework classification", () => {
         calls: [
           { target: "protectedProcedure", line: 2 },
           { target: "", line: 3 },
+          { target: "  ", line: 3 },
           { target: "caf\u0065\u0301", line: 1 },
         ],
       }),
