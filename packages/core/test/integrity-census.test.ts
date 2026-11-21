@@ -162,10 +162,10 @@ describe("checkIRIntegrity — every declined call stayed a call", () => {
   const OWNER = "ts:src/a.ts#owner"
   const declined: DeclinedCall = {
     symbolId: OWNER,
-    target: "client.user.byId.query",
+    target: "t.procedure.query",
     line: 4,
     plugin: "effects-trpc",
-    reason: "effects-plugin:trpc:server-file-query",
+    reason: "effects-plugin:trpc:procedure-query",
   }
 
   function documentDeclining(entry: DeclinedCall, owner = makeSymbol(OWNER, { calls: [] })): IR {
@@ -192,27 +192,27 @@ describe("checkIRIntegrity — every declined call stayed a call", () => {
       "a Symbol the Document does not hold",
       { ...declined, symbolId: "ts:src/a.ts#gone" },
       makeSymbol(OWNER),
-      'client.user.byId.query (L4) [effects-trpc] names "ts:src/a.ts#gone", which is not a Symbol in symbols[]',
+      't.procedure.query (L4) [effects-trpc] names "ts:src/a.ts#gone", which is not a Symbol in symbols[]',
     ],
     [
       "a dropped Symbol",
       declined,
       makeSymbol(OWNER, { dropped: true, dropReason: "pure DTO" }),
-      'client.user.byId.query (L4) [effects-trpc] names the dropped Symbol "ts:src/a.ts#owner", which carries no calls',
+      't.procedure.query (L4) [effects-trpc] names the dropped Symbol "ts:src/a.ts#owner", which carries no calls',
     ],
     [
       "a call on another line",
       declined,
       makeSymbol(OWNER, { calls: [{ target: declined.target, line: 5, resolved: null }] }),
-      'client.user.byId.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
+      't.procedure.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
     ],
     [
       "another call on the same line, as a chain writes one",
       declined,
       makeSymbol(OWNER, {
-        calls: [{ target: "client.user.list.query", line: 4, resolved: null }],
+        calls: [{ target: "t.procedure.input.query", line: 4, resolved: null }],
       }),
-      'client.user.byId.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
+      't.procedure.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
     ],
     [
       "a call the owner records as an effect",
@@ -229,7 +229,7 @@ describe("checkIRIntegrity — every declined call stayed a call", () => {
           },
         ],
       }),
-      'client.user.byId.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
+      't.procedure.query (L4) [effects-trpc] is not among the calls[] of "ts:src/a.ts#owner"; a call no plugin classified stays a call',
     ],
   ])("flags a decline naming %s", (_what, entry, owner, message) => {
     expect(stayViolations(documentDeclining(entry, owner))).toEqual([message])

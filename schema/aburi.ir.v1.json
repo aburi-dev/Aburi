@@ -442,7 +442,7 @@
         "reason": {
           "type": "string",
           "minLength": 1,
-          "description": "Why the plugin declined, in its own words, e.g. 'effects-plugin:trpc:server-file-query'."
+          "description": "Why the plugin declined, in its own words, e.g. 'effects-plugin:trpc:procedure-query'."
         }
       }
     },
