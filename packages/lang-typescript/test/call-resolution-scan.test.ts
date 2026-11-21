@@ -463,3 +463,51 @@ describe("scan — a call through a barrel", () => {
     })
   })
 })
+
+describe("scan — a call into a workspace package by its name", () => {
+  it("reaches the file the package's manifest names, past its built ones, and buckets what it lacks `no-match`", async () => {
+    const sources: Record<string, string> = {
+      "packages/kit/src/index.ts": 'export * from "./sort"\n',
+      "packages/kit/src/sort.ts": "export function sortBy() { return 1 }\n",
+      "packages/legacy/index.ts": "export function legacy() { return 2 }\n",
+      "apps/web/use.ts": [
+        'import { sortBy, missing } from "@acme/kit"',
+        'import { legacy } from "@acme/legacy"',
+        'import { other } from "@acme/kit-extra"',
+        "export function main() {",
+        "  sortBy()",
+        "  legacy()",
+        "  missing()",
+        "  other()",
+        "}",
+        "",
+      ].join("\n"),
+    }
+    for (const [path, source] of Object.entries(sources)) await workspace.writeSource(path, source)
+    const { ir, unresolvedCalls } = await scanTypeScript(
+      workspace.root,
+      {},
+      {
+        workspacePackages: [
+          {
+            name: "@acme/kit",
+            root: "packages/kit",
+            entry: { exports: { ".": { import: "./dist/index.js", source: "./src/index.ts" } } },
+          },
+          { name: "@acme/legacy", root: "packages/legacy", entry: { main: "./index.js" } },
+        ],
+      },
+    )
+    const main = ir.symbols.find((symbol) => symbol.id === "ts:apps/web/use.ts#main")
+    expect(main?.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["sortBy", "ts:packages/kit/src/sort.ts#sortBy"],
+      ["legacy", "ts:packages/legacy/index.ts#legacy"],
+      ["missing", null],
+      ["other", null],
+    ])
+    expect(unresolvedCalls.map((d) => [d.target, d.bucket])).toEqual([
+      ["missing", "no-match"],
+      ["other", "external"],
+    ])
+  })
+})

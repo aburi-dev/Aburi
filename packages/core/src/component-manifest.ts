@@ -66,7 +66,20 @@ export async function readCandidateManifests(entry: {
 export interface WorkspacePackage {
   name: string
   root: string
+  /** Absent when the manifest names no entry point. */
+  entry?: PackageEntryFields
 }
+
+/** The fields of a package's `package.json` that say which file an import of it by name loads. */
+export interface PackageEntryFields {
+  exports?: unknown
+  main?: unknown
+  module?: unknown
+  types?: unknown
+  typings?: unknown
+}
+
+const ENTRY_FIELDS = ["exports", "main", "module", "types", "typings"] as const
 
 /**
  * The package a bare specifier imports: `@scope/name` for a scoped one, otherwise its first segment.
@@ -98,8 +111,18 @@ export async function readWorkspacePackages(
     if (outcome.status === "rejected") throw outcome.reason
     const { root, manifest } = outcome.value
     const name: unknown = manifest?.name
-    return typeof name === "string" && name.length > 0 ? [{ name, root }] : []
+    if (typeof name !== "string" || name.length === 0) return []
+    const entry = entryFieldsOf(manifest ?? {})
+    return [entry === null ? { name, root } : { name, root, entry }]
   })
+}
+
+function entryFieldsOf(manifest: PackageEntryFields): PackageEntryFields | null {
+  const entry: PackageEntryFields = {}
+  for (const field of ENTRY_FIELDS) {
+    if (manifest[field] !== undefined) entry[field] = manifest[field]
+  }
+  return Object.keys(entry).length === 0 ? null : entry
 }
 
 export interface ManifestIdentity {
@@ -118,7 +141,7 @@ export interface NpmManifest extends ManifestIdentity {
   typings?: string
 }
 
-async function readJsonManifest(path: string): Promise<ManifestIdentity | null> {
+async function readJsonManifest(path: string): Promise<NpmManifest | null> {
   let raw: string
   try {
     raw = await readFile(path, "utf8")
@@ -132,7 +155,7 @@ async function readJsonManifest(path: string): Promise<ManifestIdentity | null> 
   }
   const parsed = parseManifestJson(raw, path)
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null
-  return parsed as ManifestIdentity
+  return parsed as NpmManifest
 }
 
 export function collectFrameworks(manifest: NpmManifest | null): string[] {

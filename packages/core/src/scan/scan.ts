@@ -84,7 +84,8 @@ export interface ScanInput {
   components?: readonly Component[]
   /**
    * Every package of the workspace: what a bare import specifier is matched against to find the
-   * Component it imports, and to tell a workspace package from one outside the workspace. Left out,
+   * Component it imports, to tell a workspace package from one outside the workspace, and, by its
+   * entry points, to find the file a call into the package by its name reaches. Left out,
    * every package imported by its name, with no `paths` key mapping it, reads as one outside the
    * workspace, and `ImportEdge.origins` names it as the package a decorator comes from.
    */
@@ -147,7 +148,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     files: discovered.files,
     config: input.config,
     components: input.components ?? [],
-    workspacePackageNames: (input.workspacePackages ?? []).map(({ name }) => name),
+    workspacePackages: input.workspacePackages ?? [],
     languages: input.languages,
     frameworks: input.frameworks,
     effects: input.effects,
