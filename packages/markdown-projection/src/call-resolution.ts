@@ -1,7 +1,8 @@
-import type {
-  CallResolutionStats,
-  GeneratedCallResolutionStats,
-  UnresolvedCallBuckets,
+import {
+  authoredCallCensus,
+  type CallCensus,
+  type CallResolutionStats,
+  type UnresolvedCallBuckets,
 } from "@aburi/types"
 
 const BUCKET_LABELS: Readonly<Record<keyof UnresolvedCallBuckets, string>> = {
@@ -17,23 +18,10 @@ const BUCKETS = Object.keys(BUCKET_LABELS) as (keyof UnresolvedCallBuckets)[]
 export function formatCallResolutionLine(stats: CallResolutionStats): string {
   const { generated } = stats
   if (generated === undefined) return censusLine(stats)
-  return `${censusLine(authored(stats, generated))}; generated files: calls ${generated.totalCalls} · resolved ${generated.resolvedCalls}`
+  return `${censusLine(authoredCallCensus(stats))}; generated files: calls ${generated.totalCalls} · resolved ${generated.resolvedCalls}`
 }
 
-function authored(
-  stats: CallResolutionStats,
-  generated: GeneratedCallResolutionStats,
-): GeneratedCallResolutionStats {
-  const unresolved = { ...stats.unresolved }
-  for (const key of BUCKETS) unresolved[key] -= generated.unresolved[key]
-  return {
-    totalCalls: stats.totalCalls - generated.totalCalls,
-    resolvedCalls: stats.resolvedCalls - generated.resolvedCalls,
-    unresolved,
-  }
-}
-
-function censusLine(stats: GeneratedCallResolutionStats): string {
+function censusLine(stats: CallCensus): string {
   const head = `calls ${stats.totalCalls} · resolved ${stats.resolvedCalls} · unresolved ${
     stats.totalCalls - stats.resolvedCalls
   }`

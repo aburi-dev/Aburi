@@ -1,4 +1,5 @@
 import {
+  added,
   changed,
   dependency,
   headings,
@@ -243,7 +244,6 @@ describe("projectDiff — the Slice View, beside test files", () => {
   const route = symbolAt("src/route.ts", "route", 3)
   const stub = symbolAt("src/route.test.ts", "stubRepo", 5, { inTestFile: true })
   const mock = symbolAt("src/route.test.ts", "mockClock", 9, { inTestFile: true })
-  const added = (symbol: IRSymbol): SymbolChange => ({ status: "added", symbol })
 
   it("leaves out a Slice of test code alone, and a Symbol of test code alone", () => {
     const report = projectDiff(

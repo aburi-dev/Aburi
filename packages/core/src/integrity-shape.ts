@@ -187,15 +187,15 @@ const UNRESOLVED_CALL_BUCKETS: RecordSpec = {
   noMatch: num,
 }
 
-const GENERATED_CALL_RESOLUTION_STATS: RecordSpec = {
+const CALL_CENSUS: RecordSpec = {
   totalCalls: num,
   resolvedCalls: num,
   unresolved: record(UNRESOLVED_CALL_BUCKETS),
 }
 
 const CALL_RESOLUTION_STATS: RecordSpec = {
-  ...GENERATED_CALL_RESOLUTION_STATS,
-  generated: optional(record(GENERATED_CALL_RESOLUTION_STATS)),
+  ...CALL_CENSUS,
+  generated: optional(record(CALL_CENSUS)),
 }
 
 const SKIPPED_FILE: RecordSpec = {

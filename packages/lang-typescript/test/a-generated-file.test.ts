@@ -1,4 +1,4 @@
-import { useScratchWorkspace } from "@aburi/test-support"
+import { symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { diffOfEdit, scanWithoutWarnings } from "./fixtures/scan"
 
@@ -21,10 +21,14 @@ const REGISTRY = [
   "  }),",
   "}",
   "",
+  "export function load(name: string) {",
+  "  return Components[name]",
+  "}",
+  "",
 ]
 
 const HAND_WRITTEN = [
-  'import { Components } from "./__index__"',
+  'import { load } from "./__index__"',
   "",
   "/** Returns an auto-generated id for the row. */",
   "export function newId(prefix: string) {",
@@ -32,26 +36,33 @@ const HAND_WRITTEN = [
   "}",
   "",
   "function count() {",
-  "  return Object.keys(Components).length",
+  '  return load("accordion-basic") === undefined ? 0 : 1',
   "}",
   "",
 ]
 
 describe("scan — a generated file", () => {
-  it("marks the Symbols of the file its header says is generated, and counts its calls apart", async () => {
+  it("marks every Symbol of the file its header says is generated, and counts its calls apart", async () => {
     await workspace.writeSource("src/__index__.tsx", [...HEADER, ...REGISTRY].join("\n"))
     await workspace.writeSource("src/rows.ts", HAND_WRITTEN.join("\n"))
 
     const ir = await scanWithoutWarnings(workspace.root)
 
-    const marked = ir.symbols.filter((symbol) => symbol.inGeneratedFile === true)
-    expect(new Set(marked.map((symbol) => symbol.source.file))).toEqual(
-      new Set(["src/__index__.tsx"]),
-    )
+    const registry = ir.symbols.filter((symbol) => symbol.source.file === "src/__index__.tsx")
+    expect(registry.length).toBeGreaterThan(1)
+    expect(registry.filter((symbol) => symbol.inGeneratedFile !== true)).toEqual([])
     expect(
-      ir.symbols.filter((symbol) => symbol.source.file === "src/rows.ts").map((s) => s.name),
-    ).toEqual(["count", "newId"])
-    const generatedCalls = marked.flatMap((symbol) => symbol.calls)
+      ir.symbols
+        .filter((symbol) => symbol.source.file === "src/rows.ts")
+        .map((symbol) => [symbol.name, symbol.inGeneratedFile]),
+    ).toEqual([
+      ["count", undefined],
+      ["newId", undefined],
+    ])
+    expect(symbolById({ ir }, "ts:src/rows.ts#count").calls.map((call) => call.resolved)).toEqual([
+      "ts:src/__index__.tsx#load",
+    ])
+    const generatedCalls = registry.flatMap((symbol) => symbol.calls)
     expect(generatedCalls.length).toBeGreaterThan(0)
     expect(ir.stats.callResolution?.generated).toMatchObject({
       totalCalls: generatedCalls.length,

@@ -5,11 +5,13 @@ import {
   type MatchRationale,
   type SliceRecord,
   type Summary,
+  type SymbolAdded,
   type SymbolChange,
   type SymbolChanged,
   type SymbolDelta,
   type SymbolMoved,
   type SymbolMovedChanged,
+  type SymbolRemoved,
 } from "@aburi/types"
 import { expect } from "vitest"
 import { sliceId } from "./ir"
@@ -64,6 +66,14 @@ export function delta(flags: Partial<SymbolDelta> = {}): SymbolDelta {
     visibilityChanged: false,
     ...flags,
   }
+}
+
+export function added(symbol: IRSymbol): SymbolAdded {
+  return { status: "added", symbol }
+}
+
+export function removed(symbol: IRSymbol): SymbolRemoved {
+  return { status: "removed", symbol }
 }
 
 /** `before` changed in place: `after` is `before` with `after`'s fields laid over it. */

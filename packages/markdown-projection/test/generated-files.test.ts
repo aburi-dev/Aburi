@@ -1,9 +1,11 @@
 import {
+  added,
   changed,
   dependency,
   headings,
   makeDiff,
   moved,
+  removed,
   sectionOf,
   sliceOf,
   symbolAt,
@@ -26,21 +28,23 @@ function generatedAt(
   return symbolAt(file, name, line, { inGeneratedFile: true, ...extra })
 }
 
-const added = (symbol: IRSymbol): SymbolChange => ({ status: "added", symbol })
+function fixture(name: string): IRSymbol {
+  return symbolAt(`src/${name}.test.ts`, name, 1, { inTestFile: true })
+}
 
 describe("projectDiff — the changes of generated files", () => {
   const order = namedSymbol("order")
   const loader = generatedAt("src/gen/a.ts", "loader", 3)
   const registry = generatedAt("src/gen/a.ts", "registry", 9)
   const before = symbolAt("src/client.ts", "client", 2)
-  const fixture = generatedAt("src/gen/b.test.ts", "fixture", 1, { inTestFile: true })
+  const generatedFixture = generatedAt("src/gen/b.test.ts", "fixture", 1, { inTestFile: true })
   const report = projectDiff(
     makeDiff({
       symbols: [
         changed(order, { logicChanged: true }),
+        changed(generatedFixture, { apiChanged: true }),
         added(withCallsTo(loader, [order, 4])),
         moved(before, { ...relocated(before, "src/gen/a.ts"), inGeneratedFile: true }),
-        changed(fixture, { apiChanged: true }),
       ],
       dependencies: {
         added: [dependency({ from: loader.id, to: order.id, via: "call" })],
@@ -49,14 +53,51 @@ describe("projectDiff — the changes of generated files", () => {
     }),
   )
 
-  it("are one line in the last section, by file, the head deciding, test files included", () => {
+  it("are one line in the last section, by file in code-unit order, test files included", () => {
     expect(headings(report)).toEqual(["## 🔧 Logic changes", HEADING])
     expect(sectionOf(report, HEADING)).toEqual([
       HEADING,
       "",
-      "3 Symbol changes and 1 dependency change in 2 generated files: `src/gen/a.ts` (2), `src/gen/b.test.ts` (1)",
+      "3 Symbol changes and 1 dependency change in 2 generated files: `src/gen/a.ts` (+1 ↔1), `src/gen/b.test.ts` (~1)",
       "",
     ])
+  })
+
+  it.each([
+    ["out of a generated file is reviewed", false, "## 🔀 Moved"],
+    ["into a generated file is generated code", true, HEADING],
+  ])("are judged by the head, so a move %s", (_, intoGenerated, section) => {
+    const parse = intoGenerated ? namedSymbol("parse") : generatedAt("src/gen/parse.ts", "parse")
+    const { inGeneratedFile: _mark, ...unmarked } = relocated(parse, "src/parse/index.ts")
+    const after: IRSymbol = intoGenerated ? { ...unmarked, inGeneratedFile: true } : unmarked
+    expect(headings(projectChanges([moved(parse, after)]))).toEqual([section])
+  })
+
+  it("count each file's changes by status, and an unknown one by the skip that made it", () => {
+    const toggled = generatedAt("src/gen/b.ts", "toggled", 5)
+    const skipped = ["first", "second", "third"].map(
+      (name): SymbolChange => ({
+        status: "unknown",
+        symbol: generatedAt("src/gen/a.ts", name),
+        absentFrom: "head",
+        reason: "over-size",
+      }),
+    )
+    const counted = projectChanges([
+      ...skipped,
+      removed(generatedAt("src/gen/b.ts", "gone", 1)),
+      changed(generatedAt("src/gen/b.ts", "kept", 3), { logicChanged: true }),
+      {
+        status: "dropped-toggled",
+        before: toggled,
+        after: { ...toggled, dropped: true, dropReason: "pure DTO" },
+        direction: "to-dropped",
+      },
+    ])
+    expect(headings(counted)).toEqual([HEADING])
+    expect(sectionOf(counted, HEADING)).toContain(
+      "6 Symbol changes in 2 generated files: `src/gen/a.ts` (?3 skipped at head: over-size), `src/gen/b.ts` (-1 ~1 💧1)",
+    )
   })
 
   it("are counted on the Summary line, and not as test files", () => {
@@ -68,21 +109,30 @@ describe("projectDiff — the changes of generated files", () => {
   it("count one in the singular, and name no dependency change when there is none", () => {
     const one = projectChanges([added(registry)])
     expect(sectionOf(one, HEADING)).toContain(
-      "1 Symbol change in 1 generated file: `src/gen/a.ts` (1)",
+      "1 Symbol change in 1 generated file: `src/gen/a.ts` (+1)",
     )
   })
 
-  it("go first when the size cap omits a section", () => {
+  it("go first when the size cap omits a section, and the test files next", () => {
     const authored = [added(order)]
+    const tests = Array.from({ length: 10 }, (_, i) => added(fixture(`mock${i}`)))
     const regenerated = Array.from({ length: 10 }, (_, i) =>
       added(generatedAt(`src/gen/registry-${i}.ts`, `entry${i}`)),
     )
-    const capped = projectChanges([...authored, ...regenerated], {
-      maxBytes: bytes(projectChanges(authored)) + 200,
+    const everything = [...authored, ...tests, ...regenerated]
+    const withoutGenerated = projectChanges(everything, {
+      maxBytes: bytes(projectChanges([...authored, ...tests])) + 200,
     })
-    expect(headings(capped)).toEqual(["## ➕ Added"])
-    expect(noteOf(capped)).toContain("**1 section was omitted**")
-    expect(noteOf(capped)).toContain(": ⚙ Generated files.")
+    expect(headings(withoutGenerated)).toEqual(["## ➕ Added", "## 🧪 Test files"])
+    expect(noteOf(withoutGenerated)).toContain("**1 section was omitted**")
+    expect(noteOf(withoutGenerated)).toContain(": ⚙ Generated files.")
+
+    const authoredAlone = projectChanges(everything, {
+      maxBytes: bytes(projectChanges(authored)) + 400,
+    })
+    expect(headings(authoredAlone)).toEqual(["## ➕ Added"])
+    expect(noteOf(authoredAlone)).toContain("**2 sections were omitted**")
+    expect(noteOf(authoredAlone)).toContain(": 🧪 Test files, ⚙ Generated files.")
   })
 })
 

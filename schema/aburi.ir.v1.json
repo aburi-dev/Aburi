@@ -222,21 +222,22 @@
           "description": "Why the remaining call sites stayed null, one counter per cause. The five counters sum to totalCalls - resolvedCalls."
         },
         "generated": {
-          "$ref": "#/$defs/GeneratedCallResolutionStats",
-          "description": "The same census over the Symbols that carry inGeneratedFile alone. The counts above still count every call site, generated ones included, so the authored code's census is the difference, bucket by bucket. Class B: present iff a Symbol carries inGeneratedFile, which the integrity check enforces."
+          "$ref": "#/$defs/CallCensus",
+          "description": "The same census over the Symbols that carry inGeneratedFile alone, no counter of it above the same counter here. The counts above still count every call site, generated ones included, so the authored code's census is the difference, bucket by bucket. Class B: present iff a Symbol carries inGeneratedFile, which the integrity check enforces."
         }
       }
     },
 
-    "GeneratedCallResolutionStats": {
+    "CallCensus": {
       "type": "object",
       "additionalProperties": false,
       "required": ["resolvedCalls", "totalCalls", "unresolved"],
+      "description": "A call-resolution census of part of symbols[]; the property that holds it says which Symbols it covers.",
       "properties": {
         "totalCalls": {
           "type": "integer",
           "minimum": 0,
-          "description": "Call sites in the calls[] of Symbols that carry inGeneratedFile."
+          "description": "Call sites in the calls[] of the Symbols the census covers."
         },
         "resolvedCalls": {
           "type": "integer",
@@ -245,7 +246,7 @@
         },
         "unresolved": {
           "$ref": "#/$defs/UnresolvedCallBuckets",
-          "description": "Why the rest stayed null. The five counters sum to totalCalls - resolvedCalls, and none exceeds the same counter of the enclosing census."
+          "description": "Why the rest stayed null. The five counters sum to totalCalls - resolvedCalls."
         }
       }
     },

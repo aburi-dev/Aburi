@@ -1,4 +1,4 @@
-import { representativeSymbol, type SymbolChange } from "@aburi/types"
+import type { SymbolChange } from "@aburi/types"
 import { counted } from "../format"
 import { dependencyRow } from "./dependency-changes"
 import type { FoldedDependencies } from "./folded-dependencies"
@@ -12,10 +12,6 @@ import {
   indexUnknown,
 } from "./names-only"
 import { type ChangedEntry, partition } from "./partition"
-
-export function inTestFile(change: SymbolChange): boolean {
-  return representativeSymbol(change).inTestFile === true
-}
 
 export function renderTestFiles(
   changes: readonly SymbolChange[],

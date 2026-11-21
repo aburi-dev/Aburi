@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import { ABURI_COMMENT_BODY_MAX_BYTES } from "@aburi/github-action"
+import { authoredCallCensus } from "@aburi/types"
 import { DEFAULT_WORK_DIR, requireCount, requireValue } from "./args.mjs"
 
 const COMPLETED_EXIT_CODES = new Set([0, 3])
@@ -115,18 +116,7 @@ function formatExitCodes(scan) {
  */
 export function authoredCalls(census) {
   if (census === null) return null
-  const generated = census.generated
-  if (generated === undefined) return { ...census, generatedCalls: 0 }
-  const unresolved = {}
-  for (const [bucket, count] of Object.entries(census.unresolved)) {
-    unresolved[bucket] = count - generated.unresolved[bucket]
-  }
-  return {
-    totalCalls: census.totalCalls - generated.totalCalls,
-    resolvedCalls: census.resolvedCalls - generated.resolvedCalls,
-    unresolved,
-    generatedCalls: generated.totalCalls,
-  }
+  return { ...authoredCallCensus(census), generatedCalls: census.generated?.totalCalls ?? 0 }
 }
 
 export function renderReport(report) {

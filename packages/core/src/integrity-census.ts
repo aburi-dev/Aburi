@@ -1,6 +1,6 @@
 import type {
+  CallCensus,
   DeclinedCall,
-  GeneratedCallResolutionStats,
   IR,
   Symbol as IRSymbol,
   UnresolvedCallBuckets,
@@ -44,11 +44,19 @@ export function checkSkippedFilesCensus(ir: IR, out: IntegrityViolation[]): void
 
 export function checkCallResolutionStatsCensus(ir: IR, out: IntegrityViolation[]): void {
   const stats = ir.stats.callResolution
-  if (stats === undefined) return
-  const whole = countCalls(ir.symbols)
-  checkCensus("stats.callResolution", stats, whole, out)
-
   const generated = ir.symbols.filter((symbol) => symbol.inGeneratedFile === true)
+  if (stats === undefined) {
+    if (generated.length > 0) {
+      out.push({
+        invariant: 15,
+        subject: "stats.callResolution",
+        message: `${generated.length} Symbol(s) carry inGeneratedFile but the Document has no stats.callResolution; the scan that marks a file writes the census beside it`,
+      })
+    }
+    return
+  }
+  checkCensus("stats.callResolution", stats, countCalls(ir.symbols), out)
+
   if (stats.generated === undefined) {
     if (generated.length > 0) {
       out.push({
@@ -95,7 +103,7 @@ function countCalls(symbols: readonly IRSymbol[]): CallCount {
 
 function checkCensus(
   subject: string,
-  census: GeneratedCallResolutionStats,
+  census: CallCensus,
   carried: CallCount,
   out: IntegrityViolation[],
 ): void {

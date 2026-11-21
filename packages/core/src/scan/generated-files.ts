@@ -6,43 +6,97 @@ import type {
 import { buildCallResolutionStats } from "../callgraph-diagnostics"
 import type { ReadFile } from "../lsp"
 
-const GENERATED_TAG = /@generated\b/
-const FILE_IS_GENERATED =
-  /\b(?:file|code)\s+(?:is|was|has\s+been)\s+(?:auto-?|auto\s+|automatically\s+)?generated\b/i
-const GENERATED = /\bgenerated\b/i
+const GENERATED = String.raw`(?:auto-?|auto\s+|automatically\s+)?generated`
+const GENERATED_TAG = /@generated(?![\w/-])/
+const SAYS_IT_IS_GENERATED = new RegExp(
+  String.raw`\b(?:(?:this|the\s+following)\s+(?:file|code)\s+(?:is|was|has\s+been)\s+${GENERATED}|this\s+is\s+an?\s+${GENERATED}\s+(?:file|code))\b`,
+  "i",
+)
+const GENERATED_HEADER_WORD = new RegExp(
+  String.raw`^${GENERATED}\b|\b${GENERATED}\s+(?:by|file|code)\b`,
+  "im",
+)
 const DO_NOT_EDIT = /\b(?:do\s+not|don['’]t)\s+(?:edit|modify)\b/i
+const LINE_PREFIX = /^[\s*/#!]+/
+const LINE_BREAK = /\r\n?|[\n\u2028\u2029]/
 
 export function opensAsGenerated(content: string): boolean {
-  const header = openingComments(content)
-  return (
-    GENERATED_TAG.test(header) ||
-    FILE_IS_GENERATED.test(header) ||
-    (GENERATED.test(header) && DO_NOT_EDIT.test(header))
+  return openingComments(content).some(
+    (comment) =>
+      GENERATED_TAG.test(comment) ||
+      SAYS_IT_IS_GENERATED.test(comment) ||
+      (GENERATED_HEADER_WORD.test(comment) && DO_NOT_EDIT.test(comment)),
   )
 }
 
-function openingComments(content: string): string {
+/** Each comment's lines without the `//`, `#` or ` * ` they open with, so a phrase can span them. */
+function openingComments(content: string): string[] {
   const comments: string[] = []
   let at = 0
   for (;;) {
-    while (at < content.length && isWhitespace(content.charCodeAt(at))) at++
-    let end: number
-    if (content.startsWith("//", at) || content.startsWith("#", at)) {
-      const newline = content.indexOf("\n", at)
-      end = newline < 0 ? content.length : newline
+    at = skipWhitespace(content, at, isWhitespace)
+    if (opensLineComment(content, at)) {
+      const lines: string[] = []
+      // A run of line comments on consecutive lines is one comment, as a block's lines are.
+      do {
+        const end = lineEnd(content, at)
+        lines.push(content.slice(at, end))
+        at = skipWhitespace(content, afterLineBreak(content, end), isSpaceWithinLine)
+      } while (opensLineComment(content, at))
+      comments.push(commentText(lines))
     } else if (content.startsWith("/*", at)) {
       const close = content.indexOf("*/", at + 2)
-      end = close < 0 ? content.length : close + 2
+      const end = close < 0 ? content.length : close
+      comments.push(commentText(content.slice(at + 2, end).split(LINE_BREAK)))
+      at = close < 0 ? content.length : close + 2
     } else {
-      return comments.join("\n")
+      return comments
     }
-    comments.push(content.slice(at, end))
-    at = end
   }
 }
 
+function commentText(lines: readonly string[]): string {
+  return lines.map((line) => line.replace(LINE_PREFIX, "")).join("\n")
+}
+
+function opensLineComment(content: string, at: number): boolean {
+  return content.startsWith("//", at) || content.startsWith("#", at)
+}
+
+function lineEnd(content: string, at: number): number {
+  let end = at
+  while (end < content.length && !isLineTerminator(content.charCodeAt(end))) end++
+  return end
+}
+
+function afterLineBreak(content: string, end: number): number {
+  if (content.startsWith("\r\n", end)) return end + 2
+  return Math.min(end + 1, content.length)
+}
+
+function skipWhitespace(content: string, at: number, skips: (code: number) => boolean): number {
+  let next = at
+  while (next < content.length && skips(content.charCodeAt(next))) next++
+  return next
+}
+
 function isWhitespace(code: number): boolean {
-  return code === 0x20 || (code >= 0x09 && code <= 0x0d) || code === 0xa0 || code === 0xfeff
+  return isLineTerminator(code) || isSpaceWithinLine(code)
+}
+
+function isSpaceWithinLine(code: number): boolean {
+  return (
+    code === 0x20 ||
+    code === 0x09 ||
+    code === 0x0b ||
+    code === 0x0c ||
+    code === 0xa0 ||
+    code === 0xfeff
+  )
+}
+
+function isLineTerminator(code: number): boolean {
+  return code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029
 }
 
 export function markGeneratedFiles(

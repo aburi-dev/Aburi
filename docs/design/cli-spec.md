@@ -896,6 +896,8 @@ A workflow that kept `--fail-on removed` across the release that narrowed it wou
 
 `--fail-on-scope non-test` makes every clause count only the changes whose Symbol carries no `inTestFile` — the Symbols of the files the head config's `testFiles` does not name ([`config.md`](./config.md) §4.1, [`ir-schema.md`](./ir-schema.md) §5.7). For a pair it is the head Symbol's mark, as the report places the entry by the head's file: a helper moved out of a test file into the code under test counts, one moved the other way does not. A fixture deleted, renamed or rewritten then trips no gate, while the same change to the code it tests does. The default, `all`, counts every change, as the gate always has.
 
+Neither scope reads `inGeneratedFile` ([`ir-schema.md`](./ir-schema.md) §5.9). A change of a generated file counts as any other change does, under `non-test` too unless the file is also test code: a method a regenerated client lost is an API its callers lost, whoever wrote it, so a `--fail-on removed` gate trips on it while the report counts it on one line ([`markdown-projection.md`](./markdown-projection.md) §6.2). A generated test file is test code to the gate, and `non-test` leaves it out, though the report lists it with the generated files rather than the test files.
+
 The scope narrows the clauses rather than adding one, so `--fail-on removed --fail-on-scope non-test` reads as it is meant: fail on a removal outside the tests. Given without `--fail-on`, it has nothing to narrow and the diff exits as it would without it. The tripped line says it counted that way, and names only the Symbols it counted:
 
 ```

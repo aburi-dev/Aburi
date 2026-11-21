@@ -568,8 +568,8 @@ change worth reading.
 
 A change whose Symbol carries `inTestFile` ([`ir-schema.md`](./ir-schema.md) §5.7) — the head's
 for a pair, as the head's file is the one the entry names — is in **Test files** and not in the
-sections above it, and every other change is in those sections and not in **Test files**, so a pull
-request that only edits fixtures reads as one. A Slice that reaches beyond test code still draws its
+sections above it, and every other change outside generated files is in those sections and not in
+**Test files**, so a pull request that only edits fixtures reads as one. A Slice that reaches beyond test code still draws its
 test members (§6.2). An edge carries no mark, but a Symbol-level edge comes or goes only as its
 caller's calls change, so an added or removed one whose `from` is the Symbol of a change in **Test
 files** — either id, for a pair — is listed there and not in Dependency changes. Every other edge,
@@ -579,8 +579,9 @@ A change whose Symbol carries `inGeneratedFile` ([`ir-schema.md`](./ir-schema.md
 same way, is in **Generated files** instead, and in no other section, **Test files** included: a
 program wrote it, so what a reviewer needs is that it changed, and where, not the changes one by
 one — a pull request that regenerates a registry would otherwise fill every section above with
-entries nobody reads. The added or removed edges of those changes go with them, as a test change's
-do.
+entries nobody reads. That holds for an `unknown` change too: the line names the skip that made it,
+which is what the **Unknown** entry would have said. The added or removed edges of those changes go
+with them, as a test change's do.
 
 The `· ?N unknown` suffix on the Summary line appears only when `summary.unknown` is non-zero, so the line a reviewer skims on every PR does not carry a permanent `?0`. It qualifies the counts beside it: added and removed are both smaller than the truth by that much.
 
@@ -907,20 +908,31 @@ The size cap (§6.4) omits it before any other section but Generated files.
 
 #### ⚙ Generated files
 
-One line: how many changes the generated files hold, and each file, with the number of its
-changes:
+One line: how many changes the generated files hold, and each file, with its changes counted by
+status:
 
 ```md
 ## ⚙ Generated files
 
-2052 Symbol changes and 3 dependency changes in 3 generated files: `apps/v4/examples/__components__/base.tsx` (2040), `apps/v4/examples/__components__/radix.tsx` (11), `apps/v4/registry/__index__.tsx` (1)
+2052 Symbol changes and 3 dependency changes in 3 generated files: `apps/v4/examples/__components__/base.tsx` (+2016 -24), `apps/v4/examples/__components__/radix.tsx` (~11), `apps/v4/registry/__index__.tsx` (~1)
 ```
 
-A file is named by its Symbol's `source.file`, the head's for a pair, in code-unit order, and each
-is counted once whatever its changes are; the dependency changes, the edges of those changes
-(§6.1), are counted for the whole and left out when there are none. The changes themselves are
-not listed: names alone would still be one row per Symbol, and a generated file's Symbols are as
-many as its generator chose to write. `diff.json` keeps every one of them.
+A file is named by its Symbol's `source.file`, the head's for a pair, in code-unit order. Its
+counts use the glyphs of the one-line summary (§6.3) — `+` added, `-` removed, `~` changed, `↔`
+moved, `⤴` moved+changed — and `💧` for a dropped change, in that order, leaving out a status the
+file has none of: a `--fail-on removed` gate that tripped on a regeneration is read off the line.
+Its `unknown` changes come last, counted by the skip that made them, in the words the **Unknown**
+index uses:
+
+```md
+2040 Symbol changes in 1 generated file: `apps/v4/examples/__components__/base.tsx` (?2040 skipped at head: over-size)
+```
+
+Without the reason the line would read as a regeneration although nothing was compared. The
+dependency changes, the edges of those changes (§6.1), are counted for the whole and left out when
+there are none. The changes themselves are not listed: names alone would still be one row per
+Symbol, and a generated file's Symbols are as many as its generator chose to write. `diff.json`
+keeps every one of them.
 
 The Slice View leaves out a Slice whose members are all in generated files, as it does one of
 test code, and draws one that reaches beyond them whole.
@@ -1086,8 +1098,8 @@ much is not, ahead of the size cap's note when there is one:
 > ℹ **Only `added` and `removed` changes are listed.** 12 other Symbol changes are left out of this report; the Summary counts them.
 ```
 
-When it also took out edges from test code, the note counts them beside the Symbol changes, which
-are what the Summary counts, and says where they came from — `from test code`, `from generated
+When it also took out edges from test code or generated files, the note counts them beside the
+Symbol changes, which are what the Summary counts, and says where they came from — `from test code`, `from generated
 files`, or `from test code and generated files`:
 
 ```md
@@ -1253,8 +1265,9 @@ All Markdown projection output is **English, with fixed wording**.
 | MP21b | diff with a Slice of two test Symbols, a test singleton, and a Slice from a test Symbol into code under test | No Slice View for the first two; the third drawn with its test member |
 | MP21c | diff with one change outside test files and ten inside, projected with a budget that holds the first and the note but not the fold | The note names `🧪 Test files` as the one section omitted |
 | MP21d | diff with an added test Symbol whose call edge was added, a test pair whose id changed with an edge added from its head id and one removed from its base id, and a changed production Symbol with an added edge | The fold ends with `**2 dependencies added**` and `**1 dependency removed**` after its moved group; `## 🔗 Dependency changes` lists only the production edge, and without it is not rendered |
-| MP21e | diff with a change outside generated files and, in two generated files, three changes — one a pair whose base is in an authored file, one in a generated test file — and an added edge from one of them | `## ⚙ Generated files` is last, reading ``3 Symbol changes and 1 dependency change in 2 generated files: `a.ts` (2), `b.test.ts` (1)``; no other section lists the three or the edge, `## 🧪 Test files` included; the Summary line ends `· 3 in generated files`, with no `in test files` |
-| MP21f | diff with a Slice whose members are all in generated files, and one from a generated Symbol into authored code; the first diff projected with a budget that holds everything but the generated files' line | No Slice View for the first Slice, the second drawn whole; the note names `⚙ Generated files` as the one section omitted |
+| MP21e | diff with a change outside generated files and, in two generated files, three changes — an added Symbol with an added call edge and a pair whose base is in an authored file in one, a changed Symbol of a generated test file in the other | `## ⚙ Generated files` is last, reading ``3 Symbol changes and 1 dependency change in 2 generated files: `a.ts` (+1 ↔1), `b.test.ts` (~1)``; no other section lists the three or the edge, `## 🧪 Test files` included; the Summary line ends `· 3 in generated files`, with no `in test files`. A pair moved the other way, out of a generated file into an authored one, is in `## 🔀 Moved` |
+| MP21f | diff with a Slice whose members are all in generated files, and one from a generated Symbol into authored code; a diff with one authored change, ten in test files and ten in generated files, projected with a budget that holds all but the generated files' line, and with one that holds the authored change and the note alone | No Slice View for the first Slice, the second drawn whole; the note names `⚙ Generated files` as the one section omitted, then `🧪 Test files` and `⚙ Generated files` as the two |
+| MP21g | diff whose head scan skipped a generated file of three Symbols as `over-size`, beside a generated file with one removed Symbol, one changed and one dropped change | ``6 Symbol changes in 2 generated files: `a.ts` (?3 skipped at head: over-size), `b.ts` (-1 ~1 💧1)``, and no `## ❔ Unknown` |
 | MP22 | Symbol block, and `aburi explain` page, of a Symbol whose `middleware` is `requireAdmin`, `validate(user)` | ``**Middleware**: `requireAdmin`, `validate(user)` `` straight after the Signature line, and a `## Middleware` section between Signature and Rules; neither for a Symbol without the key |
 | MP23 | diff entry whose `delta.middleware` removed `requireAdmin`, added `rateLimit(…)`, or reordered `requireAdmin`, `audit` into `audit`, `requireAdmin` | ``- middleware removed: `requireAdmin` ``, ``- middleware added: `rateLimit(…)` ``, ``- middleware reordered: `requireAdmin`, `audit` → `audit`, `requireAdmin` ``, and no "no field-level detail" row; an unmoved `delta.middleware` writes no row |
 | MP23a | diff entry whose `delta.effectsReordered` is true, its effects swapped and `delta.effects` empty | ``- effects reordered: db.write `a.save`, event.publish `events.emit` → event.publish `events.emit`, db.write `a.save` `` after the effect buckets and before the call rows, and no "no field-level detail" row; `false` or absent writes no row |

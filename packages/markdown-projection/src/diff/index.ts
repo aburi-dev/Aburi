@@ -21,7 +21,7 @@ import {
   renderUnknown,
 } from "./entries"
 import { splitDependencies } from "./folded-dependencies"
-import { inGeneratedFile, renderGeneratedFiles } from "./generated-files"
+import { renderGeneratedFiles } from "./generated-files"
 import {
   indexChanged,
   indexConfidence,
@@ -30,10 +30,11 @@ import {
   indexSymbols,
   indexUnknown,
 } from "./names-only"
+import { byOrigin } from "./origin"
 import { partition } from "./partition"
 import { assemble, foldedSection, plainSection, type Section } from "./size-cap"
 import { renderSliceView } from "./slice-view"
-import { inTestFile, renderTestFiles } from "./test-files"
+import { renderTestFiles } from "./test-files"
 
 export interface ProjectDiffOptions {
   readonly maxBytes?: number
@@ -55,28 +56,25 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     )
   }
   const listed = listedChanges(diff.symbols, options.statuses)
-  const everyGeneratedChange = diff.symbols.filter(inGeneratedFile)
-  const generatedChanges = listed.filter(inGeneratedFile)
-  const everyTestChange = diff.symbols.filter(inTestCode)
-  const testChanges = listed.filter(inTestCode)
-  const fromGenerated = splitDependencies(diff.dependencies, everyGeneratedChange, generatedChanges)
-  const fromTests = splitDependencies(fromGenerated.kept, everyTestChange, testChanges)
+  const every = byOrigin(diff.symbols)
+  const shown = byOrigin(listed)
+  const fromGenerated = splitDependencies(diff.dependencies, every.generated, shown.generated)
+  const fromTests = splitDependencies(fromGenerated.kept, every.test, shown.test)
   const heading = [
     `# Aburi diff: ${titleRef(diff.base.ref)}..${titleRef(diff.head.ref)}`,
     "",
-    `**Summary**: ${summaryLine(diff, everyTestChange.length, everyGeneratedChange.length)}`,
+    `**Summary**: ${summaryLine(diff, every.test.length, every.generated.length)}`,
     "",
     ...filterNote(options.statuses, diff.symbols.length - listed.length, {
       tests: fromTests.leftOut,
       generated: fromGenerated.leftOut,
     }),
   ]
-  const authored = listed.filter((change) => !inTestFile(change) && !inGeneratedFile(change))
-  const buckets = partition(authored)
-  const shown = new Set(authored)
+  const buckets = partition(shown.authored)
+  const listedAuthored = new Set(shown.authored)
   const hiddenIds = new Set(
     diff.symbols
-      .filter((change) => !shown.has(change))
+      .filter((change) => !listedAuthored.has(change))
       .map((change) => representativeSymbol(change).id),
   )
   // A Slice with no members, or with one no change names, is left for the Slice View to refuse.
@@ -128,21 +126,16 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     ),
     foldedSection(
       "## 🧪 Test files",
-      renderTestFiles(testChanges, fromTests.folded),
-      counted(testChanges.length, "symbol in a test file", "symbols in test files"),
+      renderTestFiles(shown.test, fromTests.folded),
+      counted(shown.test.length, "symbol in a test file", "symbols in test files"),
     ),
     plainSection(
       "## ⚙ Generated files",
-      renderGeneratedFiles(generatedChanges, fromGenerated.folded),
+      renderGeneratedFiles(shown.generated, fromGenerated.folded),
     ),
   ].filter((entry): entry is Section => entry !== null)
 
   return assemble(heading, sections, maxBytes, fullReportLocation)
-}
-
-/** A generated test file is generated code first: its changes are not read one by one either. */
-function inTestCode(change: SymbolChange): boolean {
-  return inTestFile(change) && !inGeneratedFile(change)
 }
 
 function listedChanges(

@@ -1,5 +1,5 @@
 import { makeIR } from "@aburi/test-support"
-import type { CallResolutionStats, DeclinedCall, IR } from "@aburi/types"
+import type { CallCensus, CallResolutionStats, DeclinedCall, IR } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { checkIRIntegrity } from "../src/index"
 import { makeSymbol } from "./fixtures/ir"
@@ -50,6 +50,70 @@ describe("checkIRIntegrity — callResolution census", () => {
   ])("flags %s", (_what, stats, subject) => {
     const violations = checkIRIntegrity(irWithOneUnresolvedCall(stats))
     expect(violations.filter((v) => v.invariant === 15).map((v) => v.subject)).toEqual([subject])
+  })
+})
+
+/** One unresolved call in an authored file, and one in a file whose Symbol carries the mark. */
+function irWithAGeneratedFile(callResolution: CallResolutionStats | undefined, marked = true): IR {
+  const ir = makeIR({
+    symbols: [
+      makeSymbol("ts:src/a.ts#caller", { calls: [{ target: "typoed", line: 1, resolved: null }] }),
+      makeSymbol("ts:src/client.ts#request", {
+        calls: [{ target: "fetchy", line: 1, resolved: null }],
+        ...(marked ? { inGeneratedFile: true } : {}),
+      }),
+    ],
+  })
+  if (callResolution !== undefined) ir.stats.callResolution = callResolution
+  return ir
+}
+
+function withGenerated(whole: CallResolutionStats, generated: CallCensus): CallResolutionStats {
+  return { ...whole, generated }
+}
+
+describe("checkIRIntegrity — the generated files' census", () => {
+  it("accepts a generated block that matches the marked Symbols", () => {
+    expect(
+      checkIRIntegrity(irWithAGeneratedFile(withGenerated(census(2, 0, 2), census(1, 0, 1)))),
+    ).toEqual([])
+  })
+
+  it.each<[string, IR, string[]]>([
+    [
+      "a marked Symbol beside a census with no generated block",
+      irWithAGeneratedFile(census(2, 0, 2)),
+      ["stats.callResolution.generated"],
+    ],
+    [
+      "a marked Symbol beside no census at all",
+      irWithAGeneratedFile(undefined),
+      ["stats.callResolution"],
+    ],
+    [
+      "a generated block beside no marked Symbol",
+      irWithAGeneratedFile(withGenerated(census(2, 0, 2), census(1, 0, 1)), false),
+      ["stats.callResolution.generated", "stats.callResolution.generated.totalCalls"],
+    ],
+    [
+      "a generated block that counts calls the marked Symbols do not carry",
+      irWithAGeneratedFile(withGenerated(census(2, 0, 2), census(2, 0, 2))),
+      ["stats.callResolution.generated.totalCalls"],
+    ],
+    [
+      "a generated bucket larger than the whole's",
+      irWithAGeneratedFile(
+        withGenerated(census(2, 0, 2), {
+          totalCalls: 1,
+          resolvedCalls: 0,
+          unresolved: { localScope: 0, external: 0, dynamic: 1, ambiguous: 0, noMatch: 0 },
+        }),
+      ),
+      ["stats.callResolution.generated.unresolved"],
+    ],
+  ])("flags %s", (_what, ir, subjects) => {
+    const violations = checkIRIntegrity(ir)
+    expect(violations.filter((v) => v.invariant === 15).map((v) => v.subject)).toEqual(subjects)
   })
 })
 
