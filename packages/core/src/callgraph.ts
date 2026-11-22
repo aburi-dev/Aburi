@@ -28,6 +28,7 @@ import {
   type ResolutionRun,
   resolveTarget,
   resolveThroughDeclaredType,
+  splitTargetSegments,
 } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
 import { CoreError } from "./errors"
@@ -57,6 +58,11 @@ export interface ResolveCallGraphInput {
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
    */
   specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
+  /**
+   * By language: every file the scan read, Symbols or not, so that a specifier naming a barrel
+   * that only re-exports still reaches it.
+   */
+  moduleFiles?: ReadonlyMap<string, ReadonlySet<string>>
 }
 
 export interface ResolveCallGraphResult {
@@ -73,11 +79,13 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const run: ResolutionRun = {
-    table: buildSymbolTable(input.symbols),
+    table: buildSymbolTable(input.symbols, input.moduleFiles),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),
     mappedTargets: new Map(),
+    importsByFile: input.importsByFile,
+    exportAnswers: new Map(),
   }
 
   const nextSymbols: IRSymbol[] = []
@@ -102,13 +110,16 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
       }
       const trace = newTrace()
       const ctx = { run, caller: symbol, target: call.target, imports, parameterNames }
-      // A declared type is the untyped tier's, so a language server only lifts what it leaves.
-      let hit =
-        resolveTarget(ctx, trace) ??
+      const declaredType = () =>
         resolveThroughDeclaredType(
           ctx,
           declaredReceiverTypes.get(makeSymbolCallKey(symbol.id, call.line, call.target)),
         )
+      // A field's declared type is the untyped tier's, so a language server only lifts what it
+      // leaves. For `this.<method>` the server reads the class `this` is, inherited members
+      // included, so the class's own member answers only what its hint leaves.
+      const throughThis = isThisMember(call.target)
+      let hit = resolveTarget(ctx, trace) ?? (throughThis ? null : declaredType())
       if (hit === null) {
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
         const hinted = resolveViaLspHint(
@@ -117,7 +128,13 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
           run.table.keptSymbolIds,
         )
         if (hinted.outcome === "rejected") lspHintUsage[hinted.reason] += 1
-        if (hinted.outcome !== "hit") {
+        if (hinted.outcome === "hit") {
+          lspHintUsage.consumed += 1
+          hit = hinted.hit
+        } else if (throughThis) {
+          hit = declaredType()
+        }
+        if (hit === null) {
           diagnostics.push(
             classifyUnresolved({
               caller: symbol,
@@ -126,13 +143,12 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
               imports,
               trace,
               dynamicReceiver: dynamicCallSites.has(callSiteKey),
-              reachesWorkspace: (specifier) => mappedTargetOf(run, symbol, specifier) !== null,
+              reachesWorkspace: (specifier) =>
+                mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
             }),
           )
           return call
         }
-        lspHintUsage.consumed += 1
-        hit = hinted.hit
       }
       resolvedCalls++
       edges.push({
@@ -170,6 +186,11 @@ function assertReceiverHintKeys(hints: ReadonlyMap<string, ReceiverHint>): void 
       { code: "receiver-hint-key-malformed", value: key },
     )
   }
+}
+
+function isThisMember(target: string): boolean {
+  const segments = splitTargetSegments(target)
+  return segments.length === 2 && segments[0] === "this"
 }
 
 type LspHintOutcome =

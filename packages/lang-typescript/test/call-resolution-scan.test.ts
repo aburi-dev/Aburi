@@ -150,26 +150,37 @@ describe("scan — calls through a default import", () => {
     })
   })
 
-  it("leaves the default exports import scope does not reach unresolved, as known limits, over a namesake", async () => {
+  it("leaves a static member of an anonymous default class unresolved, over a namesake", async () => {
     const result = await callsFromMain(
       {
         "src/anon-class.ts": "export default class {\n  static run() { return 3 }\n}\n",
         "src/namesake.ts": "export class Anon {\n  run() { return 5 }\n}\n",
+      },
+      ['import Anon from "./anon-class"'],
+      ["Anon.run()"],
+    )
+    expect(result).toEqual({
+      resolved: [["Anon.run", null]],
+      unresolved: [["Anon.run", "no-match"]],
+    })
+  })
+
+  it("reaches a default export a barrel re-exports, as its default or by name", async () => {
+    const result = await callsFromMain(
+      {
         "src/impl.ts": "export default function impl() { return 4 }\n",
         "src/barrel.ts": 'export { default } from "./impl"\n',
         "src/renamed-barrel.ts": 'export { default as impl } from "./impl"\n',
       },
-      [
-        'import Anon from "./anon-class"',
-        'import viaBarrel from "./barrel"',
-        'import { impl } from "./renamed-barrel"',
-      ],
-      ["Anon.run()", "viaBarrel()", "impl()"],
+      ['import viaBarrel from "./barrel"', 'import { impl } from "./renamed-barrel"'],
+      ["viaBarrel()", "impl()"],
     )
-    const targets = ["Anon.run", "viaBarrel", "impl"]
     expect(result).toEqual({
-      resolved: targets.map((target) => [target, null]),
-      unresolved: targets.map((target) => [target, "no-match"]),
+      resolved: [
+        ["viaBarrel", "ts:src/impl.ts#impl"],
+        ["impl", "ts:src/impl.ts#impl"],
+      ],
+      unresolved: [],
     })
   })
 })
@@ -382,6 +393,39 @@ describe("scan — a call through a field of a declared type", () => {
   })
 })
 
+describe("scan — a call of a member of `this`", () => {
+  it("reaches the member the class declares, and leaves one it inherits or a rebound `this`", async () => {
+    await workspace.writeSource(
+      "src/service.ts",
+      [
+        "export class Base { load() { return 1 } }",
+        "export class UserService extends Base {",
+        "  byId(id: string) {",
+        "    this.find(id)",
+        "    this.helper(id)",
+        "    this.load()",
+        "    const later = () => this.find(id)",
+        "    return [later, function () { this.find(id) }]",
+        "  }",
+        "  find(id: string) { return id }",
+        "  helper = (id: string) => id",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const { ir } = await scanTypeScript(workspace.root)
+    const byId = ir.symbols.find((s) => s.id === "ts:src/service.ts#UserService.byId")
+    expect(byId?.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["this.find", "ts:src/service.ts#UserService.find"],
+      ["this.helper", "ts:src/service.ts#UserService.helper"],
+      ["this.load", null],
+      ["this.find", "ts:src/service.ts#UserService.find"],
+      ["this.find", null],
+    ])
+  })
+})
+
 describe("scan — a call through a tsconfig path alias", () => {
   it("reaches the Symbol the alias names, and buckets what it cannot reach by where it led", async () => {
     const result = await callsFromMain(
@@ -413,5 +457,98 @@ describe("scan — a call through a tsconfig path alias", () => {
         ["sortBy", "external"],
       ],
     })
+  })
+})
+
+describe("scan — a call through a barrel", () => {
+  it("reaches the declaration the barrel's re-exports lead to, and buckets a package's `external`", async () => {
+    const result = await callsFromMain(
+      {
+        "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "@lib/*": ["libs/*"] } } }),
+        "src/lib/index.ts": [
+          'export * from "./format"',
+          'export { total as sum } from "./math"',
+          'export { Tax } from "@lib/tax"',
+          'export { sortBy } from "lodash"',
+          'export type * from "./types"',
+          "",
+        ].join("\n"),
+        "src/lib/format.ts": "export function format() { return 1 }\n",
+        "src/lib/math.ts": "export function total() { return 2 }\n",
+        "src/lib/types.ts": "export function typed() { return 3 }\n",
+        "libs/tax.ts": "export class Tax { static rate() { return 4 } }\n",
+      },
+      ['import { format, sum, Tax, sortBy, typed } from "./lib"'],
+      ["format()", "sum()", "Tax.rate()", "sortBy()", "typed()"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["format", "ts:src/lib/format.ts#format"],
+        ["sum", "ts:src/lib/math.ts#total"],
+        ["Tax.rate", "ts:libs/tax.ts#Tax::rate"],
+        ["sortBy", null],
+        ["typed", null],
+      ],
+      unresolved: [
+        ["sortBy", "external"],
+        ["typed", "no-match"],
+      ],
+    })
+  })
+})
+
+describe("scan — a call into a workspace package by its name", () => {
+  it("reaches the file the package's manifest names, past its built ones, and none for a name two manifests share", async () => {
+    const sources: Record<string, string> = {
+      "packages/kit/src/index.ts": 'export * from "./sort"\n',
+      "packages/kit/src/sort.ts": "export function sortBy() { return 1 }\n",
+      "packages/legacy/index.ts": "export function legacy() { return 2 }\n",
+      "packages/twin-a/index.ts": "export function twin() { return 3 }\n",
+      "packages/twin-b/index.ts": "export function twin() { return 4 }\n",
+      "apps/web/use.ts": [
+        'import { sortBy, missing } from "@acme/kit"',
+        'import { legacy } from "@acme/legacy"',
+        'import { other } from "@acme/kit-extra"',
+        'import { twin } from "@acme/twin"',
+        "export function main() {",
+        "  sortBy()",
+        "  legacy()",
+        "  missing()",
+        "  other()",
+        "  twin()",
+        "}",
+        "",
+      ].join("\n"),
+    }
+    for (const [path, source] of Object.entries(sources)) await workspace.writeSource(path, source)
+    const { ir, unresolvedCalls } = await scanTypeScript(
+      workspace.root,
+      {},
+      {
+        workspacePackages: [
+          {
+            name: "@acme/kit",
+            root: "packages/kit",
+            entry: { exports: { ".": { import: "./dist/index.js", source: "./src/index.ts" } } },
+          },
+          { name: "@acme/legacy", root: "packages/legacy", entry: { main: "./index.js" } },
+          { name: "@acme/twin", root: "packages/twin-a" },
+          { name: "@acme/twin", root: "packages/twin-b" },
+        ],
+      },
+    )
+    const main = ir.symbols.find((symbol) => symbol.id === "ts:apps/web/use.ts#main")
+    expect(main?.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["sortBy", "ts:packages/kit/src/sort.ts#sortBy"],
+      ["legacy", "ts:packages/legacy/index.ts#legacy"],
+      ["missing", null],
+      ["other", null],
+      ["twin", null],
+    ])
+    expect(unresolvedCalls.map((d) => [d.target, d.bucket])).toEqual([
+      ["missing", "no-match"],
+      ["other", "external"],
+      ["twin", "external"],
+    ])
   })
 })

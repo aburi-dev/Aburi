@@ -1,3 +1,4 @@
+import { isRecord } from "./collections"
 import type { IntegrityViolation } from "./errors"
 
 type FieldSpec =
@@ -319,10 +320,6 @@ export const DOCUMENT_SUBJECT = "document"
 
 function violation(subject: string, message: string): IntegrityViolation {
   return { invariant: 20, subject: subject.replace(`${DOCUMENT_SUBJECT}.`, ""), message }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function describe(value: unknown): string {

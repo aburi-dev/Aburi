@@ -18,7 +18,7 @@ interface ClassifyUnresolvedInput {
   imports: readonly ImportEdge[]
   trace: ResolutionTrace
   dynamicReceiver: boolean
-  /** Whether a bare specifier the caller's file imports leads to a file with Symbols. */
+  /** Whether a bare specifier the caller's file imports leads to a file the scan read. */
   reachesWorkspace?: (specifier: string) => boolean
 }
 
@@ -34,14 +34,17 @@ export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCa
   if (input.dynamicReceiver || input.trace.unnamedReceiver) {
     return { ...base, bucket: "dynamic", candidates: [] }
   }
-  if (input.trace.ambiguousCandidates.size > 0) {
+  if (input.trace.ambiguousCandidates.size > 0 || input.trace.conflictingExport) {
     return {
       ...base,
       bucket: "ambiguous",
       candidates: [...input.trace.ambiguousCandidates].sort(compareCodeUnit),
     }
   }
-  if (bindsToExternalImport(input.target, input.imports, input.reachesWorkspace ?? NOWHERE)) {
+  if (
+    input.trace.reexportedFromOutside ||
+    bindsToExternalImport(input.target, input.imports, input.reachesWorkspace ?? NOWHERE)
+  ) {
     return { ...base, bucket: "external", candidates: [] }
   }
   return { ...base, bucket: "no-match", candidates: [] }

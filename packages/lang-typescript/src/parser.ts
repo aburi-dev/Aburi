@@ -5,8 +5,11 @@ import { fileURLToPath } from "node:url"
 import type { ParseError, ParseResult, SourceFile } from "@aburi/types"
 import { Language, type Node, Parser, type Tree } from "web-tree-sitter"
 import { walkDescendants } from "./ast-helpers"
-import { reparseImportTypes } from "./import-type-reparse"
-import { extractImports } from "./imports"
+import { callSignatureSeparators } from "./call-signature-separator"
+import { type ImportTypePatch, importTypePatches, rememberImportTypes } from "./import-type-reparse"
+import { extractImports, isTypeStarKeyword } from "./imports"
+import { jsxStringCommentPatches } from "./jsx-string-comment"
+import { type Patch, reparsePatched } from "./reparse"
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -122,17 +125,44 @@ function repairedOrFirst(
   source: string,
 ): { tree: Tree | null; errors: ParseError[] } {
   if (first === null || !first.rootNode.hasError) return { tree: first, errors: [] }
-  let repaired: Tree | null
-  try {
-    repaired = reparseImportTypes(parser, first, source, (t) => collectParseErrors(t).length)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    const message = `import() type reparse failed, keeping the first parse: ${reason}`
-    return { tree: first, errors: [{ message, line: 1, column: 1, recoverable: true }] }
+  let importTypes: readonly ImportTypePatch[] = []
+  const repairs: readonly (readonly [string, () => readonly Patch[]])[] = [
+    [
+      "import() types",
+      () => {
+        importTypes = importTypePatches(first)
+        return importTypes
+      },
+    ],
+    ["generic call signatures", () => callSignatureSeparators(first, source)],
+    ["JSX strings opening with <!--", () => jsxStringCommentPatches(source)],
+  ]
+  const errors: ParseError[] = []
+  let best = first
+  let kept: readonly Patch[] = []
+  // One repair at a time, each kept only where it leaves the tree less broken than those before.
+  for (const [name, patchesOf] of repairs) {
+    try {
+      const patches = patchesOf()
+      if (patches.length === 0) continue
+      const repaired = reparsePatched(parser, best, source, [...kept, ...patches], damageOf)
+      if (repaired === null) continue
+      if (best !== first) best.delete()
+      best = repaired.tree
+      kept = repaired.patches
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      const message = `reparse of ${name} failed, keeping the parse without it: ${reason}`
+      errors.push({ message, line: 1, column: 1, recoverable: true })
+    }
   }
-  if (repaired === null) return { tree: first, errors: [] }
+  if (best === first) return { tree: first, errors }
+  rememberImportTypes(
+    best,
+    importTypes.filter((patch) => kept.includes(patch)),
+  )
   first.delete()
-  return { tree: repaired, errors: [] }
+  return { tree: best, errors }
 }
 
 function pickGrammarForPath(path: string): string {
@@ -149,27 +179,38 @@ function pickGrammarForPath(path: string): string {
 }
 
 function collectParseErrors(tree: Tree): ParseError[] {
+  return reportedErrors(tree).map((node) => ({
+    message: node.isError ? "syntax error" : "missing token",
+    line: node.startPosition.row + 1,
+    column: node.startPosition.column + 1,
+    recoverable: true,
+  }))
+}
+
+/** How broken a tree reads: its errors, then how much of the file they cover. */
+function damageOf(tree: Tree): readonly [number, number] {
+  const errors = reportedErrors(tree)
+  return [errors.length, errors.reduce((sum, node) => sum + node.endIndex - node.startIndex, 0)]
+}
+
+function reportedErrors(tree: Tree): Node[] {
   const root = tree.rootNode
   if (!root.hasError) return []
-  const errors: ParseError[] = []
+  const errors: Node[] = []
   const descend = (n: Node) => n.hasError && !isTaggedTemplateEscapeArtifact(n)
   for (const node of walkDescendants(root, { anonymous: true, descend })) {
-    const message = node.isError ? "syntax error" : node.isMissing ? "missing token" : null
-    if (message === null) continue
+    if (!node.isError && !node.isMissing) continue
+    if (isTypedTagCompletion(node)) continue
     if (
       node.isError &&
       (isJsxEntityArtifact(node) ||
         isVarianceModifierArtifact(node) ||
-        isTaggedTemplateEscapeArtifact(node))
+        isTaggedTemplateEscapeArtifact(node) ||
+        isTypeStarKeyword(node))
     ) {
       continue
     }
-    errors.push({
-      message,
-      line: node.startPosition.row + 1,
-      column: node.startPosition.column + 1,
-      recoverable: true,
-    })
+    errors.push(node)
   }
   return errors
 }
@@ -187,6 +228,24 @@ function isTaggedTemplateEscapeArtifact(node: Node): boolean {
   return (
     template.parent?.type === "call_expression" &&
     template.parent.childForFieldName("arguments")?.equals(template) === true
+  )
+}
+
+/**
+ * The grammar has no tagged template with type arguments (`` sql<Row[]>`…` ``), and completes the
+ * instantiation into a callable with a `!` of its own.
+ */
+function isTypedTagCompletion(node: Node): boolean {
+  const asserted = node.parent
+  const call = asserted?.parent
+  return (
+    node.isMissing &&
+    node.type === "!" &&
+    asserted?.type === "non_null_expression" &&
+    asserted.child(0)?.type === "instantiation_expression" &&
+    call?.type === "call_expression" &&
+    call.childForFieldName("function")?.equals(asserted) === true &&
+    call.childForFieldName("arguments")?.type === "template_string"
   )
 }
 

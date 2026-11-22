@@ -252,8 +252,11 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     }
 
     log.debug(`scan/pipeline: ${file.path} produced ${symbols.length} symbols`)
+    // A call resolves through the file's own imports, and through its re-exports when it is a barrel.
+    const resolvesThrough =
+      symbols.some((symbol) => symbol.calls.length > 0) || writtenImports.some(reexportsAny)
     const specifierPaths =
-      origins === undefined || !symbols.some((symbol) => symbol.calls.length > 0)
+      origins === undefined || !resolvesThrough
         ? []
         : await deadline.excluding(() => origins.mapSpecifiers(file.path, writtenImports))
 
@@ -276,6 +279,10 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       releaseParsedTree(language, parseResult.tree, file, input.treeReleaseFailures)
     }
   }
+}
+
+function reexportsAny(edge: ImportEdge): boolean {
+  return edge.reexportsAll === true || (edge.reexports?.length ?? 0) > 0
 }
 
 export function releaseParsedTree(

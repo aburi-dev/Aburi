@@ -1,5 +1,6 @@
 import { importEdge, sig } from "@aburi/test-support"
 import type { ImportEdge, Symbol as IRSymbol, Signature } from "@aburi/types"
+import type { CallEdge } from "../../src/callgraph"
 import { makeSymbol, type SymbolOverrides } from "./ir"
 
 export function withCalls(
@@ -24,4 +25,9 @@ export function importsOf(
 
 export function params(...names: string[]): Signature {
   return sig({ inputs: names.map((name) => ({ name, type: "unknown" })) })
+}
+
+/** Each call edge as its caller, its callee and its confidence. */
+export function edgesOf(result: { readonly edges: readonly CallEdge[] }): string[][] {
+  return result.edges.map((edge) => [edge.from, edge.to, edge.confidence])
 }

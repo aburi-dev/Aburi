@@ -26,6 +26,25 @@ describe("readWorkspacePackages", () => {
     ])
   })
 
+  it("keeps the fields that name the package's entry points, as written", async () => {
+    const exports = { ".": { source: "./src/index.ts", default: "./dist/index.js" } }
+    await tree.writeJson("packages/web/package.json", {
+      name: "@acme/web",
+      version: "1.0.0",
+      main: "./dist/index.cjs",
+      types: 42,
+      exports,
+    })
+
+    expect(await readWorkspacePackages(tree.root, ["packages/web"])).toEqual([
+      {
+        name: "@acme/web",
+        root: "packages/web",
+        entry: { exports, main: "./dist/index.cjs", types: 42 },
+      },
+    ])
+  })
+
   it.each([
     ["has no package.json", null],
     ["declares no name", { version: "1.0.0" }],

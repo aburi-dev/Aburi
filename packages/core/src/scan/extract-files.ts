@@ -35,7 +35,7 @@ export async function extractFiles(input: ExtractFilesInput): Promise<ExtractedF
     files: input.files,
     config: input.config,
     components: input.components,
-    workspacePackageNames: input.workspacePackageNames,
+    workspacePackages: input.workspacePackages,
   }
   const collator = new ExtractionCollator(input.files, input.logger)
   const total = input.files.length

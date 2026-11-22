@@ -14,7 +14,7 @@ import {
   resolveRelativeSpecifier,
 } from "../callgraph-specifier"
 import { toNfc } from "../codepoints"
-import { packageName } from "../component-manifest"
+import { packageName, type WorkspacePackage } from "../component-manifest"
 import { decoratorReference, splitAliasedImportName } from "../import-edge"
 import type { DiscoveredFile } from "./discover"
 import {
@@ -26,6 +26,7 @@ import {
 } from "./extraction-events"
 import { describeJsonType, describeThrown } from "./faults"
 import { normalizeImportEdge } from "./normalize"
+import { packageEntryPaths } from "./package-entry"
 import { releaseParsedTree, type TreeReleaseFailure } from "./pipeline"
 import type { LanguageRouter } from "./route"
 
@@ -35,7 +36,7 @@ export interface ImportOriginsInput {
   workspaceRoot: string
   installedRoot?: string
   files: readonly DiscoveredFile[]
-  workspacePackageNames: readonly string[]
+  workspacePackages: readonly WorkspacePackage[]
   router: LanguageRouter
   loadSource(file: DiscoveredFile): Promise<SourceFile>
   record(event: ExtractionEvent): void
@@ -44,6 +45,14 @@ export interface ImportOriginsInput {
 interface Hop {
   readonly source: string
   readonly imported: string
+}
+
+function packagesByName(
+  packages: readonly WorkspacePackage[],
+): ReadonlyMap<string, WorkspacePackage | null> {
+  const byName = new Map<string, WorkspacePackage | null>()
+  for (const pkg of packages) byName.set(pkg.name, byName.has(pkg.name) ? null : pkg)
+  return byName
 }
 
 /** Where a specifier leads: a workspace file, out of the workspace, or nowhere the resolver could say. */
@@ -60,7 +69,8 @@ export class ImportOrigins {
   readonly #input: ImportOriginsInput
   readonly #files: ReadonlyMap<string, DiscoveredFile>
   readonly #knownFiles: ReadonlySet<string>
-  readonly #workspacePackages: ReadonlySet<string>
+  /** By name; null for a name several manifests share, which leaves no way to tell them apart. */
+  readonly #workspacePackages: ReadonlyMap<string, WorkspacePackage | null>
   readonly #resolvers = new Map<Language, ImportResolver | "none" | "fault">()
   readonly #edges = new AsyncMemo<string, readonly ImportEdge[]>()
   readonly #targets = new AsyncMemo<string, Target>()
@@ -70,7 +80,7 @@ export class ImportOrigins {
     this.#input = input
     this.#files = new Map(input.files.map((file) => [file.path, file]))
     this.#knownFiles = new Set(this.#files.keys())
-    this.#workspacePackages = new Set(input.workspacePackageNames)
+    this.#workspacePackages = packagesByName(input.workspacePackages)
   }
 
   remember(path: string, edges: readonly ImportEdge[]): void {
@@ -98,7 +108,10 @@ export class ImportOrigins {
     })
   }
 
-  /** What the file's language maps each bare specifier it imports names through to. */
+  /**
+   * What the file's language maps each bare specifier it imports names through to, then, for a
+   * workspace package's name, the files its manifest names, which the language looks up last.
+   */
   async mapSpecifiers(
     fromFile: string,
     imports: readonly ImportEdge[],
@@ -109,8 +122,9 @@ export class ImportOrigins {
       if (dynamic || isRelativeSpecifier(source) || asked.has(source)) continue
       if (symbols !== "*" && symbols.length === 0) continue
       asked.add(source)
-      const paths = await this.#mappedPaths(fromFile, source)
-      if (paths !== "fault" && paths.length > 0) out.push([source, paths])
+      const mapped = await this.#mappedPaths(fromFile, source)
+      const paths = [...(mapped === "fault" ? [] : mapped), ...this.#packagePaths(source)]
+      if (paths.length > 0) out.push([source, paths])
     }
     return out
   }
@@ -141,7 +155,13 @@ export class ImportOrigins {
     }
   }
 
-  // The core reads no package's entry points, so a workspace package's name ends the chain unread.
+  #packagePaths(specifier: string): readonly string[] {
+    const name = packageName(specifier)
+    const pkg = name === null ? null : this.#workspacePackages.get(name)
+    return pkg == null ? [] : packageEntryPaths(pkg, specifier)
+  }
+
+  // An origin names a package outside the workspace, so a workspace package's name ends the chain.
   #isForeign(specifier: string): boolean {
     if (isRelativeSpecifier(specifier)) return false
     const name = packageName(specifier)

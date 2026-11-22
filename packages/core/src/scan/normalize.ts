@@ -106,6 +106,7 @@ export function normalizeImportEdge(written: Omit<ImportEdge, "origins">): Impor
   const next: ImportEdge = { source, symbols, line: written.line, dynamic: written.dynamic }
   if (namespaceBinding !== undefined) next.namespaceBinding = namespaceBinding
   if (reexports !== undefined) next.reexports = reexports
+  if (written.reexportsAll !== undefined) next.reexportsAll = written.reexportsAll
   return next
 }
 
