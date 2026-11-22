@@ -19,6 +19,7 @@ import type {
   WalkContext,
 } from "@aburi/types"
 import type { CallSiteBinding, DeclaredReceiverType } from "../call-site"
+import type { Superclass } from "../callgraph-index"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
@@ -43,6 +44,8 @@ export interface ExtractedFile extends FileOutcomeCommon {
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
   declaredReceiverTypes: readonly DeclaredReceiverType[]
+  /** Each class the file declares that extends a named class, dropped or kept. */
+  superclasses: readonly Superclass[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -143,6 +146,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         declinedCalls: [],
         thisBindings: [],
         declaredReceiverTypes: [],
+        superclasses: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -159,6 +163,9 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         ? writtenImports
         : await deadline.excluding(() => origins.attach(file, writtenImports, candidates))
 
+    const superclasses = candidates.flatMap(({ id, superclass }): Superclass[] =>
+      superclass === undefined ? [] : [[id, superclass]],
+    )
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
@@ -271,6 +278,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       declinedCalls,
       thisBindings,
       declaredReceiverTypes,
+      superclasses,
       specifierPaths,
       fault: null,
     }

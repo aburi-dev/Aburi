@@ -65,3 +65,53 @@ describe("normalizeAst — a class's head", () => {
     expect(normalizeAst(symbol)).toBe(bodyOnly)
   })
 })
+
+describe("a class names the class it extends", () => {
+  it.each([
+    ["a name", `export class C extends Base ${BODY}`, "ts:src/a.ts#C", "Base"],
+    [
+      "an imported name with type arguments",
+      `import { Base } from "./base"\nexport class C extends Base<string> ${BODY}`,
+      "ts:src/a.ts#C",
+      "Base",
+    ],
+    [
+      "a namespace import's member",
+      `import * as ns from "./base"\nexport class C extends ns.Base<string> ${BODY}`,
+      "ts:src/a.ts#C",
+      "ns.Base",
+    ],
+    [
+      "a class a binding holds",
+      `export const C = class extends Base ${BODY}`,
+      "ts:src/a.ts#C",
+      "Base",
+    ],
+    [
+      "an anonymous default class",
+      `export default class extends Base ${BODY}`,
+      "ts:src/a.ts#<default>",
+      "Base",
+    ],
+    [
+      "a namespace's class extending a class the module declares",
+      `class Base {}\nexport namespace N {\n  export class C extends Base ${BODY}\n}`,
+      "ts:src/a.ts#N.C",
+      "Base",
+    ],
+  ])("as the module binds it, through %s", async (_label, source, id, superclass) => {
+    expect((await symbolOf(source, id)).superclass).toBe(superclass)
+  })
+
+  it.each([
+    ["no `extends`", `export class C implements Reader ${BODY}`, "ts:src/a.ts#C"],
+    ["a call", `export class C extends mixin(Base) ${BODY}`, "ts:src/a.ts#C"],
+    [
+      "a class the namespace declares",
+      `export namespace N {\n  class Base {}\n  export class C extends Base ${BODY}\n}`,
+      "ts:src/a.ts#N.C",
+    ],
+  ])("is absent for %s", async (_label, source, id) => {
+    expect(await symbolOf(source, id)).not.toHaveProperty("superclass")
+  })
+})

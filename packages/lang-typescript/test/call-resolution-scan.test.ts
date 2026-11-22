@@ -415,7 +415,7 @@ describe("scan — a call through a field of a declared type", () => {
 })
 
 describe("scan — a call of a member of `this`", () => {
-  it("reaches the member the class declares, and leaves one it inherits or a rebound `this`", async () => {
+  it("reaches the member the class declares or inherits, and leaves a rebound `this`", async () => {
     await workspace.writeSource(
       "src/service.ts",
       [
@@ -440,10 +440,43 @@ describe("scan — a call of a member of `this`", () => {
     expect(byId?.calls.map((call) => [call.target, call.resolved])).toEqual([
       ["this.find", "ts:src/service.ts#UserService.find"],
       ["this.helper", "ts:src/service.ts#UserService.helper"],
-      ["this.load", null],
+      ["this.load", "ts:src/service.ts#Base.load"],
       ["this.find", "ts:src/service.ts#UserService.find"],
       ["this.find", null],
     ])
+  })
+})
+
+describe("scan — a call of a member a class inherits", () => {
+  it("reaches the nearest class up the chain that declares it, each bound where its class is", async () => {
+    const result = await callsFromMain(
+      {
+        "src/base.ts": [
+          "export class Repository {",
+          "  find(id: string) { return id }",
+          "  save(id: string) { return id }",
+          "}",
+          "",
+        ].join("\n"),
+        "src/admin.ts": [
+          'import { Repository } from "./base"',
+          "export class AdminRepository extends Repository {",
+          "  save(id: string) { return id }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      ['import { AdminRepository } from "./admin"'],
+      ["const repo = new AdminRepository()", 'repo.find("a")', 'repo.save("a")'],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["AdminRepository", "ts:src/admin.ts#AdminRepository"],
+        ["repo.find", "ts:src/base.ts#Repository.find"],
+        ["repo.save", "ts:src/admin.ts#AdminRepository.save"],
+      ],
+      unresolved: [],
+    })
   })
 })
 

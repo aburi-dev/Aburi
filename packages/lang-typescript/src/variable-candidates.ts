@@ -17,6 +17,7 @@ import { readLeadingJsDoc } from "./leading-jsdoc"
 import { objectEntryOf, objectLiteralOf } from "./object-members"
 import { collectPatternBindings } from "./pattern-bindings"
 import { makeTsSymbolId, nestedQname } from "./qname"
+import { superclassOf } from "./receiver-type"
 import { buildSignature } from "./signature"
 
 export function makeVariableCandidates(
@@ -74,6 +75,7 @@ function makeVariableCandidate(
   }
   const classNode = initializer === null ? null : asClassValue(initializer)
   if (classNode !== null) {
+    const superclass = superclassOf(classNode)
     return [
       {
         id,
@@ -87,6 +89,7 @@ function makeVariableCandidate(
         derivedBy: ["variable-assigned-class", ...exportEvidence(statement)],
         bodyNode: classNode.childForFieldName("body"),
         fullNode: classNode,
+        ...(superclass === null ? {} : { superclass }),
       },
       ...classMemberCandidates(classNode, ctx, [...namespacePath, name]),
     ]

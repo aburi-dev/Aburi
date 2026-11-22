@@ -223,8 +223,108 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
     expect(result.lspHintUsage).toEqual({ consumed: 0, ...rejected })
   })
 
-  it("leaves a member the class only inherits unresolved without a hint", () => {
+  it("leaves a member the class only inherits unresolved without a hint, when it extends no class", () => {
     const result = resolveThis(service.slice(0, 1))
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
+
+describe("a call through a receiver of a declared type, to a member its class inherits", () => {
+  const USER = "ts:src/repo.ts#UserRepository"
+  const MIDDLE = "ts:src/repo.ts#Middle"
+  const BASE = "ts:src/base.ts#BaseRepository"
+  const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
+  const method = (id: string, overrides: SymbolOverrides = {}) =>
+    makeSymbol(id, { kind: "method", ...overrides })
+  const FROM_BASE: ImportClause = { source: "./base", symbols: ["BaseRepository"] }
+
+  function resolveInherited(
+    symbols: readonly IRSymbol[],
+    superclasses: ReadonlyArray<readonly [string, string]>,
+    imports: { service?: ImportClause[]; repo?: ImportClause[] } = {},
+  ) {
+    return resolve(symbols, {
+      importsByFile: new Map([
+        ["src/service.ts", [FROM_REPO, ...(imports.service ?? [])].map(importEdge)],
+        ["src/repo.ts", (imports.repo ?? []).map(importEdge)],
+      ]),
+      superclasses: new Map(superclasses.map(([id, superclass]) => [symbolId(id), superclass])),
+    })
+  }
+
+  it.each<[string, readonly IRSymbol[], ReadonlyArray<readonly [string, string]>, string]>([
+    [
+      "the class its file imports and extends",
+      [...classes(USER, BASE), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      `${BASE}.find`,
+    ],
+    [
+      "a class two levels up",
+      [...classes(USER, MIDDLE, BASE), method(`${BASE}.find`)],
+      [
+        [USER, "Middle"],
+        [MIDDLE, "BaseRepository"],
+      ],
+      `${BASE}.find`,
+    ],
+    [
+      "the nearest class that declares it",
+      [...classes(USER, MIDDLE, BASE), method(`${MIDDLE}.find`), method(`${BASE}.find`)],
+      [
+        [USER, "Middle"],
+        [MIDDLE, "BaseRepository"],
+      ],
+      `${MIDDLE}.find`,
+    ],
+  ])("resolves to the member of %s, at medium confidence", (_case, symbols, superclasses, to) => {
+    const result = resolveInherited(symbols, superclasses, { repo: [FROM_BASE] })
+    expect(edgesOf(result)).toEqual([[CALLER, to, "medium"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it.each<
+    [
+      string,
+      readonly IRSymbol[],
+      ReadonlyArray<readonly [string, string]>,
+      { service?: ImportClause[]; repo?: ImportClause[] },
+    ]
+  >([
+    [
+      "a member the class declares, though a drop rule removed it",
+      [
+        ...classes(USER, BASE),
+        method(`${USER}.find`, { dropped: true, dropReason: "empty body" }),
+        method(`${BASE}.find`),
+      ],
+      [[USER, "BaseRepository"]],
+      { repo: [FROM_BASE] },
+    ],
+    [
+      "a superclass the caller's file binds and the class's does not",
+      [...classes(USER, BASE), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      { service: [FROM_BASE] },
+    ],
+    [
+      "a superclass name that binds no class",
+      [makeSymbol(BASE, { kind: "function" }), ...classes(USER), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      { repo: [FROM_BASE] },
+    ],
+    [
+      "classes that extend each other",
+      classes(USER, MIDDLE),
+      [
+        [USER, "Middle"],
+        [MIDDLE, "UserRepository"],
+      ],
+      {},
+    ],
+  ])("leaves the call unresolved and `dynamic` for %s", (_case, symbols, superclasses, imports) => {
+    const result = resolveInherited(symbols, superclasses, imports)
     expect(result.edges).toEqual([])
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
   })

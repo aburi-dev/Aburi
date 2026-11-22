@@ -4,6 +4,7 @@ import type {
   Symbol as IRSymbol,
   Logger,
   ParseError,
+  SymbolId,
   ThisBinding,
 } from "@aburi/types"
 import type { DeclaredReceiverTypes, ThisBindingSites } from "../call-site"
@@ -44,6 +45,8 @@ export interface ExtractedFiles {
   declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
   declaredReceiverTypes: DeclaredReceiverTypes
+  /** By class Symbol id: the name of the class it extends. */
+  superclasses: Map<SymbolId, string>
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
@@ -77,6 +80,7 @@ export class ExtractionCollator {
     declinedCalls: [],
     thisBindings: this.#thisBindings,
     declaredReceiverTypes: this.#declaredReceiverTypes,
+    superclasses: new Map(),
     specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
@@ -274,6 +278,7 @@ export class ExtractionCollator {
         for (const [key, type] of result.declaredReceiverTypes) {
           this.#declaredReceiverTypes.set(key, type)
         }
+        for (const [id, superclass] of result.superclasses) out.superclasses.set(id, superclass)
         if (result.specifierPaths.length > 0) {
           out.specifierPaths.set(result.path, new Map(result.specifierPaths))
         }

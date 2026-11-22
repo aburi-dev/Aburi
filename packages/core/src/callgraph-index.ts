@@ -6,7 +6,12 @@ type FilePath = string
 type ComponentKey = string
 type ByName = ReadonlyMap<string, readonly IRSymbol[]>
 
+/** A class Symbol's id and the name of the class it extends. */
+export type Superclass = readonly [classId: SymbolId, superclass: string]
+
 export interface SymbolTable {
+  /** Dropped Symbols included: a member a class declares hides its superclass's, kept or not. */
+  symbolIds: ReadonlySet<SymbolId>
   keptSymbolIds: ReadonlySet<SymbolId>
   keptById: ReadonlyMap<SymbolId, IRSymbol>
   topLevelByFile: ReadonlyMap<FilePath, ByName>
@@ -30,6 +35,7 @@ export function buildSymbolTable(
       (symbol) => symbol.source.file,
     )
   return {
+    symbolIds: new Set(symbols.map((symbol) => symbol.id)),
     keptSymbolIds: new Set(kept.map((symbol) => symbol.id)),
     keptById: new Map(kept.map((symbol) => [symbol.id, symbol])),
     topLevelByFile: mapValues(topLevelPerFile(kept), byName),

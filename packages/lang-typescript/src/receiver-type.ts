@@ -64,14 +64,23 @@ function isConst(declarator: Node): boolean {
   )
 }
 
-// `new` reads a value, so the class is the one the module binds under that name only when no scope
-// between the call and the module binds the name to something else.
 function constructedClass(value: Node | null): string | null {
   if (value?.type !== "new_expression") return null
-  const callee = value.childForFieldName("constructor")
-  const name = callee === null ? null : dottedName(callee)
-  if (callee === null || name === null) return null
-  const binding = bindingOf(callee, headOf(name))
+  return moduleClassName(value.childForFieldName("constructor"))
+}
+
+export function superclassOf(classNode: Node): string | null {
+  const heritage = classNode.namedChildren.find((child) => child?.type === "class_heritage")
+  const clause = heritage?.namedChildren.find((child) => child?.type === "extends_clause")
+  return moduleClassName(clause?.childForFieldName("value") ?? null)
+}
+
+// `new` and `extends` read a value, so the class is the one the module binds under that name only
+// when no scope between the expression and the module binds the name to something else.
+function moduleClassName(expression: Node | null): string | null {
+  const name = expression === null ? null : dottedName(expression)
+  if (expression === null || name === null) return null
+  const binding = bindingOf(expression, headOf(name))
   return binding === null || binding.scope.type === "program" ? name : null
 }
 

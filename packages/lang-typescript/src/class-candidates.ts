@@ -24,6 +24,7 @@ import { readDecorators } from "./decorators"
 import { exportEvidence, exportVisibility, memberVisibility } from "./export-evidence"
 import { readLeadingJsDoc } from "./leading-jsdoc"
 import { classMemberQname, makeTsSymbolId } from "./qname"
+import { superclassOf } from "./receiver-type"
 import { buildSignature } from "./signature"
 
 export function addClassAndMembers(
@@ -47,6 +48,7 @@ export function makeClassCandidate(
   evidence: readonly string[],
   ctx: ExtractionContext,
 ): SymbolCandidate<Node> {
+  const superclass = superclassOf(node)
   return {
     id: makeTsSymbolId(ctx.file.path, qname),
     kind: "class",
@@ -59,6 +61,7 @@ export function makeClassCandidate(
     derivedBy: [...evidence],
     bodyNode: node.childForFieldName("body"),
     fullNode: node,
+    ...(superclass === null ? {} : { superclass }),
   }
 }
 

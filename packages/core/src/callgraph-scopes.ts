@@ -60,6 +60,8 @@ export interface ResolutionRun {
   importsByFile: ReadonlyMap<string, readonly ImportEdge[]>
   /** By language, file and name: where a module's export of the name is declared. */
   exportAnswers: Map<string, ExportAnswer>
+  /** By class Symbol id: the name of the class it extends, bound in the class's own file. */
+  superclasses: ReadonlyMap<SymbolId, string>
 }
 
 export interface ResolveTargetContext {
@@ -106,24 +108,52 @@ export function resolveThroughDeclaredType(
   if (type === undefined) return null
   const segments = splitTargetSegments(ctx.target)
   const member = segments.at(-1)
+  if (segments.length < 2 || member === undefined) return null
+  const seen = new Set<SymbolId>()
+  for (let owner = boundClass(ctx, type); owner !== null; owner = superclassOf(ctx.run, owner)) {
+    if (seen.has(owner.id)) return null
+    seen.add(owner.id)
+    const id = trySymbolId({
+      language: owner.language,
+      file: owner.source.file,
+      qualifiedName: `${owner.name}.${member}`,
+    })
+    if (id === null) return null
+    // The value may be a subclass's, whose override then runs.
+    if (ctx.run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
+    // A member the class declares hides the superclass's, though a drop rule removed it.
+    if (ctx.run.table.symbolIds.has(id)) return null
+  }
+  return null
+}
+
+// Not component or workspace scope: matching a type by its spelling could only find a namesake.
+function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
   const [head, ...tail] = splitTargetSegments(type)
-  if (segments.length < 2 || member === undefined || head === undefined) return null
+  if (head === undefined) return null
   const typeCtx = { ...ctx, target: type }
-  // Not component or workspace scope: matching a type by its spelling could only find a namesake.
   const trace = newTrace()
   const bound =
     resolveInFileScope(typeCtx, head, tail, trace) ??
     resolveInImportScope(typeCtx, head, tail, trace)
   const owner = bound?.hit == null ? undefined : ctx.run.table.keptById.get(bound.hit.id)
-  if (owner?.kind !== "class") return null
-  const id = trySymbolId({
-    language: owner.language,
-    file: owner.source.file,
-    qualifiedName: `${owner.name}.${member}`,
-  })
-  if (id === null || !ctx.run.table.keptSymbolIds.has(id)) return null
-  // The value may be a subclass's, whose override then runs.
-  return { id, confidence: "medium" }
+  return owner?.kind === "class" ? owner : null
+}
+
+// The class's own file binds the name it extends, by its declarations and its imports.
+function superclassOf(run: ResolutionRun, owner: IRSymbol): IRSymbol | null {
+  const superclass = run.superclasses.get(owner.id)
+  if (superclass === undefined) return null
+  return boundClass(
+    {
+      run,
+      caller: owner,
+      target: superclass,
+      imports: run.importsByFile.get(owner.source.file) ?? [],
+      parameterNames: EMPTY_NAME_SET,
+    },
+    superclass,
+  )
 }
 
 interface BoundHead {

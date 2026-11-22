@@ -108,6 +108,8 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
   bodyNode: TNode | null
   mergedDeclarations?: MergedDeclaration<TNode>[]
   fullNode: TNode
+  /** For a class: the class it extends, named as the module binds it, type arguments aside. */
+  superclass?: string
 }
 
 /** The nodes of one declaration that merged into a Symbol another declaration leads. */
