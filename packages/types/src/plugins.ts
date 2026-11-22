@@ -108,6 +108,18 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
   bodyNode: TNode | null
   mergedDeclarations?: MergedDeclaration<TNode>[]
   fullNode: TNode
+  /**
+   * For a class: the name its `extends` writes, type arguments aside, as the module binds it.
+   * Absent for a class that extends nothing, or anything but a name or a member of one, and for a
+   * name a scope between the class and the module binds.
+   */
+  superclass?: string
+  /**
+   * For a class with a `superclass`: every instance member it declares, by name, a Symbol or not
+   * (a method, an accessor, a field, a parameter property, a name its code assigns to `this`), each
+   * of which hides the one the class inherits. A field written only with its type is none.
+   */
+  instanceMembers?: string[]
 }
 
 /** The nodes of one declaration that merged into a Symbol another declaration leads. */

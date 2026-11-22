@@ -33,14 +33,30 @@ function normalizeCandidateStrings(
 ): SymbolCandidate<OpaqueAstNode> {
   const signature = normalizeSignatureStrings(candidate.signature)
   const decorators = normalizeDecoratorNames(candidate.decorators)
+  const written = candidate.superclass
+  const superclass = typeof written === "string" ? toNfc(written) : written
+  const members = candidate.instanceMembers
+  const instanceMembers = Array.isArray(members)
+    ? mapPreservingIdentity(members, (name) => (typeof name === "string" ? toNfc(name) : name))
+    : members
   if (
     file === candidate.source.file &&
     signature === candidate.signature &&
-    decorators === candidate.decorators
+    decorators === candidate.decorators &&
+    superclass === written &&
+    instanceMembers === members
   ) {
     return candidate
   }
-  return { ...candidate, source: { ...candidate.source, file }, signature, decorators }
+  const next: SymbolCandidate<OpaqueAstNode> = {
+    ...candidate,
+    source: { ...candidate.source, file },
+    signature,
+    decorators,
+  }
+  if (superclass !== undefined) next.superclass = superclass
+  if (instanceMembers !== undefined) next.instanceMembers = instanceMembers
+  return next
 }
 
 function mapPreservingIdentity<L extends readonly unknown[]>(

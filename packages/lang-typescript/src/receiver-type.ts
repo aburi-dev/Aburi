@@ -1,6 +1,8 @@
 import type { ThisBinding } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
+import { isParameterProperty } from "./class-members"
+import { bindingOf, isModuleBinding, PARAMETER_TYPES } from "./name-binding"
 
 const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "function_expression",
@@ -9,10 +11,6 @@ const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "generator_function_declaration",
 ])
 
-const PARAMETER_PROPERTY_MODIFIERS = ["accessibility_modifier", "override_modifier", "readonly"]
-
-const PARAMETER_TYPES: ReadonlySet<string> = new Set(["required_parameter", "optional_parameter"])
-
 interface ThisScope {
   readonly classBody: Node
   readonly isStatic: boolean
@@ -20,12 +18,11 @@ interface ThisScope {
   readonly declaresThis: boolean
 }
 
-// Only `this` and `this.<field>` are read: the class `this` is a value of is found by walking up,
-// where a plain name would need a scope resolver to tell its declaration from what shadows it.
 export function receiverTypeOf(callee: Node): string | null {
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
   if (receiver?.type === "this") return instanceClassOf(receiver)
+  if (receiver?.type === "identifier") return nameTypeOf(receiver)
   if (receiver?.type !== "member_expression") return null
   if (receiver.childForFieldName("object")?.type !== "this") return null
   const field = receiver.childForFieldName("property")
@@ -34,6 +31,54 @@ export function receiverTypeOf(callee: Node): string | null {
   if (scope === null || scope.declaresThis) return null
   const type = declaredType(scope, field.text)
   return type === null || isShadowed(scope.classBody, headOf(type)) ? null : type
+}
+
+// A name is a value of the type its one declaration gives it: a parameter's or a variable's
+// annotation, or the class a `const` is constructed from, which it holds for as long as it is bound.
+function nameTypeOf(name: Node): string | null {
+  const [declaration, ...others] = bindingOf(name, name.text)?.declarations ?? []
+  if (declaration === undefined || others.length > 0) return null
+  if (declaration.type === "variable_declarator") {
+    if (declaration.childForFieldName("name")?.type !== "identifier") return null
+    if (declaration.childForFieldName("type") !== null) return annotatedType(declaration)
+    return isConst(declaration) ? constructedClass(declaration.childForFieldName("value")) : null
+  }
+  if (!PARAMETER_TYPES.has(declaration.type)) return null
+  if (declaration.childForFieldName("pattern")?.type !== "identifier") return null
+  return annotatedType(declaration)
+}
+
+function annotatedType(declaration: Node): string | null {
+  const type = namedType(declaration)
+  return type === null || isShadowed(declaration, headOf(type)) ? null : type
+}
+
+function isConst(declarator: Node): boolean {
+  const declaration = declarator.parent
+  return (
+    declaration?.type === "lexical_declaration" &&
+    declaration.childForFieldName("kind")?.type === "const"
+  )
+}
+
+function constructedClass(value: Node | null): string | null {
+  if (value?.type !== "new_expression") return null
+  return moduleClassName(value.childForFieldName("constructor"))
+}
+
+export function superclassOf(classNode: Node): string | null {
+  const heritage = classNode.namedChildren.find((child) => child?.type === "class_heritage")
+  const clause = heritage?.namedChildren.find((child) => child?.type === "extends_clause")
+  return moduleClassName(clause?.childForFieldName("value") ?? null)
+}
+
+// `new` and `extends` read a value, so the class is the one the module binds under that name only
+// when no scope between the expression and the module binds the name to something else.
+function moduleClassName(expression: Node | null): string | null {
+  const name = expression === null ? null : dottedName(expression)
+  if (expression === null || name === null) return null
+  const binding = bindingOf(expression, headOf(name))
+  return binding === null || isModuleBinding(binding) ? name : null
 }
 
 export function thisBindingAt(node: Node): ThisBinding | null {
@@ -117,10 +162,10 @@ function declaredType(scope: ThisScope, name: string): string | null {
   return null
 }
 
-// A reader binds the type's name where the module binds it, so a name a scope between the class
-// and the module declares is another type there.
-function isShadowed(classBody: Node, name: string): boolean {
-  for (let node = classBody.parent; node !== null; node = node.parent) {
+// A reader binds the type's name where the module binds it, so a name a scope between the
+// declaration and the module declares is another type there.
+function isShadowed(declaration: Node, name: string): boolean {
+  for (let node = declaration.parent; node !== null; node = node.parent) {
     const parameters = node.childForFieldName("type_parameters")?.namedChildren ?? []
     if (parameters.some((parameter) => parameter?.childForFieldName("name")?.text === name)) {
       return true
@@ -180,10 +225,7 @@ function parameterProperty(construction: Node, name: string): Node | null {
   for (const parameter of parameters) {
     if (parameter === null) continue
     if (parameter.childForFieldName("pattern")?.text !== name) continue
-    const isProperty = PARAMETER_PROPERTY_MODIFIERS.some((modifier) =>
-      hasChildOfType(parameter, modifier),
-    )
-    return isProperty ? parameter : null
+    return isParameterProperty(parameter) ? parameter : null
   }
   return null
 }
@@ -191,7 +233,26 @@ function parameterProperty(construction: Node, name: string): Node | null {
 function namedType(declaration: Node): string | null {
   const annotation = declaration.childForFieldName("type")
   const type = annotation === null ? null : firstNonCommentChild(annotation)
-  return type === null ? null : typeName(type)
+  return type === null ? null : typeName(withoutNullish(type))
+}
+
+// `T | undefined` and `T | null` hold a `T` whenever a member can be called on them.
+function withoutNullish(type: Node): Node {
+  if (type.type !== "union_type") return type
+  const members = unionMembers(type).filter((member) => !isNullish(member))
+  return members.length === 1 && members[0] !== undefined ? members[0] : type
+}
+
+function unionMembers(type: Node): Node[] {
+  return type.namedChildren.flatMap((member) => {
+    if (member === null || member.type === "comment") return []
+    return member.type === "union_type" ? unionMembers(member) : [member]
+  })
+}
+
+function isNullish(type: Node): boolean {
+  const value = type.type === "literal_type" ? firstNonCommentChild(type) : null
+  return value?.type === "null" || value?.type === "undefined"
 }
 
 function typeName(type: Node): string | null {
@@ -209,6 +270,7 @@ const NAME_TYPES: ReadonlySet<string> = new Set([
 const DOTTED_NAME_FIELDS: ReadonlyMap<string, readonly [string, string]> = new Map([
   ["nested_identifier", ["object", "property"]],
   ["nested_type_identifier", ["module", "name"]],
+  ["member_expression", ["object", "property"]],
 ])
 
 // Read off the name's parts rather than its text, which keeps the spaces and comments around a `.`.

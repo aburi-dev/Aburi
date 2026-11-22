@@ -1,4 +1,4 @@
-import type { ThisBinding } from "@aburi/types"
+import type { SymbolId, ThisBinding } from "@aburi/types"
 
 export const CALL_SITE_KEY_SEPARATOR = "\t"
 
@@ -27,6 +27,20 @@ export type DeclaredReceiverType = readonly [key: string, type: string]
  * do not all name one type is left out, since which call a type was written for is lost.
  */
 export type DeclaredReceiverTypes = ReadonlyMap<string, string>
+
+/**
+ * A class that extends another: the name its `extends` writes, bound where the class is declared,
+ * and the instance members it declares itself, a Symbol or not, which hide the ones it inherits.
+ */
+export interface ClassHeritage {
+  readonly superclass: string
+  readonly instanceMembers: readonly string[]
+}
+
+/** By class Symbol id: what each class that extends another extends. */
+export type ClassHeritages = ReadonlyMap<SymbolId, ClassHeritage>
+
+export type ClassHeritageEntry = readonly [classId: SymbolId, heritage: ClassHeritage]
 
 export function receiverHead(target: string): string | undefined {
   return target.split(".").find((segment) => segment.length > 0)

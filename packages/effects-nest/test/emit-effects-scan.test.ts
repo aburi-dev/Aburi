@@ -94,6 +94,40 @@ describe("scan — event emitters in a NestJS service file", () => {
     expect(create.calls.map((c) => c.target)).toEqual(["this.server.emit"])
   })
 
+  it("publishes through a parameter or a local declared as EventEmitter2, and leaves a socket parameter a call", async () => {
+    await workspace.writeSource(
+      "src/publish.ts",
+      [
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        'import type { Server } from "socket.io"',
+        "",
+        "export function publish(bus: EventEmitter2, server: Server) {",
+        "  const local = new EventEmitter2()",
+        '  bus.emit("order.created", 1)',
+        '  local.emit("order.created", 2)',
+        '  server.emit("order", 3)',
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const publish = symbolNamed(await scanWorkspace(), "publish")
+
+    expect(publish.effects).toMatchObject([
+      {
+        id: "event.publish",
+        target: "bus.emit",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      },
+      {
+        id: "event.publish",
+        target: "local.emit",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      },
+    ])
+    expect(publish.calls.map((c) => c.target)).toEqual(["EventEmitter2", "server.emit"])
+  })
+
   it.each([
     ["an aliased import", 'import { EventEmitter2 as Bus } from "@nestjs/event-emitter"', "Bus"],
     ["a namespace import", 'import * as ee from "eventemitter2"', "ee.EventEmitter2"],

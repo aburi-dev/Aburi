@@ -4,9 +4,15 @@ import type {
   Symbol as IRSymbol,
   Logger,
   ParseError,
+  SymbolId,
   ThisBinding,
 } from "@aburi/types"
-import type { DeclaredReceiverTypes, ThisBindingSites } from "../call-site"
+import type {
+  ClassHeritage,
+  ClassHeritages,
+  DeclaredReceiverTypes,
+  ThisBindingSites,
+} from "../call-site"
 import { countBy } from "../collections"
 import { CoreError, REPORT_BUG } from "../errors"
 import { symbolIdFile } from "../id"
@@ -44,6 +50,7 @@ export interface ExtractedFiles {
   declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
   declaredReceiverTypes: DeclaredReceiverTypes
+  classHeritages: ClassHeritages
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
@@ -62,6 +69,7 @@ export class ExtractionCollator {
     instance: new Set(),
   }
   readonly #declaredReceiverTypes = new Map<string, string>()
+  readonly #classHeritages = new Map<SymbolId, ClassHeritage>()
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -77,6 +85,7 @@ export class ExtractionCollator {
     declinedCalls: [],
     thisBindings: this.#thisBindings,
     declaredReceiverTypes: this.#declaredReceiverTypes,
+    classHeritages: this.#classHeritages,
     specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
@@ -274,6 +283,7 @@ export class ExtractionCollator {
         for (const [key, type] of result.declaredReceiverTypes) {
           this.#declaredReceiverTypes.set(key, type)
         }
+        for (const [id, heritage] of result.classHeritages) this.#classHeritages.set(id, heritage)
         if (result.specifierPaths.length > 0) {
           out.specifierPaths.set(result.path, new Map(result.specifierPaths))
         }

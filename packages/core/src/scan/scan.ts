@@ -186,6 +186,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     implementerHints: enrichment.implementerHints,
     dynamicCallSites: extracted.dynamicCallSites,
     declaredReceiverTypes: extracted.declaredReceiverTypes,
+    classHeritages: extracted.classHeritages,
     specifierPaths: extracted.specifierPaths,
     moduleFiles: moduleFilesOf(extracted.importsByFile.keys(), router),
   })

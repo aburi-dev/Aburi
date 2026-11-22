@@ -67,5 +67,9 @@ export function makeCandidate(
       ? {}
       : { mergedDeclarations: overrides.mergedDeclarations }),
     fullNode: overrides.fullNode ?? { placeholder: true },
+    ...(overrides.superclass === undefined ? {} : { superclass: overrides.superclass }),
+    ...(overrides.instanceMembers === undefined
+      ? {}
+      : { instanceMembers: overrides.instanceMembers }),
   }
 }

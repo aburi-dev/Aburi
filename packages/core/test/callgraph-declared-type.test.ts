@@ -1,7 +1,7 @@
 import { importEdge, starReexportEdge, symbolId } from "@aburi/test-support"
 import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
+import { type ClassHeritages, makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
 import { type ResolveCallGraphInput, resolveCallGraph } from "../src/callgraph"
 import { edgesOf, type ImportClause, importsOf, withCalls } from "./fixtures/callgraph"
 import { makeSymbol, type SymbolOverrides } from "./fixtures/ir"
@@ -31,6 +31,17 @@ function resolve(
 }
 
 const FROM_REPO: ImportClause = { source: "./repo", symbols: ["UserRepository"] }
+
+/** A class's id, the name its `extends` writes, and the instance members it declares itself. */
+type Heritage = readonly [classId: string, superclass: string, instanceMembers?: string[]]
+
+const heritagesOf = (heritages: readonly Heritage[]): ClassHeritages =>
+  new Map(
+    heritages.map(([id, superclass, instanceMembers = []]) => [
+      symbolId(id),
+      { superclass, instanceMembers },
+    ]),
+  )
 
 describe("a call through a receiver of a declared type", () => {
   it.each<[string, readonly IRSymbol[], ImportClause[], string]>([
@@ -170,6 +181,7 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
   function resolveThis(
     symbols: readonly IRSymbol[],
     hint?: { kind: "this" | "super"; to: string },
+    input: Partial<ResolveCallGraphInput> = {},
   ) {
     const target = "this.load"
     return resolveCallGraph({
@@ -194,8 +206,25 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
                 { kind: hint.kind, targetSymbolId: symbolId(hint.to) },
               ],
             ]),
+      ...input,
     })
   }
+
+  const MIXIN = "ts:src/mixin.ts#Audited.load"
+  // `UserService extends BaseService`, which its file imports, and declares no `load` itself.
+  const resolveInherited = (hint?: { kind: "this" | "super"; to: string }) =>
+    resolveThis(
+      [
+        ...service.slice(0, 1),
+        makeSymbol("ts:src/base.ts#BaseService", { kind: "class" }),
+        makeSymbol(MIXIN, { kind: "method" }),
+      ],
+      hint,
+      {
+        importsByFile: importsOf("src/service.ts", { source: "./base", symbols: ["BaseService"] }),
+        classHeritages: heritagesOf([["ts:src/service.ts#UserService", "BaseService"]]),
+      },
+    )
 
   it("resolves to the member the class declares, at medium confidence", () => {
     const result = resolveThis(service)
@@ -223,8 +252,166 @@ describe("a call of a member of `this`, whose type is the caller's own class", (
     expect(result.lspHintUsage).toEqual({ consumed: 0, ...rejected })
   })
 
-  it("leaves a member the class only inherits unresolved without a hint", () => {
+  it("resolves to a member the class inherits from the class it extends, at medium confidence", () => {
+    const result = resolveInherited()
+    expect(edgesOf(result)).toEqual([[CALLER, BASE, "medium"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it("takes a language server's hint over a member the class inherits", () => {
+    const result = resolveInherited({ kind: "this", to: MIXIN })
+    expect(edgesOf(result)).toEqual([[CALLER, MIXIN, "high"]])
+    expect(result.lspHintUsage).toEqual({ consumed: 1, kindMismatch: 0, targetDropped: 0 })
+  })
+
+  it.each([
+    ["names another receiver kind", "super", MIXIN, { kindMismatch: 1, targetDropped: 0 }],
+    [
+      "names a dropped Symbol",
+      "this",
+      "ts:src/base.ts#Dropped.load",
+      { kindMismatch: 0, targetDropped: 1 },
+    ],
+  ] as const)(
+    "reads the member the class inherits when the hint %s",
+    (_case, kind, to, rejected) => {
+      const result = resolveInherited({ kind, to })
+      expect(edgesOf(result)).toEqual([[CALLER, BASE, "medium"]])
+      expect(result.lspHintUsage).toEqual({ consumed: 0, ...rejected })
+    },
+  )
+
+  it("leaves a member the class only inherits unresolved without a hint, when it extends no class", () => {
     const result = resolveThis(service.slice(0, 1))
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
+
+describe("a call through a receiver of a declared type, to a member its class inherits", () => {
+  const USER = "ts:src/repo.ts#UserRepository"
+  const MIDDLE = "ts:src/repo.ts#Middle"
+  const BASE = "ts:src/base.ts#BaseRepository"
+  const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
+  const method = (id: string, overrides: SymbolOverrides = {}) =>
+    makeSymbol(id, { kind: "method", ...overrides })
+  const FROM_BASE: ImportClause = { source: "./base", symbols: ["BaseRepository"] }
+
+  function resolveInherited(
+    symbols: readonly IRSymbol[],
+    heritages: readonly Heritage[],
+    imports: { service?: ImportClause[]; repo?: ImportClause[] } = {},
+  ) {
+    return resolve(symbols, {
+      importsByFile: new Map([
+        ["src/service.ts", [FROM_REPO, ...(imports.service ?? [])].map(importEdge)],
+        ["src/repo.ts", (imports.repo ?? []).map(importEdge)],
+      ]),
+      classHeritages: heritagesOf(heritages),
+    })
+  }
+
+  it.each<[string, readonly IRSymbol[], readonly Heritage[], string]>([
+    [
+      "the class its file imports and extends",
+      [...classes(USER, BASE), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      `${BASE}.find`,
+    ],
+    [
+      "a class two levels up",
+      [...classes(USER, MIDDLE, BASE), method(`${BASE}.find`)],
+      [
+        [USER, "Middle"],
+        [MIDDLE, "BaseRepository"],
+      ],
+      `${BASE}.find`,
+    ],
+    [
+      "the nearest class that declares it",
+      [...classes(USER, MIDDLE, BASE), method(`${MIDDLE}.find`), method(`${BASE}.find`)],
+      [
+        [USER, "Middle"],
+        [MIDDLE, "BaseRepository"],
+      ],
+      `${MIDDLE}.find`,
+    ],
+    [
+      "a class past one a drop rule removed",
+      [
+        ...classes(USER, BASE),
+        makeSymbol(MIDDLE, { kind: "class", dropped: true, dropReason: "pure DTO" }),
+        method(`${BASE}.find`),
+      ],
+      [
+        [USER, "Middle"],
+        [MIDDLE, "BaseRepository", ["table"]],
+      ],
+      `${BASE}.find`,
+    ],
+    [
+      "the class a dropped class extends, the receiver's own",
+      [
+        makeSymbol(USER, { kind: "class", dropped: true, dropReason: "pure DTO" }),
+        ...classes(BASE),
+        method(`${BASE}.find`),
+      ],
+      [[USER, "BaseRepository", ["table"]]],
+      `${BASE}.find`,
+    ],
+  ])("resolves to the member of %s, at medium confidence", (_case, symbols, heritages, to) => {
+    const result = resolveInherited(symbols, heritages, { repo: [FROM_BASE] })
+    expect(edgesOf(result)).toEqual([[CALLER, to, "medium"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it.each<
+    [
+      string,
+      readonly IRSymbol[],
+      readonly Heritage[],
+      { service?: ImportClause[]; repo?: ImportClause[] },
+    ]
+  >([
+    [
+      "a member the class declares, though a drop rule removed it",
+      [
+        ...classes(USER, BASE),
+        method(`${USER}.find`, { dropped: true, dropReason: "empty body" }),
+        method(`${BASE}.find`),
+      ],
+      [[USER, "BaseRepository"]],
+      { repo: [FROM_BASE] },
+    ],
+    [
+      "a member the class declares with no Symbol, as a field holding data",
+      [...classes(USER, BASE), method(`${BASE}.find`)],
+      [[USER, "BaseRepository", ["find"]]],
+      { repo: [FROM_BASE] },
+    ],
+    [
+      "a superclass the caller's file binds and the class's does not",
+      [...classes(USER, BASE), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      { service: [FROM_BASE] },
+    ],
+    [
+      "a superclass name that binds no class",
+      [makeSymbol(BASE, { kind: "function" }), ...classes(USER), method(`${BASE}.find`)],
+      [[USER, "BaseRepository"]],
+      { repo: [FROM_BASE] },
+    ],
+    [
+      "classes that extend each other",
+      classes(USER, MIDDLE),
+      [
+        [USER, "Middle"],
+        [MIDDLE, "UserRepository"],
+      ],
+      {},
+    ],
+  ])("leaves the call unresolved and `dynamic` for %s", (_case, symbols, heritages, imports) => {
+    const result = resolveInherited(symbols, heritages, imports)
     expect(result.edges).toEqual([])
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
   })

@@ -417,7 +417,7 @@ It marks only the unresolved calls that could have joined two Slices: those that
 
 - a bare call (`audit()`) can reach a plain function, never a method;
 - a call through a receiver can reach a method, never a plain function:
-  - through `this` or `super` (`this.save()`), any method, from a caller that is itself a method. The resolver already links such a call to a method of the caller's own class, so what it leaves is an inherited one, of a class the call does not name. From a plain function, `this` names nothing and the call reaches nothing;
+  - through `this` or `super` (`this.save()`), any method, from a caller that is itself a method. The resolver already links such a call to a method the caller's own class declares or inherits from a class the scan read, so what it leaves is a method of a class the call does not name, a mixin's or a dependency's. From a plain function, `this` names nothing and the call reaches nothing;
   - through a field of `this` or `super` (`this.db.query()`), any method. Unresolved calls on injected dependencies live here, and a field's name need not say its class: `this.db` holds a `Database`, `this.users` a `UserRepository`;
   - through any other receiver, only a method whose owner (the segment before its name) shares a word with the receiver (the segment before the target's name). Both are split into camelCase words, ignoring case and words shorter than three characters, and two words are shared when one begins with the other. `getRepo.save`, the target `getRepo().save()` is written as, and `repository.save` can reach `UserRepo.save`; `e.save` and `user.save` cannot reach `Repo.save`, nor `part.text` reach `rulePayload.text`, and a receiver the scan wrote as `<computed>` reaches nothing.
 

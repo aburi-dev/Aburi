@@ -8,7 +8,7 @@ import {
   nameFieldText,
 } from "./ast-helpers"
 import { callBodies, layOutBodies } from "./call-symbols"
-import { classMemberCandidates } from "./class-candidates"
+import { classHeritageOf, classMemberCandidates } from "./class-candidates"
 import { foldMemberGroup, groupMemberDeclaration, type MemberGroup } from "./declaration-merge"
 import { refuseAnonymousId } from "./declared-name"
 import { readDecorators } from "./decorators"
@@ -87,6 +87,7 @@ function makeVariableCandidate(
         derivedBy: ["variable-assigned-class", ...exportEvidence(statement)],
         bodyNode: classNode.childForFieldName("body"),
         fullNode: classNode,
+        ...classHeritageOf(classNode),
       },
       ...classMemberCandidates(classNode, ctx, [...namespacePath, name]),
     ]

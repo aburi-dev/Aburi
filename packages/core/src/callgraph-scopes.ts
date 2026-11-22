@@ -5,6 +5,7 @@ import {
   type Symbol as IRSymbol,
   type SymbolId,
 } from "@aburi/types"
+import type { ClassHeritages } from "./call-site"
 import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
@@ -60,6 +61,7 @@ export interface ResolutionRun {
   importsByFile: ReadonlyMap<string, readonly ImportEdge[]>
   /** By language, file and name: where a module's export of the name is declared. */
   exportAnswers: Map<string, ExportAnswer>
+  classHeritages: ClassHeritages
 }
 
 export interface ResolveTargetContext {
@@ -68,6 +70,8 @@ export interface ResolveTargetContext {
   target: string
   imports: readonly ImportEdge[]
   parameterNames: ReadonlySet<string>
+  /** The Symbols a binding may reach: the kept ones unless a caller says otherwise. */
+  reachable?: { has(id: SymbolId): boolean }
 }
 
 export function resolveTarget(
@@ -106,24 +110,55 @@ export function resolveThroughDeclaredType(
   if (type === undefined) return null
   const segments = splitTargetSegments(ctx.target)
   const member = segments.at(-1)
+  if (segments.length < 2 || member === undefined) return null
+  const seen = new Set<SymbolId>()
+  for (let owner = boundClass(ctx, type); owner !== null; owner = superclassOf(ctx.run, owner)) {
+    if (seen.has(owner.id)) return null
+    seen.add(owner.id)
+    const id = trySymbolId({
+      language: owner.language,
+      file: owner.source.file,
+      qualifiedName: `${owner.name}.${member}`,
+    })
+    if (id === null) return null
+    // The value may be a subclass's, whose override then runs.
+    if (ctx.run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
+    // A member the class declares hides the one it inherits, though a drop rule removed it or,
+    // as a field holding data, it is no Symbol at all.
+    const declares = ctx.run.classHeritages.get(owner.id)?.instanceMembers.includes(member)
+    if (declares === true || ctx.run.table.allById.has(id)) return null
+  }
+  return null
+}
+
+// Not component or workspace scope: matching a type by its spelling could only find a namesake. A
+// drop rule keeps a class out of `resolved`, not out of what its name means or what it inherits.
+function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
   const [head, ...tail] = splitTargetSegments(type)
-  if (segments.length < 2 || member === undefined || head === undefined) return null
-  const typeCtx = { ...ctx, target: type }
-  // Not component or workspace scope: matching a type by its spelling could only find a namesake.
+  if (head === undefined) return null
+  const typeCtx = { ...ctx, target: type, reachable: ctx.run.table.allById }
   const trace = newTrace()
   const bound =
     resolveInFileScope(typeCtx, head, tail, trace) ??
     resolveInImportScope(typeCtx, head, tail, trace)
-  const owner = bound?.hit == null ? undefined : ctx.run.table.keptById.get(bound.hit.id)
-  if (owner?.kind !== "class") return null
-  const id = trySymbolId({
-    language: owner.language,
-    file: owner.source.file,
-    qualifiedName: `${owner.name}.${member}`,
-  })
-  if (id === null || !ctx.run.table.keptSymbolIds.has(id)) return null
-  // The value may be a subclass's, whose override then runs.
-  return { id, confidence: "medium" }
+  const owner = bound?.hit == null ? undefined : ctx.run.table.allById.get(bound.hit.id)
+  return owner?.kind === "class" ? owner : null
+}
+
+// The class's own file binds the name it extends, by its declarations and its imports.
+function superclassOf(run: ResolutionRun, owner: IRSymbol): IRSymbol | null {
+  const superclass = run.classHeritages.get(owner.id)?.superclass
+  if (superclass === undefined) return null
+  return boundClass(
+    {
+      run,
+      caller: owner,
+      target: superclass,
+      imports: run.importsByFile.get(owner.source.file) ?? [],
+      parameterNames: EMPTY_NAME_SET,
+    },
+    superclass,
+  )
 }
 
 interface BoundHead {
@@ -163,9 +198,10 @@ function memberId(
   first: string,
   tail: readonly string[],
 ): SymbolId | null {
+  const reachable = ctx.reachable ?? ctx.run.table.keptSymbolIds
   const keptId = (qualifiedName: string) => {
     const id = trySymbolId({ language: ctx.caller.language, file, qualifiedName })
-    return id !== null && ctx.run.table.keptSymbolIds.has(id) ? id : null
+    return id !== null && reachable.has(id) ? id : null
   }
   let qualifiedName = first
   for (const segment of tail) {
@@ -434,6 +470,12 @@ function declaredExport(table: SymbolTable, file: string, name: string): ExportA
     return names.length === 0
       ? null
       : { kind: "declared", sites: names.map((declared) => ({ file, name: declared })) }
+  }
+  // `export { stringType as string }` exports the declaration under the clause's name, which a
+  // declaration of that name, if the module has one, does not then hold.
+  const aliased = table.clauseExportsByFile.get(file)?.get(name)
+  if (aliased !== undefined) {
+    return { kind: "declared", sites: aliased.map((declared) => ({ file, name: declared })) }
   }
   const declares =
     table.topLevelByFile.get(file)?.has(name) === true ||
