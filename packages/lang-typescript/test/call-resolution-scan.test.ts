@@ -293,6 +293,8 @@ describe("scan — a call through a field of a declared type", () => {
         "  private untyped",
         "  private either: UserRepository | null = null",
         "  private both: UserRepository | Store",
+        "  private readonly made = new UserRepository()",
+        "  private reassignable = new UserRepository()",
         "  constructor(private readonly repo: UserRepository, private store: Store) {",
         "    super()",
         "    this.untyped = repo",
@@ -304,6 +306,8 @@ describe("scan — a call through a field of a declared type", () => {
         "    this.both.find(id)",
         "    this.inherited.find(id)",
         "    this.store.find(id)",
+        "    this.made.find(id)",
+        "    this.reassignable.find(id)",
         "  }",
         "}",
         "",
@@ -319,6 +323,8 @@ describe("scan — a call through a field of a declared type", () => {
       ["this.both.find", null],
       ["this.inherited.find", null],
       ["this.store.find", null],
+      ["this.made.find", "ts:src/repo.ts#UserRepository.find"],
+      ["this.reassignable.find", null],
     ])
   })
 
@@ -553,6 +559,22 @@ describe("scan — a call of a member a class inherits", () => {
     })
   })
 
+  it("reaches the class `super(…)` constructs and the member `super.<member>` reads", async () => {
+    const calls = await callsOfKinds([
+      'import { Repository } from "./base"',
+      "export class Admin extends Repository {",
+      "  constructor() { super() }",
+      "  find(id: string) { return super.find(id) }",
+      "}",
+    ])
+    const constructs = [["super", "ts:src/base.ts#Repository"]]
+    expect(calls).toEqual({
+      Admin: constructs,
+      "Admin.constructor": constructs,
+      "Admin.find": [["super.find", FIND]],
+    })
+  })
+
   it("leaves it where the class's own member hides it, a Symbol or not", async () => {
     const calls = await callsOfKinds([
       'import { Repository } from "./base"',
@@ -589,6 +611,61 @@ describe("scan — a call of a member a class inherits", () => {
         ["a.find", null],
         ["g.find", "ts:src/kinds.ts#WithGetter.find"],
         ["i.find", null],
+      ],
+    })
+  })
+})
+
+describe("scan — a call through a variable another module declares", () => {
+  it("reaches the member of the class its module declares it with, the type bound there, unless a local hides the import", async () => {
+    const result = await callsFromMain(
+      {
+        "src/manager.ts": [
+          'import { Manager } from "./classes"',
+          "export const manager = new Manager()",
+          "export let current: Manager | null = null",
+          "export const made = make()",
+          "",
+        ].join("\n"),
+        "src/classes.ts": [
+          "export class Base {",
+          "  start(id: string) { return id }",
+          "}",
+          "export class Manager extends Base {",
+          "  stop(id: string) { return id }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      [
+        'import { current, made, manager } from "./manager"',
+        'import * as managers from "./manager"',
+      ],
+      [
+        'manager.stop("a")',
+        'manager.start("a")',
+        'current.stop("a")',
+        'managers.manager.stop("a")',
+        'made.stop("a")',
+        '{ let manager; manager.stop("b") }',
+        'for (const manager of []) manager.stop("c")',
+      ],
+    )
+    const STOP = "ts:src/classes.ts#Manager.stop"
+    expect(result).toEqual({
+      resolved: [
+        ["manager.stop", STOP],
+        ["manager.start", "ts:src/classes.ts#Base.start"],
+        ["current.stop", STOP],
+        ["managers.manager.stop", STOP],
+        ["made.stop", null],
+        ["manager.stop", null],
+        ["manager.stop", null],
+      ],
+      unresolved: [
+        ["made.stop", "no-match"],
+        ["manager.stop", "no-match"],
+        ["manager.stop", "no-match"],
       ],
     })
   })

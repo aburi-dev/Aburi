@@ -242,6 +242,21 @@ describe("a call through a field of `this` carries the type the class declares t
       "N.C.m",
       "EventEmitter2",
     ],
+    [
+      "a `readonly` field constructed from a class",
+      classOf("  private readonly events = new EventEmitter2()", '  m() { this.events.emit("a") }'),
+      "C.m",
+      "EventEmitter2",
+    ],
+    [
+      "a `readonly` field constructed from a namespace's generic class",
+      classOf(
+        "  readonly #events = new ee.EventEmitter2<Payload>()",
+        '  m() { this.#events.emit("a") }',
+      ),
+      "C.m",
+      "ee.EventEmitter2",
+    ],
   ])("reads %s", async (_label, source, id, type) => {
     expect(await emitReceiverType(source, id)).toBe(type)
   })
@@ -250,9 +265,26 @@ describe("a call through a field of `this` carries the type the class declares t
 describe("a call through `this` carries no type where the class does not declare one", () => {
   it.each([
     [
-      "a field with no annotation",
+      "a field with no annotation and no `readonly`, which can be assigned another value",
       classOf("  events = new EventEmitter2()", '  m() { this.events.emit("a") }'),
       "C.m",
+    ],
+    [
+      "a `readonly` field holding a call's result",
+      classOf("  readonly events = make()", '  m() { this.events.emit("a") }'),
+      "C.m",
+    ],
+    [
+      "a `readonly` field constructed from a class a scope around the class binds",
+      [
+        "export function f(EventEmitter2: any) {",
+        "  return class {",
+        "    readonly events = new EventEmitter2()",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "f",
     ],
     [
       "a type that is not a name",
@@ -630,5 +662,123 @@ describe("a call of a member of `this` in an instance member carries the class's
     ],
   ])("reads nothing from %s", async (_label, source, id) => {
     expect(await thisReceiverType(source, id)).toBeUndefined()
+  })
+})
+
+describe("a call through `super` carries the name of the class the enclosing class extends", () => {
+  const superReceiverType = (source: string, id: string, target: string) =>
+    receiverTypeOfCall(source, id, (written) => written === target)
+  const extending = (...members: string[]) =>
+    ['import { Base } from "./base"', "export class C extends Base {", ...members, "}"].join("\n")
+
+  it.each([
+    [
+      "a constructor's `super(…)`",
+      extending("  constructor() { super(1) }"),
+      "C.constructor",
+      "super",
+      "Base",
+    ],
+    ["a method's `super.<member>`", extending("  m() { super.n() }"), "C.m", "super.n", "Base"],
+    [
+      "an arrow inside a method",
+      extending("  m() { [1].map(() => super.n()) }"),
+      "C.m",
+      "super.n",
+      "Base",
+    ],
+    ["a field's arrow", extending("  handle = () => super.n()"), "C.handle", "super.n", "Base"],
+    [
+      "a method whose `this` parameter declares another type, which `super` does not read",
+      extending("  m(this: Other) { super.n() }"),
+      "C.m",
+      "super.n",
+      "Base",
+    ],
+    [
+      "a class a binding holds",
+      'import { Base } from "./base"\nexport const C = class extends Base {\n  m() { super.n() }\n}',
+      "C.m",
+      "super.n",
+      "Base",
+    ],
+    [
+      "a dotted name the class extends",
+      'import * as b from "./base"\nexport class C extends b.Base {\n  m() { super.n() }\n}',
+      "C.m",
+      "super.n",
+      "b.Base",
+    ],
+  ])("in %s", async (_label, source, id, target, type) => {
+    expect(await superReceiverType(source, id, target)).toBe(type)
+  })
+
+  it.each([
+    ["a static member", extending("  static m() { super.n() }"), "C::m"],
+    [
+      "a class that extends a call",
+      "export class C extends Mixin(Base) {\n  m() { super.n() }\n}",
+      "C.m",
+    ],
+    [
+      "a class that extends a name a scope around it binds",
+      "export function f(Base: any) {\n  class C extends Base {\n    m() { super.n() }\n  }\n}",
+      "f",
+    ],
+    ["an object literal's method", "export const o = {\n  m() { super.n() },\n}", "o.m"],
+  ])("reads nothing from %s", async (_label, source, id) => {
+    expect(await superReceiverType(source, id, "super.n")).toBeUndefined()
+  })
+})
+
+describe("a call through a name marks whether one of the module's imports binds it", () => {
+  const importedOf = async (source: string, target = "manager.stop") => {
+    const calls = (await walkOf(source, "ts:src/a.ts#f")).calls.filter((c) => c.target === target)
+    expect(calls).toHaveLength(1)
+    return calls[0]?.importedReceiver
+  }
+  const calling = (imports: string, ...body: string[]) =>
+    [imports, "export function f(list: unknown[], deps: unknown) {", ...body, "}"].join("\n")
+  const FROM_MANAGER = 'import { manager } from "./manager"'
+
+  it.each([
+    ["a named import", calling(FROM_MANAGER, "  manager.stop()"), "manager.stop"],
+    [
+      "a default import",
+      calling('import manager from "./manager"', "  manager.stop()"),
+      "manager.stop",
+    ],
+    [
+      "a namespace import, through the member it reaches",
+      calling('import * as managers from "./manager"', "  managers.manager.stop()"),
+      "managers.manager.stop",
+    ],
+  ])("marks a call through %s", async (_label, source, target) => {
+    expect(await importedOf(source, target)).toBe(true)
+  })
+
+  it.each([
+    ["a block's `const`", calling(FROM_MANAGER, "  { const manager = make(); manager.stop() }")],
+    [
+      "a callback's parameter",
+      calling(FROM_MANAGER, "  list.forEach((manager) => manager.stop())"),
+    ],
+    ["a `for…of` binding", calling(FROM_MANAGER, "  for (const manager of list) manager.stop()")],
+    [
+      "a `catch` binding",
+      calling(FROM_MANAGER, "  try { go() } catch (manager) { manager.stop() }"),
+    ],
+    [
+      "a destructured `const`",
+      calling(FROM_MANAGER, "  const { manager } = deps\n  manager.stop()"),
+    ],
+    ["a variable of the module", calling("const manager = make()", "  manager.stop()")],
+    ["a global", calling("", "  manager.stop()")],
+  ])("marks nothing where %s binds the name", async (_label, source) => {
+    expect(await importedOf(source)).toBeUndefined()
+  })
+
+  it("marks nothing for a call of the imported name itself", async () => {
+    expect(await importedOf(calling(FROM_MANAGER, "  manager()"), "manager")).toBeUndefined()
   })
 })

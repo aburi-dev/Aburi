@@ -1,6 +1,7 @@
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type ExtractionContext,
+  FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type SymbolCandidate,
   type SymbolKind,
 } from "@aburi/types"
@@ -143,7 +144,9 @@ function makeFieldFunctionCandidate(
   const isStatic = hasChildOfType(field, "static")
   const qname = classMemberQname(ownerChain, segment, isStatic ? "static" : "instance")
   const spelling =
-    held.kind === "function" ? "field-assigned-function" : CALL_ARGUMENT_FUNCTION_DERIVED_BY
+    held.kind === "function"
+      ? FIELD_ASSIGNED_FUNCTION_DERIVED_BY
+      : CALL_ARGUMENT_FUNCTION_DERIVED_BY
   const derivedBy = [isStatic ? "static-method" : "class-method", spelling]
   if (hasChildOfType(field, "accessor")) derivedBy.push("accessor-declaration")
   const member: Omit<SymbolCandidate<Node>, "signature" | "bodyNode" | "fullNode"> = {

@@ -2,7 +2,7 @@ import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } f
 import { type CallCandidate, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
-import { receiverTypeOf, thisBindingAt } from "./receiver-type"
+import { isImportedReceiver, receiverTypeOf, thisBindingAt } from "./receiver-type"
 
 export function readCall(node: Node): CallCandidate | null {
   const isNew = node.type === "new_expression"
@@ -27,6 +27,7 @@ export function readCall(node: Node): CallCandidate | null {
     literalArgs: args.map(literalOf),
     ...(shape.dynamic ? { dynamicReceiver: true } : {}),
     ...(receiverType === null ? {} : { receiverType }),
+    ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }

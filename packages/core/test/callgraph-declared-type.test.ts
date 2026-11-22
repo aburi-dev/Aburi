@@ -1,5 +1,5 @@
 import { importEdge, starReexportEdge, symbolId } from "@aburi/test-support"
-import type { Symbol as IRSymbol } from "@aburi/types"
+import type { ImportEdge, Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { type ClassHeritages, makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
 import { type ResolveCallGraphInput, resolveCallGraph } from "../src/callgraph"
@@ -414,5 +414,314 @@ describe("a call through a receiver of a declared type, to a member its class in
     const result = resolveInherited(symbols, heritages, imports)
     expect(result.edges).toEqual([])
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
+
+describe("a call through `super`, whose type is the class the caller's class extends", () => {
+  const ADMIN = "ts:src/admin.ts#AdminService"
+  const MIDDLE = "ts:src/admin.ts#Middle"
+  const BASE = "ts:src/base.ts#BaseService"
+  const ROOT = "ts:src/base.ts#Root"
+  const CONSTRUCTOR = `${ADMIN}.constructor`
+  const SAVE = `${ADMIN}.save`
+  const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
+  const method = (id: string, overrides: SymbolOverrides = {}) =>
+    makeSymbol(id, { kind: "method", ...overrides })
+  const dropped = { dropped: true, dropReason: "cat-b:trivial" } as const
+
+  interface SuperCall {
+    target?: string
+    type?: string
+    hint?: string
+  }
+
+  // `AdminService extends BaseService`, which its file imports; the plugin types `super` with it.
+  function resolveSuper(
+    symbols: readonly IRSymbol[],
+    heritages: readonly Heritage[] = [[ADMIN, "BaseService"]],
+    { target = "super.save", type = "BaseService", hint }: SuperCall = {},
+  ) {
+    const caller = target === "super" ? CONSTRUCTOR : SAVE
+    return resolveCallGraph({
+      symbols: [withCalls(caller, [{ target, line: 3 }]), ...symbols],
+      importsByFile: importsOf("src/admin.ts", { source: "./base", symbols: ["BaseService"] }),
+      declaredReceiverTypes: new Map([[makeSymbolCallKey(caller, 3, target), type]]),
+      classHeritages: heritagesOf(heritages),
+      receiverHints: new Map(
+        hint === undefined
+          ? []
+          : [
+              [
+                makeCallSiteKey("src/admin.ts", 3, target),
+                { kind: "super", targetSymbolId: symbolId(hint) },
+              ],
+            ],
+      ),
+    })
+  }
+
+  it("resolves `super(…)` to the class, at high confidence", () => {
+    const result = resolveSuper(classes(ADMIN, BASE), undefined, { target: "super" })
+    expect(edgesOf(result)).toEqual([[CONSTRUCTOR, BASE, "high"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it.each<[string, readonly IRSymbol[], readonly Heritage[], string, string]>([
+    [
+      "the class extends",
+      [...classes(ADMIN, BASE), method(`${BASE}.save`)],
+      [[ADMIN, "BaseService"]],
+      "BaseService",
+      `${BASE}.save`,
+    ],
+    [
+      "a class two levels up",
+      [...classes(ADMIN, MIDDLE, BASE), method(`${BASE}.save`)],
+      [
+        [ADMIN, "Middle"],
+        [MIDDLE, "BaseService"],
+      ],
+      "Middle",
+      `${BASE}.save`,
+    ],
+    [
+      "the nearest of the classes up the chain that declare it",
+      [...classes(ADMIN, MIDDLE, BASE), method(`${MIDDLE}.save`), method(`${BASE}.save`)],
+      [
+        [ADMIN, "Middle"],
+        [MIDDLE, "BaseService"],
+      ],
+      "Middle",
+      `${MIDDLE}.save`,
+    ],
+    [
+      "a class it extends that a drop rule removed",
+      [makeSymbol(BASE, { kind: "class", ...dropped }), method(`${BASE}.save`)],
+      [[ADMIN, "BaseService"]],
+      "BaseService",
+      `${BASE}.save`,
+    ],
+    [
+      "a class two levels up, through one a drop rule removed",
+      [makeSymbol(MIDDLE, { kind: "class", ...dropped }), ...classes(BASE), method(`${BASE}.save`)],
+      [[MIDDLE, "BaseService"]],
+      "Middle",
+      `${BASE}.save`,
+    ],
+  ])(
+    "resolves `super.<member>` to the member %s, at high confidence",
+    (_c, symbols, heritages, type, to) => {
+      const result = resolveSuper(symbols, heritages, { type })
+      expect(edgesOf(result)).toEqual([[SAVE, to, "high"]])
+      expect(result.diagnostics).toEqual([])
+    },
+  )
+
+  it("keeps the member it reaches over a hint for the call, which it does not read", () => {
+    const result = resolveSuper(
+      [...classes(BASE, ROOT), method(`${BASE}.save`), method(`${ROOT}.save`)],
+      undefined,
+      {
+        hint: `${ROOT}.save`,
+      },
+    )
+    expect(edgesOf(result)).toEqual([[SAVE, `${BASE}.save`, "high"]])
+    expect(result.lspHintUsage).toEqual({ consumed: 0, kindMismatch: 0, targetDropped: 0 })
+  })
+
+  // `BaseService extends Root`, whose kept `save` a walk that went on past `BaseService` would reach.
+  const aboveBase: readonly Heritage[] = [[BASE, "Root"]]
+  const withRoot = (...symbols: IRSymbol[]) => [
+    ...classes(BASE, ROOT),
+    method(`${ROOT}.save`),
+    ...symbols,
+  ]
+
+  it.each<[string, readonly IRSymbol[], readonly Heritage[], SuperCall]>([
+    [
+      "`super(…)` of a class a drop rule removed",
+      [makeSymbol(BASE, { kind: "class", ...dropped })],
+      [],
+      { target: "super" },
+    ],
+    [
+      "a member the class declares, though a drop rule removed it",
+      withRoot(method(`${BASE}.save`, dropped)),
+      aboveBase,
+      {},
+    ],
+    [
+      "a member the class holds in a field, which is no member of its prototype",
+      withRoot(method(`${BASE}.save`, { derivedBy: ["class-method", "field-assigned-function"] })),
+      aboveBase,
+      {},
+    ],
+    [
+      "a member the class holds in a field, a call handed its function",
+      withRoot(method(`${BASE}.save`, { derivedBy: ["class-method", "call-argument-function"] })),
+      aboveBase,
+      {},
+    ],
+    [
+      "a member the class declares with no Symbol",
+      [...classes(MIDDLE, BASE), method(`${BASE}.save`)],
+      [[MIDDLE, "BaseService", ["save"]]],
+      { type: "Middle" },
+    ],
+    [
+      "a member of a member",
+      [...classes(BASE), method(`${BASE}.repo`), method(`${BASE}.save`)],
+      [],
+      { target: "super.repo.save" },
+    ],
+  ])("leaves %s unresolved and `dynamic`", (_case, symbols, heritages, call) => {
+    const result = resolveSuper(symbols, heritages, call)
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
+
+describe("a call through a variable another module declares, whose type that module names", () => {
+  const CALLER_ID = "ts:src/use.ts#main"
+  const VARIABLE = "ts:src/manager.ts#manager"
+  const CLASS = "ts:src/classes.ts#Manager"
+  const STOP = `${CLASS}.stop`
+  const FROM_MANAGER: ImportClause = { source: "./manager", symbols: ["manager"] }
+  const FROM_CLASSES: ImportClause = { source: "./classes", symbols: ["Manager"] }
+  const manager = (file = "src/classes.ts") => [
+    makeSymbol(`ts:${file}#Manager`, { kind: "class" }),
+    makeSymbol(`ts:${file}#Manager.stop`, { kind: "method" }),
+  ]
+
+  interface Setup {
+    target?: string
+    variable?: SymbolOverrides
+    importsByFile?: ReadonlyMap<string, readonly ImportEdge[]>
+    imports?: ImportClause[]
+    /** What the variable's own file imports. */
+    variableImports?: ImportClause[]
+    valueTypes?: ReadonlyMap<string, string>
+    heritages?: readonly Heritage[]
+    /** Whether the language plugin found the import binding the receiver's leading name. */
+    marked?: boolean
+  }
+
+  // `src/manager.ts` declares `manager` with the type `Manager`, which it imports from `./classes`.
+  function resolveImported(symbols: readonly IRSymbol[], setup: Setup = {}) {
+    const { target = "manager.stop", imports = [FROM_MANAGER], marked = true } = setup
+    return resolveCallGraph({
+      symbols: [
+        withCalls(CALLER_ID, [{ target, line: 3 }]),
+        makeSymbol(VARIABLE, { kind: "const", ...setup.variable }),
+        ...symbols,
+      ],
+      importsByFile:
+        setup.importsByFile ??
+        new Map([
+          ...importsOf("src/use.ts", ...imports),
+          ...importsOf("src/manager.ts", ...(setup.variableImports ?? [FROM_CLASSES])),
+        ]),
+      valueTypes: new Map(
+        [...(setup.valueTypes ?? new Map([[VARIABLE, "Manager"]]))].map(([id, type]) => [
+          symbolId(id),
+          type,
+        ]),
+      ),
+      importedReceivers: new Set(marked ? [makeSymbolCallKey(CALLER_ID, 3, target)] : []),
+      classHeritages: heritagesOf(setup.heritages ?? []),
+      moduleFiles: new Map([["ts", new Set(["src/lib.ts"])]]),
+    })
+  }
+
+  it.each<[string, readonly IRSymbol[], Setup, string]>([
+    ["a named import", manager(), {}, STOP],
+    [
+      "an import under another name",
+      manager(),
+      {
+        imports: [{ source: "./manager", symbols: ["manager as current"] }],
+        target: "current.stop",
+      },
+      STOP,
+    ],
+    [
+      "a namespace import",
+      manager(),
+      {
+        imports: [{ source: "./manager", symbols: "*", namespaceBinding: "managers" }],
+        target: "managers.manager.stop",
+      },
+      STOP,
+    ],
+    [
+      "a barrel that re-exports it, which does not bind the type itself",
+      manager(),
+      {
+        importsByFile: new Map([
+          ...importsOf("src/use.ts", { source: "./lib", symbols: ["manager"] }),
+          ["src/lib.ts", [starReexportEdge("./manager")]],
+          ...importsOf("src/manager.ts", FROM_CLASSES),
+        ]),
+      },
+      STOP,
+    ],
+    [
+      "a variable a drop rule removed",
+      manager(),
+      { variable: { dropped: true, dropReason: "cat-b:trivial" } },
+      STOP,
+    ],
+    [
+      "a class the variable's own file declares",
+      manager("src/manager.ts"),
+      { variableImports: [] },
+      "ts:src/manager.ts#Manager.stop",
+    ],
+    [
+      "a class the type extends",
+      [
+        ...manager(),
+        makeSymbol("ts:src/classes.ts#Base", { kind: "class" }),
+        makeSymbol("ts:src/classes.ts#Base.start", { kind: "method" }),
+      ],
+      { target: "manager.start", heritages: [[CLASS, "Base"]] },
+      "ts:src/classes.ts#Base.start",
+    ],
+  ])(
+    "resolves to the member of the type, through %s, at medium confidence",
+    (_c, symbols, setup, to) => {
+      const result = resolveImported(symbols, setup)
+      expect(edgesOf(result)).toEqual([[CALLER_ID, to, "medium"]])
+      expect(result.diagnostics).toEqual([])
+    },
+  )
+
+  it.each<[string, readonly IRSymbol[], Setup]>([
+    ["a variable its module names no type for", manager(), { valueTypes: new Map() }],
+    ["a type its module binds to no class", [makeSymbol(CLASS, { kind: "interface" })], {}],
+    [
+      "a type only the caller's file binds",
+      manager(),
+      { variableImports: [], imports: [FROM_MANAGER, FROM_CLASSES] },
+    ],
+    [
+      "a member neither the type nor a class it extends declares",
+      manager(),
+      { target: "manager.start" },
+    ],
+    [
+      "a call the language plugin finds no import under, as where a local of the name hides it",
+      manager(),
+      { marked: false },
+    ],
+    [
+      "a variable of the caller's own file, which only an import's variable is read for",
+      [...manager("src/use.ts"), makeSymbol("ts:src/use.ts#manager", { kind: "const" })],
+      { imports: [], valueTypes: new Map([["ts:src/use.ts#manager", "Manager"]]) },
+    ],
+  ])("leaves %s unresolved, `no-match`", (_case, symbols, setup) => {
+    const result = resolveImported(symbols, setup)
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["no-match"])
   })
 })

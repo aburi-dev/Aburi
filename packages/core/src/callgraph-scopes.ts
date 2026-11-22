@@ -1,11 +1,13 @@
 import {
+  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type Confidence,
   EXPORT_DEFAULT_DERIVED_BY,
+  FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type ImportEdge,
   type Symbol as IRSymbol,
   type SymbolId,
 } from "@aburi/types"
-import type { ClassHeritages } from "./call-site"
+import type { ClassHeritages, ValueTypes } from "./call-site"
 import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
@@ -62,6 +64,7 @@ export interface ResolutionRun {
   /** By language, file and name: where a module's export of the name is declared. */
   exportAnswers: Map<string, ExportAnswer>
   classHeritages: ClassHeritages
+  valueTypes: ValueTypes
 }
 
 export interface ResolveTargetContext {
@@ -105,30 +108,104 @@ export function resolveTarget(
 
 export function resolveThroughDeclaredType(
   ctx: ResolveTargetContext,
-  type: string | undefined,
+  type: string,
 ): ResolutionHit | null {
-  if (type === undefined) return null
   const segments = splitTargetSegments(ctx.target)
+  if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
   const member = segments.at(-1)
   if (segments.length < 2 || member === undefined) return null
-  const seen = new Set<SymbolId>()
-  for (let owner = boundClass(ctx, type); owner !== null; owner = superclassOf(ctx.run, owner)) {
-    if (seen.has(owner.id)) return null
-    seen.add(owner.id)
-    const id = trySymbolId({
-      language: owner.language,
-      file: owner.source.file,
-      qualifiedName: `${owner.name}.${member}`,
-    })
+  return instanceMemberOf(ctx.run, boundClass(ctx, type), member)
+}
+
+// A language plugin reads one file at a time, so it types no call through a variable another module
+// declares: that module's declaration gives the type, its name bound there.
+export function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+  if (ctx.run.valueTypes.size === 0) return null
+  const segments = splitTargetSegments(ctx.target)
+  const member = segments.at(-1)
+  const [head, ...rest] = segments.slice(0, -1)
+  if (head === undefined || member === undefined) return null
+  const reach = { ...ctx, reachable: ctx.run.table.allById }
+  const id = resolveInImportScope(reach, head, rest, newTrace())?.hit?.id
+  const variable = id === undefined ? undefined : ctx.run.table.allById.get(id)
+  const type = id === undefined ? undefined : ctx.run.valueTypes.get(id)
+  if (variable === undefined || type === undefined) return null
+  return instanceMemberOf(ctx.run, boundClassWhere(ctx.run, variable, type), member)
+}
+
+function instanceMemberOf(
+  run: ResolutionRun,
+  type: IRSymbol | null,
+  member: string,
+): ResolutionHit | null {
+  for (const owner of classChain(run, type)) {
+    const id = instanceMemberId(owner, member)
     if (id === null) return null
     // The value may be a subclass's, whose override then runs.
-    if (ctx.run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
-    // A member the class declares hides the one it inherits, though a drop rule removed it or,
-    // as a field holding data, it is no Symbol at all.
-    const declares = ctx.run.classHeritages.get(owner.id)?.instanceMembers.includes(member)
-    if (declares === true || ctx.run.table.allById.has(id)) return null
+    if (run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
+    if (declaresMember(run, owner, member) || run.table.allById.has(id)) return null
   }
   return null
+}
+
+// `super` names the class the caller's class extends, which no subclass replaces: `super(…)`
+// constructs it, and `super.<member>` reads its prototype, where a field is not.
+function resolveThroughSuper(
+  ctx: ResolveTargetContext,
+  type: string,
+  segments: readonly string[],
+): ResolutionHit | null {
+  const extended = boundClass(ctx, type)
+  if (segments.length === 1) {
+    return extended !== null && ctx.run.table.keptSymbolIds.has(extended.id)
+      ? { id: extended.id, confidence: "high" }
+      : null
+  }
+  const member = segments[1]
+  if (segments.length !== 2 || member === undefined) return null
+  for (const owner of classChain(ctx.run, extended)) {
+    const id = instanceMemberId(owner, member)
+    if (id === null) return null
+    const declared = ctx.run.table.allById.get(id)
+    if (declared === undefined) {
+      if (declaresMember(ctx.run, owner, member)) return null
+      continue
+    }
+    if (isHeldByField(declared) || !ctx.run.table.keptSymbolIds.has(id)) return null
+    return { id, confidence: "high" }
+  }
+  return null
+}
+
+// A cycle of classes extending one another ends the chain where it would come round again.
+function* classChain(run: ResolutionRun, first: IRSymbol | null): Iterable<IRSymbol> {
+  const seen = new Set<SymbolId>()
+  for (let owner = first; owner !== null; owner = superclassOf(run, owner)) {
+    if (seen.has(owner.id)) return
+    seen.add(owner.id)
+    yield owner
+  }
+}
+
+function instanceMemberId(owner: IRSymbol, member: string): SymbolId | null {
+  return trySymbolId({
+    language: owner.language,
+    file: owner.source.file,
+    qualifiedName: `${owner.name}.${member}`,
+  })
+}
+
+// A member the class declares hides the one it inherits, though a drop rule removed it or, as a
+// field holding data, it is no Symbol at all.
+function declaresMember(run: ResolutionRun, owner: IRSymbol, member: string): boolean {
+  return run.classHeritages.get(owner.id)?.instanceMembers.includes(member) === true
+}
+
+function isHeldByField(member: IRSymbol): boolean {
+  return member.derivedBy.some(
+    (token) =>
+      token === FIELD_ASSIGNED_FUNCTION_DERIVED_BY || token === CALL_ARGUMENT_FUNCTION_DERIVED_BY,
+  )
 }
 
 // Not component or workspace scope: matching a type by its spelling could only find a namesake. A
@@ -148,16 +225,19 @@ function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
 // The class's own file binds the name it extends, by its declarations and its imports.
 function superclassOf(run: ResolutionRun, owner: IRSymbol): IRSymbol | null {
   const superclass = run.classHeritages.get(owner.id)?.superclass
-  if (superclass === undefined) return null
+  return superclass === undefined ? null : boundClassWhere(run, owner, superclass)
+}
+
+function boundClassWhere(run: ResolutionRun, declaration: IRSymbol, type: string): IRSymbol | null {
   return boundClass(
     {
       run,
-      caller: owner,
-      target: superclass,
-      imports: run.importsByFile.get(owner.source.file) ?? [],
+      caller: declaration,
+      target: type,
+      imports: run.importsByFile.get(declaration.source.file) ?? [],
       parameterNames: EMPTY_NAME_SET,
     },
-    superclass,
+    type,
   )
 }
 

@@ -10,8 +10,9 @@ Recognised shapes:
 |---|---|
 | `eventBus.emit(...)` | `event.publish` |
 | `EventEmitter2.emit(...)` | `event.publish` |
-| `this.<field>.emit(...)`, the field declared as `EventEmitter2` | `event.publish` |
+| `this.<field>.emit(...)`, the field declared as `EventEmitter2` or `readonly` and constructed from it | `event.publish` |
 | `bus.emit(...)`, `bus` a parameter, a variable declared as `EventEmitter2` or a `const` constructed from it | `event.publish` |
+| `super.emit(...)` in a class that extends `EventEmitter2` | `event.publish` |
 
 The receiver is recognised by its name or by its declared type. The name check
 is a case-sensitive exact match against a fixed set (currently
@@ -29,9 +30,12 @@ create(id: string) {
 ```
 
 The type is the one the language plugin reads off the declaration: a
-constructor parameter property or a typed field of the class, a parameter or a
+constructor parameter property or a typed field of the class, a `readonly`
+field constructed from it (`private readonly bus = new EventEmitter2()`), a parameter or a
 variable annotated with it (`publish(bus: EventEmitter2) { bus.emit(…) }`), or
-a `const` constructed from it (`const bus = new EventEmitter2()`). It must be
+a `const` constructed from it (`const bus = new EventEmitter2()`), and for
+`super.emit(…)` the class the enclosing one extends (`class Bus extends
+EventEmitter2`). It must be
 the `EventEmitter2` the file imports from an emitter module: under its own
 name, under an alias (`EventEmitter2 as Bus`), through a namespace
 (`ee.EventEmitter2`), or as `eventemitter2`'s default import. An inherited

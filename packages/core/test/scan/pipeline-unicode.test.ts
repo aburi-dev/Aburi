@@ -101,6 +101,12 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
       [{ superclass: `${composed}.Base`, instanceMembers: [composed, "find"] }],
     ],
     [
+      "a variable's value type",
+      { candidate: stubCandidate("Fn", { kind: "const", valueType: `${decomposed}.Manager` }) },
+      (file) => file.valueTypes.map(([, type]) => type),
+      [`${composed}.Manager`],
+    ],
+    [
       "an unclassified call target",
       { body: { rules: [], calls: [makeCall({ target: `${decomposed}.doWork` })] } },
       (file) => file.symbols[0]?.calls.map((c) => c.target),
@@ -174,6 +180,22 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
     })
     expect(file.symbols).toHaveLength(1)
     expect(file.classHeritages.map(([, read]) => read)).toEqual(expected)
+  })
+
+  it.each(["const", "variable"] as const)("reads the value type of a `%s`", async (kind) => {
+    const file = await extractOneSymbol({
+      candidate: stubCandidate("Fn", { kind, valueType: "Manager" }),
+    })
+    expect(file.valueTypes).toEqual([["stub:test.stub#Fn", "Manager"]])
+  })
+
+  it.each([
+    ["a value type that is not a string", { kind: "const" as const, valueType: 7 as never }],
+    ["a value type on a Symbol that is no variable", { kind: "function" as const, valueType: "M" }],
+  ])("keeps the file and reads no type from %s", async (_case, written) => {
+    const file = await extractOneSymbol({ candidate: stubCandidate("Fn", written) })
+    expect(file.symbols).toHaveLength(1)
+    expect(file.valueTypes).toEqual([])
   })
 
   it("normalizes the import edges of a file the parse refused, too", async () => {

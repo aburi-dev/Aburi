@@ -19,9 +19,11 @@ interface ThisScope {
 }
 
 export function receiverTypeOf(callee: Node): string | null {
+  if (callee.type === "super") return extendedClassOf(callee)
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
   if (receiver?.type === "this") return instanceClassOf(receiver)
+  if (receiver?.type === "super") return extendedClassOf(receiver)
   if (receiver?.type === "identifier") return nameTypeOf(receiver)
   if (receiver?.type !== "member_expression") return null
   if (receiver.childForFieldName("object")?.type !== "this") return null
@@ -38,14 +40,16 @@ export function receiverTypeOf(callee: Node): string | null {
 function nameTypeOf(name: Node): string | null {
   const [declaration, ...others] = bindingOf(name, name.text)?.declarations ?? []
   if (declaration === undefined || others.length > 0) return null
-  if (declaration.type === "variable_declarator") {
-    if (declaration.childForFieldName("name")?.type !== "identifier") return null
-    if (declaration.childForFieldName("type") !== null) return annotatedType(declaration)
-    return isConst(declaration) ? constructedClass(declaration.childForFieldName("value")) : null
-  }
+  if (declaration.type === "variable_declarator") return heldTypeOf(declaration)
   if (!PARAMETER_TYPES.has(declaration.type)) return null
   if (declaration.childForFieldName("pattern")?.type !== "identifier") return null
   return annotatedType(declaration)
+}
+
+export function heldTypeOf(declarator: Node): string | null {
+  if (declarator.childForFieldName("name")?.type !== "identifier") return null
+  if (declarator.childForFieldName("type") !== null) return annotatedType(declarator)
+  return isConst(declarator) ? constructedClass(declarator.childForFieldName("value")) : null
 }
 
 function annotatedType(declaration: Node): string | null {
@@ -64,6 +68,22 @@ function isConst(declarator: Node): boolean {
 function constructedClass(value: Node | null): string | null {
   if (value?.type !== "new_expression") return null
   return moduleClassName(value.childForFieldName("constructor"))
+}
+
+// A callback's parameter, a block's `const` or a `catch` clause named after an import hides it.
+export function isImportedReceiver(callee: Node): boolean {
+  if (callee.type !== "member_expression") return false
+  let head = callee.childForFieldName("object")
+  while (head?.type === "member_expression") head = head.childForFieldName("object")
+  if (head?.type !== "identifier") return false
+  const binding = bindingOf(head, head.text)
+  const [declaration, ...others] = binding?.declarations ?? []
+  return (
+    binding !== null &&
+    isModuleBinding(binding) &&
+    others.length === 0 &&
+    declaration?.type === "import_statement"
+  )
 }
 
 export function superclassOf(classNode: Node): string | null {
@@ -119,6 +139,15 @@ function instanceClassOf(receiver: Node): string | null {
   return name === null || isShadowed(scope.classBody, name) ? null : name
 }
 
+// `super` in an instance member, a constructor's `super(…)` included, reads the class the enclosing
+// one extends, whatever a `this` parameter says `this` is.
+function extendedClassOf(node: Node): string | null {
+  const scope = thisScope(node)
+  if (scope === null || scope.isStatic) return null
+  const owner = scope.classBody.parent
+  return owner === null ? null : superclassOf(owner)
+}
+
 const CLASS_DECLARATIONS: ReadonlySet<string> = new Set([
   "class_declaration",
   "abstract_class_declaration",
@@ -152,7 +181,7 @@ function declaredType(scope: ThisScope, name: string): string | null {
     if (member.type === "public_field_definition") {
       if (member.childForFieldName("name")?.text !== name) continue
       if (hasChildOfType(member, "static") !== scope.isStatic) continue
-      return namedType(member)
+      return fieldType(member)
     }
     if (!scope.isStatic && isConstructor(member)) {
       const property = parameterProperty(member, name)
@@ -160,6 +189,14 @@ function declaredType(scope: ThisScope, name: string): string | null {
     }
   }
   return null
+}
+
+// A `readonly` field is assigned again only in its constructor, and only with a value of the type
+// its initializer gives it.
+function fieldType(field: Node): string | null {
+  if (field.childForFieldName("type") !== null) return namedType(field)
+  if (!hasChildOfType(field, "readonly")) return null
+  return constructedClass(field.childForFieldName("value"))
 }
 
 // A reader binds the type's name where the module binds it, so a name a scope between the

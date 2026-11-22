@@ -10,4 +10,6 @@ export const EXPORT_CLAUSE_DERIVED_BY_PREFIX = "export-clause:"
 
 export const CALL_ARGUMENT_FUNCTION_DERIVED_BY = "call-argument-function"
 
+export const FIELD_ASSIGNED_FUNCTION_DERIVED_BY = "field-assigned-function"
+
 export const INVOKED_FUNCTION_DERIVED_BY = "invoked-function"

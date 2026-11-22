@@ -348,6 +348,30 @@ describe("runFilePipeline — effect classification", () => {
     ])
   })
 
+  it("keys each call through an imported receiver, and no key one of whose calls goes through none", async () => {
+    const imported = (line: number, importedReceiver?: boolean) =>
+      makeCall({
+        target: "manager.stop",
+        line,
+        ...(importedReceiver === undefined ? {} : { importedReceiver }),
+      })
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        imported(3, true),
+        imported(3, true),
+        imported(4, true),
+        imported(4),
+        imported(5),
+        imported(5, true),
+        imported(6, false),
+      ),
+    })
+
+    expect(result.importedReceivers).toEqual([
+      makeSymbolCallKey("stub:test.stub#Fn", 3, "manager.stop"),
+    ])
+  })
+
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {
     const seen: ClassifyContext["owner"]["decorators"][] = []
     const candidate = stubCandidate("Fn", {

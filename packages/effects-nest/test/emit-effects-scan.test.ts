@@ -60,7 +60,7 @@ describe("scan — event emitters in a NestJS service file", () => {
     expect(publish.calls.map((c) => c.target)).toEqual(["socket.emit"])
   })
 
-  it("publishes through a field declared as EventEmitter2 under any name, and leaves a gateway's socket a call", async () => {
+  it("publishes through a field declared as EventEmitter2 or `readonly` and constructed from it, under any name, and leaves a gateway's socket a call", async () => {
     await workspace.writeSource(
       "src/orders.service.ts",
       [
@@ -71,9 +71,11 @@ describe("scan — event emitters in a NestJS service file", () => {
         "@Injectable()",
         "export class OrdersService {",
         "  private server!: Server",
+        "  private readonly local = new EventEmitter2()",
         "  constructor(private readonly eventEmitter: EventEmitter2) {}",
         "  create(id: string) {",
         '    this.eventEmitter.emit("order.created", { id })',
+        '    this.local.emit("order.cached", { id })',
         '    this.server.emit("order", id)',
         "  }",
         "}",
@@ -87,6 +89,12 @@ describe("scan — event emitters in a NestJS service file", () => {
       {
         id: "event.publish",
         target: "this.eventEmitter.emit",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      },
+      {
+        id: "event.publish",
+        target: "this.local.emit",
         confidence: "high",
         derivedBy: "effects-plugin:nest:EventEmitter2.emit",
       },
@@ -126,6 +134,33 @@ describe("scan — event emitters in a NestJS service file", () => {
       },
     ])
     expect(publish.calls.map((c) => c.target)).toEqual(["EventEmitter2", "server.emit"])
+  })
+
+  it("publishes through `super` in a class that extends EventEmitter2", async () => {
+    await workspace.writeSource(
+      "src/bus.ts",
+      [
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        "",
+        "export class Bus extends EventEmitter2 {",
+        "  send(id: number) {",
+        '    return super.emit("order.created", id)',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const send = symbolNamed(await scanWorkspace(), "Bus.send")
+
+    expect(send.effects).toMatchObject([
+      {
+        id: "event.publish",
+        target: "super.emit",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      },
+    ])
+    expect(send.calls).toEqual([])
   })
 
   it.each([

@@ -71,5 +71,6 @@ export function makeCandidate(
     ...(overrides.instanceMembers === undefined
       ? {}
       : { instanceMembers: overrides.instanceMembers }),
+    ...(overrides.valueType === undefined ? {} : { valueType: overrides.valueType }),
   }
 }

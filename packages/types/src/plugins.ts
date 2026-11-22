@@ -120,6 +120,11 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
    * of which hides the one the class inherits. A field written only with its type is none.
    */
   instanceMembers?: string[]
+  /**
+   * For a variable: the named type its value is declared with, type arguments aside, or for a
+   * `const` the class it is constructed from, as its module binds that name.
+   */
+  valueType?: string
 }
 
 /** The nodes of one declaration that merged into a Symbol another declaration leads. */
@@ -137,8 +142,16 @@ export interface CallCandidate {
   /** Per-argument literal value, or null when the argument is not a literal. */
   literalArgs: (string | null)[]
   dynamicReceiver?: boolean
-  /** The named type the receiver is declared with, type arguments aside, e.g. `EventEmitter2`. */
+  /**
+   * The named type the receiver is declared with, type arguments aside, e.g. `EventEmitter2`: for
+   * `this` the class's own name, and for `super` the name the class's `extends` writes.
+   */
   receiverType?: string
+  /**
+   * The receiver's leading name is bound by one of the module's imports, which no scope nearer the
+   * call declares again.
+   */
+  importedReceiver?: boolean
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding
 }
