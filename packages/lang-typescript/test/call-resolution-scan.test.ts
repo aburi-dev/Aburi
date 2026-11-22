@@ -292,6 +292,7 @@ describe("scan — a call through a field of a declared type", () => {
         "export class UserService extends Base {",
         "  private untyped",
         "  private either: UserRepository | null = null",
+        "  private both: UserRepository | Store",
         "  constructor(private readonly repo: UserRepository, private store: Store) {",
         "    super()",
         "    this.untyped = repo",
@@ -300,6 +301,7 @@ describe("scan — a call through a field of a declared type", () => {
         "    this.repo.find(id)",
         "    this.untyped.find(id)",
         "    this.either.find(id)",
+        "    this.both.find(id)",
         "    this.inherited.find(id)",
         "    this.store.find(id)",
         "  }",
@@ -313,7 +315,8 @@ describe("scan — a call through a field of a declared type", () => {
     expect(byId?.calls.map((call) => [call.target, call.resolved])).toEqual([
       ["this.repo.find", "ts:src/repo.ts#UserRepository.find"],
       ["this.untyped.find", null],
-      ["this.either.find", null],
+      ["this.either.find", "ts:src/repo.ts#UserRepository.find"],
+      ["this.both.find", null],
       ["this.inherited.find", null],
       ["this.store.find", null],
     ])
@@ -373,6 +376,24 @@ describe("scan — a call through a field of a declared type", () => {
       "}",
     ])
     expect(calls).toEqual({ "Box.put": [null] })
+  })
+
+  it("reaches the member of the class a name is declared or constructed with", async () => {
+    const calls = await callsByMember([
+      "const shared = new UserRepository()",
+      'export function byParameter(repo: UserRepository) { repo.find("a") }',
+      'export function byConst() { const repo = new AdminRepository(); repo.find("a") }',
+      'export function byModule() { shared.find("a") }',
+      'export function shadowed(repo: UserRepository) { { const repo = make(); repo.find("a") } }',
+      'export function byInterface(repo: Pick<UserRepository, "find">) { repo.find("a") }',
+    ])
+    expect(calls).toEqual({
+      byParameter: [USER_FIND],
+      byConst: ["ts:src/repo.ts#AdminRepository", ADMIN_FIND],
+      byModule: [USER_FIND],
+      shadowed: [null, null],
+      byInterface: [null],
+    })
   })
 
   it("reaches a class imported through a tsconfig path alias", async () => {

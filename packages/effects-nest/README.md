@@ -11,6 +11,7 @@ Recognised shapes:
 | `eventBus.emit(...)` | `event.publish` |
 | `EventEmitter2.emit(...)` | `event.publish` |
 | `this.<field>.emit(...)`, the field declared as `EventEmitter2` | `event.publish` |
+| `bus.emit(...)`, `bus` a parameter, a variable declared as `EventEmitter2` or a `const` constructed from it | `event.publish` |
 
 The receiver is recognised by its name or by its declared type. The name check
 is a case-sensitive exact match against a fixed set (currently
@@ -27,15 +28,15 @@ create(id: string) {
 }
 ```
 
-The type is the one the language plugin reads off the class (a constructor
-parameter property or a typed field), and it must be the `EventEmitter2` the
-file imports from an emitter module: under its own name, under an alias
-(`EventEmitter2 as Bus`), through a namespace (`ee.EventEmitter2`), or as
-`eventemitter2`'s default import. Only a field of `this` that the class itself
-declares carries a type: a parameter or local
-(`publish(bus: EventEmitter2) { bus.emit(…) }`), an inherited field and
-`this.hub.bus.emit(…)` go through the name check alone, so `bus.emit(…)` there
-stays a call. The name check comes first: `this.eventBus.emit(…)` is a publish
+The type is the one the language plugin reads off the declaration (a
+constructor parameter property or a typed field of the class, a parameter or a
+variable annotated with it, or a `const` constructed from it, as in
+`publish(bus: EventEmitter2) { bus.emit(…) }`), and it must be the
+`EventEmitter2` the file imports from an emitter module: under its own name,
+under an alias (`EventEmitter2 as Bus`), through a namespace
+(`ee.EventEmitter2`), or as `eventemitter2`'s default import. An inherited field,
+an untyped parameter and `this.hub.bus.emit(…)` carry no type and go through the
+name check alone, so `bus.emit(…)` there stays a call. The name check comes first: `this.eventBus.emit(…)` is a publish
 tagged `eventBus.emit` whatever `eventBus` is declared as.
 
 Layered gate: the owning file must import a recognised event-emitter module
