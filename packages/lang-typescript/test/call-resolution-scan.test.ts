@@ -480,6 +480,31 @@ describe("scan — a call of a member a class inherits", () => {
   })
 })
 
+describe("scan — a call through a name an export clause gives", () => {
+  it("reaches the declaration the clause exports under that name", async () => {
+    const result = await callsFromMain(
+      {
+        "src/lib.ts": [
+          "function stringType() { return 1 }",
+          "class Impl { static make() { return 2 } }",
+          "export { stringType as string, Impl as Service }",
+          "",
+        ].join("\n"),
+      },
+      ['import { Service, string } from "./lib"', 'import * as lib from "./lib"'],
+      ["string()", "Service.make()", "lib.string()"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["string", "ts:src/lib.ts#stringType"],
+        ["Service.make", "ts:src/lib.ts#Impl::make"],
+        ["lib.string", "ts:src/lib.ts#stringType"],
+      ],
+      unresolved: [],
+    })
+  })
+})
+
 describe("scan — a call through a tsconfig path alias", () => {
   it("reaches the Symbol the alias names, and buckets what it cannot reach by where it led", async () => {
     const result = await callsFromMain(

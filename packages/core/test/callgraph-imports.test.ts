@@ -1,4 +1,4 @@
-import { importEdge } from "@aburi/test-support"
+import { importEdge, reexportEdge } from "@aburi/test-support"
 import type { ImportEdge, Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { resolveCallGraph } from "../src/callgraph"
@@ -167,6 +167,50 @@ describe("import scope", () => {
         "ts:src/repo.js#helper",
       )
       expect(resolveFrom("src/a.ts", "./repo.js", ["src/repo.tsx"], ["ts", "js"])).toBeNull()
+    })
+  })
+
+  describe("an import resolves to the declaration an export clause exports under its name", () => {
+    const stringType = makeSymbol("ts:src/x.ts#stringType", { derivedBy: ["export-clause:string"] })
+
+    it.each<[string, string, ImportClause]>([
+      ["a named import", "string", { source: "./x", symbols: ["string"] }],
+      ["an aliased import", "str", { source: "./x", symbols: ["string as str"] }],
+      ["a namespace import", "z.string", { source: "./x", symbols: "*", namespaceBinding: "z" }],
+    ])("reaches it through %s", (_binding, target, edge) => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, stringType],
+        importsByFile: importsOf("src/a.ts", edge),
+      })
+      expect(result.edges.map((e) => [e.to, e.confidence])).toEqual([
+        ["ts:src/x.ts#stringType", "high"],
+      ])
+    })
+
+    it("reaches it through a barrel that re-exports the name", () => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target: "string", line: 4 }])
+      const importsByFile = new Map<string, readonly ImportEdge[]>([
+        ["src/a.ts", [importEdge({ source: "./barrel", symbols: ["string"] })]],
+        ["src/barrel.ts", [reexportEdge("./x", "string")]],
+      ])
+      const result = resolveCallGraph({
+        symbols: [caller, stringType],
+        importsByFile,
+        moduleFiles: new Map([["ts", new Set(importsByFile.keys())]]),
+      })
+      expect(result.edges.map((e) => [e.to, e.confidence])).toEqual([
+        ["ts:src/x.ts#stringType", "high"],
+      ])
+    })
+
+    it("takes it over a declaration of the clause's name, which the module does not export so", () => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target: "string", line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, stringType, makeSymbol("ts:src/x.ts#string")],
+        importsByFile: importsOf("src/a.ts", { source: "./x", symbols: ["string"] }),
+      })
+      expect(result.edges.map((e) => e.to)).toEqual(["ts:src/x.ts#stringType"])
     })
   })
 

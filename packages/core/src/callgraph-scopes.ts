@@ -1,5 +1,6 @@
 import {
   type Confidence,
+  EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   EXPORT_DEFAULT_DERIVED_BY,
   type ImportEdge,
   type Symbol as IRSymbol,
@@ -465,10 +466,25 @@ function declaredExport(table: SymbolTable, file: string, name: string): ExportA
       ? null
       : { kind: "declared", sites: names.map((declared) => ({ file, name: declared })) }
   }
+  const aliased = exportedUnder(table, file, name)
+  if (aliased.length > 0) {
+    return { kind: "declared", sites: aliased.map((declared) => ({ file, name: declared })) }
+  }
   const declares =
     table.topLevelByFile.get(file)?.has(name) === true ||
     table.memberOwnersByFile.get(file)?.has(name) === true
   return declares ? { kind: "declared", sites: [{ file, name }] } : null
+}
+
+// `export { Hono as HonoBase }` exports the declaration under the clause's name, which a
+// declaration of that name, if the module has one, does not then hold.
+function exportedUnder(table: SymbolTable, file: string, name: string): string[] {
+  const token = `${EXPORT_CLAUSE_DERIVED_BY_PREFIX}${name}`
+  const found: string[] = []
+  for (const bucket of table.topLevelByFile.get(file)?.values() ?? []) {
+    for (const symbol of bucket) if (symbol.derivedBy.includes(token)) found.push(symbol.name)
+  }
+  return found
 }
 
 const NO_FILES: ReadonlySet<string> = new Set()
