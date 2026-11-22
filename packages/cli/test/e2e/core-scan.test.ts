@@ -65,7 +65,17 @@ describe("scan — integration through real plugins", () => {
   it("buckets an expression-receiver call as `dynamic`, end to end", async () => {
     await workspace.writeSource(
       "app/api/reports/route.ts",
-      `export function GET() {\n  return getRepo().save({})\n}\n`,
+      [
+        "class ReportRepo {",
+        "  save(report: object) { return report }",
+        "}",
+        "const repos: Record<string, ReportRepo> = {}",
+        "function getRepo(kind: string) { return repos[kind] }",
+        "export function GET() {",
+        '  return getRepo("reports").save({})',
+        "}",
+        "",
+      ].join("\n"),
     )
 
     const result = await scanWorkspace({ frameworks: [nextFrameworkPlugin] })

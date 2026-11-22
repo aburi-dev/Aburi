@@ -372,6 +372,26 @@ describe("runFilePipeline — effect classification", () => {
     ])
   })
 
+  it("keys each call whose leading name nothing declares, and no key one of whose calls has one", async () => {
+    const global = (line: number, unboundHead?: boolean) =>
+      makeCall({
+        target: "runtime.tick",
+        line,
+        ...(unboundHead === undefined ? {} : { unboundHead }),
+      })
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        global(3, true),
+        global(3, true),
+        global(4, true),
+        global(4),
+        global(5, false),
+      ),
+    })
+
+    expect(result.unboundHeads).toEqual([makeSymbolCallKey("stub:test.stub#Fn", 3, "runtime.tick")])
+  })
+
   it("keys the call each receiver is the result of, and no key whose calls name two or none", async () => {
     const through = (line: number, from?: number) =>
       makeCall({

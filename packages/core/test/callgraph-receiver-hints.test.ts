@@ -14,7 +14,7 @@ describe("receiver hints from the LSP tier", () => {
   it.each<[string, IRSymbol]>([
     ["this.method", makeSymbol("ts:src/other.ts#this.method", { kind: "method" })],
     ["super.method", makeSymbol("ts:src/other.ts#super.method", { kind: "method" })],
-    ["this.#v", makeSymbol("ts:src/a.ts#C.#v", { kind: "method" })],
+    ["this.#v", makeSymbol("ts:src/a.ts#C.#v", { kind: "method", name: "C.#v" })],
   ])(
     "`%s` stays unresolved without one, bucketed `dynamic`, whatever Symbol it might name",
     (target, lookalike) => {

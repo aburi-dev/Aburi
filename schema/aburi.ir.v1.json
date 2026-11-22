@@ -265,7 +265,7 @@
         "external": {
           "type": "integer",
           "minimum": 0,
-          "description": "The callee is bound by an import whose specifier is not relative and that the language maps to no file the scan has Symbols in — a bare package specifier, a workspace package, or a path alias that names no such file."
+          "description": "No declaration the scan read can be the callee: the leading name is bound by an import whose specifier is not relative and that the language maps to no file the scan has Symbols in (a bare package specifier, a workspace package, or a path alias that names no such file), it is a name nothing around the call declares and no Symbol has (a global such as `setTimeout`), or the member called is a name no Symbol has and no module exports (`items.map()`). Counted ahead of every bucket but localScope."
         },
         "dynamic": {
           "type": "integer",
@@ -280,7 +280,7 @@
         "noMatch": {
           "type": "integer",
           "minimum": 0,
-          "description": "No candidate was found at all — a typo, or a callee that is neither imported nor present in the workspace."
+          "description": "No candidate was found, though some Symbol or export bears the name — a member the declaration the head is bound to lacks, or a name a relative module does not export."
         }
       }
     },

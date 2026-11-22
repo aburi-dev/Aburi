@@ -103,8 +103,11 @@ describe("a call through a receiver of a declared type", () => {
       typed("UserRepository"),
     ],
     [
-      "a class that does not declare the member itself",
-      [makeSymbol("ts:src/repo.ts#UserRepository", { kind: "class" })],
+      "a class that does not declare the member itself, though another class does",
+      [
+        makeSymbol("ts:src/repo.ts#UserRepository", { kind: "class" }),
+        makeSymbol("ts:src/other.ts#Index.find", { kind: "method" }),
+      ],
       [FROM_REPO],
       typed("UserRepository"),
     ],
@@ -403,7 +406,7 @@ describe("a call through a receiver of a declared type, to a member its class in
     ],
     [
       "classes that extend each other",
-      classes(USER, MIDDLE),
+      [...classes(USER, MIDDLE), method("ts:src/other.ts#Index.find")],
       [
         [USER, "Middle"],
         [MIDDLE, "UserRepository"],
@@ -698,15 +701,19 @@ describe("a call through a variable another module declares, whose type that mod
 
   it.each<[string, readonly IRSymbol[], Setup]>([
     ["a variable its module names no type for", manager(), { valueTypes: new Map() }],
-    ["a type its module binds to no class", [makeSymbol(CLASS, { kind: "interface" })], {}],
+    [
+      "a type its module binds to no class",
+      [makeSymbol(CLASS, { kind: "interface" }), makeSymbol(STOP, { kind: "method" })],
+      {},
+    ],
     [
       "a type only the caller's file binds",
       manager(),
       { variableImports: [], imports: [FROM_MANAGER, FROM_CLASSES] },
     ],
     [
-      "a member neither the type nor a class it extends declares",
-      manager(),
+      "a member neither the type nor a class it extends declares, though another class does",
+      [...manager(), makeSymbol("ts:src/engine.ts#Engine.start", { kind: "method" })],
       { target: "manager.start" },
     ],
     [

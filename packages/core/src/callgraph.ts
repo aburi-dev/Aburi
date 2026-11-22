@@ -12,6 +12,7 @@ import {
   type ClassHeritages,
   type DeclaredReceiverTypes,
   makeCallSiteKey,
+  makeSymbolCallKey,
   type ReceiverCalls,
   type ReturnSources,
   type ValueTypes,
@@ -20,6 +21,8 @@ import {
   buildCallResolutionStats,
   classifyUnresolved,
   compareDiagnostic,
+  type WorkspaceNames,
+  workspaceNamesOf,
 } from "./callgraph-diagnostics"
 import { buildSymbolTable } from "./callgraph-index"
 import { CallResolver } from "./callgraph-outcomes"
@@ -49,6 +52,8 @@ export interface ResolveCallGraphInput {
   declaredReceiverTypes?: DeclaredReceiverTypes
   /** By `makeSymbolCallKey`: each call whose receiver's leading name an import of its file binds. */
   importedReceivers?: ReadonlySet<string>
+  /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
+  unboundHeads?: ReadonlySet<string>
   classHeritages?: ClassHeritages
   /** By variable Symbol id: the named type its module declares its value with. */
   valueTypes?: ValueTypes
@@ -82,6 +87,12 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const importedReceivers = input.importedReceivers ?? EMPTY_CALL_SITE_KEYS
+  const unboundHeads = input.unboundHeads ?? EMPTY_CALL_SITE_KEYS
+  let names: WorkspaceNames | null = null
+  const workspaceNames = (): WorkspaceNames => {
+    names ??= workspaceNamesOf(input.symbols, input.importsByFile)
+    return names
+  }
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
     classHeritages: input.classHeritages ?? new Map(),
@@ -138,6 +149,8 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
             dynamicReceiver: dynamicCallSites.has(callSiteKey),
             reachesWorkspace: (specifier) =>
               mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
+            unboundHead: unboundHeads.has(makeSymbolCallKey(symbol.id, call.line, call.target)),
+            names: workspaceNames(),
           }),
         )
         return call

@@ -242,10 +242,13 @@ describe("a call through a barrel", () => {
       ["ts:src/x.ts#X", "ts:src/y.ts#X"],
     ],
     [
-      "a member neither declares",
+      "a member neither declares, though another class does",
       "X.run",
       disagreeing,
-      classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+      [
+        ...classes("ts:src/x.ts#X", "ts:src/y.ts#X"),
+        makeSymbol("ts:src/z.ts#Z.run", { kind: "method" }),
+      ],
       ["ts:src/x.ts#X", "ts:src/y.ts#X"],
     ],
     [

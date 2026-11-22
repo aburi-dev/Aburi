@@ -175,6 +175,11 @@ export interface CallCandidate {
    * initializes the `const` the receiver names.
    */
   receiverCall?: CallSiteRef
+  /**
+   * `true` when no scope around the call, the module's included, declares the callee's leading
+   * name: a global the runtime or the test runner provides, or a name nothing declares.
+   */
+  unboundHead?: boolean
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding
 }

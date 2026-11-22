@@ -67,6 +67,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
   declaredReceiverTypes: DeclaredReceiverType[]
   importedReceivers: string[]
   receiverCalls: ReceiverCallEntry[]
+  unboundHeads: string[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
@@ -77,6 +78,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
   const declaredTypes = new Map<string, string | null>()
   // `false` once one of a key's calls goes through a name no import binds.
   const imported = new Map<string, boolean>()
+  // `false` once one of a key's calls starts with a name a scope around it declares.
+  const unbound = new Map<string, boolean>()
   // `null` once a key's calls stop naming one call, a call with none included.
   const receiverCallSites = new Map<string, string | null>()
   const owner: OwnerSummary = {
@@ -159,6 +162,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
       const seen = declaredTypes.get(symbolKey)
       declaredTypes.set(symbolKey, seen === undefined || seen === type ? type : null)
       imported.set(symbolKey, imported.get(symbolKey) !== false && call.importedReceiver === true)
+      unbound.set(symbolKey, unbound.get(symbolKey) !== false && call.unboundHead === true)
       const written = call.receiverCall
       const site = isCallSiteRef(written)
         ? makeCallSiteKey(input.file.path, written.line, written.target)
@@ -171,6 +175,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
   for (const [key, type] of declaredTypes)
     if (type !== null) declaredReceiverTypes.push([key, type])
   const importedReceivers = [...imported].flatMap(([key, through]) => (through ? [key] : []))
+  const unboundHeads = [...unbound].flatMap(([key, none]) => (none ? [key] : []))
   const receiverCalls = [...receiverCallSites].flatMap(([key, site]): ReceiverCallEntry[] =>
     site === null ? [] : [[key, site]],
   )
@@ -185,6 +190,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     declaredReceiverTypes,
     importedReceivers,
     receiverCalls,
+    unboundHeads,
     declinedCalls,
   }
 }

@@ -187,6 +187,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     dynamicCallSites: extracted.dynamicCallSites,
     declaredReceiverTypes: extracted.declaredReceiverTypes,
     importedReceivers: extracted.importedReceivers,
+    unboundHeads: extracted.unboundHeads,
     classHeritages: extracted.classHeritages,
     valueTypes: extracted.valueTypes,
     returnSources: extracted.returnSources,

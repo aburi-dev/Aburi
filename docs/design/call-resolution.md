@@ -51,6 +51,7 @@ The resolver runs after all files have been parsed and `Symbol[]` is available. 
 | `importedReceiver` | `walkBody` `CallCandidate` | set where one of the module's imports binds the receiver's leading name and no scope nearer the call declares it again (`lang-plugin.md` LP20n7). It reaches the resolver as `importedReceivers`, keyed as `declaredReceiverTypes` is, and §4.7.1 reads a `valueType` only for such a call |
 | `returns` | `extractSymbols` `SymbolCandidate` | for a function, a method or a variable holding one by name, what a call of it gives back, as its declaration says: a type, the call its body returns, or the name the variable holds (`lang-plugin.md` LP20n8). It reaches the resolver as `returnSources`, keyed by the Symbol's id, a call as its `makeCallSiteKey`, and §4.7.1 reads it for a call whose `receiverCall` names a call of the Symbol |
 | `receiverCall` | `walkBody` `CallCandidate` | the call whose result the receiver is, written in the chain or initializing the `const` the receiver names (`lang-plugin.md` LP20n9). It reaches the resolver as `receiverCalls`, keyed as `declaredReceiverTypes` is, the call as its `makeCallSiteKey`, and §4.7.1 reads it |
+| `unboundHead` | `walkBody` `CallCandidate` | set where no scope around the call, the module's included, declares the target's leading name (`lang-plugin.md` LP20n10). It reaches the resolver as `unboundHeads`, keyed as `declaredReceiverTypes` is, and §8.1 reads it to bucket a call it leaves unresolved; it never resolves one |
 | `receiverTypes` | LSP layer only | actual type at each call receiver — absent in the untyped tier |
 
 The **caller's file path** is the anchor; resolution is always evaluated in the frame of one call site inside one Symbol.
@@ -349,22 +350,31 @@ The core does not persist a "why null" reason field on `Call` in the IR. Adding 
 | Bucket | Meaning | Example |
 |---|---|---|
 | `local-scope` | resolved to a local variable / parameter | `callback(x)` inside `foo(callback: () => void)` |
-| `external` | bound by an import whose specifier is bare and maps to no file the scan read (§4.4.1), or whose re-exports lead to one (§4.4.2) | `lodash.sortBy(...)` |
+| `external` | out of the workspace's reach: bound by an import whose specifier is bare and maps to no file the scan read (§4.4.1) or whose re-exports lead to one (§4.4.2), a leading name nothing around the call declares and no top-level Symbol has, or a member that no Symbol is named and no module exports | `lodash.sortBy(...)`, `setTimeout(...)`, `expect(x).toBe(1)`, `items.map(...)` |
 | `dynamic` | receiver is an expression, not a name, or a `this` / `super` receiver with no usable LSP hint and no declared type that resolves it (§4.7.1) | `getRepo().save(...)`, `items[0].save(...)` |
 | `ambiguous` | multiple candidates | two `User.save` in different components with no explicit import |
-| `no-match` | no candidate found | typo, a member the declaration a call is bound to does not declare, or callee not in workspace and not imported. A member missing from a field's declared type is `dynamic` (§4.7.1) |
+| `no-match` | no candidate found, though some Symbol or export bears the name | a member the declaration a call is bound to does not declare while another declaration names one so, or a name the module declares in a scope the resolver does not read. A member missing from a field's declared type is `dynamic` (§4.7.1) |
 
 #### Bucket precedence
 
 A single call can fit several descriptions at once — a parameter that happens to share a name with an imported package, an ambiguous qname reached through an expression receiver. The reviewer needs one stable answer per call site, so the resolver assigns the **most specific cause** in this fixed order:
 
 1. `local-scope` — the §4.2 shadow guard fired, so the resolver never looked outward at all.
-2. `dynamic` — the receiver is not a name: an expression receiver reported by the language plugin — which includes a property addressed through brackets with something that is not a name, `items[0].save()` ([`lang-plugin.md`](./lang-plugin.md) §4.4) — or `this` / `super` with no declared type that resolves the call (§4.7.1) and no *usable* LSP hint (§4.7) — no hint at all, or one the LSP tier declined (§5.2). `this.save()` is filed here because in the untyped tier the receiver's identity is a runtime property of the class hierarchy, exactly like `getRepo().save()`; there is no name for the resolver to look up. The bucket therefore does not separate a call site the type layer never spoke about from one whose hint was refused; `stats.lspEnrichment.hintsRejected` ([`lsp-enrichment.md`](./lsp-enrichment.md) §7.2) is where that distinction is recorded, per run rather than per call site.
-3. `ambiguous` — some tier found the callee and refused to choose between candidates (§7.1). The competing Symbol ids are recorded, deduplicated and lex-sorted.
-4. `external` — the head of the target is bound in the caller's file by an import whose specifier is not relative and that §4.4.1 maps to no file the scan read, or by an import whose re-exports lead to such a specifier (§4.4.2). Such a callee is out of reach by construction rather than by accident. A bare specifier that does map to one is a relative specifier's case, and a miss through it is `no-match`.
-5. `no-match` — nothing matched anywhere, or the search ended at the declaration the head is bound to, which lacks the member (§4.3, §4.4).
+2. `external` — no declaration the scan read can be the callee, whatever the receiver holds. That is so in three cases:
+   - The head of the target is bound in the caller's file by an import whose specifier is not relative and that §4.4.1 maps to no file the scan read, or by an import whose re-exports lead to such a specifier (§4.4.2). A bare specifier that does map to one is a relative specifier's case, and a miss through it is `no-match`.
+   - The language plugin reports that nothing around the call declares the head (`unboundHead`), and no Symbol's qualified name starts with it. That is a global the runtime or a test runner provides (`setTimeout`, `expect`, `describe`), or a name nothing declares at all.
+   - The target is qualified, and its last segment, read without a trailing `!`, is the last segment of no Symbol's qualified name, dropped Symbols included, nor a name any module exports or re-exports. `items.map()`, `res.status()` and `this.emit()` in a class extending a package's `EventEmitter` call members of values the workspace does not define, whatever those values are. A computed segment (`<computed>`) names nothing and is never counted here.
+
+   The test reads names, not declarations: a member a workspace file assigns in a constructor without declaring it as a Symbol is counted here as well. It runs before `dynamic` and `ambiguous` because neither a receiver the resolver could name nor a choice between candidates would reach a callee no declaration has.
+3. `dynamic` — the receiver is not a name: an expression receiver reported by the language plugin — which includes a property addressed through brackets with something that is not a name, `items[0].save()` ([`lang-plugin.md`](./lang-plugin.md) §4.4) — or `this` / `super` with no declared type that resolves the call (§4.7.1) and no *usable* LSP hint (§4.7) — no hint at all, or one the LSP tier declined (§5.2). `this.save()` is filed here because in the untyped tier the receiver's identity is a runtime property of the class hierarchy, exactly like `getRepo().save()`; there is no name for the resolver to look up. The bucket therefore does not separate a call site the type layer never spoke about from one whose hint was refused; `stats.lspEnrichment.hintsRejected` ([`lsp-enrichment.md`](./lsp-enrichment.md) §7.2) is where that distinction is recorded, per run rather than per call site.
+4. `ambiguous` — some tier found the callee and refused to choose between candidates (§7.1). The competing Symbol ids are recorded, deduplicated and lex-sorted.
+5. `no-match` — nothing matched, though the workspace bears the name somewhere: the search ended at the declaration the head is bound to, which lacks the member (§4.3, §4.4), or at a module that does not export the name.
+
+Where another section files a call under `dynamic`, `ambiguous` or `no-match`, that holds for a call none of the three `external` cases covers; one they cover is `external` whatever else is true of it.
 
 The order is part of the contract: changing it would move counts between buckets on an unchanged workspace.
+
+The buckets also give the census a second denominator. `external` holds the calls the scan could not have resolved by reading more carefully, so `resolvedCalls / (totalCalls − external)` is the share of the calls that could reach workspace code that do. The public-repository benchmark reports it beside the plain rate.
 
 **A call an effect plugin claimed is in no bucket at all**, whichever description fits it. Such a
 call never reaches `calls[]` ([`ir-schema.md`](./ir-schema.md) §9.3), so the resolver never sees
@@ -493,8 +503,10 @@ Every implementation of the resolver must pass the following.
 | ID | Input | Expected |
 |---|---|---|
 | CR27 | `factory().save()` | `resolved` = `null`, diagnostic bucket `dynamic` |
-| CR28 | typo callee (`foo()` where no `foo` exists) | `resolved` = `null`, diagnostic bucket `no-match` |
+| CR28 | a named import of a name its relative module does not declare (`import { foo } from './y'; foo()`) | `resolved` = `null`, diagnostic bucket `no-match`. A typo nothing declares (`foo()` where no `foo` exists) is CR30's case |
 | CR29 | ambiguous cross-component qname | diagnostic bucket `ambiguous`, candidates recorded |
+| CR30 | `setTimeout(...)`, `expect(x).toBe(1)`, `describe(...)` where nothing around the call declares the head and no Symbol's qualified name starts with it | `resolved` = `null`, diagnostic bucket `external`. A head a top-level Symbol has stays out of `external` |
+| CR31 | `items.map(...)`, `items.map!(...)`, `this.emit(...)` in a class extending a package's class, where no Symbol's qualified name ends in the member and no module exports it | `resolved` = `null`, diagnostic bucket `external`, ahead of `dynamic` and `ambiguous`; a parameter's member stays `local-scope`. A member a Symbol of any class is named, kept or dropped, a name an export clause or a re-export gives, and a computed member stay out of `external` |
 
 ## 11. Design Decisions
 

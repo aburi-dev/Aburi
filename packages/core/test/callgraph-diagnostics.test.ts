@@ -1,6 +1,7 @@
+import { reexportEdge } from "@aburi/test-support"
 import type { ImportEdge, Symbol as IRSymbol, Signature } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { makeCallSiteKey } from "../src/call-site"
+import { makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
 import { resolveCallGraph } from "../src/callgraph"
 import { importsOf, params, withCalls } from "./fixtures/callgraph"
 import { makeSymbol } from "./fixtures/ir"
@@ -12,6 +13,8 @@ interface CallSetup {
   imports?: ReadonlyMap<string, readonly ImportEdge[]>
   signature?: Signature
   dynamicReceiver?: boolean
+  /** Whether the language plugin found no scope around the call declaring its leading name. */
+  unbound?: boolean
 }
 
 interface UnresolvedCase extends CallSetup {
@@ -30,8 +33,15 @@ function resolveOneCall(target: string, setup: CallSetup = {}) {
     dynamicCallSites: new Set(
       setup.dynamicReceiver === true ? [makeCallSiteKey("src/a.ts", 4, target)] : [],
     ),
+    unboundHeads: new Set(
+      setup.unbound === true ? [makeSymbolCallKey("ts:src/a.ts#caller", 4, target)] : [],
+    ),
   })
 }
+
+/** A member of that name elsewhere, so a call of it is one the workspace could hold. */
+const namesake = (member: string): IRSymbol =>
+  makeSymbol(`ts:src/other.ts#Other.${member}`, { kind: "method" })
 
 function competingSaves(): IRSymbol[] {
   return [
@@ -170,13 +180,80 @@ describe("unresolved calls are bucketed by cause", () => {
     ])
   })
 
+  it.each<UnresolvedCase>([
+    {
+      cause: "a global's member",
+      target: "console.log",
+      callees: [namesake("log")],
+      unbound: true,
+    },
+    { cause: "a global called by its name", target: "setTimeout", unbound: true },
+    { cause: "a member nothing in the workspace names", target: "items.map" },
+    { cause: "a member behind a non-null assertion nothing names", target: "items.map!" },
+  ])("`external` for $cause, which no declaration the scan read can be", (c) => {
+    const result = resolveOneCall(c.target, c)
+    expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["external"])
+  })
+
+  it.each<UnresolvedCase & { bucket: string }>([
+    {
+      cause: "an unbound name a top-level declaration of the workspace has",
+      target: "helper",
+      callees: [makeSymbol("ts:src/script.ts#helper")],
+      unbound: true,
+      bucket: "no-match",
+    },
+    {
+      cause: "an unbound name a top-level declaration has, of a member another class declares",
+      target: "Pricing.calc",
+      callees: [makeSymbol("ts:src/p.ts#Pricing", { kind: "class" }), namesake("calc")],
+      unbound: true,
+      bucket: "no-match",
+    },
+    {
+      cause: "a member another class declares",
+      target: "items.save",
+      callees: [namesake("save")],
+      bucket: "no-match",
+    },
+    {
+      cause: "a member a dropped Symbol declares",
+      target: "items.save",
+      callees: [
+        makeSymbol("ts:src/other.ts#Other.save", {
+          kind: "method",
+          dropped: true,
+          dropReason: "cat-b:trivial",
+        }),
+      ],
+      bucket: "no-match",
+    },
+    {
+      cause: "a member an export clause names",
+      target: "z.string",
+      callees: [makeSymbol("ts:src/z.ts#stringType", { derivedBy: ["export-clause:string"] })],
+      bucket: "no-match",
+    },
+    {
+      cause: "a member a barrel re-exports under its name",
+      target: "z.string",
+      imports: new Map([["src/z.ts", [reexportEdge("./types", "stringType as string")]]]),
+      bucket: "no-match",
+    },
+    { cause: "a computed member", target: "items.<computed>", bucket: "no-match" },
+  ])("keeps $cause out of `external`, as one the workspace could hold", (c) => {
+    expect(resolveOneCall(c.target, c).diagnostics.map((d) => d.bucket)).toEqual([c.bucket])
+  })
+
   it("`dynamic` for an empty target", () => {
     expect(resolveOneCall("").diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
   })
 
   it("`dynamic` for an expression receiver, with nothing else about the call changed", () => {
-    const plain = resolveOneCall("factory.save")
-    const flagged = resolveOneCall("factory.save", { dynamicReceiver: true })
+    const callees = [namesake("save")]
+    const plain = resolveOneCall("factory.save", { callees })
+    const flagged = resolveOneCall("factory.save", { callees, dynamicReceiver: true })
     expect(flagged.symbols).toEqual(plain.symbols)
     expect(flagged.symbols[0]?.calls[0]?.resolved).toBeNull()
     expect(flagged.edges).toEqual([])
@@ -231,21 +308,43 @@ describe("unresolved calls are bucketed by cause", () => {
       candidates: [],
     },
     {
-      cause: "`dynamic` over `external`, for an expression receiver named like an import",
+      cause: "`external` over `dynamic`, for an expression receiver whose head a package binds",
       target: "repo.save",
+      callees: [namesake("save")],
       imports: importsOf("src/a.ts", { source: "@acme/db", symbols: ["repo"] }),
       dynamicReceiver: true,
-      bucket: "dynamic",
+      bucket: "external",
       candidates: [],
     },
     {
-      cause:
-        "`ambiguous` over `external`, since a recorded conflict outranks an out-of-reach import",
+      cause: "`external` over `ambiguous`, since the import binds the name the namesakes spell",
       target: "User.save",
       callees: competingSaves(),
       imports: importsOf("src/a.ts", { source: "@acme/models", symbols: ["User"] }),
-      bucket: "ambiguous",
-      candidates: ["ts:src/b.ts#User.save", "ts:src/z.ts#User.save"],
+      bucket: "external",
+      candidates: [],
+    },
+    {
+      cause: "`external` over `dynamic`, for a global's call the receiver is",
+      target: "expect.toBe",
+      callees: [namesake("toBe")],
+      dynamicReceiver: true,
+      unbound: true,
+      bucket: "external",
+      candidates: [],
+    },
+    {
+      cause: "`external` over `dynamic`, for a member of `this` nothing declares",
+      target: "this.emit",
+      bucket: "external",
+      candidates: [],
+    },
+    {
+      cause: "`local-scope` over `external`, for a member of a parameter nothing declares",
+      target: "res.json",
+      signature: params("res"),
+      bucket: "local-scope",
+      candidates: [],
     },
   ])("prefers $cause", (c) => {
     expect(resolveOneCall(c.target, c).diagnostics.map((d) => [d.bucket, d.candidates])).toEqual([
@@ -261,14 +360,18 @@ describe("unresolved calls are bucketed by cause", () => {
         { target: "shadowed", line: 2, resolved: null },
         { target: "this.save", line: 3, resolved: null },
         { target: "typoed", line: 4, resolved: null },
+        { target: "this.emit", line: 5, resolved: null },
       ],
     })
     const helper = makeSymbol("ts:src/a.ts#helper")
-    const result = resolveCallGraph({ symbols: [caller, helper], importsByFile: NO_IMPORTS })
+    const result = resolveCallGraph({
+      symbols: [caller, helper, namesake("save")],
+      importsByFile: NO_IMPORTS,
+    })
     expect(result.stats).toEqual({
-      totalCalls: 4,
+      totalCalls: 5,
       resolvedCalls: 1,
-      unresolved: { localScope: 1, external: 0, dynamic: 1, ambiguous: 0, noMatch: 1 },
+      unresolved: { localScope: 1, external: 1, dynamic: 1, ambiguous: 0, noMatch: 1 },
     })
   })
 

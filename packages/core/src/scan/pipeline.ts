@@ -64,6 +64,8 @@ export interface ExtractedFile extends FileOutcomeCommon {
   returnSources: readonly ReturnSourceEntry[]
   /** By `makeSymbolCallKey`: the call each call's receiver is the result of. */
   receiverCalls: readonly ReceiverCallEntry[]
+  /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
+  unboundHeads: readonly string[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -169,6 +171,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         valueTypes: [],
         returnSources: [],
         receiverCalls: [],
+        unboundHeads: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -195,6 +198,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const declaredReceiverTypes: DeclaredReceiverType[] = []
     const importedReceivers: string[] = []
     const receiverCalls: ReceiverCallEntry[] = []
+    const unboundHeads: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
@@ -260,6 +264,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         declaredReceiverTypes: fileDeclaredReceiverTypes,
         importedReceivers: fileImportedReceivers,
         receiverCalls: fileReceiverCalls,
+        unboundHeads: fileUnboundHeads,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
@@ -267,6 +272,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       declaredReceiverTypes.push(...fileDeclaredReceiverTypes)
       importedReceivers.push(...fileImportedReceivers)
       receiverCalls.push(...fileReceiverCalls)
+      unboundHeads.push(...fileUnboundHeads)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -311,6 +317,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       valueTypes,
       returnSources,
       receiverCalls,
+      unboundHeads,
       specifierPaths,
       fault: null,
     }

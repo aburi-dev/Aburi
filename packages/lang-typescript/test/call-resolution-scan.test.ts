@@ -415,7 +415,7 @@ describe("scan — a call through a field of a declared type", () => {
     // What the declared type leaves keeps the bucket the earlier steps gave it.
     expect(buckets).toEqual([
       ["byInterface", "repo.find", "local-scope"],
-      ["shadowed", "make", "no-match"],
+      ["shadowed", "make", "external"],
       ["shadowed", "repo.find", "local-scope"],
     ])
   })
@@ -871,6 +871,42 @@ describe("scan — a call through what another call gave back", () => {
       ["made.run", RUN],
       ["load.run", null],
       ["held.run", null],
+    ])
+  })
+})
+
+describe("scan — a call no declaration the scan read can be the callee of", () => {
+  it("buckets a global's call and a member nothing in the workspace names `external`", async () => {
+    const result = await callsFromMain(
+      {
+        "src/store.ts": [
+          'import { EventEmitter } from "node:events"',
+          "export class Store extends EventEmitter {",
+          '  save() { this.emit("saved") }',
+          "}",
+          "",
+        ].join("\n"),
+      },
+      ['import { Store } from "./store"'],
+      [
+        "setTimeout(() => {}, 1)",
+        "expect(1).toBe(1)",
+        "const items = [1, 2]",
+        "items.map(String)",
+        "items.save()",
+        "const store = new Store()",
+        "store.flush()",
+        "localHelper()",
+      ],
+    )
+    expect(result.unresolved).toEqual([
+      ["setTimeout", "external"],
+      ["expect", "external"],
+      ["expect.toBe", "external"],
+      ["items.map", "external"],
+      ["items.save", "no-match"],
+      ["store.flush", "external"],
+      ["localHelper", "external"],
     ])
   })
 })

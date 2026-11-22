@@ -410,13 +410,14 @@ describe("authoredCalls", () => {
       totalCalls: 8,
       resolvedCalls: 4,
       unresolved: buckets(2, 2),
+      reachableCalls: 6,
       generatedCalls: 12,
     })
   })
 
   it("counts no generated call for a census without the block, and nothing for no census", () => {
     const census = { totalCalls: 3, resolvedCalls: 2, unresolved: buckets(1, 0) }
-    expect(authoredCalls(census)).toEqual({ ...census, generatedCalls: 0 })
+    expect(authoredCalls(census)).toEqual({ ...census, reachableCalls: 3, generatedCalls: 0 })
     expect(authoredCalls(null)).toBeNull()
   })
 })
@@ -428,7 +429,7 @@ describe("renderReport — the Call resolution table", () => {
       generator: "0.6.0",
       options: { runs: 1, warmup: 0, diff: false },
       environment: { node: "v24.0.0", cpus: 4, cpuModel: "CPU", totalMemGiB: 16 },
-      results: metrics.map(([id, generatedCalls]) => ({
+      results: metrics.map(([id, generatedCalls, reachableCalls]) => ({
         id,
         scan: { wallMsMedian: 1000, peakRssKb: 120_000, exitCode: 0, warnings: "" },
         metrics: {
@@ -439,6 +440,7 @@ describe("renderReport — the Call resolution table", () => {
           skippedFiles: 0,
           skippedByReason: {},
           ...(generatedCalls === undefined ? {} : { generatedCalls }),
+          ...(reachableCalls === undefined ? {} : { reachableCalls }),
         },
       })),
     }
@@ -455,6 +457,15 @@ describe("renderReport — the Call resolution table", () => {
       "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
       "| `shadcn-ui` | 1 | 200 | 50 | 25.0% | 15485 | 40 | 0 | 0 | — |",
       "| `hono` | 1 | 200 | 50 | 25.0% | 0 | 40 | 0 | 0 | — |",
+    ])
+  })
+
+  it("rates the resolved calls against the ones no `external` call leaves out", () => {
+    expect(resolutionTable(sweep(["hono", 0, 80], ["zod", 0, 0])).slice(0, 4)).toEqual([
+      "| Repo | Components | Calls | Resolved | Resolved % | Reachable | Resolved % of reachable | Generated calls | Deps | Parse errors | Files lost | Reasons |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+      "| `hono` | 1 | 200 | 50 | 25.0% | 80 | 62.5% | 0 | 40 | 0 | 0 | — |",
+      "| `zod` | 1 | 200 | 50 | 25.0% | 0 | — | 0 | 40 | 0 | 0 | — |",
     ])
   })
 

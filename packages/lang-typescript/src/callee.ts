@@ -2,6 +2,7 @@ import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } f
 import { type CallCandidate, type CallSiteRef, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
+import { bindingOf } from "./name-binding"
 import {
   initializingCall,
   isImportedReceiver,
@@ -35,6 +36,7 @@ export function readCall(node: Node): CallCandidate | null {
     ...(receiverType === null ? {} : { receiverType }),
     ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
     ...(receiverCall === null ? {} : { receiverCall }),
+    ...(isUnboundHead(callee) ? { unboundHead: true } : {}),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }
@@ -47,6 +49,41 @@ function receiverCallOf(callee: Node): CallSiteRef | null {
   if (receiver?.type === "call_expression") return callSiteOf(receiver)
   const call = receiver?.type === "identifier" ? initializingCall(receiver) : null
   return call === null ? null : callSiteOf(call)
+}
+
+function isUnboundHead(callee: Node): boolean {
+  const head = leadingName(callee)
+  return head !== null && bindingOf(head, head.text) === null
+}
+
+// The name the target spells first, read down the chain as `describeCallee` reads it.
+function leadingName(callee: Node): Node | null {
+  let node: Node | null = callee
+  while (node !== null) {
+    switch (node.type) {
+      case "identifier":
+        return node
+      case "member_expression":
+      case "subscript_expression":
+        node = node.childForFieldName("object")
+        break
+      case "call_expression":
+        node = node.childForFieldName("function")
+        break
+      case "parenthesized_expression":
+        node = parenthesizedReceiver(node)
+        break
+      case "as_expression":
+      case "satisfies_expression":
+      case "type_assertion":
+      case "non_null_expression":
+        node = wrappedExpression(node)
+        break
+      default:
+        return null
+    }
+  }
+  return null
 }
 
 export function callSiteOf(call: Node): CallSiteRef | null {
