@@ -242,6 +242,21 @@ describe("a call through a field of `this` carries the type the class declares t
       "N.C.m",
       "EventEmitter2",
     ],
+    [
+      "a `readonly` field constructed from a class",
+      classOf("  private readonly events = new EventEmitter2()", '  m() { this.events.emit("a") }'),
+      "C.m",
+      "EventEmitter2",
+    ],
+    [
+      "a `readonly` field constructed from a namespace's generic class",
+      classOf(
+        "  readonly #events = new ee.EventEmitter2<Payload>()",
+        '  m() { this.#events.emit("a") }',
+      ),
+      "C.m",
+      "ee.EventEmitter2",
+    ],
   ])("reads %s", async (_label, source, id, type) => {
     expect(await emitReceiverType(source, id)).toBe(type)
   })
@@ -250,9 +265,26 @@ describe("a call through a field of `this` carries the type the class declares t
 describe("a call through `this` carries no type where the class does not declare one", () => {
   it.each([
     [
-      "a field with no annotation",
+      "a field with no annotation and no `readonly`, which can be assigned another value",
       classOf("  events = new EventEmitter2()", '  m() { this.events.emit("a") }'),
       "C.m",
+    ],
+    [
+      "a `readonly` field holding a call's result",
+      classOf("  readonly events = make()", '  m() { this.events.emit("a") }'),
+      "C.m",
+    ],
+    [
+      "a `readonly` field constructed from a class a scope around the class binds",
+      [
+        "export function f(EventEmitter2: any) {",
+        "  return class {",
+        "    readonly events = new EventEmitter2()",
+        '    m() { this.events.emit("a") }',
+        "  }",
+        "}",
+      ].join("\n"),
+      "f",
     ],
     [
       "a type that is not a name",

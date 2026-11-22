@@ -19,7 +19,12 @@ import type {
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import type { CallSiteBinding, ClassHeritageEntry, DeclaredReceiverType } from "../call-site"
+import type {
+  CallSiteBinding,
+  ClassHeritageEntry,
+  DeclaredReceiverType,
+  ValueTypeEntry,
+} from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
@@ -46,6 +51,8 @@ export interface ExtractedFile extends FileOutcomeCommon {
   declaredReceiverTypes: readonly DeclaredReceiverType[]
   /** Each class the file declares that extends a name, dropped or kept. */
   classHeritages: readonly ClassHeritageEntry[]
+  /** Each variable the file declares with a named type, dropped or kept. */
+  valueTypes: readonly ValueTypeEntry[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -147,6 +154,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         thisBindings: [],
         declaredReceiverTypes: [],
         classHeritages: [],
+        valueTypes: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -164,6 +172,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         : await deadline.excluding(() => origins.attach(file, writtenImports, candidates))
 
     const classHeritages = candidates.flatMap(classHeritageOf)
+    const valueTypes = candidates.flatMap(valueTypeOf)
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
@@ -277,6 +286,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       thisBindings,
       declaredReceiverTypes,
       classHeritages,
+      valueTypes,
       specifierPaths,
       fault: null,
     }
@@ -293,6 +303,11 @@ function classHeritageOf(candidate: SymbolCandidate<OpaqueAstNode>): ClassHerita
   if (kind !== "class" || typeof superclass !== "string") return []
   const members = Array.isArray(instanceMembers) ? instanceMembers : []
   return [[id, { superclass, instanceMembers: members.filter((name) => typeof name === "string") }]]
+}
+
+function valueTypeOf(candidate: SymbolCandidate<OpaqueAstNode>): ValueTypeEntry[] {
+  const { id, kind, valueType } = candidate
+  return kind === "const" && typeof valueType === "string" ? [[id, valueType]] : []
 }
 
 function reexportsAny(edge: ImportEdge): boolean {

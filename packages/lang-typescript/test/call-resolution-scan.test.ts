@@ -293,6 +293,8 @@ describe("scan — a call through a field of a declared type", () => {
         "  private untyped",
         "  private either: UserRepository | null = null",
         "  private both: UserRepository | Store",
+        "  private readonly made = new UserRepository()",
+        "  private reassignable = new UserRepository()",
         "  constructor(private readonly repo: UserRepository, private store: Store) {",
         "    super()",
         "    this.untyped = repo",
@@ -304,6 +306,8 @@ describe("scan — a call through a field of a declared type", () => {
         "    this.both.find(id)",
         "    this.inherited.find(id)",
         "    this.store.find(id)",
+        "    this.made.find(id)",
+        "    this.reassignable.find(id)",
         "  }",
         "}",
         "",
@@ -319,6 +323,8 @@ describe("scan — a call through a field of a declared type", () => {
       ["this.both.find", null],
       ["this.inherited.find", null],
       ["this.store.find", null],
+      ["this.made.find", "ts:src/repo.ts#UserRepository.find"],
+      ["this.reassignable.find", null],
     ])
   })
 
@@ -606,6 +612,53 @@ describe("scan — a call of a member a class inherits", () => {
         ["g.find", "ts:src/kinds.ts#WithGetter.find"],
         ["i.find", null],
       ],
+    })
+  })
+})
+
+describe("scan — a call through a variable another module declares", () => {
+  it("reaches the member of the class its module declares it with, the type bound there", async () => {
+    const result = await callsFromMain(
+      {
+        "src/manager.ts": [
+          'import { Manager } from "./classes"',
+          "export const manager = new Manager()",
+          "export let current: Manager | null = null",
+          "export const made = make()",
+          "",
+        ].join("\n"),
+        "src/classes.ts": [
+          "export class Base {",
+          "  start(id: string) { return id }",
+          "}",
+          "export class Manager extends Base {",
+          "  stop(id: string) { return id }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      [
+        'import { current, made, manager } from "./manager"',
+        'import * as managers from "./manager"',
+      ],
+      [
+        'manager.stop("a")',
+        'manager.start("a")',
+        'current.stop("a")',
+        'managers.manager.stop("a")',
+        'made.stop("a")',
+      ],
+    )
+    const STOP = "ts:src/classes.ts#Manager.stop"
+    expect(result).toEqual({
+      resolved: [
+        ["manager.stop", STOP],
+        ["manager.start", "ts:src/classes.ts#Base.start"],
+        ["current.stop", STOP],
+        ["managers.manager.stop", STOP],
+        ["made.stop", null],
+      ],
+      unresolved: [["made.stop", "no-match"]],
     })
   })
 })

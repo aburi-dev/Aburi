@@ -35,6 +35,9 @@ function normalizeCandidateStrings(
   const decorators = normalizeDecoratorNames(candidate.decorators)
   const written = candidate.superclass
   const superclass = typeof written === "string" ? toNfc(written) : written
+  const writtenValueType = candidate.valueType
+  const valueType =
+    typeof writtenValueType === "string" ? toNfc(writtenValueType) : writtenValueType
   const members = candidate.instanceMembers
   const instanceMembers = Array.isArray(members)
     ? mapPreservingIdentity(members, (name) => (typeof name === "string" ? toNfc(name) : name))
@@ -44,7 +47,8 @@ function normalizeCandidateStrings(
     signature === candidate.signature &&
     decorators === candidate.decorators &&
     superclass === written &&
-    instanceMembers === members
+    instanceMembers === members &&
+    valueType === writtenValueType
   ) {
     return candidate
   }
@@ -56,6 +60,7 @@ function normalizeCandidateStrings(
   }
   if (superclass !== undefined) next.superclass = superclass
   if (instanceMembers !== undefined) next.instanceMembers = instanceMembers
+  if (valueType !== undefined) next.valueType = valueType
   return next
 }
 

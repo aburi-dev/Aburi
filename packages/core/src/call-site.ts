@@ -42,6 +42,11 @@ export type ClassHeritages = ReadonlyMap<SymbolId, ClassHeritage>
 
 export type ClassHeritageEntry = readonly [classId: SymbolId, heritage: ClassHeritage]
 
+/** By variable Symbol id: the named type its module declares its value with. */
+export type ValueTypes = ReadonlyMap<SymbolId, string>
+
+export type ValueTypeEntry = readonly [variableId: SymbolId, type: string]
+
 export function receiverHead(target: string): string | undefined {
   return target.split(".").find((segment) => segment.length > 0)
 }

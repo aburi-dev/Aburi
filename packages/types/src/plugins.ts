@@ -120,6 +120,11 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
    * of which hides the one the class inherits. A field written only with its type is none.
    */
   instanceMembers?: string[]
+  /**
+   * For a variable: the named type its value is declared with, type arguments aside, or for a
+   * `const` the class it is constructed from, as its module binds that name.
+   */
+  valueType?: string
 }
 
 /** The nodes of one declaration that merged into a Symbol another declaration leads. */

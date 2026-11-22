@@ -7,7 +7,7 @@ import {
   type Symbol as IRSymbol,
   type SymbolId,
 } from "@aburi/types"
-import type { ClassHeritages } from "./call-site"
+import type { ClassHeritages, ValueTypes } from "./call-site"
 import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
@@ -64,6 +64,7 @@ export interface ResolutionRun {
   /** By language, file and name: where a module's export of the name is declared. */
   exportAnswers: Map<string, ExportAnswer>
   classHeritages: ClassHeritages
+  valueTypes: ValueTypes
 }
 
 export interface ResolveTargetContext {
@@ -109,17 +110,41 @@ export function resolveThroughDeclaredType(
   ctx: ResolveTargetContext,
   type: string | undefined,
 ): ResolutionHit | null {
-  if (type === undefined) return null
+  if (type === undefined) return resolveThroughImportedValue(ctx)
   const segments = splitTargetSegments(ctx.target)
   if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
   const member = segments.at(-1)
   if (segments.length < 2 || member === undefined) return null
-  for (const owner of classChain(ctx.run, boundClass(ctx, type))) {
+  return instanceMemberOf(ctx.run, boundClass(ctx, type), member)
+}
+
+// A variable another module declares carries no type on the call, so its own module's declaration
+// gives it, the type's name bound there. One the caller's file declares has its type on the call.
+function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+  const segments = splitTargetSegments(ctx.target)
+  const member = segments.at(-1)
+  const [head, ...rest] = segments.slice(0, -1)
+  if (head === undefined || member === undefined || ctx.parameterNames.has(head)) return null
+  const reach = { ...ctx, reachable: ctx.run.table.allById }
+  if (resolveInFileScope(reach, head, rest, newTrace()) !== null) return null
+  const id = resolveInImportScope(reach, head, rest, newTrace())?.hit?.id
+  const variable = id === undefined ? undefined : ctx.run.table.allById.get(id)
+  const type = id === undefined ? undefined : ctx.run.valueTypes.get(id)
+  if (variable === undefined || type === undefined) return null
+  return instanceMemberOf(ctx.run, boundClassWhere(ctx.run, variable, type), member)
+}
+
+function instanceMemberOf(
+  run: ResolutionRun,
+  type: IRSymbol | null,
+  member: string,
+): ResolutionHit | null {
+  for (const owner of classChain(run, type)) {
     const id = instanceMemberId(owner, member)
     if (id === null) return null
     // The value may be a subclass's, whose override then runs.
-    if (ctx.run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
-    if (declaresMember(ctx.run, owner, member) || ctx.run.table.allById.has(id)) return null
+    if (run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
+    if (declaresMember(run, owner, member) || run.table.allById.has(id)) return null
   }
   return null
 }
@@ -201,16 +226,19 @@ function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
 // The class's own file binds the name it extends, by its declarations and its imports.
 function superclassOf(run: ResolutionRun, owner: IRSymbol): IRSymbol | null {
   const superclass = run.classHeritages.get(owner.id)?.superclass
-  if (superclass === undefined) return null
+  return superclass === undefined ? null : boundClassWhere(run, owner, superclass)
+}
+
+function boundClassWhere(run: ResolutionRun, declaration: IRSymbol, type: string): IRSymbol | null {
   return boundClass(
     {
       run,
-      caller: owner,
-      target: superclass,
-      imports: run.importsByFile.get(owner.source.file) ?? [],
+      caller: declaration,
+      target: type,
+      imports: run.importsByFile.get(declaration.source.file) ?? [],
       parameterNames: EMPTY_NAME_SET,
     },
-    superclass,
+    type,
   )
 }
 

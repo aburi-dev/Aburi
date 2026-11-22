@@ -14,6 +14,7 @@ import {
   makeCallSiteKey,
   makeSymbolCallKey,
   receiverHead,
+  type ValueTypes,
 } from "./call-site"
 import {
   buildCallResolutionStats,
@@ -55,6 +56,8 @@ export interface ResolveCallGraphInput {
   /** By `makeSymbolCallKey`: the named type each call's receiver is declared with. */
   declaredReceiverTypes?: DeclaredReceiverTypes
   classHeritages?: ClassHeritages
+  /** By variable Symbol id: the named type its module declares its value with. */
+  valueTypes?: ValueTypes
   /**
    * By importing file, then by bare specifier: the workspace-relative paths the language's import
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
@@ -83,6 +86,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
     classHeritages: input.classHeritages ?? new Map(),
+    valueTypes: input.valueTypes ?? new Map(),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),

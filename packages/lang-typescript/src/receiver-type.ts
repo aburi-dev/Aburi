@@ -40,14 +40,16 @@ export function receiverTypeOf(callee: Node): string | null {
 function nameTypeOf(name: Node): string | null {
   const [declaration, ...others] = bindingOf(name, name.text)?.declarations ?? []
   if (declaration === undefined || others.length > 0) return null
-  if (declaration.type === "variable_declarator") {
-    if (declaration.childForFieldName("name")?.type !== "identifier") return null
-    if (declaration.childForFieldName("type") !== null) return annotatedType(declaration)
-    return isConst(declaration) ? constructedClass(declaration.childForFieldName("value")) : null
-  }
+  if (declaration.type === "variable_declarator") return heldTypeOf(declaration)
   if (!PARAMETER_TYPES.has(declaration.type)) return null
   if (declaration.childForFieldName("pattern")?.type !== "identifier") return null
   return annotatedType(declaration)
+}
+
+export function heldTypeOf(declarator: Node): string | null {
+  if (declarator.childForFieldName("name")?.type !== "identifier") return null
+  if (declarator.childForFieldName("type") !== null) return annotatedType(declarator)
+  return isConst(declarator) ? constructedClass(declarator.childForFieldName("value")) : null
 }
 
 function annotatedType(declaration: Node): string | null {
@@ -163,7 +165,7 @@ function declaredType(scope: ThisScope, name: string): string | null {
     if (member.type === "public_field_definition") {
       if (member.childForFieldName("name")?.text !== name) continue
       if (hasChildOfType(member, "static") !== scope.isStatic) continue
-      return namedType(member)
+      return fieldType(member)
     }
     if (!scope.isStatic && isConstructor(member)) {
       const property = parameterProperty(member, name)
@@ -171,6 +173,13 @@ function declaredType(scope: ThisScope, name: string): string | null {
     }
   }
   return null
+}
+
+// A `readonly` field holds the value it is initialized with for as long as the instance does.
+function fieldType(field: Node): string | null {
+  if (field.childForFieldName("type") !== null) return namedType(field)
+  if (!hasChildOfType(field, "readonly")) return null
+  return constructedClass(field.childForFieldName("value"))
 }
 
 // A reader binds the type's name where the module binds it, so a name a scope between the

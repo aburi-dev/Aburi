@@ -12,6 +12,7 @@ import type {
   ClassHeritages,
   DeclaredReceiverTypes,
   ThisBindingSites,
+  ValueTypes,
 } from "../call-site"
 import { countBy } from "../collections"
 import { CoreError, REPORT_BUG } from "../errors"
@@ -51,6 +52,7 @@ export interface ExtractedFiles {
   thisBindings: ThisBindingSites
   declaredReceiverTypes: DeclaredReceiverTypes
   classHeritages: ClassHeritages
+  valueTypes: ValueTypes
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
@@ -70,6 +72,7 @@ export class ExtractionCollator {
   }
   readonly #declaredReceiverTypes = new Map<string, string>()
   readonly #classHeritages = new Map<SymbolId, ClassHeritage>()
+  readonly #valueTypes = new Map<SymbolId, string>()
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -86,6 +89,7 @@ export class ExtractionCollator {
     thisBindings: this.#thisBindings,
     declaredReceiverTypes: this.#declaredReceiverTypes,
     classHeritages: this.#classHeritages,
+    valueTypes: this.#valueTypes,
     specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
@@ -284,6 +288,7 @@ export class ExtractionCollator {
           this.#declaredReceiverTypes.set(key, type)
         }
         for (const [id, heritage] of result.classHeritages) this.#classHeritages.set(id, heritage)
+        for (const [id, type] of result.valueTypes) this.#valueTypes.set(id, type)
         if (result.specifierPaths.length > 0) {
           out.specifierPaths.set(result.path, new Map(result.specifierPaths))
         }

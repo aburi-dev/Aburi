@@ -3,7 +3,7 @@ import type { Symbol as IRSymbol } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { type ClassHeritages, makeCallSiteKey, makeSymbolCallKey } from "../src/call-site"
 import { type ResolveCallGraphInput, resolveCallGraph } from "../src/callgraph"
-import { edgesOf, type ImportClause, importsOf, withCalls } from "./fixtures/callgraph"
+import { edgesOf, type ImportClause, importsOf, params, withCalls } from "./fixtures/callgraph"
 import { makeSymbol, type SymbolOverrides } from "./fixtures/ir"
 
 const CALLER = "ts:src/service.ts#UserService.byId"
@@ -512,5 +512,136 @@ describe("a call through `super`, whose type is the class the caller's class ext
     const result = resolveSuper(symbols, heritages, call)
     expect(result.edges).toEqual([])
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})
+
+describe("a call through a variable another module declares, whose type that module names", () => {
+  const CALLER_ID = "ts:src/use.ts#main"
+  const VARIABLE = "ts:src/manager.ts#manager"
+  const CLASS = "ts:src/classes.ts#Manager"
+  const STOP = `${CLASS}.stop`
+  const FROM_MANAGER: ImportClause = { source: "./manager", symbols: ["manager"] }
+  const FROM_CLASSES: ImportClause = { source: "./classes", symbols: ["Manager"] }
+  const manager = (file = "src/classes.ts") => [
+    makeSymbol(`ts:${file}#Manager`, { kind: "class" }),
+    makeSymbol(`ts:${file}#Manager.stop`, { kind: "method" }),
+  ]
+
+  interface Setup {
+    target?: string
+    caller?: SymbolOverrides
+    variable?: SymbolOverrides
+    imports?: ImportClause[]
+    /** What the variable's own file imports. */
+    variableImports?: ImportClause[]
+    valueType?: string | null
+    heritages?: readonly Heritage[]
+  }
+
+  // `src/manager.ts` declares `manager` with the type `Manager`, which it imports from `./classes`.
+  function resolveImported(symbols: readonly IRSymbol[], setup: Setup = {}) {
+    const { target = "manager.stop", imports = [FROM_MANAGER], valueType = "Manager" } = setup
+    return resolveCallGraph({
+      symbols: [
+        withCalls(CALLER_ID, [{ target, line: 3 }], setup.caller),
+        makeSymbol(VARIABLE, { kind: "const", ...setup.variable }),
+        ...symbols,
+      ],
+      importsByFile: new Map([
+        ...importsOf("src/use.ts", ...imports),
+        ...importsOf("src/manager.ts", ...(setup.variableImports ?? [FROM_CLASSES])),
+      ]),
+      valueTypes: new Map(valueType === null ? [] : [[symbolId(VARIABLE), valueType]]),
+      classHeritages: heritagesOf(setup.heritages ?? []),
+    })
+  }
+
+  it.each<[string, readonly IRSymbol[], Setup, string]>([
+    ["a named import", manager(), {}, STOP],
+    [
+      "an import under another name",
+      manager(),
+      {
+        imports: [{ source: "./manager", symbols: ["manager as current"] }],
+        target: "current.stop",
+      },
+      STOP,
+    ],
+    [
+      "a namespace import",
+      manager(),
+      {
+        imports: [{ source: "./manager", symbols: "*", namespaceBinding: "managers" }],
+        target: "managers.manager.stop",
+      },
+      STOP,
+    ],
+    [
+      "a variable a drop rule removed",
+      manager(),
+      { variable: { dropped: true, dropReason: "no calls" } },
+      STOP,
+    ],
+    [
+      "a class the variable's own file declares",
+      manager("src/manager.ts"),
+      { variableImports: [] },
+      "ts:src/manager.ts#Manager.stop",
+    ],
+    [
+      "a class the type extends",
+      [
+        ...manager(),
+        makeSymbol("ts:src/classes.ts#Base", { kind: "class" }),
+        makeSymbol("ts:src/classes.ts#Base.start", { kind: "method" }),
+      ],
+      { target: "manager.start", heritages: [[CLASS, "Base"]] },
+      "ts:src/classes.ts#Base.start",
+    ],
+  ])(
+    "resolves to the member of the type, through %s, at medium confidence",
+    (_c, symbols, setup, to) => {
+      const result = resolveImported(symbols, setup)
+      expect(edgesOf(result)).toEqual([[CALLER_ID, to, "medium"]])
+      expect(result.diagnostics).toEqual([])
+    },
+  )
+
+  it.each<[string, readonly IRSymbol[], Setup, string]>([
+    ["a variable its module names no type for", manager(), { valueType: null }, "no-match"],
+    [
+      "a type its module binds to no class",
+      [makeSymbol(CLASS, { kind: "interface" })],
+      {},
+      "no-match",
+    ],
+    [
+      "a type only the caller's file binds",
+      manager(),
+      { variableImports: [], imports: [FROM_MANAGER, FROM_CLASSES] },
+      "no-match",
+    ],
+    [
+      "a member neither the type nor a class it extends declares",
+      manager(),
+      { target: "manager.start" },
+      "no-match",
+    ],
+    [
+      "a name the caller's file declares, whose type the call itself carries",
+      [...manager(), makeSymbol("ts:src/use.ts#manager", { kind: "const" })],
+      {},
+      "no-match",
+    ],
+    [
+      "a parameter of the caller's",
+      manager(),
+      { caller: { signature: params("manager") } },
+      "local-scope",
+    ],
+  ])("leaves %s unresolved", (_case, symbols, setup, bucket) => {
+    const result = resolveImported(symbols, setup)
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual([bucket])
   })
 })
