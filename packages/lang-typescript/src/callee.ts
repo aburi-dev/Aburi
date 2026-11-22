@@ -1,8 +1,13 @@
 import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } from "@aburi/core"
-import { type CallCandidate, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
+import { type CallCandidate, type CallSiteRef, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
-import { isImportedReceiver, receiverTypeOf, thisBindingAt } from "./receiver-type"
+import {
+  initializingCall,
+  isImportedReceiver,
+  receiverTypeOf,
+  thisBindingAt,
+} from "./receiver-type"
 
 export function readCall(node: Node): CallCandidate | null {
   const isNew = node.type === "new_expression"
@@ -15,6 +20,7 @@ export function readCall(node: Node): CallCandidate | null {
     (arg): arg is Node => arg !== null && arg.type !== "comment",
   )
   const receiverType = receiverTypeOf(callee)
+  const receiverCall = receiverType === null ? receiverCallOf(callee) : null
   const thisBinding = THIS_RECEIVERS.has(receiverHead(shape.target) ?? "")
     ? thisBindingAt(node)
     : null
@@ -28,11 +34,26 @@ export function readCall(node: Node): CallCandidate | null {
     ...(shape.dynamic ? { dynamicReceiver: true } : {}),
     ...(receiverType === null ? {} : { receiverType }),
     ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
+    ...(receiverCall === null ? {} : { receiverCall }),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }
 
 const THIS_RECEIVERS: ReadonlySet<string> = new Set(["this", "super"])
+
+function receiverCallOf(callee: Node): CallSiteRef | null {
+  if (callee.type !== "member_expression") return null
+  const receiver = callee.childForFieldName("object")
+  if (receiver?.type === "call_expression") return callSiteOf(receiver)
+  const call = receiver?.type === "identifier" ? initializingCall(receiver) : null
+  return call === null ? null : callSiteOf(call)
+}
+
+export function callSiteOf(call: Node): CallSiteRef | null {
+  const callee = call.childForFieldName("function") ?? call.namedChild(0)
+  const shape = callee === null ? null : describeCallee(callee)
+  return shape === null ? null : { target: shape.target, line: call.startPosition.row + 1 }
+}
 
 function literalOf(node: Node): string | null {
   switch (node.type) {

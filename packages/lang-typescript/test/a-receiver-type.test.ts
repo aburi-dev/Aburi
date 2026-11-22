@@ -539,6 +539,12 @@ describe("a call through a name carries the type the name is declared with", () 
       "const events = new EventEmitter2()\nexport class C {\n  m(@Use(events.emit()) events: Bus) {}\n}",
       "C",
     ],
+    ["a class constructed in place", "export function f() { new EventEmitter2().emit() }", "f"],
+    [
+      "a `const` constructed from the class in the class's own body",
+      "export class EventEmitter2 {\n  m() { const events = new EventEmitter2(); events.emit() }\n}",
+      "EventEmitter2.m",
+    ],
     [
       "a class constructed through a namespace, type arguments aside",
       "export function f() { const events = new ee.EventEmitter2<Payload>(); events.emit() }",
@@ -780,5 +786,71 @@ describe("a call through a name marks whether one of the module's imports binds 
 
   it("marks nothing for a call of the imported name itself", async () => {
     expect(await importedOf(calling(FROM_MANAGER, "  manager()"), "manager")).toBeUndefined()
+  })
+})
+
+describe("a call through what another call gave back names that call", () => {
+  const receiverCallOf = async (source: string, target: string) => {
+    const calls = (await walkOf(source, "ts:src/a.ts#f")).calls.filter((c) => c.target === target)
+    expect(calls).toHaveLength(1)
+    return calls[0]?.receiverCall
+  }
+
+  it.each([
+    ["a call", "export function f() {\n  make().run()\n}", "make.run", { target: "make", line: 2 }],
+    [
+      "a member's call in a chain",
+      "export function f() {\n  builder.with(1).run()\n}",
+      "builder.with.run",
+      { target: "builder.with", line: 2 },
+    ],
+    [
+      "a `const` a call initializes",
+      "export function f() {\n  const s = make()\n  s.run()\n}",
+      "s.run",
+      { target: "make", line: 2 },
+    ],
+    [
+      "a `const` of the module a call initializes",
+      "const s = make()\nexport function f() {\n  s.run()\n}",
+      "s.run",
+      { target: "make", line: 1 },
+    ],
+    [
+      "a `const` a chain initializes",
+      "export function f() {\n  const s = a.b().c()\n  s.run()\n}",
+      "s.run",
+      { target: "a.b.c", line: 2 },
+    ],
+  ])("for %s", async (_label, source, target, call) => {
+    expect(await receiverCallOf(source, target)).toEqual(call)
+  })
+
+  it.each([
+    ["a `let`", "export function f() {\n  let s = make()\n  s.run()\n}", "s.run"],
+    [
+      "an annotated `const`, which carries its type instead",
+      "export function f() {\n  const s: Session = make()\n  s.run()\n}",
+      "s.run",
+    ],
+    [
+      "a `const` an awaited call initializes",
+      "export async function f() {\n  const s = await make()\n  s.run()\n}",
+      "s.run",
+    ],
+    [
+      "a destructured `const`",
+      "export function f() {\n  const { s } = make()\n  s.run()\n}",
+      "s.run",
+    ],
+    ["a parameter", "export function f(s) {\n  s.run()\n}", "s.run"],
+    [
+      "a member of a call's result",
+      "export function f() {\n  make().session.run()\n}",
+      "make.session.run",
+    ],
+    ["a call of the name itself", "export function f() {\n  const s = make()\n  s()\n}", "s"],
+  ])("is absent for %s", async (_label, source, target) => {
+    expect(await receiverCallOf(source, target)).toBeUndefined()
   })
 })

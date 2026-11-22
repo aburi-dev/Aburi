@@ -86,6 +86,7 @@ export { LANGUAGE_ID_GRAMMAR, LANGUAGE_ID_PATTERN, RESERVED_LANGUAGE_IDS } from 
 export type {
   BodyExtraction,
   CallCandidate,
+  CallSiteRef,
   ClassifyContext,
   DropHint,
   EffectClassification,
@@ -118,6 +119,7 @@ export type {
   ParseResult,
   PluginContext,
   Reexport,
+  ReturnedValue,
   SourceFile,
   SymbolCandidate,
   SymbolClassification,

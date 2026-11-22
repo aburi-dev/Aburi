@@ -19,11 +19,16 @@ import type {
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import type {
-  CallSiteBinding,
-  ClassHeritageEntry,
-  DeclaredReceiverType,
-  ValueTypeEntry,
+import {
+  type CallSiteBinding,
+  type ClassHeritageEntry,
+  type DeclaredReceiverType,
+  isCallSiteRef,
+  makeCallSiteKey,
+  type ReceiverCallEntry,
+  type ReturnSource,
+  type ReturnSourceEntry,
+  type ValueTypeEntry,
 } from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
@@ -55,6 +60,10 @@ export interface ExtractedFile extends FileOutcomeCommon {
   classHeritages: readonly ClassHeritageEntry[]
   /** Each variable the file declares with a named type or constructs from a class, dropped or kept. */
   valueTypes: readonly ValueTypeEntry[]
+  /** What a call of each function the file declares gives back, dropped or kept, where it says. */
+  returnSources: readonly ReturnSourceEntry[]
+  /** By `makeSymbolCallKey`: the call each call's receiver is the result of. */
+  receiverCalls: readonly ReceiverCallEntry[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -158,6 +167,8 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         importedReceivers: [],
         classHeritages: [],
         valueTypes: [],
+        returnSources: [],
+        receiverCalls: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -176,12 +187,14 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
     const classHeritages = candidates.flatMap(classHeritageOf)
     const valueTypes = candidates.flatMap(valueTypeOf)
+    const returnSources = candidates.flatMap((candidate) => returnSourceOf(candidate, file.path))
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
     const declaredReceiverTypes: DeclaredReceiverType[] = []
     const importedReceivers: string[] = []
+    const receiverCalls: ReceiverCallEntry[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
@@ -246,12 +259,14 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         thisBindings: fileThisBindings,
         declaredReceiverTypes: fileDeclaredReceiverTypes,
         importedReceivers: fileImportedReceivers,
+        receiverCalls: fileReceiverCalls,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
       declaredReceiverTypes.push(...fileDeclaredReceiverTypes)
       importedReceivers.push(...fileImportedReceivers)
+      receiverCalls.push(...fileReceiverCalls)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -294,6 +309,8 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       importedReceivers,
       classHeritages,
       valueTypes,
+      returnSources,
+      receiverCalls,
       specifierPaths,
       fault: null,
     }
@@ -316,6 +333,31 @@ function valueTypeOf(candidate: SymbolCandidate<OpaqueAstNode>): ValueTypeEntry[
   const { id, kind, valueType } = candidate
   const variable = kind === "const" || kind === "variable"
   return variable && typeof valueType === "string" ? [[id, valueType]] : []
+}
+
+// A function says what its call gives back by a type or a call, a variable by the name it holds.
+function returnSourceOf(
+  candidate: SymbolCandidate<OpaqueAstNode>,
+  file: string,
+): ReturnSourceEntry[] {
+  const { id, kind, returns } = candidate
+  if (typeof returns !== "object" || returns === null) return []
+  const source = returnSourceFrom(returns, kind === "const" || kind === "variable", file)
+  return source === null ? [] : [[id, source]]
+}
+
+function returnSourceFrom(returns: object, variable: boolean, file: string): ReturnSource | null {
+  if (variable) {
+    const reference = "reference" in returns ? returns.reference : undefined
+    return isName(reference) ? { reference } : null
+  }
+  if ("type" in returns) return isName(returns.type) ? { type: returns.type } : null
+  if (!("call" in returns) || !isCallSiteRef(returns.call)) return null
+  return { callSite: makeCallSiteKey(file, returns.call.line, returns.call.target) }
+}
+
+function isName(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
 }
 
 function reexportsAny(edge: ImportEdge): boolean {

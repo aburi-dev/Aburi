@@ -133,6 +133,34 @@ export function resolveThroughImportedValue(ctx: ResolveTargetContext): Resoluti
   return instanceMemberOf(ctx.run, boundClassWhere(ctx.run, variable, type), member)
 }
 
+// What a call gave back is a value of the class its callee declares, or of a subclass.
+export function resolveThroughReturnedClass(
+  ctx: ResolveTargetContext,
+  owner: IRSymbol | null,
+): ResolutionHit | null {
+  const segments = splitTargetSegments(ctx.target)
+  const member = segments.at(-1)
+  if (segments.length < 2 || member === undefined) return null
+  return instanceMemberOf(ctx.run, owner, member)
+}
+
+// A variable naming a function is read where it is declared, whatever a drop rule removed.
+export function resolveReference(
+  run: ResolutionRun,
+  variable: IRSymbol,
+  reference: string,
+): ResolutionHit | null {
+  const ctx = {
+    run,
+    caller: variable,
+    target: reference,
+    imports: run.importsByFile.get(variable.source.file) ?? [],
+    parameterNames: EMPTY_NAME_SET,
+    reachable: run.table.allById,
+  }
+  return resolveTarget(ctx, newTrace())
+}
+
 function instanceMemberOf(
   run: ResolutionRun,
   type: IRSymbol | null,
@@ -228,7 +256,11 @@ function superclassOf(run: ResolutionRun, owner: IRSymbol): IRSymbol | null {
   return superclass === undefined ? null : boundClassWhere(run, owner, superclass)
 }
 
-function boundClassWhere(run: ResolutionRun, declaration: IRSymbol, type: string): IRSymbol | null {
+export function boundClassWhere(
+  run: ResolutionRun,
+  declaration: IRSymbol,
+  type: string,
+): IRSymbol | null {
   return boundClass(
     {
       run,

@@ -822,3 +822,55 @@ describe("scan — a call into a workspace package by its name", () => {
     ])
   })
 })
+
+describe("scan — a call through what another call gave back", () => {
+  it("reaches the member of the class the callee gives back, each callee read where it is declared", async () => {
+    const result = await callsFromMain(
+      {
+        "src/box.ts": [
+          "export class Box {",
+          "  #n = 0",
+          "  run(id: string) { return id + this.#n }",
+          "  with(n: number): this {",
+          "    this.#n = n",
+          "    return this",
+          "  }",
+          "  static create() { return new Box() }",
+          "}",
+          "",
+        ].join("\n"),
+        "src/make.ts": [
+          'import { Box } from "./box"',
+          "export function make() { return new Box() }",
+          "export function build() { return make() }",
+          "export const create = make",
+          "export async function load() { return new Box() }",
+          "",
+        ].join("\n"),
+      },
+      ['import { Box } from "./box"', 'import { build, create, load, make } from "./make"'],
+      [
+        'make().run("a")',
+        'build().run("a")',
+        'create().run("a")',
+        'make().with(1).run("a")',
+        'Box.create().run("a")',
+        "const made = make()",
+        'made.run("a")',
+        'load().run("a")',
+        '{ let held = make(); held.run("a") }',
+      ],
+    )
+    const RUN = "ts:src/box.ts#Box.run"
+    expect(result.resolved?.filter(([target]) => target?.endsWith(".run"))).toEqual([
+      ["make.run", RUN],
+      ["build.run", RUN],
+      ["create.run", RUN],
+      ["make.with.run", RUN],
+      ["Box.create.run", RUN],
+      ["made.run", RUN],
+      ["load.run", null],
+      ["held.run", null],
+    ])
+  })
+})

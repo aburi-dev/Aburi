@@ -2,7 +2,7 @@ import type { ThisBinding } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
 import { isParameterProperty } from "./class-members"
-import { bindingOf, isModuleBinding, PARAMETER_TYPES } from "./name-binding"
+import { bindingOf, isModuleBinding, type NameBinding, PARAMETER_TYPES } from "./name-binding"
 
 const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "function_expression",
@@ -25,6 +25,7 @@ export function receiverTypeOf(callee: Node): string | null {
   if (receiver?.type === "this") return instanceClassOf(receiver)
   if (receiver?.type === "super") return extendedClassOf(receiver)
   if (receiver?.type === "identifier") return nameTypeOf(receiver)
+  if (receiver?.type === "new_expression") return constructedClass(receiver)
   if (receiver?.type !== "member_expression") return null
   if (receiver.childForFieldName("object")?.type !== "this") return null
   const field = receiver.childForFieldName("property")
@@ -37,7 +38,7 @@ export function receiverTypeOf(callee: Node): string | null {
 
 // A name is a value of the type its one declaration gives it: a parameter's or a variable's
 // annotation, or the class a `const` is constructed from, which it holds for as long as it is bound.
-function nameTypeOf(name: Node): string | null {
+export function nameTypeOf(name: Node): string | null {
   const [declaration, ...others] = bindingOf(name, name.text)?.declarations ?? []
   if (declaration === undefined || others.length > 0) return null
   if (declaration.type === "variable_declarator") return heldTypeOf(declaration)
@@ -50,6 +51,39 @@ export function heldTypeOf(declarator: Node): string | null {
   if (declarator.childForFieldName("name")?.type !== "identifier") return null
   if (declarator.childForFieldName("type") !== null) return annotatedType(declarator)
   return isConst(declarator) ? constructedClass(declarator.childForFieldName("value")) : null
+}
+
+// A `const` with no type of its own holds what its initializer's call gave back.
+export function initializingCall(name: Node): Node | null {
+  const [declaration, ...others] = bindingOf(name, name.text)?.declarations ?? []
+  if (declaration?.type !== "variable_declarator" || others.length > 0) return null
+  if (declaration.childForFieldName("name")?.type !== "identifier") return null
+  if (declaration.childForFieldName("type") !== null || !isConst(declaration)) return null
+  const value = declaration.childForFieldName("value")
+  return value?.type === "call_expression" ? value : null
+}
+
+// A `const` holding a name holds what the module binds under it where the `const` is written.
+export function referenceOf(declarator: Node): string | null {
+  if (declarator.childForFieldName("name")?.type !== "identifier") return null
+  if (declarator.childForFieldName("type") !== null || !isConst(declarator)) return null
+  const value = declarator.childForFieldName("value")
+  if (value?.type !== "identifier" && value?.type !== "member_expression") return null
+  return moduleClassName(value)
+}
+
+// What a function's annotation says a call of it gives back: `this` is the class of an instance
+// member, and any other type is the one the module binds under its name.
+export function returnAnnotationType(fn: Node): string | null {
+  const annotation = fn.childForFieldName("return_type")
+  const type = annotation === null ? null : firstNonCommentChild(annotation)
+  if (annotation === null || type === null) return null
+  if (type.type === "this_type") {
+    const body = fn.childForFieldName("body")
+    return body === null ? null : instanceClassOf(body)
+  }
+  const name = typeName(withoutNullish(type))
+  return name === null || isShadowed(annotation, headOf(name)) ? null : name
 }
 
 function annotatedType(declaration: Node): string | null {
@@ -65,7 +99,7 @@ function isConst(declarator: Node): boolean {
   )
 }
 
-function constructedClass(value: Node | null): string | null {
+export function constructedClass(value: Node | null): string | null {
   if (value?.type !== "new_expression") return null
   return moduleClassName(value.childForFieldName("constructor"))
 }
@@ -98,7 +132,19 @@ function moduleClassName(expression: Node | null): string | null {
   const name = expression === null ? null : dottedName(expression)
   if (expression === null || name === null) return null
   const binding = bindingOf(expression, headOf(name))
-  return binding === null || isModuleBinding(binding) ? name : null
+  return binding === null || isModuleBinding(binding) || isModuleClassItself(binding) ? name : null
+}
+
+// In its own body a class declaration's name is the class, which is the module's where the module
+// binds the declaration.
+function isModuleClassItself(binding: NameBinding): boolean {
+  const { scope } = binding
+  if (!CLASS_DECLARATIONS.has(scope.type)) return false
+  const name = nameFieldText(scope)
+  const outer = name === null ? null : bindingOf(scope, name)
+  return (
+    outer !== null && isModuleBinding(outer) && outer.declarations.some((d) => d.id === scope.id)
+  )
 }
 
 export function thisBindingAt(node: Node): ThisBinding | null {
@@ -130,7 +176,7 @@ function thisScope(from: Node): ThisScope | null {
 }
 
 // In an instance member `this` is a value of the class itself, which a reader binds by its name.
-function instanceClassOf(receiver: Node): string | null {
+export function instanceClassOf(receiver: Node): string | null {
   const scope = thisScope(receiver)
   if (scope === null || scope.isStatic || scope.declaresThis) return null
   const owner = scope.classBody.parent
