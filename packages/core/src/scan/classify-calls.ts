@@ -63,6 +63,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
   declinedCalls: DeclinedCall[]
   thisBindings: CallSiteBinding[]
   declaredReceiverTypes: DeclaredReceiverType[]
+  importedReceivers: string[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
@@ -71,6 +72,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
   const thisBindings: CallSiteBinding[] = []
   // `null` once a key's calls stop naming one type, an untyped call's included.
   const declaredTypes = new Map<string, string | null>()
+  // `false` once one of a key's calls goes through a name no import binds.
+  const imported = new Map<string, boolean>()
   const owner: OwnerSummary = {
     id: input.candidate.id,
     kind: input.candidate.kind,
@@ -150,11 +153,13 @@ export function classifyCalls(input: ClassifyCallsInput): {
       const symbolKey = makeSymbolCallKey(input.candidate.id, call.line, call.target)
       const seen = declaredTypes.get(symbolKey)
       declaredTypes.set(symbolKey, seen === undefined || seen === type ? type : null)
+      imported.set(symbolKey, imported.get(symbolKey) !== false && call.importedReceiver === true)
     }
   }
   const declaredReceiverTypes: DeclaredReceiverType[] = []
   for (const [key, type] of declaredTypes)
     if (type !== null) declaredReceiverTypes.push([key, type])
+  const importedReceivers = [...imported].flatMap(([key, through]) => (through ? [key] : []))
 
   // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
   // so two effects on one line keep the order they are written in, which `logic` reads.
@@ -164,6 +169,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     dynamicCallSites,
     thisBindings,
     declaredReceiverTypes,
+    importedReceivers,
     declinedCalls,
   }
 }

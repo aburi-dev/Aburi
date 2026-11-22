@@ -30,6 +30,7 @@ import {
   type ResolutionRun,
   resolveTarget,
   resolveThroughDeclaredType,
+  resolveThroughImportedValue,
   splitTargetSegments,
 } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
@@ -55,6 +56,8 @@ export interface ResolveCallGraphInput {
   dynamicCallSites?: ReadonlySet<string>
   /** By `makeSymbolCallKey`: the named type each call's receiver is declared with. */
   declaredReceiverTypes?: DeclaredReceiverTypes
+  /** By `makeSymbolCallKey`: each call whose receiver's leading name an import of its file binds. */
+  importedReceivers?: ReadonlySet<string>
   classHeritages?: ClassHeritages
   /** By variable Symbol id: the named type its module declares its value with. */
   valueTypes?: ValueTypes
@@ -83,6 +86,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   assertReceiverHintKeys(receiverHints)
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
+  const importedReceivers = input.importedReceivers ?? EMPTY_CALL_SITE_KEYS
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
     classHeritages: input.classHeritages ?? new Map(),
@@ -117,14 +121,16 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
       }
       const trace = newTrace()
       const ctx = { run, caller: symbol, target: call.target, imports, parameterNames }
-      const declaredType = () =>
-        resolveThroughDeclaredType(
-          ctx,
-          declaredReceiverTypes.get(makeSymbolCallKey(symbol.id, call.line, call.target)),
-        )
-      // A field's declared type is the untyped tier's, so a language server only lifts what it
-      // leaves. For `this.<method>` the server reads the class `this` is, inherited members
-      // included, so the class's own member answers only what its hint leaves.
+      const symbolCallKey = makeSymbolCallKey(symbol.id, call.line, call.target)
+      const declaredType = () => {
+        const type = declaredReceiverTypes.get(symbolCallKey)
+        if (type !== undefined) return resolveThroughDeclaredType(ctx, type)
+        return importedReceivers.has(symbolCallKey) ? resolveThroughImportedValue(ctx) : null
+      }
+      // A type the source declares, a receiver's, `super`'s or an imported variable's, is the
+      // untyped tier's, so a language server only lifts what it leaves. For `this.<method>` the
+      // server reads the class `this` is, inherited members included, so the class's own member
+      // answers only what its hint leaves.
       const throughThis = isThisMember(call.target)
       let hit = resolveTarget(ctx, trace) ?? (throughThis ? null : declaredType())
       if (hit === null) {

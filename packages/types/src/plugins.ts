@@ -147,6 +147,11 @@ export interface CallCandidate {
    * `this` the class's own name, and for `super` the name the class's `extends` writes.
    */
   receiverType?: string
+  /**
+   * The receiver's leading name is bound by one of the module's imports, which no scope nearer the
+   * call declares again.
+   */
+  importedReceiver?: boolean
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding
 }

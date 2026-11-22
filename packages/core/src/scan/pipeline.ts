@@ -49,9 +49,11 @@ export interface ExtractedFile extends FileOutcomeCommon {
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
   declaredReceiverTypes: readonly DeclaredReceiverType[]
+  /** By `makeSymbolCallKey`: each call whose receiver's leading name one of the file's imports binds. */
+  importedReceivers: readonly string[]
   /** Each class the file declares that extends a name, dropped or kept. */
   classHeritages: readonly ClassHeritageEntry[]
-  /** Each variable the file declares with a named type, dropped or kept. */
+  /** Each variable the file declares with a named type or constructs from a class, dropped or kept. */
   valueTypes: readonly ValueTypeEntry[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
@@ -153,6 +155,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         declinedCalls: [],
         thisBindings: [],
         declaredReceiverTypes: [],
+        importedReceivers: [],
         classHeritages: [],
         valueTypes: [],
         specifierPaths: [],
@@ -178,6 +181,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
     const declaredReceiverTypes: DeclaredReceiverType[] = []
+    const importedReceivers: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
@@ -241,11 +245,13 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         declinedCalls: fileDeclinedCalls,
         thisBindings: fileThisBindings,
         declaredReceiverTypes: fileDeclaredReceiverTypes,
+        importedReceivers: fileImportedReceivers,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
       declaredReceiverTypes.push(...fileDeclaredReceiverTypes)
+      importedReceivers.push(...fileImportedReceivers)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -285,6 +291,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       declinedCalls,
       thisBindings,
       declaredReceiverTypes,
+      importedReceivers,
       classHeritages,
       valueTypes,
       specifierPaths,
@@ -307,7 +314,8 @@ function classHeritageOf(candidate: SymbolCandidate<OpaqueAstNode>): ClassHerita
 
 function valueTypeOf(candidate: SymbolCandidate<OpaqueAstNode>): ValueTypeEntry[] {
   const { id, kind, valueType } = candidate
-  return kind === "const" && typeof valueType === "string" ? [[id, valueType]] : []
+  const variable = kind === "const" || kind === "variable"
+  return variable && typeof valueType === "string" ? [[id, valueType]] : []
 }
 
 function reexportsAny(edge: ImportEdge): boolean {

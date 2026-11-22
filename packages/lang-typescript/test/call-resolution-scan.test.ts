@@ -617,7 +617,7 @@ describe("scan — a call of a member a class inherits", () => {
 })
 
 describe("scan — a call through a variable another module declares", () => {
-  it("reaches the member of the class its module declares it with, the type bound there", async () => {
+  it("reaches the member of the class its module declares it with, the type bound there, unless a local hides the import", async () => {
     const result = await callsFromMain(
       {
         "src/manager.ts": [
@@ -647,6 +647,8 @@ describe("scan — a call through a variable another module declares", () => {
         'current.stop("a")',
         'managers.manager.stop("a")',
         'made.stop("a")',
+        '{ let manager; manager.stop("b") }',
+        'for (const manager of []) manager.stop("c")',
       ],
     )
     const STOP = "ts:src/classes.ts#Manager.stop"
@@ -657,8 +659,14 @@ describe("scan — a call through a variable another module declares", () => {
         ["current.stop", STOP],
         ["managers.manager.stop", STOP],
         ["made.stop", null],
+        ["manager.stop", null],
+        ["manager.stop", null],
       ],
-      unresolved: [["made.stop", "no-match"]],
+      unresolved: [
+        ["made.stop", "no-match"],
+        ["manager.stop", "no-match"],
+        ["manager.stop", "no-match"],
+      ],
     })
   })
 })

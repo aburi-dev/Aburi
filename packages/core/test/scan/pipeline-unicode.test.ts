@@ -182,6 +182,13 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
     expect(file.classHeritages.map(([, read]) => read)).toEqual(expected)
   })
 
+  it.each(["const", "variable"] as const)("reads the value type of a `%s`", async (kind) => {
+    const file = await extractOneSymbol({
+      candidate: stubCandidate("Fn", { kind, valueType: "Manager" }),
+    })
+    expect(file.valueTypes).toEqual([["stub:test.stub#Fn", "Manager"]])
+  })
+
   it.each([
     ["a value type that is not a string", { kind: "const" as const, valueType: 7 as never }],
     ["a value type on a Symbol that is no variable", { kind: "function" as const, valueType: "M" }],

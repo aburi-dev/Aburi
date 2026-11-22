@@ -51,6 +51,7 @@ export interface ExtractedFiles {
   declinedCalls: DeclinedCall[]
   thisBindings: ThisBindingSites
   declaredReceiverTypes: DeclaredReceiverTypes
+  importedReceivers: Set<string>
   classHeritages: ClassHeritages
   valueTypes: ValueTypes
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
@@ -88,6 +89,7 @@ export class ExtractionCollator {
     declinedCalls: [],
     thisBindings: this.#thisBindings,
     declaredReceiverTypes: this.#declaredReceiverTypes,
+    importedReceivers: new Set(),
     classHeritages: this.#classHeritages,
     valueTypes: this.#valueTypes,
     specifierPaths: new Map(),
@@ -287,6 +289,7 @@ export class ExtractionCollator {
         for (const [key, type] of result.declaredReceiverTypes) {
           this.#declaredReceiverTypes.set(key, type)
         }
+        for (const key of result.importedReceivers) out.importedReceivers.add(key)
         for (const [id, heritage] of result.classHeritages) this.#classHeritages.set(id, heritage)
         for (const [id, type] of result.valueTypes) this.#valueTypes.set(id, type)
         if (result.specifierPaths.length > 0) {

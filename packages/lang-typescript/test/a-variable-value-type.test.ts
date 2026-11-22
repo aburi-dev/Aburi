@@ -39,15 +39,16 @@ describe("a variable names the type its value is declared with", () => {
     [
       "a `let` constructed from a class, which can be assigned another",
       "export let manager = new Manager()",
+      MANAGER,
     ],
-    ["a `const` holding a call's result", "export const manager = make()"],
-    ["a union of two types", "export const manager: Manager | Other = make()"],
+    ["a `const` holding a call's result", "export const manager = make()", MANAGER],
+    ["a union of two types", "export const manager: Manager | Other = make()", MANAGER],
     [
       "a class the namespace declares",
       "export namespace N {\n  class Manager {}\n  export const manager = new Manager()\n}",
+      "ts:src/a.ts#N.manager",
     ],
-  ])("is absent for %s", async (_label, source) => {
-    const id = source.includes("namespace") ? "ts:src/a.ts#N.manager" : MANAGER
+  ])("is absent for %s", async (_label, source, id) => {
     expect(await symbolOf(source, id)).not.toHaveProperty("valueType")
   })
 })

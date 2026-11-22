@@ -1,4 +1,8 @@
-import { type LangManifest, PLUGIN_SCHEMA_URL } from "@aburi/types"
+import {
+  FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
+  type LangManifest,
+  PLUGIN_SCHEMA_URL,
+} from "@aburi/types"
 import grammars from "@vscode/tree-sitter-wasm/package.json" with { type: "json" }
 import { TYPESCRIPT_LANGUAGE_ID } from "./qname"
 
@@ -24,7 +28,7 @@ export const langTypescriptManifest: LangManifest = {
       "variable-assigned-function",
       "variable-assigned-class",
       "class-method",
-      "field-assigned-function",
+      FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
       "call-statement",
       "chained-call",
       "path-literal",

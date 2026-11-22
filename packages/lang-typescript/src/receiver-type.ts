@@ -70,6 +70,22 @@ function constructedClass(value: Node | null): string | null {
   return moduleClassName(value.childForFieldName("constructor"))
 }
 
+// A callback's parameter, a block's `const` or a `catch` clause named after an import hides it.
+export function isImportedReceiver(callee: Node): boolean {
+  if (callee.type !== "member_expression") return false
+  let head = callee.childForFieldName("object")
+  while (head?.type === "member_expression") head = head.childForFieldName("object")
+  if (head?.type !== "identifier") return false
+  const binding = bindingOf(head, head.text)
+  const [declaration, ...others] = binding?.declarations ?? []
+  return (
+    binding !== null &&
+    isModuleBinding(binding) &&
+    others.length === 0 &&
+    declaration?.type === "import_statement"
+  )
+}
+
 export function superclassOf(classNode: Node): string | null {
   const heritage = classNode.namedChildren.find((child) => child?.type === "class_heritage")
   const clause = heritage?.namedChildren.find((child) => child?.type === "extends_clause")
@@ -175,7 +191,8 @@ function declaredType(scope: ThisScope, name: string): string | null {
   return null
 }
 
-// A `readonly` field holds the value it is initialized with for as long as the instance does.
+// A `readonly` field is assigned again only in its constructor, and only with a value of the type
+// its initializer gives it.
 function fieldType(field: Node): string | null {
   if (field.childForFieldName("type") !== null) return namedType(field)
   if (!hasChildOfType(field, "readonly")) return null

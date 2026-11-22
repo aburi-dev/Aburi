@@ -108,9 +108,8 @@ export function resolveTarget(
 
 export function resolveThroughDeclaredType(
   ctx: ResolveTargetContext,
-  type: string | undefined,
+  type: string,
 ): ResolutionHit | null {
-  if (type === undefined) return resolveThroughImportedValue(ctx)
   const segments = splitTargetSegments(ctx.target)
   if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
   const member = segments.at(-1)
@@ -118,15 +117,15 @@ export function resolveThroughDeclaredType(
   return instanceMemberOf(ctx.run, boundClass(ctx, type), member)
 }
 
-// A variable another module declares carries no type on the call, so its own module's declaration
-// gives it, the type's name bound there. One the caller's file declares has its type on the call.
-function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+// A language plugin reads one file at a time, so it types no call through a variable another module
+// declares: that module's declaration gives the type, its name bound there.
+export function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+  if (ctx.run.valueTypes.size === 0) return null
   const segments = splitTargetSegments(ctx.target)
   const member = segments.at(-1)
   const [head, ...rest] = segments.slice(0, -1)
-  if (head === undefined || member === undefined || ctx.parameterNames.has(head)) return null
+  if (head === undefined || member === undefined) return null
   const reach = { ...ctx, reachable: ctx.run.table.allById }
-  if (resolveInFileScope(reach, head, rest, newTrace()) !== null) return null
   const id = resolveInImportScope(reach, head, rest, newTrace())?.hit?.id
   const variable = id === undefined ? undefined : ctx.run.table.allById.get(id)
   const type = id === undefined ? undefined : ctx.run.valueTypes.get(id)
