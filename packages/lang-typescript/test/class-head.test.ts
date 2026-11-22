@@ -115,3 +115,64 @@ describe("a class names the class it extends", () => {
     expect(await symbolOf(source, id)).not.toHaveProperty("superclass")
   })
 })
+
+describe("a class that extends another names the instance members it declares itself", () => {
+  it("as each spelling of one declares or assigns it, a Symbol or not, but no field written only for its type", async () => {
+    const source = [
+      "export abstract class C extends Base {",
+      "  static make() { this.made = 1 }",
+      "  static shared = 1",
+      "  find() {}",
+      "  get size() { return 1 }",
+      "  table = 'users'",
+      "  #secret = 1",
+      "  'quoted' = 2",
+      "  [computed] = 3",
+      "  @Input() injected!: Repo",
+      "  accessor stored: Repo",
+      "  abstract pending: Repo",
+      "  untyped",
+      "  narrowed!: Base['narrowed']",
+      "  declare typed: Repo",
+      "  optional?: Repo",
+      "  assigned!: Repo",
+      "  init() { this.assigned = make() }",
+      "  handler = () => { this.fromArrow = 1 }",
+      "  callback = function () { this.ownThis = 1 }",
+      "  constructor(private readonly repo: Repo, plain: number) {",
+      "    super()",
+      "    this.cache = new Map()",
+      "    if (plain) this.count ??= 0",
+      "    const later = () => { this.late = 1 }",
+      "    function own() { this.ignored = 1 }",
+      "  }",
+      "}",
+    ].join("\n")
+    expect((await symbolOf(source, "ts:src/a.ts#C")).instanceMembers).toEqual([
+      "find",
+      "size",
+      "table",
+      "#secret",
+      "quoted",
+      "injected",
+      "stored",
+      "pending",
+      "untyped",
+      "init",
+      "assigned",
+      "handler",
+      "fromArrow",
+      "callback",
+      "repo",
+      "cache",
+      "count",
+      "late",
+    ])
+  })
+
+  it("names none for a class that extends nothing", async () => {
+    expect(await symbolOf(`export class C ${BODY}`, "ts:src/a.ts#C")).not.toHaveProperty(
+      "instanceMembers",
+    )
+  })
+})

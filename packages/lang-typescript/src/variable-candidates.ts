@@ -8,7 +8,7 @@ import {
   nameFieldText,
 } from "./ast-helpers"
 import { callBodies, layOutBodies } from "./call-symbols"
-import { classMemberCandidates } from "./class-candidates"
+import { classHeritageOf, classMemberCandidates } from "./class-candidates"
 import { foldMemberGroup, groupMemberDeclaration, type MemberGroup } from "./declaration-merge"
 import { refuseAnonymousId } from "./declared-name"
 import { readDecorators } from "./decorators"
@@ -17,7 +17,6 @@ import { readLeadingJsDoc } from "./leading-jsdoc"
 import { objectEntryOf, objectLiteralOf } from "./object-members"
 import { collectPatternBindings } from "./pattern-bindings"
 import { makeTsSymbolId, nestedQname } from "./qname"
-import { superclassOf } from "./receiver-type"
 import { buildSignature } from "./signature"
 
 export function makeVariableCandidates(
@@ -75,7 +74,6 @@ function makeVariableCandidate(
   }
   const classNode = initializer === null ? null : asClassValue(initializer)
   if (classNode !== null) {
-    const superclass = superclassOf(classNode)
     return [
       {
         id,
@@ -89,7 +87,7 @@ function makeVariableCandidate(
         derivedBy: ["variable-assigned-class", ...exportEvidence(statement)],
         bodyNode: classNode.childForFieldName("body"),
         fullNode: classNode,
-        ...(superclass === null ? {} : { superclass }),
+        ...classHeritageOf(classNode),
       },
       ...classMemberCandidates(classNode, ctx, [...namespacePath, name]),
     ]

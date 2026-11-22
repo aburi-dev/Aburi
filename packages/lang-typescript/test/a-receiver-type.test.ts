@@ -424,6 +424,9 @@ describe("a call through `this` carries no type where the class does not declare
 })
 
 describe("a call through a name carries the type the name is declared with", () => {
+  // A typed name around the call, which a declaration nearer it must hide.
+  const outer = (body: string) => `export function f(events: EventEmitter2) { ${body} }`
+
   it.each([
     ["a parameter", "export function f(events: EventEmitter2) { events.emit() }", "f"],
     ["an optional parameter", "export function f(events?: EventEmitter2) { events?.emit() }", "f"],
@@ -474,33 +477,64 @@ describe("a call through a name carries the type the name is declared with", () 
       "const events = new Bus()\nexport function f(events: EventEmitter2) { events.emit() }",
       "f",
     ],
-  ])("reads %s", async (_label, source, id) => {
-    expect(await emitReceiverType(source, id)).toBe("EventEmitter2")
-  })
-
-  it.each([
+    [
+      "a `const` a `switch` case declares",
+      "export function f(k: number) { switch (k) { case 1: const events = new EventEmitter2(); events.emit() } }",
+      "f",
+    ],
+    [
+      "a `const` a `for` loop's head declares",
+      "export function f() { for (const events = new EventEmitter2(); go(); ) events.emit() }",
+      "f",
+    ],
+    [
+      "a `var` a namespace declares",
+      "export namespace N {\n  var events: EventEmitter2\n  export function f() { events.emit() }\n}",
+      "N.f",
+    ],
+    [
+      "a `var` a static block declares",
+      "export class C {\n  static { var events: EventEmitter2 = make(); events.emit() }\n}",
+      "C",
+    ],
+    [
+      "a parameter that shadows the function expression's own name",
+      "export const f = function events(events: EventEmitter2) { events.emit() }",
+      "f",
+    ],
+    [
+      "a name of the module a parameter's decorator reads, outside the method",
+      "const events = new EventEmitter2()\nexport class C {\n  m(@Use(events.emit()) events: Bus) {}\n}",
+      "C",
+    ],
     [
       "a class constructed through a namespace, type arguments aside",
       "export function f() { const events = new ee.EventEmitter2<Payload>(); events.emit() }",
+      "f",
       "ee.EventEmitter2",
     ],
     [
       "a parameter typed through a namespace",
       "export function f(events: ee.EventEmitter2<Payload>) { events.emit() }",
+      "f",
       "ee.EventEmitter2",
     ],
-  ])("reads %s", async (_label, source, type) => {
-    expect(await emitReceiverType(source, "f")).toBe(type)
+  ])("reads %s", async (_label, source, id, type = "EventEmitter2") => {
+    expect(await emitReceiverType(source, id)).toBe(type)
   })
 
   it.each([
     ["a parameter with no annotation", "export function f(events) { events.emit() }"],
-    ["an arrow's bare parameter", "export const f = events => events.emit()"],
+    ["an arrow's bare parameter", outer("return [make()].map(events => events.emit())")],
     ["a destructured parameter", "export function f({ events }: Deps) { events.emit() }"],
     ["a rest parameter", "export function f(...events: EventEmitter2[]) { events.emit() }"],
     [
       "a `let` constructed from the class, which can be assigned another value",
       "export function f() { let events = new EventEmitter2(); events.emit() }",
+    ],
+    [
+      "a `var` constructed from the class, which can be assigned another value",
+      "export function f() { var events = new EventEmitter2(); events.emit() }",
     ],
     [
       "a `const` holding what a call returns",
@@ -509,21 +543,27 @@ describe("a call through a name carries the type the name is declared with", () 
     ["a union of two types", "export function f(events: EventEmitter2 | Bus) { events.emit() }"],
     [
       "a declaration with no type that shadows a typed one",
-      "export function f(events: EventEmitter2) { { const events = make(); events.emit() } }",
+      outer("{ const events = make(); events.emit() }"),
     ],
     [
       "a name a `var` declares twice",
       "export function f() { var events: EventEmitter2 = make(); var events: EventEmitter2 = make(); events.emit() }",
     ],
     ["an import", 'import { events } from "./events"\nexport function f() { events.emit() }'],
+    ["a `for…of` binding", outer("for (const events of all) events.emit()")],
+    ["a `catch` binding", outer("try { make() } catch (events) { events.emit() }")],
+    ["a `using` declaration", outer("{ using events = open(); events.emit() }")],
     [
-      "a `for…of` binding",
-      "export function f(all: EventEmitter2[]) { for (const events of all) events.emit() }",
+      "an `await using` declaration",
+      "export async function f(events: EventEmitter2) { { await using events = open(); events.emit() } }",
     ],
     [
-      "a `catch` binding",
-      "export function f() { try { make() } catch (events) { events.emit() } }",
+      "a `switch` case's untyped `const`",
+      outer("switch (k) { case 1: const events = make(); events.emit() }"),
     ],
+    ["a `for` loop's untyped head", outer("for (let events = make(); go(); ) events.emit()")],
+    ["a function expression's own name", outer("return function events() { events.emit() }")],
+    ["a class's own name in its body", outer("return class events { m() { events.emit() } }")],
     [
       "a `var` a nested function declares, which binds it there alone",
       "export function f() { function g() { var events: EventEmitter2 } events.emit() }",
@@ -538,7 +578,7 @@ describe("a call through a name carries the type the name is declared with", () 
       "export function f() { class EventEmitter2 {} const events: EventEmitter2 = make(); events.emit() }",
     ],
     [
-      "a class a parameter names, which shadows the class the module binds",
+      "a class a parameter around the `new` names, which shadows the class the module binds",
       "export function f(EventEmitter2: any) { const events = new EventEmitter2(); events.emit() }",
     ],
     [

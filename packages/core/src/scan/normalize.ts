@@ -34,12 +34,17 @@ function normalizeCandidateStrings(
   const signature = normalizeSignatureStrings(candidate.signature)
   const decorators = normalizeDecoratorNames(candidate.decorators)
   const written = candidate.superclass
-  const superclass = written === undefined ? written : toNfc(written)
+  const superclass = typeof written === "string" ? toNfc(written) : written
+  const members = candidate.instanceMembers
+  const instanceMembers = Array.isArray(members)
+    ? mapPreservingIdentity(members, (name) => (typeof name === "string" ? toNfc(name) : name))
+    : members
   if (
     file === candidate.source.file &&
     signature === candidate.signature &&
     decorators === candidate.decorators &&
-    superclass === written
+    superclass === written &&
+    instanceMembers === members
   ) {
     return candidate
   }
@@ -50,6 +55,7 @@ function normalizeCandidateStrings(
     decorators,
   }
   if (superclass !== undefined) next.superclass = superclass
+  if (instanceMembers !== undefined) next.instanceMembers = instanceMembers
   return next
 }
 

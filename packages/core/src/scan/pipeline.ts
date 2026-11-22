@@ -15,11 +15,11 @@ import type {
   ParsedTree,
   ParseError,
   SourceFile,
+  SymbolCandidate,
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import type { CallSiteBinding, DeclaredReceiverType } from "../call-site"
-import type { Superclass } from "../callgraph-index"
+import type { CallSiteBinding, ClassHeritageEntry, DeclaredReceiverType } from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
@@ -44,8 +44,8 @@ export interface ExtractedFile extends FileOutcomeCommon {
   declinedCalls: readonly DeclinedCall[]
   thisBindings: readonly CallSiteBinding[]
   declaredReceiverTypes: readonly DeclaredReceiverType[]
-  /** Each class the file declares that extends a named class, dropped or kept. */
-  superclasses: readonly Superclass[]
+  /** Each class the file declares that extends a name, dropped or kept. */
+  classHeritages: readonly ClassHeritageEntry[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -146,7 +146,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         declinedCalls: [],
         thisBindings: [],
         declaredReceiverTypes: [],
-        superclasses: [],
+        classHeritages: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -163,9 +163,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         ? writtenImports
         : await deadline.excluding(() => origins.attach(file, writtenImports, candidates))
 
-    const superclasses = candidates.flatMap(({ id, superclass }): Superclass[] =>
-      superclass === undefined ? [] : [[id, superclass]],
-    )
+    const classHeritages = candidates.flatMap(classHeritageOf)
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
@@ -278,7 +276,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       declinedCalls,
       thisBindings,
       declaredReceiverTypes,
-      superclasses,
+      classHeritages,
       specifierPaths,
       fault: null,
     }
@@ -287,6 +285,14 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       releaseParsedTree(language, parseResult.tree, file, input.treeReleaseFailures)
     }
   }
+}
+
+// A plugin outside the tree may write anything, and a heritage is only a hint.
+function classHeritageOf(candidate: SymbolCandidate<OpaqueAstNode>): ClassHeritageEntry[] {
+  const { id, kind, superclass, instanceMembers } = candidate
+  if (kind !== "class" || typeof superclass !== "string") return []
+  const members = Array.isArray(instanceMembers) ? instanceMembers : []
+  return [[id, { superclass, instanceMembers: members.filter((name) => typeof name === "string") }]]
 }
 
 function reexportsAny(edge: ImportEdge): boolean {

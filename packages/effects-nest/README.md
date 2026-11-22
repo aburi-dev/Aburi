@@ -28,16 +28,17 @@ create(id: string) {
 }
 ```
 
-The type is the one the language plugin reads off the declaration (a
+The type is the one the language plugin reads off the declaration: a
 constructor parameter property or a typed field of the class, a parameter or a
-variable annotated with it, or a `const` constructed from it, as in
-`publish(bus: EventEmitter2) { bus.emit(…) }`), and it must be the
-`EventEmitter2` the file imports from an emitter module: under its own name,
-under an alias (`EventEmitter2 as Bus`), through a namespace
-(`ee.EventEmitter2`), or as `eventemitter2`'s default import. An inherited field,
-an untyped parameter and `this.hub.bus.emit(…)` carry no type and go through the
-name check alone, so `bus.emit(…)` there stays a call. The name check comes first: `this.eventBus.emit(…)` is a publish
-tagged `eventBus.emit` whatever `eventBus` is declared as.
+variable annotated with it (`publish(bus: EventEmitter2) { bus.emit(…) }`), or
+a `const` constructed from it (`const bus = new EventEmitter2()`). It must be
+the `EventEmitter2` the file imports from an emitter module: under its own
+name, under an alias (`EventEmitter2 as Bus`), through a namespace
+(`ee.EventEmitter2`), or as `eventemitter2`'s default import. An inherited
+field, an untyped parameter and `this.hub.bus.emit(…)` carry no type and go
+through the name check alone, so `bus.emit(…)` there stays a call. The name
+check comes first: `this.eventBus.emit(…)` is a publish tagged `eventBus.emit`
+whatever `eventBus` is declared as.
 
 Layered gate: the owning file must import a recognised event-emitter module
 (`@nestjs/event-emitter` or `eventemitter2`), the method must be `emit`, and the

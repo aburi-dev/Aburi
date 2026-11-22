@@ -1,4 +1,9 @@
-import type { Symbol as IRSymbol, SymbolId, SymbolKind } from "@aburi/types"
+import {
+  EXPORT_CLAUSE_DERIVED_BY_PREFIX,
+  type Symbol as IRSymbol,
+  type SymbolId,
+  type SymbolKind,
+} from "@aburi/types"
 import { groupBy } from "./collections"
 
 type Language = string
@@ -6,16 +11,18 @@ type FilePath = string
 type ComponentKey = string
 type ByName = ReadonlyMap<string, readonly IRSymbol[]>
 
-/** A class Symbol's id and the name of the class it extends. */
-export type Superclass = readonly [classId: SymbolId, superclass: string]
-
 export interface SymbolTable {
-  /** Dropped Symbols included: a member a class declares hides its superclass's, kept or not. */
-  symbolIds: ReadonlySet<SymbolId>
+  /** Every Symbol by id, dropped ones included. */
+  allById: ReadonlyMap<SymbolId, IRSymbol>
   keptSymbolIds: ReadonlySet<SymbolId>
   keptById: ReadonlyMap<SymbolId, IRSymbol>
   topLevelByFile: ReadonlyMap<FilePath, ByName>
   memberOwnersByFile: ReadonlyMap<FilePath, ReadonlySet<string>>
+  /**
+   * By file, then by a name an export clause exports: the top-level declarations it exports under
+   * that name, dropped ones included.
+   */
+  clauseExportsByFile: ReadonlyMap<FilePath, ReadonlyMap<string, readonly string[]>>
   filesByLanguage: ReadonlyMap<Language, ReadonlySet<FilePath>>
   byComponent: ReadonlyMap<Language, ReadonlyMap<ComponentKey, ByName>>
   byWorkspace: ReadonlyMap<Language, ByName>
@@ -35,7 +42,7 @@ export function buildSymbolTable(
       (symbol) => symbol.source.file,
     )
   return {
-    symbolIds: new Set(symbols.map((symbol) => symbol.id)),
+    allById: new Map(symbols.map((symbol) => [symbol.id, symbol])),
     keptSymbolIds: new Set(kept.map((symbol) => symbol.id)),
     keptById: new Map(kept.map((symbol) => [symbol.id, symbol])),
     topLevelByFile: mapValues(topLevelPerFile(kept), byName),
@@ -44,6 +51,7 @@ export function buildSymbolTable(
       topLevelPerFile(symbols.filter(listsItsMembers)),
       (owners) => new Set(owners.map((symbol) => symbol.name)),
     ),
+    clauseExportsByFile: mapValues(topLevelPerFile(symbols), clauseExportsOf),
     filesByLanguage: filesByLanguageOf(symbols, moduleFiles),
     byComponent: mapValues(keptByLanguage, (perLanguage) =>
       mapValues(
@@ -63,6 +71,20 @@ function listsItsMembers(symbol: IRSymbol): boolean {
   return (
     MEMBER_OWNER_KINDS.has(symbol.kind) || symbol.derivedBy.includes("object-literal-initializer")
   )
+}
+
+function clauseExportsOf(symbols: readonly IRSymbol[]): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const symbol of symbols) {
+    for (const token of symbol.derivedBy) {
+      if (!token.startsWith(EXPORT_CLAUSE_DERIVED_BY_PREFIX)) continue
+      const exported = token.slice(EXPORT_CLAUSE_DERIVED_BY_PREFIX.length)
+      const names = out.get(exported)
+      if (names === undefined) out.set(exported, [symbol.name])
+      else names.push(symbol.name)
+    }
+  }
+  return out
 }
 
 export function componentKeyOf(component: string | null | undefined): ComponentKey {

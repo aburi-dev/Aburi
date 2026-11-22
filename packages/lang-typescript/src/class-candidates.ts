@@ -10,6 +10,7 @@ import { layOutBodies } from "./call-symbols"
 import {
   functionValuedField,
   type HeldFunction,
+  instanceMemberNames,
   isConstructorMember,
   memberSymbolSegment,
 } from "./class-members"
@@ -48,7 +49,6 @@ export function makeClassCandidate(
   evidence: readonly string[],
   ctx: ExtractionContext,
 ): SymbolCandidate<Node> {
-  const superclass = superclassOf(node)
   return {
     id: makeTsSymbolId(ctx.file.path, qname),
     kind: "class",
@@ -61,8 +61,17 @@ export function makeClassCandidate(
     derivedBy: [...evidence],
     bodyNode: node.childForFieldName("body"),
     fullNode: node,
-    ...(superclass === null ? {} : { superclass }),
+    ...classHeritageOf(node),
   }
+}
+
+/** What a class extends, and what of its own hides what it inherits. */
+export function classHeritageOf(
+  classNode: Node,
+): Pick<SymbolCandidate<Node>, "superclass" | "instanceMembers"> {
+  const superclass = superclassOf(classNode)
+  if (superclass === null) return {}
+  return { superclass, instanceMembers: instanceMemberNames(classNode) }
 }
 
 export function classMemberCandidates(

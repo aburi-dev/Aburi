@@ -322,24 +322,36 @@ describe("scan — a call through a field of a declared type", () => {
     ])
   })
 
-  /** Write two repositories and `service`, which imports them through `specifier`, and scan. */
-  async function callsByMember(service: readonly string[], specifier = "./repo") {
+  /**
+   * Write two repositories and an interface, and `service`, which imports them through
+   * `specifier`, and scan: each calling Symbol's calls, and how the unresolved ones are bucketed.
+   */
+  async function scanService(service: readonly string[], specifier = "./repo") {
     await workspace.writeSource(
       "src/repo.ts",
       [
         "export class UserRepository { find(id: string) { return id } }",
         "export class AdminRepository { find(id: string) { return id } }",
+        "export interface Finder { find(id: string): string }",
         "",
       ].join("\n"),
     )
-    const imports = `import { AdminRepository, UserRepository } from "${specifier}"`
+    const imports = `import { AdminRepository, type Finder, UserRepository } from "${specifier}"`
     await workspace.writeSource("src/service.ts", [imports, ...service, ""].join("\n"))
-    const { ir } = await scanTypeScript(workspace.root)
-    return Object.fromEntries(
-      ir.symbols
-        .filter((s) => s.source.file === "src/service.ts" && s.calls.length > 0)
-        .map((s) => [s.id.slice(s.id.indexOf("#") + 1), s.calls.map((call) => call.resolved)]),
-    )
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const nameOf = (id: string) => id.slice(id.indexOf("#") + 1)
+    return {
+      calls: Object.fromEntries(
+        ir.symbols
+          .filter((s) => s.source.file === "src/service.ts" && s.calls.length > 0)
+          .map((s) => [nameOf(s.id), s.calls.map((call) => call.resolved)]),
+      ),
+      buckets: unresolvedCalls.map((d) => [nameOf(d.symbolId), d.target, d.bucket]),
+    }
+  }
+
+  async function callsByMember(service: readonly string[], specifier = "./repo") {
+    return (await scanService(service, specifier)).calls
   }
 
   const USER_FIND = "ts:src/repo.ts#UserRepository.find"
@@ -379,13 +391,13 @@ describe("scan — a call through a field of a declared type", () => {
   })
 
   it("reaches the member of the class a name is declared or constructed with", async () => {
-    const calls = await callsByMember([
+    const { calls, buckets } = await scanService([
       "const shared = new UserRepository()",
       'export function byParameter(repo: UserRepository) { repo.find("a") }',
       'export function byConst() { const repo = new AdminRepository(); repo.find("a") }',
       'export function byModule() { shared.find("a") }',
       'export function shadowed(repo: UserRepository) { { const repo = make(); repo.find("a") } }',
-      'export function byInterface(repo: Pick<UserRepository, "find">) { repo.find("a") }',
+      'export function byInterface(repo: Finder) { repo.find("a") }',
     ])
     expect(calls).toEqual({
       byParameter: [USER_FIND],
@@ -394,6 +406,12 @@ describe("scan — a call through a field of a declared type", () => {
       shadowed: [null, null],
       byInterface: [null],
     })
+    // What the declared type leaves keeps the bucket the earlier steps gave it.
+    expect(buckets).toEqual([
+      ["byInterface", "repo.find", "local-scope"],
+      ["shadowed", "make", "no-match"],
+      ["shadowed", "repo.find", "local-scope"],
+    ])
   })
 
   it("reaches a class imported through a tsconfig path alias", async () => {
@@ -476,6 +494,102 @@ describe("scan — a call of a member a class inherits", () => {
         ["repo.save", "ts:src/admin.ts#AdminRepository.save"],
       ],
       unresolved: [],
+    })
+  })
+
+  const BASE = [
+    "export class Repository {",
+    "  find(id: string) { return id }",
+    "}",
+    "export default Repository",
+    "",
+  ].join("\n")
+  const FIND = "ts:src/base.ts#Repository.find"
+
+  /** Each Symbol of `src/kinds.ts` that calls, by qualified name, with where each call resolved. */
+  async function callsOfKinds(kinds: readonly string[]) {
+    await workspace.writeSource("src/base.ts", BASE)
+    await workspace.writeSource("src/kinds.ts", [...kinds, ""].join("\n"))
+    const { ir } = await scanTypeScript(workspace.root)
+    return Object.fromEntries(
+      ir.symbols
+        .filter((s) => s.source.file === "src/kinds.ts" && s.calls.length > 0)
+        .map((s) => [s.name, s.calls.map((call) => [call.target, call.resolved])]),
+    )
+  }
+
+  it("reaches it through a default or a namespace import, a class a binding holds, a field, a class a drop rule removed, and a field that only narrows its type", async () => {
+    const calls = await callsOfKinds([
+      'import Base from "./base"',
+      'import * as b from "./base"',
+      "export class ByDefault extends Base {}",
+      "export class ByNamespace extends b.Repository {}",
+      "export const Held = class extends Base {}",
+      "export class Dto extends Base { table = 'users' }",
+      'export class Narrowed extends Base { find!: Base["find"] }',
+      "export function main(d: ByDefault, n: ByNamespace, o: Dto, t: Narrowed) {",
+      "  const h = new Held()",
+      '  d.find("a")',
+      '  n.find("a")',
+      '  h.find("a")',
+      '  o.find("a")',
+      '  t.find("a")',
+      "}",
+      "export class Service {",
+      "  constructor(private readonly repo: ByDefault) {}",
+      '  m() { return this.repo.find("a") }',
+      "}",
+    ])
+    expect(calls).toEqual({
+      main: [
+        ["Held", "ts:src/kinds.ts#Held"],
+        ["d.find", FIND],
+        ["n.find", FIND],
+        ["h.find", FIND],
+        ["o.find", FIND],
+        ["t.find", FIND],
+      ],
+      "Service.m": [["this.repo.find", FIND]],
+    })
+  })
+
+  it("leaves it where the class's own member hides it, a Symbol or not", async () => {
+    const calls = await callsOfKinds([
+      'import { Repository } from "./base"',
+      "export class WithField extends Repository {",
+      "  find = make()",
+      "  m() { return this.find() }",
+      "}",
+      "export class WithProperty extends Repository {",
+      "  constructor(public find: () => string) { super() }",
+      "}",
+      "export class WithAssigned extends Repository {",
+      "  constructor() { super(); this.find = () => 'x' }",
+      "}",
+      "export class WithGetter extends Repository {",
+      "  get find() { return () => 'y' }",
+      "}",
+      "export class WithInit extends Repository {",
+      "  find!: () => string",
+      "  init() { this.find = () => 'z' }",
+      "}",
+      "export function main(f: WithField, p: WithProperty, a: WithAssigned, g: WithGetter, i: WithInit) {",
+      "  f.find()",
+      "  p.find()",
+      "  a.find()",
+      "  g.find()",
+      "  i.find()",
+      "}",
+    ])
+    expect({ "WithField.m": calls["WithField.m"], main: calls.main }).toEqual({
+      "WithField.m": [["this.find", null]],
+      main: [
+        ["f.find", null],
+        ["p.find", null],
+        ["a.find", null],
+        ["g.find", "ts:src/kinds.ts#WithGetter.find"],
+        ["i.find", null],
+      ],
     })
   })
 })

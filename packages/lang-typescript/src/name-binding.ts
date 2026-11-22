@@ -2,24 +2,48 @@ import type { Node, Tree } from "web-tree-sitter"
 import { firstNonCommentChild, walkDescendants } from "./ast-helpers"
 import { collectPatternBindings } from "./pattern-bindings"
 
-/**
- * The declarations a value name has in the scope nearest to `use` that declares it, and that
- * scope. `null` when no scope around `use` declares the name: a global, or a name the code never
- * declares.
- */
+/** The scope nearest to a use that declares a value name, and the declarations it gives it. */
 export interface NameBinding {
   readonly scope: Node
   readonly declarations: readonly Node[]
 }
 
+/** `null` when no scope around `use` declares the name: a global, or a name nothing declares. */
 export function bindingOf(use: Node, name: string): NameBinding | null {
   let child = use
+  let inParameterDecorator = false
   for (let node = use.parent; node !== null; child = node, node = node.parent) {
+    if (node.type === "decorator" && PARAMETER_TYPES.has(node.parent?.type ?? "")) {
+      inParameterDecorator = true
+    }
     if (!seesScopeOf(node, child)) continue
+    // A parameter's decorator is evaluated around the function its parameter list belongs to.
+    if (inParameterDecorator && FUNCTION_SCOPES.has(node.type)) {
+      inParameterDecorator = false
+      continue
+    }
     const declarations = scopeBindings(node).get(name)
     if (declarations !== undefined) return { scope: node, declarations }
+    const ownName = ownNameOf(node)
+    if (ownName?.text === name) return { scope: node, declarations: [node] }
   }
   return null
+}
+
+export function isModuleBinding(binding: NameBinding): boolean {
+  return binding.scope.type === "program"
+}
+
+export const PARAMETER_TYPES: ReadonlySet<string> = new Set([
+  "required_parameter",
+  "optional_parameter",
+])
+
+// A function expression's own name is bound in a scope between its parameters and the code
+// around it, so a parameter or a `var` of that name hides it.
+function ownNameOf(scope: Node): Node | null {
+  if (scope.type !== "function_expression" && scope.type !== "generator_function") return null
+  return scope.childForFieldName("name")
 }
 
 const FUNCTION_SCOPES: ReadonlySet<string> = new Set([
@@ -134,23 +158,16 @@ function collectScopeBindings(scope: Node): ScopeBindings {
 type Bind = (name: Node, declaration: Node) => void
 
 function bindFunction(fn: Node, bind: Bind): void {
-  // A function expression's own name is bound inside it, a declaration's around it.
-  if (fn.type === "function_expression" || fn.type === "generator_function") {
-    const name = fn.childForFieldName("name")
-    if (name !== null) bind(name, fn)
-  }
   const single = fn.childForFieldName("parameter")
   if (single !== null) bind(single, fn)
   for (const parameter of fn.childForFieldName("parameters")?.namedChildren ?? []) {
-    if (parameter === null || !PARAMETERS.has(parameter.type)) continue
+    if (parameter === null || !PARAMETER_TYPES.has(parameter.type)) continue
     const pattern = parameter.childForFieldName("pattern")
     if (pattern !== null && pattern.type !== "this") bindPattern(pattern, parameter, bind)
   }
   const body = fn.childForFieldName("body")
   if (body?.type === "statement_block") bindVars(body, bind)
 }
-
-const PARAMETERS: ReadonlySet<string> = new Set(["required_parameter", "optional_parameter"])
 
 function bindPattern(pattern: Node, declaration: Node, bind: Bind): void {
   for (const name of collectPatternBindings(pattern, "skip")) bind(name, declaration)
@@ -175,12 +192,18 @@ const NAMED_DECLARATIONS: ReadonlySet<string> = new Set([
   "module",
 ])
 
-// `var` is left to the function the statement is in (`bindVars`), which is where it is bound.
+// A `var` is bound by the function, namespace, static block or module around it (`bindVars`).
 function bindStatement(statement: Node, bind: Bind): void {
   switch (statement.type) {
     case "lexical_declaration":
       bindDeclarators(statement, bind)
       return
+    case "expression_statement": {
+      const declaration = usingDeclaration(statement)
+      const name = declaration?.childForFieldName("left")
+      if (declaration != null && name != null) bindPattern(name, declaration, bind)
+      return
+    }
     case "export_statement":
     case "ambient_declaration": {
       const declaration =
@@ -206,6 +229,14 @@ function bindStatement(statement: Node, bind: Bind): void {
   }
 }
 
+// The grammar reads `using x = open()` and `await using x = open()` as an assignment.
+function usingDeclaration(statement: Node): Node | null {
+  let expression = firstNonCommentChild(statement)
+  if (expression?.type === "await_expression") expression = firstNonCommentChild(expression)
+  if (expression?.type !== "assignment_expression") return null
+  return expression.children.some((child) => child?.type === "using") ? expression : null
+}
+
 function importedNames(statement: Node): Node[] {
   const out: Node[] = []
   for (const node of walkDescendants(statement)) {
@@ -225,8 +256,8 @@ const IMPORT_BINDERS: ReadonlySet<string> = new Set([
   "import_require_clause",
 ])
 
-// Every `var` the body declares, however deep in its blocks, past nested functions, classes and
-// namespaces, which bind their own.
+// Every `var` the body declares, however deep in its blocks, but not in a nested function,
+// namespace, or a class's methods and static blocks, which bind their own.
 function bindVars(body: Node, bind: Bind): void {
   const descend = (node: Node): boolean => node.id === body.id || !bindsOwnVars(node)
   for (const node of walkDescendants(body, { descend })) {

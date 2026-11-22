@@ -9,6 +9,7 @@ import type {
 } from "@aburi/types"
 import {
   CALL_SITE_KEY_SEPARATOR,
+  type ClassHeritages,
   type DeclaredReceiverTypes,
   makeCallSiteKey,
   makeSymbolCallKey,
@@ -53,8 +54,7 @@ export interface ResolveCallGraphInput {
   dynamicCallSites?: ReadonlySet<string>
   /** By `makeSymbolCallKey`: the named type each call's receiver is declared with. */
   declaredReceiverTypes?: DeclaredReceiverTypes
-  /** By class Symbol id: the name of the class it extends, bound in the class's own file. */
-  superclasses?: ReadonlyMap<SymbolId, string>
+  classHeritages?: ClassHeritages
   /**
    * By importing file, then by bare specifier: the workspace-relative paths the language's import
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
@@ -82,7 +82,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
-    superclasses: input.superclasses ?? new Map(),
+    classHeritages: input.classHeritages ?? new Map(),
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),

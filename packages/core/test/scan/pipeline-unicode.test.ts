@@ -89,6 +89,18 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
       [composed],
     ],
     [
+      "a class's superclass and instance members",
+      {
+        candidate: stubCandidate("Fn", {
+          kind: "class",
+          superclass: `${decomposed}.Base`,
+          instanceMembers: [decomposed, "find"],
+        }),
+      },
+      (file) => file.classHeritages.map(([, heritage]) => heritage),
+      [{ superclass: `${composed}.Base`, instanceMembers: [composed, "find"] }],
+    ],
+    [
       "an unclassified call target",
       { body: { rules: [], calls: [makeCall({ target: `${decomposed}.doWork` })] } },
       (file) => file.symbols[0]?.calls.map((c) => c.target),
@@ -138,6 +150,30 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
     ],
   ])("leaves %s as the plugin wrote it", async (_field, setup, read, expected) => {
     expect(read(await extractOneSymbol(setup))).toStrictEqual(expected)
+  })
+
+  it.each([
+    [
+      "a superclass that is not a string, which names no heritage",
+      { superclass: null as never },
+      [],
+    ],
+    [
+      "instance members that are not strings, which name none",
+      { superclass: "Base", instanceMembers: [7 as never] },
+      [{ superclass: "Base", instanceMembers: [] }],
+    ],
+    [
+      "a superclass on a Symbol that is no class",
+      { kind: "function" as const, superclass: "Base" },
+      [],
+    ],
+  ])("keeps the file and reads %s", async (_case, heritage, expected) => {
+    const file = await extractOneSymbol({
+      candidate: stubCandidate("Fn", { kind: "class", ...heritage }),
+    })
+    expect(file.symbols).toHaveLength(1)
+    expect(file.classHeritages.map(([, read]) => read)).toEqual(expected)
   })
 
   it("normalizes the import edges of a file the parse refused, too", async () => {

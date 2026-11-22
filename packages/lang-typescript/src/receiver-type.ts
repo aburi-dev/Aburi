@@ -1,7 +1,8 @@
 import type { ThisBinding } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
-import { bindingOf } from "./name-binding"
+import { isParameterProperty } from "./class-members"
+import { bindingOf, isModuleBinding, PARAMETER_TYPES } from "./name-binding"
 
 const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "function_expression",
@@ -9,10 +10,6 @@ const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "generator_function",
   "generator_function_declaration",
 ])
-
-const PARAMETER_PROPERTY_MODIFIERS = ["accessibility_modifier", "override_modifier", "readonly"]
-
-const PARAMETER_TYPES: ReadonlySet<string> = new Set(["required_parameter", "optional_parameter"])
 
 interface ThisScope {
   readonly classBody: Node
@@ -81,7 +78,7 @@ function moduleClassName(expression: Node | null): string | null {
   const name = expression === null ? null : dottedName(expression)
   if (expression === null || name === null) return null
   const binding = bindingOf(expression, headOf(name))
-  return binding === null || binding.scope.type === "program" ? name : null
+  return binding === null || isModuleBinding(binding) ? name : null
 }
 
 export function thisBindingAt(node: Node): ThisBinding | null {
@@ -228,10 +225,7 @@ function parameterProperty(construction: Node, name: string): Node | null {
   for (const parameter of parameters) {
     if (parameter === null) continue
     if (parameter.childForFieldName("pattern")?.text !== name) continue
-    const isProperty = PARAMETER_PROPERTY_MODIFIERS.some((modifier) =>
-      hasChildOfType(parameter, modifier),
-    )
-    return isProperty ? parameter : null
+    return isParameterProperty(parameter) ? parameter : null
   }
   return null
 }

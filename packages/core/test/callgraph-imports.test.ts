@@ -204,14 +204,28 @@ describe("import scope", () => {
       ])
     })
 
-    it("takes it over a declaration of the clause's name, which the module does not export so", () => {
-      const caller = withCalls("ts:src/a.ts#caller", [{ target: "string", line: 4 }])
-      const result = resolveCallGraph({
-        symbols: [caller, stringType, makeSymbol("ts:src/x.ts#string")],
-        importsByFile: importsOf("src/a.ts", { source: "./x", symbols: ["string"] }),
-      })
-      expect(result.edges.map((e) => e.to)).toEqual(["ts:src/x.ts#stringType"])
-    })
+    it.each([
+      ["kept", stringType, ["ts:src/x.ts#stringType"]],
+      [
+        "dropped, which leaves the call unresolved",
+        makeSymbol("ts:src/x.ts#stringType", {
+          derivedBy: ["export-clause:string"],
+          dropped: true,
+          dropReason: "empty body",
+        }),
+        [],
+      ],
+    ])(
+      "takes it, %s, over a declaration of the clause's name, which the module does not export so",
+      (_case, declared, edges) => {
+        const caller = withCalls("ts:src/a.ts#caller", [{ target: "string", line: 4 }])
+        const result = resolveCallGraph({
+          symbols: [caller, declared, makeSymbol("ts:src/x.ts#string")],
+          importsByFile: importsOf("src/a.ts", { source: "./x", symbols: ["string"] }),
+        })
+        expect(result.edges.map((e) => e.to)).toEqual(edges)
+      },
+    )
   })
 
   describe("a default import resolves to the module's default export", () => {

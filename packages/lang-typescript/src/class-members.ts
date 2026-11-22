@@ -1,6 +1,12 @@
 import { decodeStringLiteral, isQnameSegment, unwrapValue } from "@aburi/core"
 import type { Node } from "web-tree-sitter"
-import { asFunctionValue, hasChildOfType, hasErrorChild, nameFieldText } from "./ast-helpers"
+import {
+  asFunctionValue,
+  hasChildOfType,
+  hasErrorChild,
+  nameFieldText,
+  walkDescendants,
+} from "./ast-helpers"
 import { handedFunctions, wrappedFunctions } from "./call-symbols"
 
 const CONSTRUCTION_SEGMENT = "constructor"
@@ -94,4 +100,97 @@ export function isConstructorMember(member: Node): boolean {
 
 export function hasPrivateName(member: Node): boolean {
   return member.childForFieldName("name")?.type === "private_property_identifier"
+}
+
+const PARAMETER_PROPERTY_MODIFIERS = ["accessibility_modifier", "override_modifier", "readonly"]
+
+/** A constructor parameter that declares a field too: `private`, `readonly`, `override` and the like. */
+export function isParameterProperty(parameter: Node): boolean {
+  return PARAMETER_PROPERTY_MODIFIERS.some((modifier) => hasChildOfType(parameter, modifier))
+}
+
+const NAMED_INSTANCE_MEMBERS: ReadonlySet<string> = new Set([
+  "method_definition",
+  "method_signature",
+  "abstract_method_signature",
+  "public_field_definition",
+])
+
+/** Every instance member the class declares by name, a Symbol or not. */
+export function instanceMemberNames(classNode: Node): string[] {
+  const names = new Set<string>()
+  for (const member of classNode.childForFieldName("body")?.namedChildren ?? []) {
+    if (member === null || hasChildOfType(member, "static")) continue
+    if (isConstructorMember(member)) {
+      for (const name of parameterPropertyNames(member)) names.add(name)
+    } else if (NAMED_INSTANCE_MEMBERS.has(member.type) && !isTypeOnlyField(member)) {
+      const name = memberNameSegment(member)
+      if (name !== null) names.add(name)
+    }
+    for (const name of thisAssignedNames(member)) names.add(name)
+  }
+  return [...names]
+}
+
+// TypeScript emits nothing for such a field unless it defines class fields, so it is how a subclass
+// narrows the type of a member it inherits (`subscribe!: Narrowed`); a decorator may set it.
+function isTypeOnlyField(member: Node): boolean {
+  return (
+    member.type === "public_field_definition" &&
+    member.childForFieldName("value") === null &&
+    member.childForFieldName("type") !== null &&
+    member.childForFieldName("decorator") === null &&
+    !hasChildOfType(member, "accessor") &&
+    !hasChildOfType(member, "abstract")
+  )
+}
+
+function parameterPropertyNames(construction: Node): string[] {
+  const names: string[] = []
+  for (const parameter of construction.childForFieldName("parameters")?.namedChildren ?? []) {
+    const pattern = parameter?.childForFieldName("pattern")
+    if (parameter && pattern?.type === "identifier" && isParameterProperty(parameter)) {
+      names.push(pattern.text)
+    }
+  }
+  return names
+}
+
+const THIS_BINDERS: ReadonlySet<string> = new Set([
+  "function_expression",
+  "function_declaration",
+  "generator_function",
+  "generator_function_declaration",
+  "method_definition",
+  "class",
+  "class_declaration",
+  "abstract_class_declaration",
+])
+
+const ASSIGNMENTS: ReadonlySet<string> = new Set([
+  "assignment_expression",
+  "augmented_assignment_expression",
+])
+
+// What an instance member's code assigns to `this`, in a method's body or a field's value, outside
+// a function or class that binds a `this` of its own.
+function thisAssignedNames(member: Node): string[] {
+  const code =
+    member.type === "method_definition"
+      ? member.childForFieldName("body")
+      : member.type === "public_field_definition"
+        ? member.childForFieldName("value")
+        : null
+  if (code === null || THIS_BINDERS.has(code.type)) return []
+  const names: string[] = []
+  const descend = (node: Node): boolean => !THIS_BINDERS.has(node.type)
+  for (const node of walkDescendants(code, { descend })) {
+    if (!ASSIGNMENTS.has(node.type)) continue
+    const left = node.childForFieldName("left")
+    if (left?.type !== "member_expression") continue
+    if (left.childForFieldName("object")?.type !== "this") continue
+    const name = writtenNameSegment(left, left.childForFieldName("property"))
+    if (name !== null) names.push(name)
+  }
+  return names
 }
