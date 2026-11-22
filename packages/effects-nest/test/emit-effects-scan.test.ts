@@ -128,6 +128,33 @@ describe("scan — event emitters in a NestJS service file", () => {
     expect(publish.calls.map((c) => c.target)).toEqual(["EventEmitter2", "server.emit"])
   })
 
+  it("publishes through `super` in a class that extends EventEmitter2", async () => {
+    await workspace.writeSource(
+      "src/bus.ts",
+      [
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        "",
+        "export class Bus extends EventEmitter2 {",
+        "  send(id: number) {",
+        '    return super.emit("order.created", id)',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const send = symbolNamed(await scanWorkspace(), "Bus.send")
+
+    expect(send.effects).toMatchObject([
+      {
+        id: "event.publish",
+        target: "super.emit",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emit",
+      },
+    ])
+    expect(send.calls).toEqual([])
+  })
+
   it.each([
     ["an aliased import", 'import { EventEmitter2 as Bus } from "@nestjs/event-emitter"', "Bus"],
     ["a namespace import", 'import * as ee from "eventemitter2"', "ee.EventEmitter2"],

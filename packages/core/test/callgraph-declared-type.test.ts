@@ -416,3 +416,101 @@ describe("a call through a receiver of a declared type, to a member its class in
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
   })
 })
+
+describe("a call through `super`, whose type is the class the caller's class extends", () => {
+  const ADMIN = "ts:src/admin.ts#AdminService"
+  const MIDDLE = "ts:src/admin.ts#Middle"
+  const BASE = "ts:src/base.ts#BaseService"
+  const CONSTRUCTOR = `${ADMIN}.constructor`
+  const SAVE = `${ADMIN}.save`
+  const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
+  const method = (id: string, overrides: SymbolOverrides = {}) =>
+    makeSymbol(id, { kind: "method", ...overrides })
+
+  // `AdminService extends BaseService`, which its file imports; the plugin types `super` with it.
+  function resolveSuper(
+    symbols: readonly IRSymbol[],
+    heritages: readonly Heritage[] = [[ADMIN, "BaseService"]],
+    { target = "super.save", type = "BaseService" }: { target?: string; type?: string } = {},
+  ) {
+    const caller = target === "super" ? CONSTRUCTOR : SAVE
+    return resolveCallGraph({
+      symbols: [withCalls(caller, [{ target, line: 3 }]), ...symbols],
+      importsByFile: importsOf("src/admin.ts", { source: "./base", symbols: ["BaseService"] }),
+      declaredReceiverTypes: new Map([[makeSymbolCallKey(caller, 3, target), type]]),
+      classHeritages: heritagesOf(heritages),
+    })
+  }
+
+  it("resolves `super(…)` to the class, at high confidence", () => {
+    const result = resolveSuper(classes(ADMIN, BASE), undefined, { target: "super" })
+    expect(edgesOf(result)).toEqual([[CONSTRUCTOR, BASE, "high"]])
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it.each<[string, readonly IRSymbol[], readonly Heritage[], string]>([
+    [
+      "the class extends",
+      [...classes(ADMIN, BASE), method(`${BASE}.save`), method(SAVE)],
+      [[ADMIN, "BaseService"]],
+      `${BASE}.save`,
+    ],
+    [
+      "the nearest class up the chain that declares it",
+      [...classes(ADMIN, MIDDLE, BASE), method(`${BASE}.save`)],
+      [
+        [ADMIN, "Middle"],
+        [MIDDLE, "BaseService"],
+      ],
+      `${BASE}.save`,
+    ],
+  ])(
+    "resolves `super.<member>` to the member %s, at high confidence",
+    (_c, symbols, heritages, to) => {
+      const type = heritages[0]?.[1]
+      const result = resolveSuper(symbols, heritages, type === undefined ? {} : { type })
+      expect(edgesOf(result)).toEqual([[SAVE, to, "high"]])
+      expect(result.diagnostics).toEqual([])
+    },
+  )
+
+  it.each<[string, readonly IRSymbol[], readonly Heritage[], { target?: string; type?: string }]>([
+    [
+      "`super(…)` of a class a drop rule removed",
+      [makeSymbol(BASE, { kind: "class", dropped: true, dropReason: "pure DTO" })],
+      [],
+      { target: "super" },
+    ],
+    [
+      "a member the class declares, though a drop rule removed it",
+      [...classes(BASE), method(`${BASE}.save`, { dropped: true, dropReason: "empty body" })],
+      [],
+      {},
+    ],
+    [
+      "a member the class holds in a field, which is no member of its prototype",
+      [
+        ...classes(BASE),
+        method(`${BASE}.save`, { derivedBy: ["class-method", "field-assigned-function"] }),
+      ],
+      [],
+      {},
+    ],
+    [
+      "a member the class declares with no Symbol",
+      [...classes(MIDDLE, BASE), method(`${BASE}.save`)],
+      [[MIDDLE, "BaseService", ["save"]]],
+      { type: "Middle" },
+    ],
+    [
+      "a member of a member",
+      [...classes(BASE), method(`${BASE}.repo`)],
+      [],
+      { target: "super.repo.save" },
+    ],
+  ])("leaves %s unresolved and `dynamic`", (_case, symbols, heritages, call) => {
+    const result = resolveSuper(symbols, heritages, call)
+    expect(result.edges).toEqual([])
+    expect(result.diagnostics.map((d) => d.bucket)).toEqual(["dynamic"])
+  })
+})

@@ -1,6 +1,8 @@
 import {
+  CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type Confidence,
   EXPORT_DEFAULT_DERIVED_BY,
+  FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type ImportEdge,
   type Symbol as IRSymbol,
   type SymbolId,
@@ -109,26 +111,77 @@ export function resolveThroughDeclaredType(
 ): ResolutionHit | null {
   if (type === undefined) return null
   const segments = splitTargetSegments(ctx.target)
+  if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
   const member = segments.at(-1)
   if (segments.length < 2 || member === undefined) return null
-  const seen = new Set<SymbolId>()
-  for (let owner = boundClass(ctx, type); owner !== null; owner = superclassOf(ctx.run, owner)) {
-    if (seen.has(owner.id)) return null
-    seen.add(owner.id)
-    const id = trySymbolId({
-      language: owner.language,
-      file: owner.source.file,
-      qualifiedName: `${owner.name}.${member}`,
-    })
+  for (const owner of classChain(ctx.run, boundClass(ctx, type))) {
+    const id = instanceMemberId(owner, member)
     if (id === null) return null
     // The value may be a subclass's, whose override then runs.
     if (ctx.run.table.keptSymbolIds.has(id)) return { id, confidence: "medium" }
-    // A member the class declares hides the one it inherits, though a drop rule removed it or,
-    // as a field holding data, it is no Symbol at all.
-    const declares = ctx.run.classHeritages.get(owner.id)?.instanceMembers.includes(member)
-    if (declares === true || ctx.run.table.allById.has(id)) return null
+    if (declaresMember(ctx.run, owner, member) || ctx.run.table.allById.has(id)) return null
   }
   return null
+}
+
+// `super` names the class the caller's class extends, which no subclass replaces: `super(…)`
+// constructs it, and `super.<member>` reads its prototype, where a field is not.
+function resolveThroughSuper(
+  ctx: ResolveTargetContext,
+  type: string,
+  segments: readonly string[],
+): ResolutionHit | null {
+  const extended = boundClass(ctx, type)
+  if (segments.length === 1) {
+    return extended !== null && ctx.run.table.keptSymbolIds.has(extended.id)
+      ? { id: extended.id, confidence: "high" }
+      : null
+  }
+  const member = segments[1]
+  if (segments.length !== 2 || member === undefined) return null
+  for (const owner of classChain(ctx.run, extended)) {
+    const id = instanceMemberId(owner, member)
+    if (id === null) return null
+    const declared = ctx.run.table.allById.get(id)
+    if (declared === undefined) {
+      if (declaresMember(ctx.run, owner, member)) return null
+      continue
+    }
+    if (isHeldByField(declared) || !ctx.run.table.keptSymbolIds.has(id)) return null
+    return { id, confidence: "high" }
+  }
+  return null
+}
+
+// A cycle of classes extending one another ends the chain where it would come round again.
+function* classChain(run: ResolutionRun, first: IRSymbol | null): Iterable<IRSymbol> {
+  const seen = new Set<SymbolId>()
+  for (let owner = first; owner !== null; owner = superclassOf(run, owner)) {
+    if (seen.has(owner.id)) return
+    seen.add(owner.id)
+    yield owner
+  }
+}
+
+function instanceMemberId(owner: IRSymbol, member: string): SymbolId | null {
+  return trySymbolId({
+    language: owner.language,
+    file: owner.source.file,
+    qualifiedName: `${owner.name}.${member}`,
+  })
+}
+
+// A member the class declares hides the one it inherits, though a drop rule removed it or, as a
+// field holding data, it is no Symbol at all.
+function declaresMember(run: ResolutionRun, owner: IRSymbol, member: string): boolean {
+  return run.classHeritages.get(owner.id)?.instanceMembers.includes(member) === true
+}
+
+function isHeldByField(member: IRSymbol): boolean {
+  return member.derivedBy.some(
+    (token) =>
+      token === FIELD_ASSIGNED_FUNCTION_DERIVED_BY || token === CALL_ARGUMENT_FUNCTION_DERIVED_BY,
+  )
 }
 
 // Not component or workspace scope: matching a type by its spelling could only find a namesake. A

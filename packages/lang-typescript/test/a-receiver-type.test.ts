@@ -632,3 +632,60 @@ describe("a call of a member of `this` in an instance member carries the class's
     expect(await thisReceiverType(source, id)).toBeUndefined()
   })
 })
+
+describe("a call through `super` carries the name of the class the enclosing class extends", () => {
+  const superReceiverType = (source: string, id: string, target: string) =>
+    receiverTypeOfCall(source, id, (written) => written === target)
+  const extending = (...members: string[]) =>
+    ['import { Base } from "./base"', "export class C extends Base {", ...members, "}"].join("\n")
+
+  it.each([
+    [
+      "a constructor's `super(…)`",
+      extending("  constructor() { super(1) }"),
+      "C.constructor",
+      "super",
+    ],
+    ["a method's `super.<member>`", extending("  m() { super.n() }"), "C.m", "super.n"],
+    ["an arrow inside a method", extending("  m() { [1].map(() => super.n()) }"), "C.m", "super.n"],
+    ["a field's arrow", extending("  handle = () => super.n()"), "C.handle", "super.n"],
+    [
+      "a method whose `this` parameter declares another type, which `super` does not read",
+      extending("  m(this: Other) { super.n() }"),
+      "C.m",
+      "super.n",
+    ],
+    [
+      "a class a binding holds",
+      'import { Base } from "./base"\nexport const C = class extends Base {\n  m() { super.n() }\n}',
+      "C.m",
+      "super.n",
+    ],
+    [
+      "a dotted name the class extends",
+      'import * as b from "./base"\nexport class C extends b.Base {\n  m() { super.n() }\n}',
+      "C.m",
+      "super.n",
+    ],
+  ])("in %s", async (_label, source, id, target) => {
+    const type = source.includes("b.Base") ? "b.Base" : "Base"
+    expect(await superReceiverType(source, id, target)).toBe(type)
+  })
+
+  it.each([
+    ["a static member", extending("  static m() { super.n() }"), "C::m"],
+    [
+      "a class that extends a call",
+      "export class C extends Mixin(Base) {\n  m() { super.n() }\n}",
+      "C.m",
+    ],
+    [
+      "a class that extends a name a scope around it binds",
+      "export function f(Base: any) {\n  class C extends Base {\n    m() { super.n() }\n  }\n}",
+      "f",
+    ],
+    ["an object literal's method", "export const o = {\n  m() { super.n() },\n}", "o.m"],
+  ])("reads nothing from %s", async (_label, source, id) => {
+    expect(await superReceiverType(source, id, "super.n")).toBeUndefined()
+  })
+})

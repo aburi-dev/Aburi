@@ -137,7 +137,10 @@ export interface CallCandidate {
   /** Per-argument literal value, or null when the argument is not a literal. */
   literalArgs: (string | null)[]
   dynamicReceiver?: boolean
-  /** The named type the receiver is declared with, type arguments aside, e.g. `EventEmitter2`. */
+  /**
+   * The named type the receiver is declared with, type arguments aside, e.g. `EventEmitter2`: for
+   * `this` the class's own name, and for `super` the name the class's `extends` writes.
+   */
   receiverType?: string
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding

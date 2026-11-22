@@ -553,6 +553,22 @@ describe("scan — a call of a member a class inherits", () => {
     })
   })
 
+  it("reaches the class `super(…)` constructs and the member `super.<member>` reads", async () => {
+    const calls = await callsOfKinds([
+      'import { Repository } from "./base"',
+      "export class Admin extends Repository {",
+      "  constructor() { super() }",
+      "  find(id: string) { return super.find(id) }",
+      "}",
+    ])
+    const constructs = [["super", "ts:src/base.ts#Repository"]]
+    expect(calls).toEqual({
+      Admin: constructs,
+      "Admin.constructor": constructs,
+      "Admin.find": [["super.find", FIND]],
+    })
+  })
+
   it("leaves it where the class's own member hides it, a Symbol or not", async () => {
     const calls = await callsOfKinds([
       'import { Repository } from "./base"',

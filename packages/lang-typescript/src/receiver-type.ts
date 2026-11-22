@@ -19,9 +19,11 @@ interface ThisScope {
 }
 
 export function receiverTypeOf(callee: Node): string | null {
+  if (callee.type === "super") return extendedClassOf(callee)
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
   if (receiver?.type === "this") return instanceClassOf(receiver)
+  if (receiver?.type === "super") return extendedClassOf(receiver)
   if (receiver?.type === "identifier") return nameTypeOf(receiver)
   if (receiver?.type !== "member_expression") return null
   if (receiver.childForFieldName("object")?.type !== "this") return null
@@ -117,6 +119,15 @@ function instanceClassOf(receiver: Node): string | null {
   if (owner === null || !CLASS_DECLARATIONS.has(owner.type)) return null
   const name = nameFieldText(owner)
   return name === null || isShadowed(scope.classBody, name) ? null : name
+}
+
+// `super` in an instance member, a constructor's `super(…)` included, reads the class the enclosing
+// one extends, whatever a `this` parameter says `this` is.
+function extendedClassOf(node: Node): string | null {
+  const scope = thisScope(node)
+  if (scope === null || scope.isStatic) return null
+  const owner = scope.classBody.parent
+  return owner === null ? null : superclassOf(owner)
 }
 
 const CLASS_DECLARATIONS: ReadonlySet<string> = new Set([
