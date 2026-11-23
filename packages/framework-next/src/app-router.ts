@@ -17,9 +17,16 @@ export const NEXT_APP_ROUTER_ROLES: ReadonlyMap<string, AppRouterRole> = new Map
   ["route", "route"],
 ])
 
-// Next.js matches every App Router file, `route` included, against `pageExtensions`, whose
-// default holds all four: an Open Graph `route.tsx` renders JSX into an `ImageResponse`.
-const NEXT_APP_ROUTER_EXTENSIONS: ReadonlySet<string> = new Set([".ts", ".tsx", ".js", ".jsx"])
+const NEXT_APP_ROUTER_COMPONENT_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+])
+
+// Next.js matches `route` against the same `pageExtensions` as every other App Router file: an
+// Open Graph `route.tsx` renders JSX into an `ImageResponse`.
+const NEXT_APP_ROUTER_ROUTE_EXTENSIONS: ReadonlySet<string> = NEXT_APP_ROUTER_COMPONENT_EXTENSIONS
 
 export type AppRouterFile = { readonly role: AppRouterRole }
 
@@ -37,7 +44,9 @@ export function recognizeAppRouterFile(path: string): AppRouterFile | null {
   const role = NEXT_APP_ROUTER_ROLES.get(base)
   if (role === undefined) return null
 
-  if (!NEXT_APP_ROUTER_EXTENSIONS.has(ext)) return null
+  const allowedExtensions =
+    role === "route" ? NEXT_APP_ROUTER_ROUTE_EXTENSIONS : NEXT_APP_ROUTER_COMPONENT_EXTENSIONS
+  if (!allowedExtensions.has(ext)) return null
 
   // Any `app` parent counts: monorepos routinely nest it (`apps/web/app/page.tsx`).
   const parents = segments.slice(0, -1)
