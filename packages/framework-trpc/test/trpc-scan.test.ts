@@ -147,9 +147,79 @@ describe("scan — a procedure written inside a router", () => {
       "publicProcedure.input.query",
       "publicProcedure.input",
       "z.string",
+      "publicProcedure",
       "TRPCError",
       "ctx.db.post.findUnique",
     ])
+  })
+
+  /** The router's `middleware`, for `export const appRouter = t.router(<procedures>)`. */
+  async function routerMiddleware(procedures: string[]): Promise<readonly string[] | undefined> {
+    await workspace.writeSource(
+      "src/server.ts",
+      [SERVER_IMPORT, "export const appRouter = t.router({", ...procedures, "})"].join("\n"),
+    )
+    return symbolNamed({ ir: await scanWorkspace() }, "appRouter").middleware
+  }
+
+  it.each([
+    [
+      "each procedure's base procedure, under its key",
+      ["  list: publicProcedure.query(() => []),", "  delete: protectedProcedure.mutation(fn),"],
+      ["list:publicProcedure", "delete:protectedProcedure"],
+    ],
+    [
+      "what a procedure's chain uses, after its base",
+      ["  delete: protectedProcedure.use(isAdmin).input(z.string()).mutation(fn),"],
+      ["delete:protectedProcedure", "delete:isAdmin"],
+    ],
+    [
+      "a nested router's procedures, under the path of keys",
+      ["  post: t.router({", "    delete: protectedProcedure.mutation(fn),", "  }),"],
+      ["post.delete:protectedProcedure"],
+    ],
+    [
+      "a quoted key as its value, and a computed one as computed",
+      ['  "by-id": publicProcedure.query(fn),', "  [name]: protectedProcedure.query(fn),"],
+      ["by-id:publicProcedure", "<computed>:protectedProcedure"],
+    ],
+  ])("names %s", async (_label, procedures, middleware) => {
+    expect(await routerMiddleware(procedures)).toEqual(middleware)
+  })
+
+  it.each([
+    ["a procedure on the instance's own procedure", ["  list: t.procedure.query(() => []),"]],
+    ["a procedure the router names by reference", ["  list,", "  byId: byIdProcedure,"]],
+    ["a nested router named by reference", ["  post: postRouter,"]],
+  ])("names nothing for %s", async (_label, procedures) => {
+    expect(await routerMiddleware(procedures)).toBeUndefined()
+  })
+
+  it("calls the base procedure an inline procedure is built on", async () => {
+    await workspace.writeSource(
+      "src/trpc.ts",
+      [
+        SERVER_IMPORT,
+        "const t = initTRPC.create()",
+        "export const protectedProcedure = t.procedure.use(isAuthed)",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/server.ts",
+      [
+        SERVER_IMPORT,
+        'import { protectedProcedure } from "./trpc"',
+        "export const appRouter = t.router({",
+        "  delete: protectedProcedure.mutation(fn),",
+        "})",
+      ].join("\n"),
+    )
+
+    const appRouter = symbolNamed({ ir: await scanWorkspace() }, "appRouter")
+
+    expect(appRouter.calls.find((call) => call.target === "protectedProcedure")?.resolved).toBe(
+      "ts:src/trpc.ts#protectedProcedure",
+    )
   })
 })
 

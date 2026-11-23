@@ -37,3 +37,38 @@ describe("diff — a procedure written inside a router", () => {
     expect(change.delta.logicChanged).toBe(true)
   })
 })
+
+describe("diff — the base procedure of a procedure written inside a router", () => {
+  const postRouter = (base: string) =>
+    [
+      'import { createTRPCRouter, protectedProcedure, publicProcedure } from "./trpc"',
+      "export const postRouter = createTRPCRouter({",
+      "  list: publicProcedure.query(() => []),",
+      `  delete: ${base}`,
+      "    .input(z.object({ id: z.string() }))",
+      "    .mutation(({ input }) => input.id),",
+      "})",
+      "",
+    ].join("\n")
+
+  it("reports switching it to another as a logic change that names both", async () => {
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      "src/post.ts",
+      postRouter("protectedProcedure"),
+      postRouter("publicProcedure"),
+    )
+
+    const change = soleChange(diff.symbols, "changed")
+    expect(change.after.id).toBe("ts:src/post.ts#postRouter")
+    expect(change.delta).toMatchObject({
+      logicChanged: true,
+      middleware: {
+        added: ["delete:publicProcedure"],
+        removed: ["delete:protectedProcedure"],
+        reordered: false,
+      },
+    })
+  })
+})

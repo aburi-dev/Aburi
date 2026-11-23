@@ -106,6 +106,21 @@ guard removed from `protectedProcedure` changes `protectedProcedure` alone, and
 the report lists a procedure built on it only when the change moves an effect
 the procedure inherits.
 
+A procedure written inside a router's object literal has no Symbol of its own,
+so the router names, for each, what it is built on, prefixed by the key it is
+served under: `t.router({ list: publicProcedure.query(fn), delete:
+protectedProcedure.use(isAdmin).mutation(fn) })` names `list:publicProcedure`,
+`delete:protectedProcedure` and `delete:isAdmin`, and calls `publicProcedure`,
+`protectedProcedure` and `isAdmin`. Switching `delete` to `publicProcedure` is
+then a logic change to the router that names both
+(`- middleware removed: delete:protectedProcedure`). A router written inside
+one is read the same way under the path of keys (`post.delete:protectedProcedure`),
+a quoted key is its value (`"by-id"` gives `by-id:`), and a computed one is
+`<computed>:`. A procedure on the instance's own `t.procedure` names nothing, as
+it does when declared as a `const`, and neither does a procedure or router the
+object names by reference (`{ list }`, `{ post: postRouter }`), which carries
+its own.
+
 Not linked today:
 
 - A middleware composed inside the `.use(…)` or `.concat(…)` that hands it
@@ -136,9 +151,9 @@ Not classified today:
   gives an object handed to a call no member Symbols, so there is no Symbol to
   classify. The router is classified, and it walks its whole call, so the
   procedure's resolver is the router's: its calls, rules and effects are on the
-  router, and an edit to its rules or effects is a logic change to the router. Declare the
-  procedure as a `const` and name it in the router to give it a Symbol of its
-  own.
+  router, and an edit to its rules or effects is a logic change to the router,
+  as is a change to what it is built on (above). Declare the procedure as a
+  `const` and name it in the router to give it a Symbol of its own.
 - What is built on a base procedure whose name is neither `procedure` nor ends
   in `Procedure` (`const base = t.procedure`, then `base.query(fn)` or
   `base.use(x)`). `base` itself is classified, but the plugin reads one

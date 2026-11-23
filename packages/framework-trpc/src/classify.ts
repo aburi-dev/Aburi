@@ -3,6 +3,7 @@ import {
   calleeName,
   chainCalls,
   declaratorValue,
+  decodeStringLiteral,
   lastQnameSegment,
   middlewareNames,
   type SyntaxNode,
@@ -56,7 +57,9 @@ export function classifyTrpcSymbol(
   if (chain === null || role === null) return null
   const { middleware, calls } = BUILDS_A_PROCEDURE.has(role)
     ? builtOn(chain)
-    : { middleware: [], calls: [] }
+    : role === "router"
+      ? routerProcedures(chain, importsTrpc, "")
+      : { middleware: [], calls: [] }
   return {
     extKind: `${TRPC_DERIVED_BY_PREFIX}:${role}` satisfies TrpcExtKind,
     derivedBy: `${TRPC_DERIVED_BY_PREFIX}:${role}:${chain.name}`,
@@ -90,6 +93,41 @@ function builtOn(chain: Chain): BuiltOn {
       onBase && chain.rootReference !== null ? [chain.rootReference, ...handlers] : handlers,
     ),
   }
+}
+
+// A procedure written in a router's object is no Symbol of its own, so the router names what each
+// is built on under the key that serves it: two procedures on one base stay apart, and moving one
+// to another base moves the router's `logic` as it moves a `const` procedure's.
+function routerProcedures(router: Chain, importsTrpc: boolean, prefix: string): BuiltOn {
+  const [procedures] = router.call === null ? [] : argumentsOf(router.call)
+  const object = procedures === undefined ? null : unwrapValue(procedures)
+  if (object?.type !== "object") return { middleware: [], calls: [] }
+  const built = writtenChildren(object).flatMap((entry) => {
+    const value = entry.type === "pair" ? entry.childForFieldName("value") : null
+    const chain = value === null ? null : readChain(unwrapValue(value))
+    if (chain === null) return []
+    const key = `${prefix}${propertyKey(entry)}`
+    const role = roleOf(chain, importsTrpc)
+    if (role === "router") return [routerProcedures(chain, importsTrpc, `${key}.`)]
+    if (role !== "procedure") return []
+    const { middleware, calls } = builtOn(chain)
+    return [{ middleware: middleware.map((name) => `${key}:${name}`), calls }]
+  })
+  return {
+    middleware: built.flatMap((procedure) => procedure.middleware),
+    calls: built.flatMap((procedure) => procedure.calls),
+  }
+}
+
+// The key a client calls the procedure by: a quoted key is its value, and one computed at run
+// time is `<computed>`, as a call target names what it cannot read.
+function propertyKey(pair: SyntaxNode): string {
+  const key = pair.childForFieldName("key")
+  if (key === null) return COMPUTED_TARGET_SEGMENT
+  if (key.type === "property_identifier" || key.type === "number") return key.text
+  if (key.type !== "string") return COMPUTED_TARGET_SEGMENT
+  const { value, whole } = decodeStringLiteral(key)
+  return whole ? value : COMPUTED_TARGET_SEGMENT
 }
 
 function roleOf(chain: Chain, importsTrpc: boolean): TrpcRole | null {
