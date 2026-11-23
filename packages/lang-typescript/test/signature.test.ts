@@ -99,12 +99,24 @@ describe("a type is recorded as it reads on one line", () => {
 describe("what a function throws", () => {
   it.each([
     ["the constructor of `throw new`", "throw new MyError()", ["MyError"]],
-    ["an identifier thrown", "throw err", ["err"]],
+    ["an identifier the module binds", "throw TIMEOUT", ["TIMEOUT"]],
+    ["an identifier nothing binds", "throw unknownError", ["unknownError"]],
     ["the callee of a factory thrown", "throw makeError()", ["makeError"]],
     ["the whole callee of a member factory", "throw errors.gone()", ["errors.gone"]],
     ["nothing for a thrown literal", 'throw "bad"', []],
+    ["nothing for a parameter thrown", "throw err", []],
+    ["nothing for a `catch` binding thrown", "try { run() } catch (e) { throw e }", []],
+    [
+      "nothing for a module name a `catch` binding hides",
+      "try {} catch (TIMEOUT) { throw TIMEOUT }",
+      [],
+    ],
+    ["nothing for a local thrown", "const gone = new Gone(); throw gone", []],
+    ["nothing for a local factory's call", "const make = () => new Gone(); throw make()", []],
+    ["nothing for a member of a local", "const errors = load(); throw errors.gone()", []],
+    ["nothing for a local class constructed", "class Local extends Error {} throw new Local()", []],
   ])("records %s", async (_label, statement, throws) => {
-    const source = `export function f(err: Error) { ${statement} }`
+    const source = `const TIMEOUT = new Error()\nexport function f(err: Error) { ${statement} }`
 
     expect((await signatureOf(source))?.throws).toEqual(throws)
   })

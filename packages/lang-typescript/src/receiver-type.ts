@@ -133,8 +133,16 @@ export function superclassOf(classNode: Node): string | null {
 function moduleClassName(expression: Node | null): string | null {
   const name = expression === null ? null : dottedName(expression)
   if (expression === null || name === null) return null
-  const binding = bindingOf(expression, headOf(name))
-  return binding === null || isModuleBinding(binding) || isModuleClassItself(binding) ? name : null
+  return isModuleLevel(bindingOf(expression, headOf(name))) ? name : null
+}
+
+/** Whether the identifier reads what the module or the global scope binds under its name. */
+export function namesModuleLevelValue(name: Node): boolean {
+  return isModuleLevel(bindingOf(name, name.text))
+}
+
+function isModuleLevel(binding: NameBinding | null): boolean {
+  return binding === null || isModuleBinding(binding) || isModuleClassItself(binding)
 }
 
 // In its own body a class declaration's name is the class, which is the module's where the module

@@ -390,6 +390,12 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
       ["larger", "total"],
     ],
     [
+      "a renamed `catch` binding a function rethrows",
+      "export function load(id: string) {\n  try {\n    return fetchUser(id)\n  } catch (e) {\n    report(e)\n    throw e\n  }\n}\n",
+      "export function load(id: string) {\n  try {\n    return fetchUser(id)\n  } catch (error) {\n    report(error)\n    throw error\n  }\n}\n",
+      ["load"],
+    ],
+    [
       "a concise conditional rewritten as a block that returns it in parentheses",
       "export const larger = (a: number, b: number): number => (a > b ? a : b)\n",
       "export const larger = (a: number, b: number): number => {\n  return (a > b ? a : b)\n}\n",

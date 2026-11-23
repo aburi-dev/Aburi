@@ -124,7 +124,7 @@ Examples:
 
 - Changing `signature.inputs[].name` does not change `api` (parameter names are not part of the contract)
 - Changing only a default's **value** (`limit = 10` → `limit = 20`) does not change `api`: omitting the argument stays legal either way, so the value is not part of the api contract. The IR records that a default exists (`optional`) and not what it is. What the default runs is read with the body instead ([lang-plugin.md](./lang-plugin.md) LP20d), so a default that calls something reaches `logic`
-- Changing local variable names, the function body, or rules/effects does not change `api`
+- Changing local variable names, the function body, or rules/effects does not change `api`. A thrown name is recorded in `throws` only when the module or the global scope binds it, so renaming a parameter, a `catch` binding or a local the Symbol throws does not either ([lang-plugin.md](./lang-plugin.md) LP13b)
 - Reordering the **occurrence order** of a Symbol's decorators, or of a parameter's, does not change `api` (both are sorted, §3.1)
 - **Changing only the class-scope portion of `Symbol.name` (`InvoiceService.createInvoice` → `BillingService.createInvoice`) does not change `api`** (the last segment is the same)
 - Breaking a type over lines, or joining it back onto one line, does not change `api`: `| A | B` ↔ `A | B`, `Array<` … `| A` … `| B` … `>` ↔ `Array<A | B>`, `(` … `a: A,` … `) => void` ↔ `(a: A) => void`, `{` … `a: A` … `b: B` … `}` ↔ `{ a: A; b: B }`. A formatter that breaks a type adds the line breaks, a trailing comma before a closing bracket and a union's leading `|`, drops an object type's `;` between members, and undoes each of these when it joins the type, so the language plugin records each type as it reads on one line ([lang-plugin.md](./lang-plugin.md) LP11e). It is the plugin's to do rather than the fingerprint's: the canonical string sees only text, where telling a union's operator from a `|` inside a string literal type takes the grammar, and the recorded text is also what the diff's delta rows and its rename pairing compare
@@ -393,6 +393,7 @@ The reference implementation and every language plugin must pass the following t
 | A24 | Join a parameter type broken over lines onto one line: `\| ClassProvider \| FactoryProvider` → `ClassProvider \| FactoryProvider`, `Array<` … `\| A` … `\| B` … `>` → `Array<A \| B>`, `(` … `request: Request,` … `) => void` → `(request: Request) => void` | api unchanged (LP11e records each spelling as the one-line text) |
 | A25 | Export a declaration under its own name by a clause instead of the keyword, or reorder the names a clause exports it under | api unchanged (§3.8) |
 | A28 | Break a parameter decorator's arguments over lines, or write a comment inside them: `@Inject(` … `TOKEN,` … `)` → `@Inject(TOKEN)`, `@Inject(/* legacy */ TOKEN)` → `@Inject(TOKEN)` | api unchanged (LP11f records each spelling as the one-line text) |
+| A29 | Rename a parameter, a `catch` binding or a local the Symbol throws (`catch (e) { throw e }` → `catch (error) { throw error }`) | api unchanged |
 
 ### 7.3 api change conditions
 

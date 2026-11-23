@@ -5,11 +5,13 @@ import {
   findChild,
   firstNonCommentChild,
   leadingOperatorOperand,
+  type ThrownValue,
   thrownValue,
   walkDescendants,
 } from "./ast-helpers"
 import { decoratorNodes } from "./decorators"
 import { collectPatternBindings, isRepairedPattern } from "./pattern-bindings"
+import { namesModuleLevelValue } from "./receiver-type"
 
 export function buildSignature(declaration: Node, jsDocText: string | null): Signature {
   const async = detectAsync(declaration)
@@ -257,15 +259,25 @@ function readThrows(node: Node, jsDocText: string | null): string[] {
   return [...seen].sort(compareCodeUnit)
 }
 
+// A name a parameter, a `catch` clause or a local binds tells a caller nothing about what reaches
+// it, and renaming one is no api change.
 function extractThrownType(throwNode: Node): string | null {
   const thrown = thrownValue(throwNode)
-  if (thrown === null) return null
-  if (thrown.viaNew) return thrown.node.text
-  if (thrown.node.type === "identifier") return thrown.node.text
-  if (thrown.node.type === "call_expression") {
-    return thrown.node.childForFieldName("function")?.text ?? null
-  }
-  return null
+  const named = thrown === null ? null : thrownName(thrown)
+  if (named === null) return null
+  const head = leadingIdentifier(named)
+  return head === null || namesModuleLevelValue(head) ? named.text : null
+}
+
+function thrownName({ node, viaNew }: ThrownValue): Node | null {
+  if (viaNew || node.type === "identifier") return node
+  return node.type === "call_expression" ? node.childForFieldName("function") : null
+}
+
+function leadingIdentifier(name: Node): Node | null {
+  let head: Node | null = name
+  while (head?.type === "member_expression") head = head.childForFieldName("object")
+  return head?.type === "identifier" ? head : null
 }
 
 const JSDOC_THROWS_PATTERN =
