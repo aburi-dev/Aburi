@@ -26,6 +26,12 @@ export interface UnreadPackageManifest {
   reason: string
 }
 
+/** A workspace package none of the declared Components holds, and the Symbols the IR has from it. */
+export interface PackageInNoComponent {
+  root: string
+  symbols: number
+}
+
 export interface PluginNamedFramework {
   component: string
   value: string
@@ -70,6 +76,7 @@ export interface ScanReport {
   pluginNamedFrameworks: readonly PluginNamedFramework[]
   ignoredPublicApi: readonly IgnoredPublicApi[]
   unreadPackageManifests: readonly UnreadPackageManifest[]
+  packagesInNoComponent: readonly PackageInNoComponent[]
   loadedPlugins: readonly string[]
   strayPluginOptions: readonly StrayPluginOptions[]
   exitCode: ExitCode

@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import {
   CoreError,
   detectComponents,
   detectManagers,
+  NPM_MANIFEST,
   type UnnameableRoot,
   type UnresolvedDeclaration,
 } from "@aburi/core"
@@ -11,7 +13,11 @@ import { CliError, errorMessage } from "../errors"
 import { EXIT, type ExitCode } from "../exit-codes"
 import { pathKind } from "../fs-probe"
 import { outputIsADirectory, writeOutputFile } from "../output-file"
-import { FRAMEWORK_TO_PLUGIN, LANGUAGE_TO_PLUGIN } from "../plugin-catalog"
+import {
+  DEPENDENCY_TO_EFFECTS_PLUGIN,
+  FRAMEWORK_TO_PLUGIN,
+  LANGUAGE_TO_PLUGIN,
+} from "../plugin-catalog"
 import { resolveWorkspaceRoot } from "../workspace-root"
 import { isUnreadableTree } from "./scan-components"
 
@@ -31,6 +37,8 @@ export interface InitReport {
   detectedManagers: string[]
   detectedLanguages: string[]
   detectedFrameworks: string[]
+  /** The effects plugins written to `effects`, for the dependencies the workspace's manifests name. */
+  effectsPlugins: string[]
   componentCount: number
   suggestedPlugins: readonly string[]
   unmappedLanguages: readonly string[]
@@ -77,12 +85,21 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     for (const framework of component.frameworks ?? []) frameworkSet.add(framework)
   }
 
+  const dependencies = await dependencyNames(
+    workspaceRoot,
+    components.flatMap((component) => component.roots),
+  )
+  const effects = pluginRefsFor(dependencies, DEPENDENCY_TO_EFFECTS_PLUGIN)
   const suggestions = options.withSuggestions
-    ? await uninstalledPackages(workspaceRoot, suggestPluginsFor(languageSet, frameworkSet))
+    ? await uninstalledPackages(
+        workspaceRoot,
+        suggestPluginsFor(languageSet, frameworkSet, effects),
+      )
     : []
   const contents = renderConfig({
     languages: pluginRefsFor(languageSet, LANGUAGE_TO_PLUGIN),
     frameworks: pluginRefsFor(frameworkSet, FRAMEWORK_TO_PLUGIN),
+    effects,
     components: components.map((component) => ({
       id: component.id,
       name: component.name,
@@ -101,6 +118,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     detectedManagers: managers.managers.map((manager) => manager.tool),
     detectedLanguages: [...languageSet].sort(),
     detectedFrameworks: [...frameworkSet].sort(),
+    effectsPlugins: effects,
     componentCount: components.length,
     suggestedPlugins: suggestions,
     unmappedLanguages: unmappedIds(languageSet, LANGUAGE_TO_PLUGIN),
@@ -128,11 +146,50 @@ function pluginRefsFor(
 function suggestPluginsFor(
   languages: ReadonlySet<string>,
   frameworks: ReadonlySet<string>,
+  effects: readonly string[],
 ): string[] {
   return [
     ...pluginRefsFor(languages, LANGUAGE_TO_PLUGIN),
     ...pluginRefsFor(frameworks, FRAMEWORK_TO_PLUGIN),
+    ...effects,
   ].map((name) => `@aburi/${name}`)
+}
+
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const
+
+/** Every package the workspace root's manifest and each Component root's depends on. */
+async function dependencyNames(
+  workspaceRoot: string,
+  componentRoots: readonly string[],
+): Promise<Set<string>> {
+  const names = new Set<string>()
+  for (const root of new Set([".", ...componentRoots])) {
+    const manifest = await readManifest(join(workspaceRoot, root, NPM_MANIFEST))
+    for (const field of DEPENDENCY_FIELDS) {
+      const block = manifest?.[field]
+      if (block !== null && typeof block === "object") {
+        for (const name of Object.keys(block)) names.add(name)
+      }
+    }
+  }
+  return names
+}
+
+async function readManifest(path: string): Promise<Record<string, unknown> | null> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
+    return parsed !== null && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    // Detection has read every manifest a Component came from; one it did not read names no plugin.
+    return null
+  }
 }
 
 async function uninstalledPackages(
@@ -161,6 +218,7 @@ function unmappedIds(detected: ReadonlySet<string>, table: ReadonlyMap<string, s
 interface RenderedConfigInput {
   languages: readonly string[]
   frameworks: readonly string[]
+  effects: readonly string[]
   components: readonly {
     id: string
     name: string
@@ -176,6 +234,7 @@ function renderConfig(input: RenderedConfigInput): string {
     $schema: CONFIG_SCHEMA_URL,
     languages: [...input.languages],
     frameworks: [...input.frameworks],
+    effects: [...input.effects],
     components: input.components.map((component) => ({
       id: component.id,
       name: component.name,

@@ -13,6 +13,17 @@ export const FRAMEWORK_TO_PLUGIN: ReadonlyMap<string, string> = new Map([
   ["trpc", "framework-trpc"],
 ])
 
+/** The packages whose calls each effects plugin classifies, by the name a manifest depends on. */
+export const DEPENDENCY_TO_EFFECTS_PLUGIN: ReadonlyMap<string, string> = new Map([
+  ["@prisma/client", "effects-prisma"],
+  ["drizzle-orm", "effects-drizzle"],
+  ["@nestjs/event-emitter", "effects-nest"],
+  ["eventemitter2", "effects-nest"],
+  ["@trpc/client", "effects-trpc"],
+  ["@trpc/react-query", "effects-trpc"],
+  ["@trpc/next", "effects-trpc"],
+])
+
 export function pluginForDetectorId(
   field: "languages" | "frameworks",
   id: string,

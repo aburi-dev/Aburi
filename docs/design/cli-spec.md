@@ -96,7 +96,7 @@ aburi init [--output <path>] [--force] [--with-suggestions]
 |---|---|
 | `--output <path>` | Output destination (default: `./aburi.json`) |
 | `--force` | Overwrite an existing file |
-| `--with-suggestions` | Include enable candidates for plugins matching detected frameworks as JSONC comments |
+| `--with-suggestions` | Include enable candidates for the plugins written for the detected languages, frameworks and effect libraries as JSONC comments |
 | `--respect-gitignore` / `--no-respect-gitignore` | Whether the language census and the nx detector's search for `project.json` honour `.gitignore` (default: honour), as `config.respectGitignore` decides for `aburi scan`: whether a git-ignored file counts, a git-ignored `project.json` is a project, and a git-ignored directory either search cannot list may go unread. No config exists yet to override, so this is also the only way past a `.gitignore` that cannot be read |
 
 ### 4.3 Behavior
@@ -130,25 +130,30 @@ aburi init [--output <path>] [--force] [--with-suggestions]
   managers: pnpm
   languages: ts
   frameworks: nestjs
+  effects: effects-prisma
   components: 3
-  suggested: @aburi/framework-nestjs
+  suggested: @aburi/framework-nestjs, @aburi/effects-prisma
 ```
 
 The `suggested:` line appears under `--with-suggestions` when it names anything. Warnings go to
 stderr: a `--force` that replaced a file (`⚠ Overwrote /repo/aburi.json; the config that was there
 is gone.`), and a detected language or framework no first-party plugin covers.
 
-`languages` and `frameworks` always name the first-party plugins for what was detected, installed or
-not, because a scan loads nothing it is not told to. `--with-suggestions` adds one JSONC comment per
+`languages`, `frameworks` and `effects` always name the first-party plugins for what was detected,
+installed or not, because a scan loads nothing it is not told to. `effects` comes from the
+dependencies the workspace's manifests declare ([`config.md`](./config.md) §13), and the `effects:`
+line names the plugins written there, or `—`. `--with-suggestions` adds one JSONC comment per
 plugin among them that the workspace has not installed — no `node_modules/@aburi/<name>` directory
 in the workspace root or any directory above it, the walk an ESM import from there makes:
 
 ```jsonc
 {
   // Suggested install: pnpm add -D @aburi/framework-nestjs
+  // Suggested install: pnpm add -D @aburi/effects-prisma
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
+  "effects": ["effects-prisma"],
   "components": [/* ... */]
 }
 ```
@@ -254,6 +259,7 @@ calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambi
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
 ⚠ Component "sdk": packages/sdk/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.
 ⚠ packages/legacy/package.json could not be read (EACCES: permission denied), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.
+⚠ 1 workspace package(s) are in none of the components the config declares, so their Symbols count towards no Component: packages/c (2 Symbols). A declared components list is the whole set: add each package to it, or remove components to have every package detected.
 ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
@@ -1754,6 +1760,8 @@ a command's option, not a global one (§3).
 | CL81 | `aburi scan --concurrency 2` where workers end under three files | exit 1, stderr naming the three files and `--concurrency 1` |
 | CL82 | `aburi scan --concurrency 2` where a plugin throws, or calls `process.exit(5)`, when loaded on a worker | exit 1, `A parser worker failed: ` with the plugin's error, or `A parser worker ended with exit code 5; a plugin may have called process.exit() before it had loaded the scan's plugins.`, and `--concurrency 1` on stderr |
 | CL83 | `aburi scan --concurrency` 0, -1, 1.5, `two` or a value past the largest safe integer; `runScan`, `runDiff` or `runExplain` with `concurrency` 0, -1, 1.5, `NaN` or 2⁵³ | exit 2 and `--concurrency must be a positive integer (got "<value>")` on stderr; the functions reject with `--concurrency must be a positive integer (got <value>).`, code `input-error`, before reading the workspace or an IR |
+| CL86 | `aburi init` in a workspace whose manifests depend on `@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter` or `@trpc/client`, at the root or in a workspace package; with `--with-suggestions` and none installed | `effects` names `effects-prisma`, `effects-drizzle`, `effects-nest` or `effects-trpc` respectively, and the `suggested:` line and banner name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
+| CL87 | `aburi scan` after `aburi init` wrote the components of packages `a` and `b` and a package `c` was added; the same scan with the components detected, with all three declared, or with `c` under `ignore` | One warning naming `packages/c` and its Symbol count; none in the other three |
 
 ## 18. Design Decisions
 

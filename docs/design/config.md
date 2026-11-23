@@ -262,7 +262,7 @@ passes silently into the IR, because the detector itself records ids no plugin p
 
 Components explicitly declared in the config **replace** the autodetect results as a whole (no merging):
 
-- A non-empty `components[]` → autodetect does not run at all; the IR holds exactly the declared Components, and a package the list leaves out is in none
+- A non-empty `components[]` → autodetect does not run at all; the IR holds exactly the declared Components, and a package the list leaves out is in none. `aburi scan` names, on stderr, each workspace package the list leaves out that the IR has Symbols from, with their count ([`cli-spec.md`](./cli-spec.md) §5.6): a list `aburi init` wrote stops covering the workspace the moment a package is added, and nothing else would say so. A package whose files `ignore` leaves out gives the IR no Symbols, so leaving one out on purpose is said that way
 - An absent or empty `components[]` → the autodetect result is adopted as-is
 
 No ad-hoc merge is provided for "I only want to tweak part of the autodetect result". Once one component is declared, every component the IR should hold must be written out explicitly.
@@ -520,8 +520,8 @@ Framework detection:
 Plugins are not inferred. `aburi scan` loads exactly the plugins `languages` / `frameworks` /
 `effects` name, so with no config, or one naming no language plugin, it exits 2 and names
 `aburi init` ([`cli-spec.md`](./cli-spec.md) CL6). `aburi init` runs the detection above and
-writes it down, mapping each detected language and framework to the first-party plugin for it
-(§13).
+writes it down, mapping each detected language and framework, and each library an effects plugin
+classifies, to the first-party plugin for it (§13).
 
 ## 13. Output of `aburi init`
 
@@ -532,6 +532,7 @@ writes it down, mapping each detected language and framework to the first-party 
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": [],
+  "effects": ["effects-prisma"],
   "components": [
     { "id": "billing", "name": "Billing", "roots": ["apps/billing"], "languages": ["ts"], "frameworks": [] },
     { "id": "shared",  "name": "Shared",  "roots": ["packages/shared"], "languages": ["ts"], "frameworks": [] }
@@ -539,7 +540,16 @@ writes it down, mapping each detected language and framework to the first-party 
 }
 ```
 
-`init` fills in the language and framework plugin refs it has a mapping for, and writes no `effects` key: effects plugins are outside its scope and are added by hand.
+`init` fills in the language and framework plugin refs it has a mapping for, and `effects` from the dependencies the manifests at the workspace root and at each Component's roots declare, in any of `dependencies`, `devDependencies`, `peerDependencies` and `optionalDependencies`:
+
+| Dependency | `effects` entry |
+|---|---|
+| `@prisma/client` | `effects-prisma` |
+| `drizzle-orm` | `effects-drizzle` |
+| `@nestjs/event-emitter`, `eventemitter2` | `effects-nest` |
+| `@trpc/client`, `@trpc/react-query`, `@trpc/next` | `effects-trpc` |
+
+Each is the package an effects plugin's import gate reads, so a plugin is written only where it has calls to classify: a NestJS service with no event emitter gets no `effects-nest`. The components it writes are the whole set from then on (§6.1), so a package added later is in none until it is added to them.
 
 ## 14. Verifiable Properties
 

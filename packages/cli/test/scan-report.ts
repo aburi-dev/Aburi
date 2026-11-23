@@ -33,6 +33,7 @@ export function scanReportWith(overrides: Partial<ScanReport>): ScanReport {
     pluginNamedFrameworks: [],
     ignoredPublicApi: [],
     unreadPackageManifests: [],
+    packagesInNoComponent: [],
     loadedPlugins: [],
     strayPluginOptions: [],
     exitCode: EXIT.SUCCESS,

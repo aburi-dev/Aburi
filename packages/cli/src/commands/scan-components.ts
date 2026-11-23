@@ -2,6 +2,7 @@ import {
   buildComponentAttribution,
   CoreError,
   type CoreErrorCode,
+  compareCodeUnit,
   type DetectComponentsResult,
   type DetectManagersResult,
   describeThrown,
@@ -16,11 +17,15 @@ import {
   toDocumentPath,
   type WorkspacePackage,
 } from "@aburi/core"
-import type { Component, Config, LanguagePlugin } from "@aburi/types"
+import type { Component, Config, IR, LanguagePlugin } from "@aburi/types"
 import { CliError, errorMessage } from "../errors"
 import { frameworkIdForPlugin } from "../plugin-catalog"
 import type { LoadedPlugins } from "../plugin-loader"
-import type { PluginNamedFramework, UnreadPackageManifest } from "./scan-report"
+import type {
+  PackageInNoComponent,
+  PluginNamedFramework,
+  UnreadPackageManifest,
+} from "./scan-report"
 
 export function declaredComponents(config: Partial<Config>): Config["components"] | undefined {
   const declared = config.components
@@ -67,6 +72,8 @@ export async function resolveComponents(
 export interface ResolvedWorkspacePackages {
   packages: WorkspacePackage[]
   unreadManifests: UnreadPackageManifest[]
+  /** The roots of the workspace packages no Component holds. */
+  rootsInNoComponent: string[]
 }
 
 export async function resolveWorkspacePackages(
@@ -97,13 +104,38 @@ export async function resolveWorkspacePackages(
   return {
     packages: [...packages, ...named.flatMap((read) => read.packages)],
     unreadManifests: named.flatMap((read) => read.unreadManifests),
+    rootsInNoComponent: [...unheld].sort(compareCodeUnit),
   }
+}
+
+/**
+ * The workspace packages, among `roots`, that Symbols no Component holds came from, each Symbol
+ * counted for the deepest root containing its file.
+ */
+export function packagesInNoComponent(
+  symbols: IR["symbols"],
+  roots: readonly string[],
+): PackageInNoComponent[] {
+  const deepestFirst = [...roots].sort((a, b) => b.length - a.length)
+  const counts = new Map<string, number>()
+  for (const symbol of symbols) {
+    if (symbol.component !== null) continue
+    const { file } = symbol.source
+    const root = deepestFirst.find(
+      (candidate) => candidate === "." || file === candidate || file.startsWith(`${candidate}/`),
+    )
+    if (root !== undefined) counts.set(root, (counts.get(root) ?? 0) + 1)
+  }
+  return roots.flatMap((root) => {
+    const count = counts.get(root)
+    return count === undefined ? [] : [{ root, symbols: count }]
+  })
 }
 
 async function readUnheldPackage(
   workspaceRoot: string,
   root: string,
-): Promise<ResolvedWorkspacePackages> {
+): Promise<Omit<ResolvedWorkspacePackages, "rootsInNoComponent">> {
   try {
     return { packages: await readWorkspacePackages(workspaceRoot, [root]), unreadManifests: [] }
   } catch (error) {

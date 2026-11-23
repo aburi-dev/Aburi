@@ -9,6 +9,7 @@ const workspace = useScratchWorkspace("init-plugin-refs")
 interface WrittenConfig {
   languages: string[]
   frameworks: string[]
+  effects: string[]
   components: { languages: string[]; frameworks: string[] }[]
 }
 
@@ -44,12 +45,47 @@ describe("aburi init — the plugins it writes", () => {
     },
   )
 
-  it("suggests the language plugin ahead of the framework plugins", async () => {
-    await writeApp({ "@nestjs/core": "^10.0.0" })
+  it.each([
+    [{ "@prisma/client": "^5.0.0" }, ["effects-prisma"]],
+    [{ "drizzle-orm": "^0.30.0" }, ["effects-drizzle"]],
+    [{ "@nestjs/event-emitter": "^2.0.0", eventemitter2: "^6.0.0" }, ["effects-nest"]],
+    [{ "@trpc/client": "^11.0.0", "@trpc/react-query": "^11.0.0" }, ["effects-trpc"]],
+    [
+      { "@prisma/client": "^5.0.0", "@nestjs/event-emitter": "^2.0.0" },
+      ["effects-nest", "effects-prisma"],
+    ],
+    [{ "@trpc/server": "^11.0.0", express: "^4.0.0" }, []],
+  ])("writes the effects plugins for the dependencies %o", async (dependencies, plugins) => {
+    const { report, config } = await initWithDependencies(dependencies)
+
+    expect(config.effects).toEqual(plugins)
+    expect(report.effectsPlugins).toEqual(plugins)
+  })
+
+  it("writes the effects plugin for a dependency of a workspace package, not only of the root", async () => {
+    await workspace.writeSource("pnpm-workspace.yaml", "packages:\n  - 'apps/*'\n")
+    await writePackageJson(workspace.root, { name: "root", private: true })
+    await writePackageJson(`${workspace.root}/apps/api`, {
+      name: "api",
+      private: true,
+      devDependencies: { "drizzle-orm": "^0.30.0" },
+    })
+
+    const report = await runInit({ cwd: workspace.root })
+
+    expect(report.effectsPlugins).toEqual(["effects-drizzle"])
+  })
+
+  it("suggests the language plugin, then the framework plugins, then the effects plugins", async () => {
+    await writeApp({ "@nestjs/core": "^10.0.0", "@prisma/client": "^5.0.0" })
 
     const report = await runInit({ cwd: workspace.root, withSuggestions: true })
 
-    expect(report.suggestedPlugins).toEqual(["@aburi/lang-typescript", "@aburi/framework-nestjs"])
+    expect(report.suggestedPlugins).toEqual([
+      "@aburi/lang-typescript",
+      "@aburi/framework-nestjs",
+      "@aburi/effects-prisma",
+    ])
   })
 
   it("reports a framework it has no plugin for instead of writing a ref nothing resolves", async () => {
