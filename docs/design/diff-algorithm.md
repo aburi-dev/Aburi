@@ -851,7 +851,7 @@ However, fingerprints themselves contain no line information (D4 §4), so line f
 Decorators are identified by `(name)`, but differences in `arguments` and `qualifier` are shown in the delta, each side as written ([`markdown-projection.md`](./markdown-projection.md) §6.2):
 
 ```
-- decorator modified: `@Post('/invoices')` → `@Post('/invoices/v2')`
+- decorator modified: `@Post("/invoices")` → `@Post("/invoices/v2")`
 - decorator modified: `@UseGuards(AuthGuard)` → `@UseGuards(AuthGuard, RoleGuard)`
 ```
 

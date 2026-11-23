@@ -41,16 +41,15 @@ describe("rule text drops comments", () => {
       "a comment between two tokens",
       "if (a/**/||b) throw x",
       [
-        ["guard", "a ||b"],
+        ["guard", "a || b"],
         ["throw", "x"],
       ],
     ],
-    // The space is what keeps `a - (-b)` from reading as `a--b`.
     [
       "a comment that alone keeps two tokens apart",
       "if (a-/**/-b) throw x",
       [
-        ["guard", "a- -b"],
+        ["guard", "a - -b"],
         ["throw", "x"],
       ],
     ],
@@ -59,7 +58,7 @@ describe("rule text drops comments", () => {
       "return a ? b * 0.9 /* member */ : b",
       [["return", "a ? b * 0.9 : b"]],
     ],
-    ["a comment in a throw", "throw make(/* code */ 'bad')", [["throw", "make( 'bad')"]]],
+    ["a comment in a throw", "throw make(/* code */ 'bad')", [["throw", 'make("bad")']]],
     [
       "a comment in a switch",
       "switch (a /* kind */) { case 1: return b + c }",
@@ -97,7 +96,7 @@ describe("rule text is whitespace-collapsed", () => {
     [
       "a multi-line throw",
       'throw make({\n      code: a,\n      message: "bad",\n    })',
-      ["throw", 'make({ code: a, message: "bad", })'],
+      ["throw", 'make({ code: a, message: "bad" })'],
     ],
     ["a re-indented return", "return a ?\n      b * 2 :\n      c", ["return", "a ? b * 2 : c"]],
   ])("collapses %s", async (_label, body, expected) => {
@@ -106,8 +105,8 @@ describe("rule text is whitespace-collapsed", () => {
 })
 
 describe("an if's condition", () => {
-  it("loses only the parentheses the statement requires, past a comment between operands", async () => {
-    expect((await textsOf("if ((a) || /* why */ (b)) throw x"))[0]).toEqual(["guard", "(a) || (b)"])
+  it("loses the parentheses the grouping does not need, past a comment between operands", async () => {
+    expect((await textsOf("if ((a) || /* why */ (b)) throw x"))[0]).toEqual(["guard", "a || b"])
   })
 })
 
@@ -120,7 +119,7 @@ describe("a finally block's rules take the same form", () => {
     expect(texts).toEqual([
       ["try", null],
       ["guard", "a || c"],
-      ["throw", "make( a, b )"],
+      ["throw", "make(a, b)"],
     ])
   })
 })

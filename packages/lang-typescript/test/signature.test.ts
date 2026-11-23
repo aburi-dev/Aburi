@@ -83,7 +83,11 @@ describe("a type is recorded as it reads on one line", () => {
     ["a comment inside a type", "(x: A | /* legacy */ B) {}", ["A | B"]],
     ["a comment before a return type", "(): /* c */ Foo {}", ["Foo"]],
     ["a `,` and a `|` inside a string type", '(x: "a, | b" | C) {}', ['"a, | b" | C']],
-    ["the layout inside a template literal type", `(x: \`a \${ B }  c\`) {}`, [`\`a \${ B }  c\``]],
+    [
+      "a template literal type's text as written and its substitution respaced",
+      `(x: \`a \${ B }  c\`) {}`,
+      [`\`a \${B}  c\``],
+    ],
     ["an operator the parser gave no operand", "(x: |) {}", ["|"]],
   ])("records %s", async (_label, written, recorded) => {
     const signature = await signatureOf(`export function f${written}`)
