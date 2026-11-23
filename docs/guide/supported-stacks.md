@@ -18,6 +18,13 @@ You need one language plugin per language in the repository.
 Parsing runs on tree-sitter WASM, so you get no native build step and no
 compiler in the loop.
 
+A CommonJS `require("…")` counts as an import, so a `.js` or `.cjs` file gets
+the framework and effect classification an ESM file gets. At the top of a
+file, `const x = require("m")`, `const { a } = require("m")` and
+`const a = require("m").a` also bind their names for call resolution, as the
+matching `import` would. A `require()` anywhere else records only that the
+file loads the module.
+
 Python, Go, and a functional language are planned. See the [roadmap](../roadmap.md).
 
 ## Frameworks

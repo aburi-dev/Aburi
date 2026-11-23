@@ -185,6 +185,25 @@ describe("scan — calls through a default import", () => {
   })
 })
 
+describe("scan — a call through a CommonJS require()", () => {
+  const USERS = {
+    "src/users.js":
+      "function createUser(email) {\n  return email\n}\nmodule.exports = { createUser }\n",
+  }
+
+  it.each([
+    ["a destructuring", 'const { createUser } = require("./users")', "createUser"],
+    ["a destructuring that renames", 'const { createUser: make } = require("./users")', "make"],
+    ["the module object", 'const users = require("./users")', "users.createUser"],
+    ["a property read off it", 'const createUser = require("./users").createUser', "createUser"],
+  ])("reaches the function the module declares, through %s", async (_label, head, target) => {
+    expect(await callsFromMain(USERS, [head], [`${target}("a@b.c")`], "src/use.js")).toEqual({
+      resolved: [[target, "ts:src/users.js#createUser"]],
+      unresolved: [],
+    })
+  })
+})
+
 describe("scan — a call through the name of a class a namespace merged into", () => {
   it("reaches the namespace's export, the member TypeScript calls", async () => {
     await workspace.writeSource(

@@ -22,10 +22,13 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
 
   const imports: ImportEdge[] = []
   const exportedLocals = new Map<string, string[]>()
+  const boundRequires = new Set<number>()
   for (const child of root.namedChildren) {
     if (child === null) continue
     if (child.type === "import_statement") {
       for (const edge of readImportStatement(child, errors)) imports.push(edge)
+    } else if (child.type === "lexical_declaration" || child.type === "variable_declaration") {
+      for (const edge of readRequireDeclaration(child, boundRequires, errors)) imports.push(edge)
     } else if (child.type === "export_statement") {
       if (child.childForFieldName("source") === null) readLocalExports(child, exportedLocals)
       else {
@@ -36,8 +39,8 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
   }
   for (const edge of imports) edges.push(withRepublished(edge, exportedLocals))
 
-  // Dynamic imports can appear anywhere in the tree, so scan the whole thing separately.
-  walkForDynamicImports(root, edges, errors)
+  // A module loaded at run time can be written anywhere in the tree, so scan the whole thing.
+  walkForDynamicImports(root, boundRequires, edges, errors)
 
   edges.sort((a, b) => a.line - b.line || compareCodeUnit(a.source, b.source))
   errors.sort((a, b) => a.line - b.line || a.column - b.column)
@@ -152,6 +155,119 @@ function readRequireClause(statement: Node, clause: Node, errors: ParseError[]):
   return [{ source, symbols: "*", line, dynamic: false, namespaceBinding: binding.text }]
 }
 
+/**
+ * The edges of a top-level `const`, `let` or `var` whose initializer is a `require()`, or a property
+ * read straight off one: CommonJS's import, binding the names an import would.
+ */
+function readRequireDeclaration(
+  statement: Node,
+  boundRequires: Set<number>,
+  errors: ParseError[],
+): ImportEdge[] {
+  const edges: ImportEdge[] = []
+  const line = statement.startPosition.row + 1
+  for (const declarator of statement.namedChildren) {
+    if (declarator?.type !== "variable_declarator") continue
+    const binding = declarator.childForFieldName("name")
+    const value = declarator.childForFieldName("value")
+    if (binding === null || value === null) continue
+    const required = requiredValue(value)
+    if (required === null) continue
+    boundRequires.add(required.call.id)
+    const source = readModuleSpecifier(required.specifier, "require", errors)
+    if (source === null) continue
+    edges.push({ source, line, dynamic: false, ...requireBindings(binding, required.property) })
+  }
+  return edges
+}
+
+interface RequiredValue {
+  readonly call: Node
+  readonly specifier: Node
+  /** The property read off what the call gives back, `null` for the module object itself. */
+  readonly property: string | null
+}
+
+function requiredValue(value: Node): RequiredValue | null {
+  const whole = requireSpecifier(value)
+  if (whole !== null) return { call: value, specifier: whole, property: null }
+  const object = value.childForFieldName("object")
+  if (object === null) return null
+  const specifier = requireSpecifier(object)
+  if (specifier === null) return null
+  const property = propertyRead(value)
+  return property === null ? null : { call: object, specifier, property }
+}
+
+function propertyRead(access: Node): string | null {
+  if (access.type === "member_expression") {
+    const property = access.childForFieldName("property")
+    return property?.type === "property_identifier" ? property.text : null
+  }
+  if (access.type !== "subscript_expression") return null
+  const index = access.childForFieldName("index")
+  return index === null ? null : readStaticString(index)
+}
+
+/** The argument of a call of the bare `require` given exactly one, read past comments. */
+function requireSpecifier(call: Node): Node | null {
+  if (call.type !== "call_expression") return null
+  const callee = call.childForFieldName("function")
+  if (callee?.type !== "identifier" || callee.text !== "require") return null
+  const args = call.childForFieldName("arguments")
+  if (args?.type !== "arguments") return null
+  const values = args.namedChildren.filter((arg) => arg !== null && arg.type !== "comment")
+  return values.length === 1 ? (values[0] ?? null) : null
+}
+
+/**
+ * What the declaration binds: the module object under a name, as `import x = require()` binds it;
+ * the names a destructuring or a property read takes from it, as named imports; or nothing a later
+ * call could reach, as a side-effect import.
+ */
+function requireBindings(
+  binding: Node,
+  property: string | null,
+): Pick<ImportEdge, "symbols" | "namespaceBinding"> {
+  if (binding.type === "identifier") {
+    if (property === null) return { symbols: "*", namespaceBinding: binding.text }
+    return { symbols: [importedAs(property, binding.text)] }
+  }
+  if (property !== null || binding.type !== "object_pattern") return { symbols: "*" }
+  const names = destructuredNames(binding)
+  return { symbols: names.length > 0 ? names : "*" }
+}
+
+function destructuredNames(pattern: Node): string[] {
+  const names: string[] = []
+  for (const entry of pattern.namedChildren) {
+    if (entry === null) continue
+    if (entry.type === "shorthand_property_identifier_pattern") names.push(entry.text)
+    else if (entry.type === "object_assignment_pattern") {
+      const left = entry.childForFieldName("left")
+      if (left?.type === "shorthand_property_identifier_pattern") names.push(left.text)
+    } else if (entry.type === "pair_pattern") {
+      const name = destructuredPair(entry)
+      if (name !== null) names.push(name)
+    }
+  }
+  return names
+}
+
+function destructuredPair(pair: Node): string | null {
+  const key = pair.childForFieldName("key")
+  const imported =
+    key === null ? null : key.type === "property_identifier" ? key.text : readStaticString(key)
+  if (imported === null || imported.length === 0) return null
+  let local = pair.childForFieldName("value")
+  if (local?.type === "assignment_pattern") local = local.childForFieldName("left")
+  return local?.type === "identifier" ? importedAs(imported, local.text) : null
+}
+
+function importedAs(imported: string, local: string): string {
+  return imported === local ? imported : `${imported} as ${local}`
+}
+
 function readImportClauseParts(clause: Node): {
   names: string[]
   namespaceBinding: string | null
@@ -224,7 +340,13 @@ function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
   return reexports.length === 0 ? edge : { ...edge, reexports }
 }
 
-function walkForDynamicImports(root: Node, edges: ImportEdge[], errors: ParseError[]): void {
+// `import()` and a `require()` no top-level declaration binds: neither binds a name of the module.
+function walkForDynamicImports(
+  root: Node,
+  boundRequires: ReadonlySet<number>,
+  edges: ImportEdge[],
+  errors: ParseError[],
+): void {
   for (const node of walkDescendants(root)) {
     const masked = node.type === "identifier" ? maskedImportSpecifier(node) : undefined
     if (masked !== undefined) {
@@ -232,6 +354,14 @@ function walkForDynamicImports(root: Node, edges: ImportEdge[], errors: ParseErr
     }
     if (node.type !== "call_expression") continue
     const callee = node.childForFieldName("function")
+    if (callee?.type === "identifier" && !boundRequires.has(node.id)) {
+      const required = requireSpecifier(node)
+      const source = required === null ? null : readModuleSpecifier(required, "require", errors)
+      if (source !== null) {
+        edges.push({ source, symbols: "*", line: node.startPosition.row + 1, dynamic: false })
+      }
+      continue
+    }
     if (callee === null || callee.type !== "import") continue
     const args = node.childForFieldName("arguments")
     const specifier =
@@ -261,7 +391,7 @@ function readModuleSpecifier(
   return null
 }
 
-type ImportSite = "import" | "re-export" | "dynamic import"
+type ImportSite = "import" | "re-export" | "dynamic import" | "require"
 
 function dedupeEdges(edges: readonly ImportEdge[]): ImportEdge[] {
   const seen = new Set<string>()

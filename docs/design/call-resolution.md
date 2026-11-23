@@ -93,13 +93,15 @@ The search ends there, member or not, when `name` is a declaration whose members
 Any other declaration of `name` leaves a missing member to the later steps, because its members may be declared in another file:
 
 - an `ambient-declaration`, since `declare class Tracker { … }` or `declare const Tracker: { … }` says the value is defined elsewhere;
-- a `destructured-binding` (`const { userService } = require('./user-service')`);
+- a `destructured-binding` (`const { userService } = container`);
 - a function;
-- a `const` whose value the resolver cannot see. `const userService = require('./user-service')` is one: a `require()` produces no `ImportEdge`. `const Logger = makeLogger()` is another, and the IR cannot tell the two apart, so a same-named member of another file is reached through either.
+- a `const` whose value the resolver cannot see, such as `const Logger = makeLogger()`, so a same-named member of another file is reached through it.
 
 An interface or a type alias binds no value and is not looked at. A class written below an interface of the same name is folded into a Symbol of the interface's kind ([`lang-plugin.md`](./lang-plugin.md) §4.3.1), so `Logger.log()` there goes on to the later steps as well.
 
 Ending the search takes exactly one kept top-level Symbol named `name`, or none kept and a dropped declaration. Two kept leave the step without an answer, their ids recorded as `ambiguous` candidates, and the search goes on.
+
+A declaration that writes an import is read through the import first (§4.4). A top-level `const { createUser } = require("./users")` is a `destructured-binding` Symbol and an `ImportEdge` binding `createUser` at once ([`lang-plugin.md`](./lang-plugin.md) §4.2), and only the import says where `createUser` is declared, so `createUser()` resolves to `users.js`'s function and takes its effects, as it would through `import { createUser } from "./users"`. The declaration writes the import when the edge's line is one of its lines. Where the import reaches no Symbol, as for a package outside the workspace, this step answers as above: `new PrismaClient()` below `const { PrismaClient } = require("@prisma/client")` still resolves to that `const`. An import written apart from the declaration is not read first. In a module that compiles, the only one is TypeScript's `import type { Format }` beside a `const Format`, where the import binds the type and the `const` the value a call reaches.
 
 Import scope (§4.4) composes a dotted tail past the imported name the same way. Component and workspace scope (§4.5, §4.6) compare the whole target with `Symbol.name` verbatim and compose nothing, so a static member is reached only through file or import scope.
 
@@ -455,6 +457,7 @@ Every implementation of the resolver must pass the following.
 | CR5c | default import whose local name is also a named export of the module (`import connect from './y'` where `./y` has `export function connect`) | the named export is never taken: `resolved` = the module's default export when it has one (CR5, CR5a), and `null`, bucketed `no-match`, when it has none |
 | CR5d | default import of a module with two default exports (TS2528) | `resolved` = `null`, diagnostic bucket `ambiguous`, both candidates recorded; for a dotted call through it (`U.save()`) whose member both declare, too, rather than a same-named `U.save` elsewhere (CR11a) |
 | CR5e | default import of a default export written as a call (`export default withAuth(async (req) => { … })` or `export default withAuth(Page)` in `./y`; `import handler from './y'; handler(r)`) | `resolved` = `<lang>:./y#<default>`, confidence `high`, as CR5 |
+| CR5f | CommonJS `require()` at the top level of the caller's file (`const { createUser } = require('./users'); createUser()`, `const { createUser: make } = …; make()`, `const users = require('./users'); users.createUser()`, `const createUser = require('./users').createUser; createUser()`) | `resolved` = `<lang>:./users#createUser`, confidence `high`, read through the import before the `const` that writes it (§4.3). A `const` of the file whose lines do not hold the import's keeps file scope's answer |
 | CR6 | type-only import used as call — cannot happen at runtime but resolver sees the string | `resolved` = `null`, confidence `high` |
 | CR7 | bare specifier (`import { sortBy } from 'lodash'; sortBy()`) | `resolved` = `null`, confidence `high` |
 | CR7a | bare specifier a `tsconfig.json` path alias maps to a workspace file (`"paths": { "@app/billing": ["libs/billing/src/index.ts"] }`; `import { formatInvoice } from '@app/billing'; formatInvoice()`), a named, aliased or namespace import, a mapping to a directory or an extensionless path | `resolved` = `<lang>:libs/billing/src/index.ts#formatInvoice`, confidence `high`; a name the file does not declare is `null`, bucketed `no-match`. A mapping to no file the scan read leaves CR7's answer |
