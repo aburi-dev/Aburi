@@ -1,5 +1,6 @@
 import type {
   BodyExtraction,
+  CallCandidate,
   ComponentId,
   Config,
   DeclinedCall,
@@ -35,7 +36,12 @@ import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
-import type { ImportOrigins, SpecifierPaths } from "./import-origins"
+import {
+  type DeclaredClasses,
+  declaredClasses,
+  type ImportOrigins,
+  type SpecifierPaths,
+} from "./import-origins"
 import { normalizeCandidates, normalizeImportEdge } from "./normalize"
 import { type ClassifyTimeoutEvent, type ParseTimeoutEvent, startParseDeadline } from "./timeout"
 import type { VocabCheck } from "./vocab"
@@ -201,6 +207,16 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const unboundHeads: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
+    // What a client imported from another file is reaches the effect plugins only, and only
+    // through the edges they are handed: the Document and call resolution read the file's own.
+    // Following an edge parses the module it leads to, so a file whose bodies make no call
+    // follows none.
+    let effectImports: readonly ImportEdge[] | null =
+      origins === undefined || effects.length === 0 ? imports : null
+    // Another file's calls may be made on a class this one declares.
+    const classes: DeclaredClasses | null =
+      origins === undefined || effects.length === 0 ? null : declaredClasses(candidates)
+    if (classes !== null) origins?.rememberClasses(file.path, classes)
 
     for (const written of candidates) {
       if (deadline.expired()) return abandonedFile()
@@ -238,6 +254,16 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
       const walkCtx: WalkContext<OpaqueAstNode> = { ...extractCtx, symbol: candidate }
       const body: BodyExtraction = language.walkBody(candidate, walkCtx)
+      let memberCalls: ReadonlySet<CallCandidate> = NO_CALLS
+      if (origins !== undefined && classes !== null && body.calls.length > 0) {
+        effectImports ??= await deadline.excluding(() => origins.attachUpstream(file.path, imports))
+        memberCalls = await deadline.excluding(() =>
+          origins.callsOnWorkspaceMembers(file.path, imports, classes, body.calls, {
+            registry,
+            config,
+          }),
+        )
+      }
 
       const classifyCallsInput: ClassifyCallsInput = {
         calls: body.calls,
@@ -248,7 +274,8 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         candidate,
         file,
         language: language.manifest.languageId,
-        imports,
+        imports: effectImports ?? imports,
+        memberCalls,
         dropCFilter,
         timeoutEvents,
         vocab,
@@ -383,6 +410,8 @@ function returnSourceFrom(returns: object, kind: string, file: string): ReturnSo
 function isName(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
 }
+
+const NO_CALLS: ReadonlySet<CallCandidate> = new Set()
 
 function reexportsAny(edge: ImportEdge): boolean {
   return edge.reexportsAll === true || (edge.reexports?.length ?? 0) > 0

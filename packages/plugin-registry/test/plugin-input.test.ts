@@ -10,10 +10,14 @@ import {
   hasMatchingImport,
   identifierMentions,
   identifierWords,
+  importBindingOf,
+  importGate,
   matchesModuleOrSubpath,
   PluginInputError,
   type PluginInputOrigin,
   receiverConfidence,
+  receiverTypeFromMatchingModule,
+  typedReceiverConfidence,
 } from "../src/plugin-input"
 
 const ORIGIN: PluginInputOrigin = { plugin: "effects-example", filePath: "src/service.ts" }
@@ -97,6 +101,145 @@ describe("hasMatchingImport", () => {
       return false
     })
     expect(seen).toEqual(["react", "example-orm"])
+  })
+})
+
+describe("importBindingOf", () => {
+  it.each<[string, ImportEdge[], string, object | null]>([
+    ["a named import", [importEdge({ source: "./db", symbols: ["db"] })], "db", { imported: "db" }],
+    [
+      "an aliased import, by its local",
+      [importEdge({ source: "./db", symbols: ["client as db"] })],
+      "db",
+      { imported: "client" },
+    ],
+    [
+      "a namespace import",
+      [importEdge({ source: "./db", symbols: "*", namespaceBinding: "db" })],
+      "db",
+      { imported: "*" },
+    ],
+    ["no import of the name", [importEdge({ source: "./db", symbols: ["other"] })], "db", null],
+    [
+      "a dynamic import, which binds nothing",
+      [importEdge({ source: "./db", symbols: ["db"], dynamic: true })],
+      "db",
+      null,
+    ],
+  ])("finds %s", (_case, imports, local, expected) => {
+    const bound = importBindingOf(imports, local, ORIGIN)
+    expect(bound === null ? null : { imported: bound.imported }).toEqual(expected)
+  })
+
+  it("takes the last edge that binds the name", () => {
+    const last = importEdge({ source: "./second", symbols: ["db"], line: 2 })
+    const imports = [importEdge({ source: "./first", symbols: ["db"] }), last]
+    expect(importBindingOf(imports, "db", ORIGIN)?.edge).toBe(last)
+  })
+})
+
+describe("importGate", () => {
+  const isOrm = (source: string) => source === "example-orm"
+  const upstream = (entries: Record<string, string[]>) => new Map(Object.entries(entries))
+
+  it.each<[string, ImportEdge[], string, "direct" | "reached" | null]>([
+    ["the file's own import", [importEdge({ source: "example-orm" })], "db", "direct"],
+    [
+      "the module declaring the call's leading name",
+      [
+        importEdge({
+          source: "./db",
+          symbols: ["db"],
+          upstream: upstream({ db: ["example-orm"] }),
+        }),
+      ],
+      "db",
+      "direct",
+    ],
+    [
+      "a module the file imports another name from",
+      [
+        importEdge({
+          source: "./prisma.service",
+          symbols: ["PrismaService"],
+          upstream: upstream({ PrismaService: ["example-orm"] }),
+        }),
+      ],
+      "this",
+      "reached",
+    ],
+    [
+      "a module whose other names lead to the library, which leaves the leading name's unplaced",
+      [
+        importEdge({
+          source: "./db",
+          symbols: ["db", "schema"],
+          upstream: upstream({ db: ["./env"], schema: ["example-orm"] }),
+        }),
+      ],
+      "db",
+      "reached",
+    ],
+    [
+      "nothing that leads to the library",
+      [importEdge({ source: "./db", symbols: ["db"], upstream: upstream({ db: ["./env"] }) })],
+      "db",
+      null,
+    ],
+  ])("places the client through %s", (_case, imports, head, expected) => {
+    expect(importGate(imports, head, ORIGIN, isOrm)).toBe(expected)
+  })
+
+  it("validates every edge, a match before a broken one included", () => {
+    expect(() =>
+      importGate([importEdge({ source: "example-orm" }), edge("", 2)], "db", ORIGIN, isOrm),
+    ).toThrow(/line 2/)
+  })
+})
+
+describe("receiverTypeFromMatchingModule", () => {
+  const isOrm = (source: string) => source === "example-orm"
+
+  it.each<[string, ImportEdge[], string | undefined, boolean]>([
+    [
+      "a type the library's module binds",
+      [importEdge({ source: "example-orm", symbols: ["Client"] })],
+      "Client",
+      true,
+    ],
+    [
+      "a type read through a namespace import",
+      [importEdge({ source: "example-orm", symbols: "*", namespaceBinding: "orm" })],
+      "orm.Client",
+      true,
+    ],
+    [
+      "a type a workspace module re-exports from the library",
+      [
+        importEdge({
+          source: "./db",
+          symbols: ["Client"],
+          origins: new Map([["Client", "example-orm"]]),
+        }),
+      ],
+      "Client",
+      true,
+    ],
+    [
+      "a type the workspace declares",
+      [importEdge({ source: "./db", symbols: ["Db"] })],
+      "Db",
+      false,
+    ],
+    ["a type no import binds", [], "Client", false],
+    [
+      "a call that carries no type",
+      [importEdge({ source: "example-orm", symbols: ["Client"] })],
+      undefined,
+      false,
+    ],
+  ])("answers for %s", (_case, imports, receiverType, expected) => {
+    expect(receiverTypeFromMatchingModule(imports, receiverType, ORIGIN, isOrm)).toBe(expected)
   })
 })
 
@@ -290,6 +433,16 @@ describe("receiverConfidence", () => {
 
   it("reads the arity limit off the terminal the caller passes", () => {
     expect(receiverConfidence("db", twoArgs, 2, namesDb)).toBe("high")
+  })
+})
+
+describe("typedReceiverConfidence", () => {
+  it.each([
+    ["a static receiver within arity", { argumentCount: 1 }, "high"],
+    ["a dynamic receiver", { argumentCount: 1, dynamicReceiver: true }, "medium"],
+    ["an over-long argument list", { argumentCount: 2 }, "medium"],
+  ])("is the tier of %s", (_case, call, expected) => {
+    expect(typedReceiverConfidence(call, 1)).toBe(expected)
   })
 })
 

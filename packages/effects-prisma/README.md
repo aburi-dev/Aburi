@@ -20,8 +20,24 @@ The plugin declines it instead, so the call stays in `calls[]` and the IR's
 `stats.declinedCalls` lists it under `effects-plugin:prisma:raw-query`, which
 `aburi explain` shows under the Symbol's `## Declined effects`.
 
-Layered gate: a file that imports `@prisma/client` (or a re-export chain that
-lands there) is a prerequisite. A delegate call needs at least three
+Layered gate: the file must reach a Prisma client module, which is
+`@prisma/client` and its subpaths (`@prisma/client/edge`, …), a driver adapter
+(`@prisma/adapter-*`) or client extension (`@prisma/extension-*`), a client
+generated to `generated/prisma` (the `prisma init` default from Prisma 6.6, and
+Prisma 7's: `../generated/prisma`, `…/generated/prisma/client`, `/edge`,
+`/browser`), or a module the options below name. It reaches one by importing
+it, or through a module of the workspace it imports from:
+
+- **The client's own module.** `import { prisma } from "./lib/db"`, where
+  `lib/db.ts` builds the client, places `prisma` as the client, whatever
+  barrels or `export *` lie between.
+- **Another module the file imports from.** A NestJS service that injects
+  `PrismaService` imports nothing from Prisma, but `./prisma.service` does. That
+  places no receiver by itself, so there a call is classified only on a
+  receiver the client vocabulary names: `this.prisma.user.create(…)` is, and
+  `this.store.items.delete({ key })` is not.
+
+A delegate call needs at least three
 `.`-separated segments (`<client>.<model>.<verb>`), so a random `foo.findMany()`
 call in an unrelated file will not false-classify; `$transaction` and the
 raw-query methods need only a client segment (`<client>.$transaction`). A bare
@@ -75,6 +91,34 @@ same reason: the name in the target is a collapsed expression, not a binding.
 Naming your client something this vocabulary does not know is not an error — it
 costs the effect its `high` tier, and the table in `src/receivers.ts` is one
 literal list if a house convention deserves to be in it.
+
+A receiver declared with a type `@prisma/client` binds (`private db:
+PrismaClient`, or one a workspace barrel re-exports from it) is the client
+whatever it is called, and gets `high` on that alone.
+
+A call of a method your own class declares is never Prisma's:
+`this.usersService.create(dto)` beside `constructor(private usersService:
+UsersService)` stays in `calls[]`, resolved to `UsersService.create`, and the
+write that method makes reaches the caller as a propagated effect.
+
+## Options
+
+A generator `output` other than `generated/prisma` puts the client in a module
+the plugin cannot know. Name it under `pluginOptions` in `aburi.json`:
+
+```json
+{
+  "effects": ["effects-prisma"],
+  "pluginOptions": {
+    "effects-prisma": { "clientModules": ["db/client"] }
+  }
+}
+```
+
+An entry matches an import whose last path segments are the entry's, an
+extension and an `index` file left off, so `"db/client"` matches
+`"../db/client"`, `"@/db/client.ts"` and `"../../db/client/index"`. An options
+value of any other shape stops the scan with an error that names the key.
 
 ## Install
 

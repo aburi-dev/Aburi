@@ -56,15 +56,28 @@ export interface ImportEdge {
    */
   reexportsAll?: true
   /**
-   * Set by the scan, never by the language plugin, and only for a name a decorator in the file
-   * binds while a framework plugin is loaded. Keyed by that name as the edge's module exports it,
-   * the bare specifier outside the workspace the name comes through, on the edge itself or on the
-   * `reexports` of the modules it leads to: one that no workspace file answers and that names no
-   * workspace package. A name without a key may be declared anywhere: in the workspace, in a
+   * Set by the scan, never by the language plugin: for a name a decorator in the file binds while
+   * a framework plugin is loaded, and, on the edges an effect plugin is handed, for a name whose
+   * re-exports `upstream` follows out of the workspace. Keyed by that name as the edge's module
+   * exports it, the bare specifier outside the workspace the name comes through, on the edge itself
+   * or on the `reexports` of the modules it leads to: one that no workspace file answers and that
+   * names no workspace package. A name without a key may be declared anywhere: in the workspace, in a
    * workspace package, or behind a re-export the scan could not follow.
    */
   origins?: ReadonlyMap<string, string>
+  /**
+   * Set by the scan, never by the language plugin, and only on the edges an effect plugin is
+   * handed, for an edge whose module is a workspace file. Keyed by each name the edge binds as the
+   * edge's module exports it (`*` for a namespace import): the specifiers of the imports made by
+   * the last workspace module the name's re-exports lead to, its `export *` targets' joined, as
+   * that module writes them. Where the chain ends at a package, `origins` names it. A name without
+   * a key could not be followed.
+   */
+  upstream?: ReadonlyMap<string, readonly string[]>
 }
+
+/** What a language plugin writes of an edge: the fields the scan sets are the scan's alone. */
+export type WrittenImportEdge = Omit<ImportEdge, "origins" | "upstream">
 
 /** An `ImportEdge.symbols` entry split into the name the module exports and the local it binds. */
 export interface ImportBinding {
@@ -83,8 +96,8 @@ export interface Reexport {
 export interface ParseResult<TTree = ParsedTree> {
   tree: TTree | null
   errors: ParseError[]
-  /** `origins` is the scan's to write; the scan drops any a plugin returns. */
-  imports: Omit<ImportEdge, "origins">[]
+  /** `origins` and `upstream` are the scan's to write; the scan drops any a plugin returns. */
+  imports: WrittenImportEdge[]
 }
 
 export type WrittenSourceRange = Omit<SourceRange, "startColumn" | "endColumn"> & {

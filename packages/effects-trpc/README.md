@@ -39,6 +39,13 @@ terminals like `query` and `subscribe` from matching unrelated code, and the
 prefix match keeps lookalikes (`@trpc/client-mock`, `@trpc/react-query-devtools`)
 out.
 
+The common layout wraps `createTRPCReact` in `src/utils/trpc.ts` and has
+components `import { trpc } from "~/utils/trpc"`. Such a file passes the gate
+for the calls on the name it imports from the wrapper, because the module that
+declares `trpc` imports `@trpc/react-query`, whatever barrels lie between. A
+call on any other receiver in it is not classified: a tRPC client has no name
+of its own to place it by.
+
 ### Server-side routers belong to framework-trpc
 
 This plugin does **not** classify `t.router({...})` or
@@ -86,11 +93,6 @@ script or a Next.js file beside an adapter import is `network.rpc`.
   its chain, so in a file that also imports a tRPC client it reads as a client
   call. Telling it apart would take the binding behind `authed`, which an
   effect plugin is not handed.
-- **Local client wrappers.** The common layout wraps `createTRPCReact` in
-  `src/utils/trpc.ts` and has components `import { trpc } from "~/utils/trpc"`.
-  Those component files carry no `@trpc/*` import, so they do not pass the gate
-  and their calls go unclassified. Resolving this needs cross-file binding
-  resolution — the [LSP enrichment](../../docs/design/lsp-enrichment.md) tier.
 - **`subscribe` shares its name** with RxJS observables and EventEmitter-style
   APIs. The three-segment minimum and the client import gate filter almost all of
   it; a file that colocates RxJS with a tRPC vanilla client is the residual risk.
