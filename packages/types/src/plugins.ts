@@ -429,6 +429,9 @@ export interface VocabRegistry {
   listFrameworks(): FrameworkVocab[]
   listPlugins(): PluginManifest[]
 
+  /** Whether a registered plugin declares that `module`'s `exported` never returns to its caller. */
+  isExitCall(module: string, exported: string): boolean
+
   /** Throws if `id` is not owned by `byPlugin` (or its prefixes). */
   assertEffectDeclared(id: string, byPlugin: string): void
   /** Throws if `id` is not owned by `byPlugin` (or its prefixes). */

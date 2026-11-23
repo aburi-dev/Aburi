@@ -59,5 +59,12 @@ export const frameworkNextManifest: FrameworkManifest = {
     derivedByPrefixes: [NEXT_DERIVED_BY_PREFIX],
     // Matches the identifier `@aburi/core`'s Component autodetect uses for the `next` dependency.
     frameworks: ["nextjs"],
+    // Each throws the error Next.js catches to end the request: a redirect or an error page.
+    exitCalls: [
+      {
+        module: "next/navigation",
+        exports: ["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"],
+      },
+    ],
   },
 }

@@ -1,5 +1,6 @@
+import { DEFAULT_EXPORT_NAME, readStaticString } from "@aburi/core"
 import type { Node, Tree } from "web-tree-sitter"
-import { firstNonCommentChild, walkDescendants } from "./ast-helpers"
+import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
 import { collectPatternBindings } from "./pattern-bindings"
 
 /** The scope nearest to a use that declares a value name, and the declarations it gives it. */
@@ -32,6 +33,69 @@ export function bindingOf(use: Node, name: string): NameBinding | null {
 
 export function isModuleBinding(binding: NameBinding): boolean {
   return binding.scope.type === "program"
+}
+
+/** What an import binds a name to: the module it names and what that module exports it as. */
+export interface ImportedValue {
+  readonly module: string
+  readonly exported: string
+}
+
+/**
+ * The export `use` reads: a named or default import's local name, or a member of a namespace
+ * import (`nav.redirect`). `null` where a scope nearer than the module binds the name.
+ */
+export function importedValueOf(use: Node): ImportedValue | null {
+  if (use.type === "identifier") {
+    return importedThrough(use, (statement) => exportedAs(statement, use.text))
+  }
+  if (use.type !== "member_expression") return null
+  const object = use.childForFieldName("object")
+  const property = use.childForFieldName("property")
+  if (object?.type !== "identifier" || property?.type !== "property_identifier") return null
+  return importedThrough(object, (statement) =>
+    namespaceNameOf(statement)?.text === object.text ? property.text : null,
+  )
+}
+
+function importedThrough(
+  name: Node,
+  exportedFrom: (statement: Node) => string | null,
+): ImportedValue | null {
+  const binding = bindingOf(name, name.text)
+  const [statement, ...others] = binding?.declarations ?? []
+  if (binding === null || !isModuleBinding(binding) || others.length > 0) return null
+  if (statement?.type !== "import_statement") return null
+  const specifier =
+    statement.childForFieldName("source") ??
+    findChild(findChild(statement, "import_require_clause") ?? statement, "string")
+  const module = specifier === null ? null : readStaticString(specifier)
+  const exported = exportedFrom(statement)
+  return module === null || exported === null ? null : { module, exported }
+}
+
+function exportedAs(statement: Node, local: string): string | null {
+  const clause = findChild(statement, "import_clause")
+  for (const part of clause?.namedChildren ?? []) {
+    if (part?.type === "identifier" && part.text === local) return DEFAULT_EXPORT_NAME
+    if (part?.type !== "named_imports") continue
+    for (const specifier of part.namedChildren) {
+      if (specifier?.type !== "import_specifier") continue
+      const name = specifier.childForFieldName("name")
+      const alias = specifier.childForFieldName("alias")
+      if (name === null || (alias ?? name).text !== local) continue
+      return name.type === "string" ? readStaticString(name) : name.text
+    }
+  }
+  return null
+}
+
+function namespaceNameOf(statement: Node): Node | null {
+  const clause = findChild(statement, "import_clause")
+  const namespace = clause === null ? null : findChild(clause, "namespace_import")
+  if (namespace !== null) return findChild(namespace, "identifier")
+  const required = findChild(statement, "import_require_clause")
+  return required === null ? null : findChild(required, "identifier")
 }
 
 export const PARAMETER_TYPES: ReadonlySet<string> = new Set([

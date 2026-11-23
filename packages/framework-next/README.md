@@ -65,6 +65,26 @@ Not classified today (documented for completeness): `default`, `global-error`,
 `middleware`, `instrumentation`, and the metadata files (`sitemap`, `icon`,
 `opengraph-image`, …). Adding them is a table extension inside `app-router.ts`.
 
+The calls that end a request are guards. `redirect`, `permanentRedirect`, `notFound`,
+`forbidden` and `unauthorized` from `next/navigation` throw the error Next.js answers with a
+redirect or an error page, so the manifest declares them under `provides.exitCalls`, and an `if`
+whose consequence calls one is recorded as a `guard` rule, as `if (!session) throw …` is:
+
+```tsx
+import { notFound, redirect } from "next/navigation"
+
+export default async function AdminPage({ params }: { params: { id: string } }) {
+  const session = await auth()
+  if (!session?.user.isAdmin) redirect("/login") // guard
+  const report = await loadReport(params.id)
+  if (!report) notFound() // guard
+  return <Dashboard user={session.user} report={report} />
+}
+```
+
+Removing either check is then a logic change in `aburi diff`. The call is read through its import
+(an alias or `import * as nav` included), so a local function named `redirect` is not one.
+
 Client / server discrimination folds into `derivedBy`: a `"use client"` or `"use server"` directive
 at the top of an App Router file adds `framework:next:client-component` or
 `framework:next:server-action` to the Symbols classified above. A server action in a file no

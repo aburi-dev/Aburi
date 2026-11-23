@@ -972,6 +972,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | ID | Input | Expected |
 |---|---|---|
 | LP16 | `if (x) throw new E()` | guard + throw in rules |
+| LP16a | an `if` whose consequence calls what a configured plugin declares never returns (`provides.exitCalls`, [extension-vocab.md](./extension-vocab.md) §3.5), read through the import that binds the callee: `import { redirect } from "next/navigation"` with `if (!s) redirect("/")`, the same under an alias (`import { notFound as missing }`), a member of a namespace import (`nav.redirect()`), a default import (`exports: ["default"]`), and a call inside a callback in the consequence; against an export no plugin declares (`useRouter()`), the same name imported from another module, a parameter or local that hides the import, a name no import binds, and a scan where no plugin declares the call | a guard for each of the first five, as a `throw` would make it; none for the rest. The walk reads `WalkContext.registry.isExitCall(module, exported)`: the language knows which imports bind a name, a framework plugin knows which of a library's functions never return, and neither has to know the other's half |
 | LP17 | `return 1` | no return in rules (trivial) |
 | LP18 | `return foo()` | no return in rules, foo in calls |
 | LP19 | `return a + b` | return in rules (expr: "a + b") |

@@ -231,6 +231,7 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 - Even if the `effects[].id` classification of an effect plugin changes (e.g. `db.write` ↔ `x-prisma:create`), `logic` is unchanged as long as the target is the same
 - Adding / removing effect plugins or reordering the config does not break the logic stability of the IR
 - Time-series comparison against past IRs is robust to plugin configuration changes
+- The guarantee is the effect plugins'. A framework plugin's answers are inputs of `logic`: the middleware it reports (§4.1), and the calls its manifest declares never return, which make an `if` around one a guard ([ir-schema.md](./ir-schema.md) §8). Adding or removing `@aburi/framework-next` moves `logic` for a Symbol with `if (!session) redirect("/login")` in it, as the check it reads is either a guard or not
 - This holds for propagated effects too. The IR orders their segment by `(id, target)` and merges it on that pair ([`effect-propagation.md`](./effect-propagation.md) §5.1, §8), so an id change can reorder its entries, split one target into two entries or merge two into one, and decide whether a locally detected effect on the same target suppresses one. The fingerprint reads the segment by target alone (§4.1): sorted, each target once, and none a locally detected effect already names, so none of this reaches `logic`. Locally detected effects keep their call order and their repeats (§4.7)
 
 ### 4.6 Known current limitations (before LSP enrichment)

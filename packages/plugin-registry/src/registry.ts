@@ -125,6 +125,8 @@ export class VocabRegistry implements VocabRegistryContract {
   readonly #frameworks = new Map<string, FrameworkVocab>()
   readonly #derivedByPrefixes = new Map<string, OwnedPrefix>()
   readonly #languages = new Map<string, PluginManifest>()
+  // Two plugins may both declare an export never returns: neither owns the module.
+  readonly #exitCalls = new Map<string, Set<string>>()
 
   register(manifest: PluginManifest): void {
     this.#register(manifest, null)
@@ -176,6 +178,11 @@ export class VocabRegistry implements VocabRegistryContract {
     }
     for (const p of manifest.provides.derivedByPrefixes) {
       this.#derivedByPrefixes.set(p, { prefix: p, owner: manifest })
+    }
+    for (const { module, exports } of manifest.provides.exitCalls ?? []) {
+      const known = this.#exitCalls.get(module)
+      if (known === undefined) this.#exitCalls.set(module, new Set(exports))
+      else for (const name of exports) known.add(name)
     }
     if (manifest.languageId !== undefined) this.#languages.set(manifest.languageId, manifest)
   }
@@ -311,6 +318,10 @@ export class VocabRegistry implements VocabRegistryContract {
 
   isExtKindOwnedBy(id: string, pluginName: string): boolean {
     return this.findExtKind(id)?.owner.name === pluginName
+  }
+
+  isExitCall(module: string, exported: string): boolean {
+    return this.#exitCalls.get(module)?.has(exported) === true
   }
 
   listEffects(): EffectVocab[] {

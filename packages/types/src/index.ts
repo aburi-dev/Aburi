@@ -77,6 +77,7 @@ export type {
 export type {
   Capabilities,
   EffectVocab as ManifestEffectVocab,
+  ExitCall,
   ExtKindVocab as ManifestExtKindVocab,
   PluginManifest,
   Provides,

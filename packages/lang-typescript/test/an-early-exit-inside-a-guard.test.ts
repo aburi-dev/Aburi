@@ -1,3 +1,5 @@
+import { noopRegistry } from "@aburi/test-support"
+import type { VocabRegistry } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { walkFirstSymbol, walkOf } from "./fixtures/ctx"
 
@@ -152,5 +154,71 @@ describe("an `if` whose consequence leaves early is a guard", () => {
     )
 
     expect(block.rules).toEqual(concise.rules)
+  })
+})
+
+describe("a call a plugin declares never returns", () => {
+  const EXITS: ReadonlyMap<string, readonly string[]> = new Map([
+    ["next/navigation", ["redirect", "notFound"]],
+    ["./deny", ["default"]],
+  ])
+  const declaring: VocabRegistry = {
+    ...noopRegistry,
+    isExitCall: (module, exported) => EXITS.get(module)?.includes(exported) === true,
+  }
+  const guardsOf = async (source: string, registry: VocabRegistry = declaring) => {
+    const { rules } = await walkOf(source, "ts:src/a.ts#f", undefined, registry)
+    return rules.filter((r) => r.type === "guard").map((r) => r.condition)
+  }
+
+  it.each([
+    [
+      "a named import",
+      'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) redirect("/login") }',
+    ],
+    [
+      "an aliased import",
+      'import { notFound as missing } from "next/navigation"\nexport function f(x: any) { if (!x) missing() }',
+    ],
+    [
+      "a member of a namespace import",
+      'import * as nav from "next/navigation"\nexport function f(x: any) { if (!x) nav.redirect("/") }',
+    ],
+    ["a default import", 'import deny from "./deny"\nexport function f(x: any) { if (!x) deny() }'],
+    [
+      "a call inside a callback, as a throw there counts",
+      'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) { run(() => redirect("/")) } }',
+    ],
+  ])("makes the `if` a guard through %s", async (_label, source) => {
+    expect(await guardsOf(source)).toEqual(["!x"])
+  })
+
+  it.each([
+    [
+      "an export the plugin does not declare",
+      'import { useRouter } from "next/navigation"\nexport function f(x: any) { if (!x) useRouter() }',
+    ],
+    [
+      "the same name imported from another module",
+      'import { redirect } from "./navigation"\nexport function f(x: any) { if (!x) redirect("/") }',
+    ],
+    [
+      "a parameter that hides the import",
+      'import { redirect } from "next/navigation"\nexport function f(x: any, redirect: any) { if (!x) redirect("/") }',
+    ],
+    [
+      "a namespace member the plugin does not declare",
+      'import * as nav from "next/navigation"\nexport function f(x: any) { if (!x) nav.useRouter() }',
+    ],
+    ["a name no import binds", 'export function f(x: any) { if (!x) redirect("/") }'],
+  ])("leaves the `if` alone for %s", async (_label, source) => {
+    expect(await guardsOf(source)).toEqual([])
+  })
+
+  it("leaves the `if` alone where no plugin declares the call", async () => {
+    const source =
+      'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) redirect("/") }'
+
+    expect(await guardsOf(source, noopRegistry)).toEqual([])
   })
 })
