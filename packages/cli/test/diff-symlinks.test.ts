@@ -166,7 +166,7 @@ describe("describeLinksReadAsSource", () => {
       (_, at) => `src/link-${String(at + 1).padStart(2, "0")}.ts`,
     )
 
-    expect(describeLinksReadAsSource("base", paths)).toBe(
+    expect(describeLinksReadAsSource("fresh-checkout", paths)).toBe(
       readAsSource(12, `${paths.slice(0, 10).join(", ")}, and 2 more`, BASE_REMEDY),
     )
   })

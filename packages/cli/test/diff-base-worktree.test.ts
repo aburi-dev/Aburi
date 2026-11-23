@@ -59,6 +59,8 @@ async function diffIn(cwd: string, refSpec: string, failOn = "added") {
   return { report, diff, warnings: log.warnings }
 }
 
+const UNCOMMITTED = "export function uncommitted(): number { return 3 }\n"
+
 const addedOne = (id: string) => ({
   clause: { token: "added", threshold: null },
   observed: 1,
@@ -126,6 +128,37 @@ describe("aburi diff — where the base revision is checked out", () => {
     expect(report.faultedScans).toEqual([])
     expect(warnings).toEqual([])
   })
+})
+
+describe("aburi diff — which tree the head side is", () => {
+  it("checks a head revision out of its own when another is checked out, and removes it after", async () => {
+    await repository(workspace.root)
+    await addFunction(workspace.root, "src/one.ts", "two")
+    await git(["checkout", "-q", "HEAD~1"], workspace.root)
+    await appendFile(resolve(workspace.root, "src/one.ts"), UNCOMMITTED)
+
+    const { report, warnings } = await diffIn(workspace.root, "HEAD..main")
+
+    expect(report.summaryLine).toBe("+1 -0 ~0 ↔0 ⤴0")
+    expect(report.triggered).toEqual(addedOne("ts:src/one.ts#two"))
+    expect(warnings).toEqual([])
+    const listing = await git(["worktree", "list", "--porcelain"], workspace.root)
+    expect(listing.split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
+  })
+
+  it.each(["HEAD", "main"])(
+    "reads the working tree, uncommitted edits included, for a head %s naming the commit checked out",
+    async (head) => {
+      await repository(workspace.root)
+      await addFunction(workspace.root, "src/one.ts", "two")
+      await appendFile(resolve(workspace.root, "src/one.ts"), UNCOMMITTED)
+
+      const { report, warnings } = await diffIn(workspace.root, `HEAD~1..${head}`)
+
+      expect(report.summaryLine).toBe("+2 -0 ~0 ↔0 ⤴0")
+      expect(warnings).toEqual([])
+    },
+  )
 })
 
 describe("aburi diff — the base checkout describes the same Components as the head", () => {

@@ -1,24 +1,41 @@
+import { copyFile } from "node:fs/promises"
+import { resolve } from "node:path"
 import type { GitRenameMap } from "@aburi/diff"
-import { errorMessage } from "../errors"
+import { errorCode, errorMessage } from "../errors"
 import type { WarnFn } from "../warn"
 import type { GitRunner } from "./runner"
+
+/** The two trees a rename map pairs paths between: two revisions, or a revision and the working tree. */
+export type RenameSpan =
+  | { readonly base: string; readonly head: string }
+  | {
+      readonly base: string
+      /**
+       * Where a copy of the caller's index is written, so the untracked files of the working tree
+       * can be added to it and a file moved without `git mv` still pairs with its old path.
+       */
+      readonly scratchIndex: string
+    }
 
 export async function collectRenames(
   git: GitRunner,
   cwd: string,
-  spec: { base: string; head: string },
+  span: RenameSpan,
   warn: WarnFn,
 ): Promise<GitRenameMap | null> {
-  const range = `${spec.base}..${spec.head}`
+  const between =
+    "head" in span ? `${span.base}..${span.head}` : `${span.base} against the working tree`
   let stdout: string
   try {
-    const result = await git.run(["diff", "--find-renames", "--name-status", "-z", range], {
-      cwd,
-    })
+    const result =
+      "head" in span
+        ? await git.run([...NAME_STATUS, `${span.base}..${span.head}`], { cwd })
+        : await diffWorkingTree(git, cwd, span.base, span.scratchIndex)
     stdout = result.stdout
-    if (result.stderr.trim().length > 0) {
+    const said = renameDetectionNotes(result.stderr)
+    if (said.length > 0) {
       warn(
-        `⚠ git reported while collecting renames for ${range}: ${result.stderr.trim()}. ` +
+        `⚠ git reported while collecting renames for ${between}: ${said}. ` +
           `Rename hints may be missing (raise diff.renameLimit if it says so); moves without one are reported as removed + added, ${RENAMED_AND_SKIPPED}.`,
       )
     }
@@ -32,12 +49,48 @@ export async function collectRenames(
   const parsed = parseRenameRecords(stdout)
   if (!parsed.ok) {
     warn(
-      `⚠ git diff --name-status -z for ${range} produced a record this parser could not read ` +
+      `⚠ git diff --name-status -z for ${between} produced a record this parser could not read ` +
         `(field ${parsed.index}: ${describeBadField(parsed.field)}); the diff will treat renamed files as removed + added, ${RENAMED_AND_SKIPPED}.`,
     )
     return null
   }
   return parsed.renames
+}
+
+const NAME_STATUS: readonly string[] = ["diff", "--find-renames", "--name-status", "-z"]
+
+async function diffWorkingTree(
+  git: GitRunner,
+  cwd: string,
+  base: string,
+  scratchIndex: string,
+): Promise<{ stdout: string; stderr: string }> {
+  const { stdout } = await git.run(["rev-parse", "--git-path", "index"], { cwd })
+  const index = stdout.trim()
+  if (index.length > 0) {
+    try {
+      await copyFile(resolve(cwd, index), scratchIndex)
+    } catch (error) {
+      // A checkout with no index yet: git starts the scratch one empty and adds every file.
+      if (errorCode(error) !== "ENOENT") throw error
+    }
+  }
+  const env = { GIT_INDEX_FILE: scratchIndex }
+  await git.run(["add", "--intent-to-add", "--", ":/"], { cwd, env })
+  return git.run([...NAME_STATUS, base], { cwd, env })
+}
+
+/**
+ * What git said about rename detection. A diff that reads the working tree also says how it would
+ * convert a file's line endings, which changes no record.
+ */
+function renameDetectionNotes(stderr: string): string {
+  return stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /rename/i.test(line))
+    .join(" ")
+    .replace(/\.$/, "")
 }
 
 const RENAMED_AND_SKIPPED =

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync, rmSync, writeSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { availableParallelism, tmpdir } from "node:os"
-import { basename, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import type { ScanProgress } from "@aburi/core"
 import type { GitRenameMap } from "@aburi/diff"
 import type { IR } from "@aburi/types"
@@ -58,7 +58,11 @@ export interface RevisionScanContext {
   concurrency: number | undefined
 }
 
-type ScanTarget = { side: "base"; ref: string } | { side: "head" }
+/** A side's revision, checked out in a worktree of its own at `dir`. */
+interface Checkout {
+  dir: string
+  ref: string
+}
 
 export async function scanRevisions(
   spec: RefSpec,
@@ -71,89 +75,107 @@ export async function scanRevisions(
   await assertNotShallow(git, cwd)
   await assertNotSparse(git, cwd)
 
+  const headIsWorkingTree = await namesCheckedOutCommit(git, cwd, spec.head)
   const pinnedConfig = await context.pinConfigOnce()
   const headWorkspaceRoot = await resolveWorkspaceRoot(cwd)
-  const headIndex = await listIndex(git, headWorkspaceRoot)
-  const submoduleIgnore = submoduleIgnorePatterns(headIndex, warn)
-  const plainLinks: Record<DiffSide, string[]> = {
-    base: [],
-    head: await plainFileLinks(headIndex, headWorkspaceRoot),
-  }
-  const gitRenames = await collectRenames(git, cwd, spec, warn)
   const tempParent = await mkdtemp(resolve(tmpdir(), "aburi-worktree-"))
-  const worktreeParent = resolve(tempParent, "base")
-  const worktreeDir = resolve(worktreeParent, baseWorktreeLeaf(headWorkspaceRoot))
+  // Each side's checkout under a level of its own, so the leaf is free to be any name the workspace has.
+  const checkoutOf = (side: DiffSide, ref: string): Checkout => ({
+    dir: resolve(tempParent, side, checkoutLeaf(headWorkspaceRoot)),
+    ref,
+  })
+  const checkouts: Record<DiffSide, Checkout | null> = {
+    base: checkoutOf("base", spec.base),
+    head: headIsWorkingTree ? null : checkoutOf("head", spec.head),
+  }
+  const labels: Record<DiffSide, string> = {
+    base: labelFor("base", spec.base),
+    head: labelFor("head", headIsWorkingTree ? null : spec.head),
+  }
+  const planned = SIDES.flatMap((side) => checkouts[side] ?? [])
+  const added: string[] = []
 
   const said = new Set<string>()
   const together = context.parallelScans ?? availableParallelism() >= 2
-  const optionsFor = (dir: string, outputDir: string): PortableScanOptions => ({
-    cwd: dir,
-    command: "diff",
-    outputDir,
-    format: "json",
-    pinnedConfig,
-    pluginRefRoot: headWorkspaceRoot,
-    ...(submoduleIgnore.length === 0 ? {} : { ignore: submoduleIgnore }),
-    ...(context.compact === undefined ? {} : { compact: context.compact }),
-    ...(context.logLevel === undefined ? {} : { logLevel: context.logLevel }),
-    ...(context.concurrency === undefined ? {} : { concurrency: context.concurrency }),
-    scansAtOnce: together ? 2 : 1,
-  })
-  const sayPlainFileLinks = (target: ScanTarget, ir: IR): IR => {
-    const read = linksReadAsSource(plainLinks[target.side], ir)
+  const plainLinks: Record<DiffSide, string[]> = { base: [], head: [] }
+  const sayPlainFileLinks = (side: DiffSide, ir: IR): IR => {
+    const read = linksReadAsSource(plainLinks[side], ir)
     if (read.length > 0) {
-      warn(`⚠ ${labelFor(target)}: ${describeLinksReadAsSource(target.side, read)}`)
+      const checkedOut = checkouts[side] === null ? "working-tree" : "fresh-checkout"
+      warn(`⚠ ${labels[side]}: ${describeLinksReadAsSource(checkedOut, read)}`)
     }
     return ir
   }
-  const readBase = async (report: ScanReport): Promise<IR> => {
-    reportScanIncidents(report, warn, labelFor({ side: "base", ref: spec.base }), said)
-    if (report.workspaceRoot !== worktreeDir) {
-      throw internalFault(
-        ` while scanning base ref "${spec.base}"`,
-        `the scan rooted at ${report.workspaceRoot} instead of the worktree ${worktreeDir}, so the two sides would describe different trees`,
-        null,
-      )
+  const readerOf =
+    (side: DiffSide) =>
+    async (report: ScanReport): Promise<IR> => {
+      const label = labels[side]
+      reportScanIncidents(report, warn, label, said)
+      const checkout = checkouts[side]
+      if (checkout !== null && report.workspaceRoot !== checkout.dir) {
+        throw internalFault(
+          ` while scanning ${label}`,
+          `the scan rooted at ${report.workspaceRoot} instead of the worktree ${checkout.dir}, so the two sides would describe different trees`,
+          null,
+        )
+      }
+      if (report.irPath === null) {
+        throw new CliError(`Scan for ${label} produced no IR file.`, "runtime-error")
+      }
+      return sayPlainFileLinks(side, await readIR(report.irPath))
     }
-    if (report.irPath === null) {
-      throw new CliError(`Scan for base ref "${spec.base}" produced no IR file.`, "runtime-error")
-    }
-    return sayPlainFileLinks({ side: "base", ref: spec.base }, await readIR(report.irPath))
-  }
-  const readHead = async (report: ScanReport): Promise<IR> => {
-    reportScanIncidents(report, warn, labelFor({ side: "head" }), said)
-    if (report.irPath === null) {
-      throw new CliError("Scan for head ref produced no IR file.", "runtime-error")
-    }
-    return sayPlainFileLinks({ side: "head" }, await readIR(report.irPath))
-  }
 
-  let worktreeAdded = false
-  const releaseSignals = cleanUpOnFatalSignal(() =>
-    removeCheckoutSynchronously(cwd, worktreeDir, tempParent),
-  )
+  const releaseSignals = cleanUpOnFatalSignal(() => {
+    for (const { dir } of planned) removeCheckoutSynchronously(cwd, dir)
+    removeTemporaryDirectorySynchronously(tempParent)
+  })
   try {
-    await mkdir(worktreeParent, { recursive: true })
-    await git.run(["worktree", "add", "--detach", worktreeDir, spec.base], { cwd })
-    worktreeAdded = true
-    plainLinks.base = await plainFileLinks(await listIndex(git, worktreeDir), worktreeDir)
-    const base: SideScan = {
-      // The worktree is made without dependencies, so the head's installed ones stand in for them.
-      options: {
-        ...optionsFor(worktreeDir, resolve(tempParent, "base-out")),
-        installedRoot: headWorkspaceRoot,
-      },
-      read: readBase,
-      ...reportOf("base", context.progress),
+    const gitRenames = await collectRenames(
+      git,
+      cwd,
+      headIsWorkingTree
+        ? { base: spec.base, scratchIndex: resolve(tempParent, "index") }
+        : { base: spec.base, head: spec.head },
+      warn,
+    )
+    for (const { dir, ref } of planned) {
+      await mkdir(dirname(dir), { recursive: true })
+      await git.run(["worktree", "add", "--detach", dir, ref], { cwd })
+      added.push(dir)
     }
-    const head: SideScan = {
-      options: optionsFor(cwd, resolve(tempParent, "head-out")),
-      read: readHead,
-      ...reportOf("head", context.progress),
+    const rootOf = (side: DiffSide): string => checkouts[side]?.dir ?? headWorkspaceRoot
+    const headIndex = await listIndex(git, rootOf("head"))
+    const submoduleIgnore = submoduleIgnorePatterns(headIndex, warn)
+    plainLinks.head = await plainFileLinks(headIndex, rootOf("head"))
+    plainLinks.base = await plainFileLinks(await listIndex(git, rootOf("base")), rootOf("base"))
+
+    const sideScan = (side: DiffSide): SideScan => {
+      const checkout = checkouts[side]
+      return {
+        options: {
+          cwd: checkout?.dir ?? cwd,
+          command: "diff",
+          outputDir: resolve(tempParent, `${side}-out`),
+          format: "json",
+          pinnedConfig,
+          pluginRefRoot: headWorkspaceRoot,
+          // A worktree is made without dependencies, so the working tree's installed ones stand in for them.
+          ...(checkout === null ? {} : { installedRoot: headWorkspaceRoot }),
+          ...(submoduleIgnore.length === 0 ? {} : { ignore: submoduleIgnore }),
+          ...(context.compact === undefined ? {} : { compact: context.compact }),
+          ...(context.logLevel === undefined ? {} : { logLevel: context.logLevel }),
+          ...(context.concurrency === undefined ? {} : { concurrency: context.concurrency }),
+          scansAtOnce: together ? 2 : 1,
+        },
+        read: readerOf(side),
+        ...reportOf(side, context.progress),
+      }
     }
+    const base = sideScan("base")
+    const head = sideScan("head")
     const scanned = together
       ? await scanTogether(base, head, context.log, {
-          name: `base ref "${spec.base}"`,
+          name: labels.base,
           log: context.log,
           warn,
         })
@@ -161,12 +183,12 @@ export async function scanRevisions(
     return { ...scanned, gitRenames }
   } finally {
     // Failures here only warn: a throw from `finally` would replace the error that ended the scan.
-    if (worktreeAdded) {
+    for (const checkout of added) {
       try {
-        await git.run(["worktree", "remove", "--force", worktreeDir], { cwd })
+        await git.run(["worktree", "remove", "--force", checkout], { cwd })
       } catch (error) {
         warn(
-          `⚠ git worktree cleanup failed for "${worktreeDir}"; ${errorMessage(error)}. Consider running \`git worktree prune\`.`,
+          `⚠ git worktree cleanup failed for "${checkout}"; ${errorMessage(error)}. Consider running \`git worktree prune\`.`,
         )
       }
     }
@@ -178,6 +200,22 @@ export async function scanRevisions(
       )
     }
     releaseSignals()
+  }
+}
+
+/** Whether `ref` names the commit checked out at `cwd`, which the working tree then stands for. */
+async function namesCheckedOutCommit(git: GitRunner, cwd: string, ref: string): Promise<boolean> {
+  const commit = await commitNamedBy(git, cwd, ref)
+  return commit !== null && commit === (await commitNamedBy(git, cwd, "HEAD"))
+}
+
+async function commitNamedBy(git: GitRunner, cwd: string, ref: string): Promise<string | null> {
+  try {
+    const { stdout } = await git.run(["rev-parse", "--verify", `${ref}^{commit}`], { cwd })
+    return stdout.trim()
+  } catch {
+    // A ref naming no commit, or a HEAD with none yet: either way not the working tree's commit.
+    return null
   }
 }
 
@@ -286,7 +324,7 @@ function heldLog(log: LogWrite): { write: LogWrite; release: () => void } {
   }
 }
 
-function removeCheckoutSynchronously(cwd: string, worktreeDir: string, tempParent: string): void {
+function removeCheckoutSynchronously(cwd: string, worktreeDir: string): void {
   // Read first, so a checkout the `finally` already removed is not reported as a failed remove.
   const hadCheckout = existsSync(worktreeDir)
   const removal = spawnSync("git", ["worktree", "remove", "--force", worktreeDir], {
@@ -301,6 +339,9 @@ function removeCheckoutSynchronously(cwd: string, worktreeDir: string, tempParen
       `⚠ git worktree cleanup failed for "${worktreeDir}"; ${why}. Consider running \`git worktree prune\`.`,
     )
   }
+}
+
+function removeTemporaryDirectorySynchronously(tempParent: string): void {
   try {
     rmSync(tempParent, { recursive: true, force: true })
   } catch (error) {
@@ -319,11 +360,11 @@ function reportFromSignal(message: string): void {
   }
 }
 
-function baseWorktreeLeaf(headWorkspaceRoot: string): string {
+function checkoutLeaf(headWorkspaceRoot: string): string {
   const leaf = basename(headWorkspaceRoot)
   return leaf.length === 0 || leaf === "@" ? "base" : leaf
 }
 
-function labelFor(target: ScanTarget): string {
-  return target.side === "base" ? `base ref "${target.ref}"` : "head (working tree)"
+function labelFor(side: DiffSide, ref: string | null): string {
+  return ref === null ? "head (working tree)" : `${side} ref "${ref}"`
 }

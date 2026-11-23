@@ -1,3 +1,4 @@
+import { rename } from "node:fs/promises"
 import { resolve } from "node:path"
 import {
   commitAll,
@@ -165,6 +166,80 @@ describe("aburi diff — a file renamed between the revisions", () => {
     expect(log.warnings).toEqual([])
   })
 
+  it.each<[string, (root: string) => Promise<string>]>([
+    [
+      "with `git mv` and not committed",
+      async (root) => {
+        await git(["mv", "src/a.ts", "src/b.ts"], root)
+        return "HEAD..HEAD"
+      },
+    ],
+    [
+      "without git being told",
+      async (root) => {
+        await rename(resolve(root, "src/a.ts"), resolve(root, "src/b.ts"))
+        return "HEAD..HEAD"
+      },
+    ],
+    [
+      "in a head revision that is not checked out",
+      async (root) => {
+        await git(["mv", "src/a.ts", "src/b.ts"], root)
+        await commitAll(root, "head")
+        await git(["checkout", "-q", "HEAD~1"], root)
+        return "HEAD..main"
+      },
+    ],
+  ])("pairs every Symbol of a file moved %s, leaving the index as it was", async (_, move) => {
+    const root = workspace.root
+    await initRepository(root)
+    await writePackageJson(root, { name: "demo", private: true })
+    await writeConfig(root, TYPESCRIPT)
+    await writeFileAt(
+      root,
+      "src/a.ts",
+      "export function alpha(x: number) {\n  return x + 1\n}\nexport function beta(y: string) {\n  return y.trim()\n}\n",
+    )
+    await commitAll(root, "base")
+    const refSpec = await move(root)
+    const index = await git(["ls-files", "-z", "--stage"], root)
+    const log = recordingLogger()
+
+    const report = await runDiff({
+      cwd: root,
+      refSpec,
+      outputDir: resolve(root, "out"),
+      failOn: "removed",
+      warn: log.warn,
+    })
+
+    expect(report.summaryLine).toBe("+0 -0 ~0 ↔2 ⤴0")
+    expect(report.exitCode).toBe(EXIT.SUCCESS)
+    expect(log.warnings).toEqual([])
+    expect(await git(["ls-files", "-z", "--stage"], root)).toBe(index)
+  })
+
+  it("says nothing of the line endings git notes while it reads the working tree", async () => {
+    const root = workspace.root
+    await initRepository(root)
+    await writePackageJson(root, { name: "demo", private: true })
+    await writeConfig(root, TYPESCRIPT)
+    await writeFileAt(root, "src/a.ts", "export const a = 1\n")
+    await commitAll(root, "base")
+    await git(["config", "core.autocrlf", "true"], root)
+    await writeFileAt(root, "src/a.ts", "export const a = 2\n")
+    const log = recordingLogger()
+
+    await runDiff({
+      cwd: root,
+      refSpec: "HEAD..HEAD",
+      outputDir: resolve(root, "out"),
+      warn: log.warn,
+    })
+
+    expect(log.warnings).toEqual([])
+  })
+
   it("passes git's rename-limit warning to the caller's warn", async () => {
     const root = workspace.root
     await initRepository(root)
@@ -191,7 +266,7 @@ describe("aburi diff — a file renamed between the revisions", () => {
 
     expect(log.warnings).toContainEqual(
       expect.stringMatching(
-        /git reported while collecting renames for HEAD~1\.\.HEAD: .*rename detection was skipped/,
+        /git reported while collecting renames for HEAD~1 against the working tree: .*rename detection was skipped/,
       ),
     )
   })

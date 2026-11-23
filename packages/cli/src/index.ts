@@ -74,7 +74,7 @@ export {
   parseFailOn,
   type TrippedClause,
 } from "./fail-on"
-export type { GitRunner } from "./git/runner"
+export type { GitRunner, GitRunOptions } from "./git/runner"
 export { readIR } from "./ir-io"
 export type { LogWrite } from "./logger"
 export {
