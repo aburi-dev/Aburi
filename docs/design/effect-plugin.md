@@ -287,7 +287,7 @@ Writing a drop-only plugin is also possible (`provides.effects: []` but declarin
 
 | plugin | example recognized callees | main effect ids |
 |---|---|---|
-| `@aburi/effects-nest` | `EventEmitter2` / `eventBus` `.emit(...)`, and `.emit(...)` on a field declared as `EventEmitter2` | `event.publish` |
+| `@aburi/effects-nest` | `EventEmitter2` / `eventBus` `.emit(...)` and `.emitAsync(...)`, the same on a field declared as `EventEmitter2`, and `@nestjs/cqrs`'s `EventBus` `.publish(...)` / `.publishAll(...)` | `event.publish` |
 | `@aburi/effects-prisma` | `prisma.*.{find*,create,update,upsert,delete}` | `db.read` / `db.write` |
 | `@aburi/effects-drizzle` | `db.select().from(...)` / `db.insert(...)` | `db.read` / `db.write` |
 | `@aburi/effects-trpc` | `trpc.*.{query,mutation}` and the React Query hooks | `network.rpc` |
