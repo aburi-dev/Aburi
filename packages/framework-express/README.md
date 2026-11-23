@@ -55,18 +55,33 @@ same call wrapped over two lines or with a comment before `.get`, and
 way: `Router`, `express.Router`, and `require.Router` for
 `require("express").Router()`. No entry carries the source's line breaks,
 indentation or comments, so reformatting a call leaves its entries as they
-were.
+were. A route chain that registers several methods is one Symbol, named after
+its last, and `derivedBy` names that method first and then each other method in
+the order the chain registers them:
+`app.route("/users").get(listUsers).post(createUser)` gives
+`framework:express:route:app.post` and `framework:express:route:app.get`, so a
+filter on either method finds the chain.
 
 A route or `use` registration also names its middleware, which `@aburi/core`
 writes to the Symbol's `middleware` and the logic fingerprint reads, so a route
 that loses its authorization check is a logic change the report names
 (`- middleware removed: requireAdmin`) rather than a reformat. For a route it
 is every handler argument but the last, the handler; for `use`, every argument
-after the path, the router a mount hands over included; in a chain
-(`app.route("/users").get(a, h).post(b, h)`), each registration's in the order
-the chain makes them. An `all` with a later method in its chain
-(`app.route("/users").all(requireUser).get(listUsers)`) runs ahead of each of
-them, so every argument it takes is middleware. A `use` path is whatever
+after the path, the router a mount hands over included; in a chain, each
+registration's in the order the chain makes them. An `all` with a later method
+in its chain (`app.route("/users").all(requireUser).get(listUsers)`) runs ahead
+of each of them, so every argument it takes is middleware.
+
+A route on a `.route(path)` chain, or one of several methods a statement
+registers, names each entry with the method it guards, so one Symbol holding
+several methods says which method each guard is on:
+`app.route("/users/:id").get(getUser).put(requireAdmin, updateUser).delete(deleteUser)`
+names `get:`, `put:requireAdmin` and `delete:`. A method of several that takes
+no middleware is the bare `get:` mark, so moving a guard to another method,
+adding a method or dropping one is a logic change
+(`- middleware removed: delete:requireAdmin`), not a reformat. A plain
+`app.get("/users", requireAdmin, listUsers)` names `requireAdmin`, its method
+being in the Symbol's name already. A `use` path is whatever
 Express reads as one, so `["/a", "/b"]`, `/^\/admin/` and `` `/v${version}` ``
 are skipped as `"/admin"` is. Arrays and spreads of arrays are flattened, as
 Express flattens them. An inline function is left out, since its body is the
@@ -93,13 +108,25 @@ and for an import the list missed (one the parser lost to a syntax error, or
 one inside a `declare module` block). JSX text with a quote or backtick in it
 can mislead that reading on the lines it spans.
 
+Every handler a registration names is also a call it makes, since Express
+runs it: `app.get("/users", requireAdmin, listUsers)` calls `requireAdmin` and
+`listUsers`, so call resolution links them to their declarations and their
+effects propagate to the route. Swapping `listUsers` for a handler that deletes
+is then a logic change that reports the write. The same holds for what `use`
+and a mount hand over (`app.use("/admin", adminRouter)` calls `adminRouter`),
+and for every registration of a chain. A call is added for what a name spells:
+an identifier, a member path, `handlers["list"]` as `handlers.list`, inside
+arrays and spreads of arrays. An inline function is the registration's own
+body, a factory (`requireRole("admin")`, `asyncHandler(listUsers)`) is a call
+the registration already makes, and a spread or computed member names nothing,
+so none of them adds one. What a factory is handed gets no call of its own:
+`asyncHandler(listUsers)` links `asyncHandler`, not `listUsers`.
+
 Not classified today (documented for completeness):
 
-- Route handlers defined as separate declarations
-  (`function getUsers(req, res) {…}`) — Aburi's Symbol extractor cannot see the
-  call-site linkage without cross-symbol lookup, so these remain plain
-  `function` Symbols. The `app.get('/users', getUsers)` call itself IS
-  classified via the promoted `kind: "call"` Symbol.
+- A route handler declared on its own (`function getUsers(req, res) {…}`) keeps
+  its own kind, a plain `function` Symbol. The registration that names it is
+  the route, and calls it.
 - Type-level inferences (whether a `Handler` typed function argument is an
   Express handler). The arity heuristic used here is the most reliable
   pre-LSP signal for a middleware / error-middleware split.

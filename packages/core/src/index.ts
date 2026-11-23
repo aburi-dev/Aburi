@@ -110,6 +110,7 @@ export {
   type PropagationStats,
   propagateEffects,
 } from "./propagate"
+export { referenceCalls } from "./reference-calls"
 export { normalizeRuleStrings, normalizeRuleText, RULE_TEXT_LIMIT } from "./rule-text"
 export {
   buildComponentAttribution,

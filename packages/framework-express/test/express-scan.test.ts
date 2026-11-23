@@ -251,12 +251,6 @@ describe("scan — a route method name is not a route", () => {
       "app.get",
     ],
     ["a handler identifier up an app.route chain", `app.route("/users").get(listUsers)`, "app.get"],
-    // One statement is one Symbol, named by the leaf call.
-    [
-      "several methods on one app.route chain",
-      `app.route("/users").get(listUsers).post(createUser)`,
-      "app.post",
-    ],
     [
       "an app.route chain with a non-null assertion",
       `app.route("/users")!.get(listUsers)`,
@@ -321,7 +315,7 @@ describe("scan — a call's derivedBy", () => {
       "a route chain wrapped over several lines",
       `app\n  .route("/users/:id")\n  .get(getUser)\n  .delete(deleteUser)`,
       `app.route("/users/:id").get(getUser).delete(deleteUser)`,
-      "framework:express:route high framework:express:route:app.delete",
+      "framework:express:route high framework:express:route:app.delete framework:express:route:app.get",
     ],
     [
       "a route with a line comment in its chain",
@@ -402,6 +396,30 @@ describe("scan — a call's derivedBy", () => {
   })
 
   it.each([
+    ["two methods", `app.route("/users").get(listUsers).post(createUser)`, ["app.post", "app.get"]],
+    [
+      "a method behind an all",
+      `app.route("/users").all(requireUser).get(listUsers)`,
+      ["app.get", "app.all"],
+    ],
+    [
+      "a method registered twice",
+      `app.route("/users").get(audit).get(listUsers).put(updateUser)`,
+      ["app.put", "app.get"],
+    ],
+  ])(
+    "names every method a chain of %s registers, the one the Symbol is named after first",
+    async (_label, line, methods) => {
+      expect(await namedCallIn(inExpressApp(line))).toBe(
+        [
+          "framework:express:route high",
+          ...methods.map((m) => `framework:express:route:${m}`),
+        ].join(" "),
+      )
+    },
+  )
+
+  it.each([
     [
       "a factory wrapped onto a second line after a comment",
       "express /* v5 */\n  .Router()",
@@ -475,29 +493,34 @@ describe("scan — the middleware a registration hands its handler to", () => {
       ["requireAdmin"],
     ],
     [
-      "each route of a chain, in the order it registers them",
+      "each method of a chain with the method it guards, in the order it registers them",
       `app.route("/users").get(requireUser, listUsers).post(requireAdmin, validate(user), createUser)`,
-      ["requireUser", "requireAdmin", "validate(user)"],
+      ["get:requireUser", "post:requireAdmin", "post:validate(user)"],
+    ],
+    [
+      "a mark for a method of a chain that takes no middleware",
+      `app.route("/users/:id").get(getUser).put(requireAdmin, updateUser).delete(deleteUser)`,
+      ["get:", "put:requireAdmin", "delete:"],
     ],
     [
       "a route of a chain behind a type assertion",
       `;(app.route("/users") as IRoute).get(requireUser, listUsers)`,
-      ["requireUser"],
+      ["get:requireUser"],
     ],
     [
       "what all takes ahead of a method in a chain behind parentheses",
       `;(app.route("/users").all(requireUser)).get(listUsers)`,
-      ["requireUser"],
+      ["all:requireUser", "get:"],
     ],
     [
       "what all takes ahead of a method in a chain, its last handler included",
       `app.route("/users").all(requireUser, audit).get(listUsers).post(createUser)`,
-      ["requireUser", "audit"],
+      ["all:requireUser", "all:audit", "get:", "post:"],
     ],
     [
       "what an all that ends its chain takes ahead of its handler",
       `app.route("/users").get(listUsers).all(audit, notAllowed)`,
-      ["audit"],
+      ["get:", "all:audit"],
     ],
     ["every argument of use", `app.use(logger, audit)`, ["logger", "audit"]],
     [
@@ -563,5 +586,86 @@ describe("scan — the middleware a registration hands its handler to", () => {
     )
 
     expect(wrapped.middleware).toEqual([`requireRole("admin")`, "auth.required"])
+  })
+})
+
+describe("scan — the handlers a registration names, as calls", () => {
+  it.each([
+    [
+      "a route's middleware and handler",
+      `app.get("/users", requireAdmin, listUsers)`,
+      ["app.get", "requireAdmin", "listUsers"],
+    ],
+    [
+      "member paths, a bracketed key read as a dotted one",
+      `app.get("/users", auth.required, handlers["list"])`,
+      ["app.get", "auth.required", "handlers.list"],
+    ],
+    [
+      "handlers in arrays and spreads of arrays, flattened as Express flattens them",
+      `app.post("/users", [auth, [audit]], ...[validate], createUser)`,
+      ["app.post", "auth", "audit", "validate", "createUser"],
+    ],
+    [
+      "no inline function, whose body is the registration's own",
+      `app.get("/users", requireAdmin, (req, res) => res.json([]))`,
+      ["res.json", "requireAdmin"],
+    ],
+    [
+      "no factory, which the registration already calls",
+      `app.get("/users", requireRole("admin"), listUsers)`,
+      ["app.get", "requireRole", "listUsers"],
+    ],
+    [
+      "nothing a name does not spell",
+      `app.get("/users", ...guards, handlers[kind], isProd ? cached : live)`,
+      ["app.get"],
+    ],
+    ["what use hands over", `app.use(logger, audit)`, ["app.use", "logger", "audit"]],
+    [
+      "what a mount hands over, the router included",
+      `app.use("/admin", requireAdmin, adminRouter)`,
+      ["app.use", "requireAdmin", "adminRouter"],
+    ],
+    [
+      "each method of a chain's handlers, in the order it registers them",
+      `app.route("/users").get(listUsers).post(requireAdmin, createUser)`,
+      [
+        "app.route.get.post",
+        "app.route.get",
+        "app.route",
+        "listUsers",
+        "requireAdmin",
+        "createUser",
+      ],
+    ],
+  ])("calls %s", async (_label, line, targets) => {
+    expect((await oneCallIn(inExpressApp(line))).calls.map((call) => call.target)).toEqual(targets)
+  })
+
+  it("links a handler and a middleware to the declarations they name", async () => {
+    await workspace.writeSource(
+      "src/users.ts",
+      "export function listUsers(req, res) { res.json([]) }\n",
+    )
+    await workspace.writeSource(
+      "src/guards.ts",
+      "export function requireAdmin(req, res, next) { next() }\n",
+    )
+    const route = await oneCallIn(
+      [
+        `import express from "express"`,
+        `import { requireAdmin } from "./guards"`,
+        `import { listUsers } from "./users"`,
+        `const app = express()`,
+        `app.get("/users", requireAdmin, listUsers)`,
+      ].join("\n"),
+    )
+
+    expect(route.calls.map((call) => [call.target, call.resolved])).toEqual([
+      ["app.get", null],
+      ["requireAdmin", "ts:src/guards.ts#requireAdmin"],
+      ["listUsers", "ts:src/users.ts#listUsers"],
+    ])
   })
 })

@@ -1,8 +1,8 @@
 import { prismaEffectsPlugin } from "@aburi/effects-prisma"
 import { expressFrameworkPlugin } from "@aburi/framework-express"
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
-import { scanWith } from "@aburi/test-harness"
-import { symbolById, useScratchWorkspace } from "@aburi/test-support"
+import { diffIRs, scanWith } from "@aburi/test-harness"
+import { onlyChange, symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { beforeEach, describe, expect, it } from "vitest"
 
 const workspace = useScratchWorkspace("route-handler")
@@ -60,5 +60,83 @@ describe("scan — an Express route whose handler writes to a database", () => {
     const result = await scanWorkspace()
 
     expect(result.ir.stats.effectPropagation.symbolsWithPropagatedEffects).toBe(0)
+  })
+})
+
+describe("scan — an Express route that names its handler", () => {
+  const ROUTE = "ts:src/app.ts#router__get__$users__d0"
+  const app = (handler: string) =>
+    [
+      'import express from "express"',
+      'import { requireAdmin } from "./guards"',
+      'import { listUsers, purgeUsers } from "./users"',
+      "",
+      "export const router = express.Router()",
+      "",
+      `router.get("/users", requireAdmin, ${handler})`,
+      "",
+    ].join("\n")
+
+  beforeEach(async () => {
+    await workspace.writeSource(
+      "src/users.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        'import type { Request, Response } from "express"',
+        "",
+        "const prisma = new PrismaClient()",
+        "",
+        "export async function listUsers(req: Request, res: Response) {",
+        "  res.json(await prisma.user.findMany())",
+        "}",
+        "",
+        "export async function purgeUsers(req: Request, res: Response) {",
+        "  await prisma.user.deleteMany()",
+        "  res.sendStatus(204)",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/guards.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        'import type { NextFunction, Request, Response } from "express"',
+        "",
+        "const prisma = new PrismaClient()",
+        "",
+        "export async function requireAdmin(req: Request, res: Response, next: NextFunction) {",
+        '  await prisma.membership.findFirst({ where: { role: "admin" } })',
+        "  next()",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    await workspace.writeSource("src/app.ts", app("listUsers"))
+  })
+
+  it("carries the effects of its middleware and handler to the route", async () => {
+    const route = symbolById(await scanWorkspace(), ROUTE)
+
+    expect(
+      route.effects.map((e) => [e.id, e.target, e.propagated === true && e.derivedFrom]),
+    ).toEqual([
+      ["db.read", "prisma.membership.findFirst", ["ts:src/guards.ts#requireAdmin"]],
+      ["db.read", "prisma.user.findMany", ["ts:src/users.ts#listUsers"]],
+    ])
+  })
+
+  it("reports a handler swapped for one that writes as a logic change bringing the write", async () => {
+    const base = await scanWorkspace()
+    await workspace.writeSource("src/app.ts", app("purgeUsers"))
+    const head = await scanWorkspace()
+
+    const change = onlyChange(diffIRs(base.ir, head.ir))
+
+    expect(change.after.id).toBe(ROUTE)
+    expect(change.delta).toMatchObject({
+      logicChanged: true,
+      effects: { added: [{ id: "db.write", target: "prisma.user.deleteMany" }] },
+    })
   })
 })

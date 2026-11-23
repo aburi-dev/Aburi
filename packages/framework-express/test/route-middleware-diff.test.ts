@@ -142,3 +142,38 @@ describe("diff — a route's middleware", () => {
     ])
   })
 })
+
+describe("diff — the methods of a .route() chain", () => {
+  const chain = (...methods: string[]) =>
+    routes(`router\n  .route("/users/:id")\n${methods.map((m) => `  .${m}`).join("\n")}`)
+
+  it.each([
+    [
+      "a guard moved to another method",
+      chain("get(getUser)", "put(requireAdmin, updateUser)", "delete(requireAdmin, deleteUser)"),
+      chain("get(requireAdmin, getUser)", "put(requireAdmin, updateUser)", "delete(deleteUser)"),
+      "ts:src/routes.ts#router__delete__$users$Zid__d0",
+      { added: ["get:requireAdmin", "delete:"], removed: ["get:", "delete:requireAdmin"] },
+    ],
+    [
+      "a method dropped",
+      chain("get(getUser)", "put(requireAdmin, updateUser)"),
+      chain("put(requireAdmin, updateUser)"),
+      "ts:src/routes.ts#router__put__$users$Zid__d0",
+      { added: [], removed: ["get:"] },
+    ],
+    [
+      "a method added",
+      chain("put(requireAdmin, updateUser)"),
+      chain("get(getUser)", "put(requireAdmin, updateUser)"),
+      "ts:src/routes.ts#router__put__$users$Zid__d0",
+      { added: ["get:"], removed: [] },
+    ],
+  ])("is a logic change for %s", async (_edit, before, after, id, middleware) => {
+    const { diff } = await diffOfEditWith(workspace, lineup, SOURCE, before, after)
+
+    const change = onlyChange(diff)
+    expect(change.after.id).toBe(id)
+    expect(change.delta).toMatchObject({ logicChanged: true, middleware })
+  })
+})

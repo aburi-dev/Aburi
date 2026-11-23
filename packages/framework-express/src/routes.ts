@@ -76,7 +76,8 @@ function eitherIsHandlerShaped(a: SyntaxNode | null, b: SyntaxNode | null): bool
 
 const ROUTE_CHAIN_METHOD = "route"
 
-function hasRouteCallUpTheChain(call: SyntaxNode): boolean {
+/** True when the registration is chained on a `.route(path)` call, which wrote its path. */
+export function hasRouteCallUpTheChain(call: SyntaxNode): boolean {
   const callee = call.childForFieldName("function")
   return (
     callee !== null &&

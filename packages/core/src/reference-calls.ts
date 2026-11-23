@@ -1,5 +1,7 @@
-import { decodeStringLiteral, isQnameSegment, type SyntaxNode, unwrapValue } from "@aburi/core"
 import type { FrameworkCall } from "@aburi/types"
+import { isQnameSegment } from "./id"
+import { decodeStringLiteral } from "./string-literal"
+import { type SyntaxNode, unwrapValue } from "./syntax-node"
 
 /**
  * A call is left out, being one the Symbol's body already makes, and so is anything a name does

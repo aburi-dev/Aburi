@@ -1,6 +1,7 @@
-import { asSyntaxNode, calleeName, type SyntaxNode } from "@aburi/core"
+import { asSyntaxNode, calleeName, referenceCalls, type SyntaxNode } from "@aburi/core"
 import type {
   Confidence,
+  FrameworkCall,
   FrameworkClassifyContext,
   OpaqueAstNode,
   SymbolCandidate,
@@ -10,7 +11,12 @@ import type { ExpressExtKind } from "./ext-kinds"
 import { EXPRESS_DERIVED_BY_PREFIX } from "./ext-kinds"
 import { hasExpressImport } from "./imports"
 import { analyzeUseArguments, EXPRESS_MIDDLEWARE_METHOD, type UseArgumentShape } from "./middleware"
-import { registrationMiddleware } from "./registration-middleware"
+import {
+  type Registration,
+  registersRoute,
+  registrationMiddleware,
+  registrationsOf,
+} from "./registration-middleware"
 import { extractRouterCall } from "./router"
 import { hasRouteArguments, isRouteMethod } from "./routes"
 
@@ -20,6 +26,7 @@ interface ExpressClassification {
   derivedBy: string
   confidence: Confidence
   middleware?: readonly string[]
+  calls?: readonly FrameworkCall[]
 }
 
 export function classifyExpressSymbol(
@@ -29,11 +36,13 @@ export function classifyExpressSymbol(
   const result = classifyBySymbolKind(symbol, ctx)
   if (result === null) return null
   const middleware = result.middleware ?? []
+  const calls = result.calls ?? []
   return {
     extKind: result.extKind,
     derivedBy: result.derivedBy,
     confidence: result.confidence,
     ...(middleware.length > 0 ? { middleware } : {}),
+    ...(calls.length > 0 ? { calls } : {}),
   }
 }
 
@@ -67,14 +76,22 @@ function classifyCallSymbol(
 ): ExpressClassification | null {
   const call = asSyntaxNode(symbol.fullNode)
   if (call === null) return null
-  const registration = classifyRegistration(call, symbol, ctx)
-  return registration === null
-    ? null
-    : { ...registration, middleware: registrationMiddleware(call) }
+  const registrations = registrationsOf(call)
+  const registration = classifyRegistration(call, registrations, symbol, ctx)
+  if (registration === null) return null
+  // Express runs every handler a registration names, so each is a call the Symbol makes and the
+  // handler's effects are the route's.
+  const handlers = registrations.flatMap((step) => step.handlers)
+  return {
+    ...registration,
+    middleware: registrationMiddleware(registrations),
+    calls: referenceCalls(handlers),
+  }
 }
 
 function classifyRegistration(
   call: SyntaxNode,
+  registrations: readonly Registration[],
   symbol: SymbolCandidate<OpaqueAstNode>,
   ctx: FrameworkClassifyContext,
 ): ExpressClassification | null {
@@ -83,9 +100,14 @@ function classifyRegistration(
   const importAnchored = hasExpressImport(ctx)
 
   if (isRouteMethod(callee.leaf) && hasRouteArguments(call)) {
+    // The method the Symbol is named after leads, then every other method its chain registers.
+    const methods = new Set([
+      callee.name,
+      ...registrations.filter(registersRoute).map((route) => route.callee.name),
+    ])
     return {
       extKind: "framework:express:route",
-      derivedBy: `${EXPRESS_DERIVED_BY_PREFIX}:route:${callee.name}`,
+      derivedBy: [...methods].map((name) => `${EXPRESS_DERIVED_BY_PREFIX}:route:${name}`).join(";"),
       confidence: importAnchored ? "high" : "medium",
     }
   }
