@@ -1,5 +1,22 @@
 # @aburi/framework-trpc
 
+## 0.3.0
+
+### Minor Changes
+
+- ea002cd: Link a procedure to what it is built on. A procedure or base procedure now calls the base procedure its chain starts from and each middleware a `.use(…)` or `.concat(…)` on its chain is handed by name or member path, so `deletePost = protectedProcedure.use(isAdmin).mutation(…)` resolves to `protectedProcedure` and `isAdmin`. An effect either one performs, such as a session read in the base procedure's middleware, is a propagated effect of the procedure, and `aburi explain` on the base procedure lists the procedures built on it under Called by. A factory call (`requireRole("admin")`, or `createProcedure("read")` at the start of the chain) was a call already, and an inline middleware, a spread and a computed member add none. Nor does a middleware composed inside the `.use(…)` (`use(isAuthed.unstable_pipe(isAdmin))`): its only call is `isAuthed.unstable_pipe`, which resolves to nothing, so the effects of `isAuthed` and `isAdmin` do not reach the procedure.
+  
+  On the pinned benchmark repositories this adds 3 calls on `trpc`, all resolved to base procedures, and 20 on `cal-com`, 18 of them resolved (11 to base procedures, 5 to middleware, 2 to middleware built with `unstable_pipe`, which the plugin does not classify); the two left unresolved name base procedures imported through a workspace package name. No fingerprint moves on either, since none of those base procedures or middleware performs an effect the scan classifies.
+  
+  A procedure that inherits an effect this way has a new `logic` fingerprint with no change to its source, so an `aburi diff` against an IR an earlier version wrote reports it as changed; one that scans both sides with this version does not. A guard removed from a base procedure is still a change to the base procedure alone: rules do not propagate.
+- b56e5d9: Name the middleware a tRPC procedure or base procedure runs: the base procedure its chain starts from, what each `.use(…)` on its own chain is handed and the builder each `.concat(…)` joins, in the order they run. Removing `.use(isAuthed)` from a procedure declared as a `const`, or building that procedure on `publicProcedure` instead of `protectedProcedure`, is now a logic change the report names (`middleware removed: isAuthed`) rather than a reformat, and swapping two is one with `reordered: true`. A procedure or base procedure that names any, every procedure built on a named base procedure among them, now carries `middleware`, so compared against an IR from an earlier version its logic fingerprint moves. `@aburi/core` exports the naming framework-express used as `middlewareNames`, and both plugins name middleware through it.
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- e794d20: Document that a procedure written inside a router's object literal, still no Symbol of its own, is walked as part of the router: its resolver's calls, rules and effects are the router's.
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.2.1
 
 ### Patch Changes

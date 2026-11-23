@@ -1,5 +1,13 @@
 # @aburi/framework-express
 
+## 0.5.2
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- b56e5d9: Name the middleware a tRPC procedure or base procedure runs: the base procedure its chain starts from, what each `.use(…)` on its own chain is handed and the builder each `.concat(…)` joins, in the order they run. Removing `.use(isAuthed)` from a procedure declared as a `const`, or building that procedure on `publicProcedure` instead of `protectedProcedure`, is now a logic change the report names (`middleware removed: isAuthed`) rather than a reformat, and swapping two is one with `reordered: true`. A procedure or base procedure that names any, every procedure built on a named base procedure among them, now carries `middleware`, so compared against an IR from an earlier version its logic fingerprint moves. `@aburi/core` exports the naming framework-express used as `middlewareNames`, and both plugins name middleware through it.
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/types@0.9.0`
+
 ## 0.5.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@aburi/plugin-process",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Aburi plugin process: drives a parser or classifier written in another language, as one long-lived process speaking JSON-RPC over stdio, from a JavaScript Aburi plugin",
   "license": "Apache-2.0",
   "author": "kage1020",

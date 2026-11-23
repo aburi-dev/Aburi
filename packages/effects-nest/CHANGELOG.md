@@ -1,5 +1,12 @@
 # @aburi/effects-nest
 
+## 0.5.2
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- Updated dependencies: `@aburi/plugin-registry@0.8.0`, `@aburi/types@0.9.0`
+
 ## 0.5.1
 
 ### Patch Changes
