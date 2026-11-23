@@ -106,6 +106,19 @@ export function resolveTarget(
   return resolveInComponentScope(ctx, trace) ?? resolveInWorkspaceScope(ctx, trace)
 }
 
+export function resolveThroughDeclaredType(
+  ctx: ResolveTargetContext,
+  type: string,
+): ResolutionHit | null {
+  const segments = splitTargetSegments(ctx.target)
+  if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
+  return resolveThroughValueOf(ctx, boundClass(ctx, type))
+}
+
+export function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+  return resolveThroughValueOf(ctx, importedValueClassOf(ctx))
+}
+
 // A language plugin reads one file at a time, so it types no call through a variable another module
 // declares: that module's declaration gives the type, its name bound there.
 export function importedValueClassOf(ctx: ResolveTargetContext): IRSymbol | null {
@@ -167,8 +180,11 @@ function instanceMemberOf(
 
 // `super` names the class the caller's class extends, which no subclass replaces: `super(…)`
 // constructs it, and `super.<member>` reads its prototype, where a field is not.
-export function resolveThroughSuper(ctx: ResolveTargetContext, type: string): ResolutionHit | null {
-  const segments = splitTargetSegments(ctx.target)
+function resolveThroughSuper(
+  ctx: ResolveTargetContext,
+  type: string,
+  segments: readonly string[],
+): ResolutionHit | null {
   const extended = boundClass(ctx, type)
   if (segments.length === 1) {
     return extended !== null && ctx.run.table.keptSymbolIds.has(extended.id)

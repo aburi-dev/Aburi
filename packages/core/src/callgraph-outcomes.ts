@@ -20,7 +20,8 @@ import {
   type ResolveTargetContext,
   resolveReference,
   resolveTarget,
-  resolveThroughSuper,
+  resolveThroughDeclaredType,
+  resolveThroughImportedValue,
   resolveThroughValueOf,
   splitTargetSegments,
 } from "./callgraph-scopes"
@@ -85,13 +86,15 @@ export class CallResolver {
   }
 
   #resolve(symbol: IRSymbol, call: Call, key: string): CallOutcome {
-    const { run } = this.#input
+    const { run, declaredReceiverTypes, importedReceivers, receiverCalls } = this.#input
     const trace = newTrace()
     const ctx = this.#contextOf(symbol, call)
     const declaredType = (): ResolutionHit | null => {
-      const type = this.#input.declaredReceiverTypes.get(key)
-      if (type !== undefined && isThroughSuper(call.target)) return resolveThroughSuper(ctx, type)
-      return resolveThroughValueOf(ctx, this.#receiverClassOf(symbol, call))
+      const type = declaredReceiverTypes.get(key)
+      if (type !== undefined) return resolveThroughDeclaredType(ctx, type)
+      if (importedReceivers.has(key)) return resolveThroughImportedValue(ctx)
+      const site = receiverCalls.get(key)
+      return site === undefined ? null : resolveThroughValueOf(ctx, this.#classReturnedAt(site))
     }
     // A type the source declares, a receiver's, `super`'s, an imported variable's or a call's
     // result's, is the untyped tier's, so a language server only lifts what it leaves. For
