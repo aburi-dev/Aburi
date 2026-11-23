@@ -1,5 +1,5 @@
 import { symbolId } from "@aburi/test-support"
-import type { Symbol as IRSymbol } from "@aburi/types"
+import type { Symbol as IRSymbol, UnresolvedCallBucket } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { makeCallSiteKey, makeSymbolCallKey, type ReturnSource } from "../src/call-site"
 import { resolveCallGraph } from "../src/callgraph"
@@ -26,6 +26,8 @@ interface Setup {
   imports?: ImportClause[]
   /** What `src/make.ts` imports. */
   makeImports?: ImportClause[]
+  /** By target: the Symbol a call `main` writes was resolved to before the resolver ran. */
+  resolvedBefore?: Readonly<Record<string, string>>
 }
 
 const box = [
@@ -42,11 +44,13 @@ function resolve(setup: Setup = {}) {
   ]
   return resolveCallGraph({
     symbols: [
-      withCalls(
-        CALLER,
-        calls.map(([target, line]) => ({ target, line })),
-        setup.caller,
-      ),
+      makeSymbol(CALLER, {
+        calls: calls.map(([target, line]) => {
+          const before = setup.resolvedBefore?.[target]
+          return { target, line, resolved: before === undefined ? null : symbolId(before) }
+        }),
+        ...setup.caller,
+      }),
       makeSymbol(MAKE, { kind: "function", ...setup.make }),
       ...box,
       ...(setup.symbols ?? []),
@@ -57,6 +61,12 @@ function resolve(setup: Setup = {}) {
     ]),
     returnSources: new Map(
       (setup.returns ?? [[MAKE, { type: "Box" }]]).map(([id, source]) => [symbolId(id), source]),
+    ),
+    // The plugin marks a receiver that is a call's result as an expression.
+    dynamicCallSites: new Set(
+      calls.flatMap(([target, line, receiver]) =>
+        receiver === undefined ? [] : [makeCallSiteKey("src/use.ts", line, target)],
+      ),
     ),
     receiverCalls: new Map(
       calls.flatMap(([target, line, receiver]) =>
@@ -121,14 +131,42 @@ describe("a call through what another call gave back", () => {
       },
       "make.with.run",
     ],
+    [
+      "a method that gives back `this`, its receiver the class the call before it gives back",
+      {
+        calls: [
+          ["make", 2],
+          ["make.with", 2, ["make", 2]],
+          ["make.with.run", 2, ["make.with", 2]],
+        ],
+        returns: [
+          [MAKE, { type: "Box" }],
+          ["ts:src/box.ts#Box.with", { self: true }],
+        ],
+      },
+      "make.with.run",
+    ],
+    [
+      "a receiver call resolved before the resolver ran",
+      { resolvedBefore: { make: MAKE } },
+      "make.run",
+    ],
   ])("resolves to the class's member, through %s, at medium confidence", (_c, setup, target) => {
     expect(resolvedTo(resolve(setup), target)).toEqual({ resolved: RUN, confidence: "medium" })
   })
 
-  it.each<[string, Setup]>([
-    ["a callee that names nothing it gives back", { returns: [] }],
-    ["a type the callee's file binds to no class", { returns: [[MAKE, { type: "Missing" }]] }],
-    ["a type only the caller's file binds", { imports: [FROM_MAKE, FROM_BOX], makeImports: [] }],
+  it.each<[string, Setup, UnresolvedCallBucket]>([
+    ["a callee that names nothing it gives back", { returns: [] }, "dynamic"],
+    [
+      "a type the callee's file binds to no class",
+      { returns: [[MAKE, { type: "Missing" }]] },
+      "dynamic",
+    ],
+    [
+      "a type only the caller's file binds",
+      { imports: [FROM_MAKE, FROM_BOX], makeImports: [] },
+      "dynamic",
+    ],
     [
       "a member the class does not declare",
       {
@@ -137,18 +175,7 @@ describe("a call through what another call gave back", () => {
           ["make.stop", 2, ["make", 2]],
         ],
       },
-    ],
-    [
-      "a callee found only by its name, in another component",
-      {
-        calls: [
-          ["Factory.make", 2],
-          ["Factory.make.run", 2, ["Factory.make", 2]],
-        ],
-        caller: { component: "billing" },
-        returns: [[FACTORY_MAKE, { type: "Box" }]],
-        symbols: [makeSymbol(FACTORY_MAKE, { kind: "method", component: "api" })],
-      },
+      "external",
     ],
     [
       "two calls written alike on one line, either of which the receiver may be",
@@ -159,6 +186,7 @@ describe("a call through what another call gave back", () => {
           ["make.run", 2, ["make", 2]],
         ],
       },
+      "dynamic",
     ],
     [
       "a callee whose return comes round to itself",
@@ -166,13 +194,44 @@ describe("a call through what another call gave back", () => {
         make: { calls: [{ target: "make", line: 5, resolved: null }] },
         returns: [[MAKE, { callSite: makeCallSiteKey("src/make.ts", 5, "make") }]],
       },
+      "dynamic",
     ],
-  ])("leaves the call unresolved for %s", (_case, setup) => {
+    [
+      "a callee that gives back `this`, called on no receiver",
+      { returns: [[MAKE, { self: true }]] },
+      "dynamic",
+    ],
+    [
+      "a variable naming a function that gives back `this`",
+      {
+        make: { kind: "const" },
+        returns: [
+          [MAKE, { reference: "build" }],
+          [BUILD, { self: true }],
+        ],
+        symbols: [makeSymbol(BUILD, { kind: "function" })],
+      },
+      "dynamic",
+    ],
+  ])("leaves the call unresolved, bucketed as before, for %s", (_case, setup, bucket) => {
     const result = resolve(setup)
-    const call = result.symbols[0]?.calls.find(
-      (c) => c.target.endsWith(".run") || c.target.endsWith(".stop"),
-    )
-    expect(call?.resolved).toBeNull()
+    const outer = (target: string) => target.endsWith(".run") || target.endsWith(".stop")
+    expect(result.symbols[0]?.calls.find((c) => outer(c.target))?.resolved).toBeNull()
+    expect(result.diagnostics.filter((d) => outer(d.target)).map((d) => d.bucket)).toEqual([bucket])
+  })
+
+  it("leaves the call unresolved through a callee found only by its name, in another component", () => {
+    const result = resolve({
+      calls: [
+        ["Factory.make", 2],
+        ["Factory.make.run", 2, ["Factory.make", 2]],
+      ],
+      caller: { component: "billing" },
+      returns: [[FACTORY_MAKE, { type: "Box" }]],
+      symbols: [makeSymbol(FACTORY_MAKE, { kind: "method", component: "api" })],
+    })
+    expect(result.edges.map((edge) => [edge.to, edge.confidence])).toEqual([[FACTORY_MAKE, "low"]])
+    expect(result.symbols[0]?.calls.map((call) => call.resolved)).toEqual([FACTORY_MAKE, null])
   })
 
   it("leaves receivers unresolved that each name the other's call", () => {

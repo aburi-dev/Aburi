@@ -106,35 +106,24 @@ export function resolveTarget(
   return resolveInComponentScope(ctx, trace) ?? resolveInWorkspaceScope(ctx, trace)
 }
 
-export function resolveThroughDeclaredType(
-  ctx: ResolveTargetContext,
-  type: string,
-): ResolutionHit | null {
-  const segments = splitTargetSegments(ctx.target)
-  if (segments[0] === "super") return resolveThroughSuper(ctx, type, segments)
-  const member = segments.at(-1)
-  if (segments.length < 2 || member === undefined) return null
-  return instanceMemberOf(ctx.run, boundClass(ctx, type), member)
-}
-
 // A language plugin reads one file at a time, so it types no call through a variable another module
 // declares: that module's declaration gives the type, its name bound there.
-export function resolveThroughImportedValue(ctx: ResolveTargetContext): ResolutionHit | null {
+export function importedValueClassOf(ctx: ResolveTargetContext): IRSymbol | null {
   if (ctx.run.valueTypes.size === 0) return null
   const segments = splitTargetSegments(ctx.target)
-  const member = segments.at(-1)
   const [head, ...rest] = segments.slice(0, -1)
-  if (head === undefined || member === undefined) return null
+  if (head === undefined) return null
   const reach = { ...ctx, reachable: ctx.run.table.allById }
   const id = resolveInImportScope(reach, head, rest, newTrace())?.hit?.id
   const variable = id === undefined ? undefined : ctx.run.table.allById.get(id)
   const type = id === undefined ? undefined : ctx.run.valueTypes.get(id)
   if (variable === undefined || type === undefined) return null
-  return instanceMemberOf(ctx.run, boundClassWhere(ctx.run, variable, type), member)
+  return boundClassWhere(ctx.run, variable, type)
 }
 
-// What a call gave back is a value of the class its callee declares, or of a subclass.
-export function resolveThroughReturnedClass(
+// A value of the class, or of a subclass whose override may run instead, reaches the member the
+// class declares or inherits.
+export function resolveThroughValueOf(
   ctx: ResolveTargetContext,
   owner: IRSymbol | null,
 ): ResolutionHit | null {
@@ -178,11 +167,8 @@ function instanceMemberOf(
 
 // `super` names the class the caller's class extends, which no subclass replaces: `super(…)`
 // constructs it, and `super.<member>` reads its prototype, where a field is not.
-function resolveThroughSuper(
-  ctx: ResolveTargetContext,
-  type: string,
-  segments: readonly string[],
-): ResolutionHit | null {
+export function resolveThroughSuper(ctx: ResolveTargetContext, type: string): ResolutionHit | null {
+  const segments = splitTargetSegments(ctx.target)
   const extended = boundClass(ctx, type)
   if (segments.length === 1) {
     return extended !== null && ctx.run.table.keptSymbolIds.has(extended.id)
@@ -238,7 +224,7 @@ function isHeldByField(member: IRSymbol): boolean {
 
 // Not component or workspace scope: matching a type by its spelling could only find a namesake. A
 // drop rule keeps a class out of `resolved`, not out of what its name means or what it inherits.
-function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
+export function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
   const [head, ...tail] = splitTargetSegments(type)
   if (head === undefined) return null
   const typeCtx = { ...ctx, target: type, reachable: ctx.run.table.allById }

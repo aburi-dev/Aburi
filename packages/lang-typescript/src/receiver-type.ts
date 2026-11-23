@@ -1,4 +1,4 @@
-import type { ThisBinding } from "@aburi/types"
+import type { ReturnedValue, ThisBinding } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
 import { isParameterProperty } from "./class-members"
@@ -72,18 +72,20 @@ export function referenceOf(declarator: Node): string | null {
   return moduleClassName(value)
 }
 
-// What a function's annotation says a call of it gives back: `this` is the class of an instance
-// member, and any other type is the one the module binds under its name.
-export function returnAnnotationType(fn: Node): string | null {
+// What a function's annotation says a call of it gives back: `this` is the receiver of an instance
+// member, whatever class it is a value of, and any other type is the one the module binds under its
+// name.
+export function returnAnnotationOf(fn: Node): ReturnedValue | null {
   const annotation = fn.childForFieldName("return_type")
-  const type = annotation === null ? null : firstNonCommentChild(annotation)
-  if (annotation === null || type === null) return null
+  const written = annotation === null ? null : firstNonCommentChild(annotation)
+  if (annotation === null || written === null) return null
+  const type = withoutNullish(written)
   if (type.type === "this_type") {
     const body = fn.childForFieldName("body")
-    return body === null ? null : instanceClassOf(body)
+    return body !== null && instanceClassOf(body) !== null ? { self: true } : null
   }
-  const name = typeName(withoutNullish(type))
-  return name === null || isShadowed(annotation, headOf(name)) ? null : name
+  const name = typeName(type)
+  return name === null || isShadowed(annotation, headOf(name)) ? null : { type: name }
 }
 
 function annotatedType(declaration: Node): string | null {

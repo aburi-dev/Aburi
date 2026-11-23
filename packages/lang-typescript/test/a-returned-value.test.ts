@@ -29,13 +29,19 @@ describe("a function names what a call of it gives back", () => {
       "`this`, in an instance member",
       "export class B {\n  m(): this { return this }\n}",
       M,
-      { type: "B" },
+      { self: true },
     ],
     [
-      "`return this`, in an instance member",
-      "export class B {\n  m() { return this }\n}",
+      "`this` that may be `null`, in an instance member",
+      "export class B {\n  m(): this | null { return null }\n}",
       M,
-      { type: "B" },
+      { self: true },
+    ],
+    [
+      "`return this`, in an instance member, on every path",
+      "export class B {\n  m() {\n    if (a) return this\n    return this\n  }\n}",
+      M,
+      { self: true },
     ],
     [
       "the class every `return` constructs, a bare one aside",
@@ -85,14 +91,32 @@ describe("a function names what a call of it gives back", () => {
       F,
       { type: "Manager" },
     ],
+    [
+      "a method's overloads that all name one type",
+      "export class B {\n  m(a: string): Manager\n  m(a: number): Manager\n  m(a: unknown) { return make(a) }\n}",
+      M,
+      { type: "Manager" },
+    ],
   ])("for %s", async (_label, source, id, returns) => {
     expect((await symbolOf(source, id)).returns).toEqual(returns)
   })
 
   it.each([
     ["an `async` function", "export async function f() { return new Manager() }", F],
-    ["a generator", "export class B {\n  *m() { return this }\n}", M],
-    ["an accessor", "export class B {\n  get m() { return new B() }\n}", M],
+    ["a generator method", "export class B {\n  *m() { return this }\n}", M],
+    ["a generator function", "export function* f() { return new Manager() }", F],
+    ["a getter", "export class B {\n  get m() { return new B() }\n}", M],
+    ["a setter", "export class B {\n  set m(v: B) { return new B() }\n}", M],
+    [
+      "`this` on one path and a class on another",
+      "export class B {\n  m() {\n    if (a) return this\n    return new B()\n  }\n}",
+      M,
+    ],
+    [
+      "a `return` only a callback, a function or a class in the body writes",
+      "export function f() {\n  list.map(() => { return new B() })\n  function g() { return new B() }\n  class C { m() { return new B() } }\n}",
+      F,
+    ],
     [
       "two classes",
       "export class B {}\nexport class C {}\nexport function f() {\n  if (a) return new B()\n  return new C()\n}",
@@ -107,6 +131,12 @@ describe("a function names what a call of it gives back", () => {
       "ts:src/a.ts#o.f",
     ],
     ["a type parameter", "export function f<T>(): T { return make() }", F],
+    ["a class's type parameter", "export class B<T> {\n  m(): T { return make() }\n}", M],
+    [
+      "a method's overloads that name two types",
+      "export class B {\n  m(a: string): Manager\n  m(a: number): Other\n  m(a: unknown) { return make(a) }\n}",
+      M,
+    ],
     [
       "overloads that name two types",
       "export function f(a: string): Manager\nexport function f(a: number): Other\nexport function f(a: unknown) { return make(a) }",

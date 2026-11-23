@@ -20,6 +20,7 @@ describe("a call marks a leading name no scope around it declares", () => {
     ["a name nothing declares", inF("  describe()"), "describe"],
     ["a global behind a non-null assertion", inF("  process!.exit()"), "process!.exit"],
     ["a global in parentheses", inF("  (window as any).close()"), "window.close"],
+    ["CommonJS's `require` called itself", inF('  require("./util")'), "require"],
   ])("marks %s", async (_label, source, target) => {
     expect(await unboundOf(source, target)).toBe(true)
   })
@@ -36,6 +37,36 @@ describe("a call marks a leading name no scope around it declares", () => {
       "later.run",
     ],
     ["a declared global", withF(["declare const env: Env"], "  env.read()"), "env.read"],
+    [
+      "a global the module declares",
+      withF(["declare global { const env: Env }"], "  env.read()"),
+      "env.read",
+    ],
+    [
+      "a global `var` the module declares",
+      withF(["declare global { var app: App }"], "  app.run()"),
+      "app.run",
+    ],
+    [
+      "a function the module declares after it",
+      [inF("  later()"), "function later() {}"].join("\n"),
+      "later",
+    ],
+    ["a class of the module", withF(["class Repo {}"], "  Repo.make()"), "Repo.make"],
+    ["an enum of the module", withF(["enum Kind { A }"], "  Kind.parse()"), "Kind.parse"],
+    [
+      "a namespace of the module",
+      withF(["namespace ns { export function g() {} }"], "  ns.g()"),
+      "ns.g",
+    ],
+    [
+      "a type-only import",
+      withF(['import type { Repo } from "./repo"'], "  Repo.make()"),
+      "Repo.make",
+    ],
+    ["CommonJS's `exports`", inF("  exports.run()"), "exports.run"],
+    ["CommonJS's `module`", inF("  module.exports.run()"), "module.exports.run"],
+    ["a module `require` gives back", inF('  require("./util").helper()'), "require.helper"],
   ])("leaves it unmarked where %s binds the name", async (_label, source, target) => {
     expect(await unboundOf(source, target)).toBeUndefined()
   })

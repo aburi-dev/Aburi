@@ -46,6 +46,8 @@ export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCa
   if (input.trace.parameterShadow) {
     return { ...base, bucket: "local-scope", candidates: [] }
   }
+  // Neither a receiver the resolver could name nor a choice between candidates would reach a callee
+  // no declaration has.
   if (isOutOfReach(input)) {
     return { ...base, bucket: "external", candidates: [] }
   }
@@ -64,8 +66,13 @@ export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCa
 
 const NOWHERE = (): boolean => false
 
-// No declaration the scan read can be the callee: a package's, a global's, or a member nothing in
-// the workspace names, whatever the receiver holds.
+// A plugin outside the tree may mark any head, but `this`, `super` and a computed segment are
+// receivers the scan cannot name, never a global.
+const RECEIVER_HEADS: ReadonlySet<string> = new Set(["this", "super", COMPUTED_TARGET_SEGMENT])
+
+// Through a function's own `call` and `apply` the function itself runs.
+const INVOKING_MEMBERS: ReadonlySet<string> = new Set(["call", "apply"])
+
 function isOutOfReach(input: ClassifyUnresolvedInput): boolean {
   if (input.trace.reexportedFromOutside) return true
   if (bindsToExternalImport(input.target, input.imports, input.reachesWorkspace ?? NOWHERE)) {
@@ -73,11 +80,23 @@ function isOutOfReach(input: ClassifyUnresolvedInput): boolean {
   }
   const { names } = input
   if (names === undefined) return false
-  const segments = splitTargetSegments(input.target)
+  const segments = splitTargetSegments(input.target).map((segment) => segment.replace(/!+$/, ""))
   const [head] = segments
-  if (input.unboundHead === true && head !== undefined && !names.leading.has(head)) return true
-  const member = segments.length > 1 ? segments.at(-1)?.replace(/!$/, "") : undefined
-  return member !== undefined && member !== COMPUTED_TARGET_SEGMENT && !names.last.has(member)
+  if (
+    input.unboundHead === true &&
+    head !== undefined &&
+    !RECEIVER_HEADS.has(head) &&
+    !names.leading.has(head)
+  ) {
+    return true
+  }
+  const member = segments.length > 1 ? segments.at(-1) : undefined
+  return (
+    member !== undefined &&
+    member !== COMPUTED_TARGET_SEGMENT &&
+    !INVOKING_MEMBERS.has(member) &&
+    !names.last.has(member)
+  )
 }
 
 export function workspaceNamesOf(

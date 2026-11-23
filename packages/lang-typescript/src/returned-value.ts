@@ -7,7 +7,7 @@ import {
   initializingCall,
   instanceClassOf,
   nameTypeOf,
-  returnAnnotationType,
+  returnAnnotationOf,
 } from "./receiver-type"
 
 const FUNCTIONS: ReadonlySet<string> = new Set([
@@ -37,15 +37,21 @@ export function returnedValueOf(candidate: SymbolCandidate<Node>): ReturnedValue
   ]
   // A caller sees only the overloads, never the signature their implementation is written with.
   const overloads = declarations.filter((node) => SIGNATURES.has(node.type))
-  if (overloads.length > 0) return sameAnnotatedType(overloads)
+  if (overloads.length > 0) return sameReturned(overloads.map(returnAnnotationOf))
   const [fn, ...others] = declarations.filter((node) => FUNCTIONS.has(node.type))
   return fn === undefined || others.length > 0 ? null : returnedByFunction(fn)
 }
 
-function sameAnnotatedType(signatures: readonly Node[]): ReturnedValue | null {
-  const types = new Set(signatures.map(returnAnnotationType))
-  const [type, ...others] = types
-  return typeof type === "string" && others.length === 0 ? { type } : null
+// A call gives back one value only where every way the function returns names the same one.
+function sameReturned(values: readonly (ReturnedValue | null)[]): ReturnedValue | null {
+  const [first, ...others] = values
+  if (first === undefined || first === null) return null
+  return others.every((value) => value !== null && sameValue(value, first)) ? first : null
+}
+
+function sameValue(a: ReturnedValue, b: ReturnedValue): boolean {
+  if (a.self === true || b.self === true) return a.self === b.self
+  return a.type !== undefined && a.type === b.type
 }
 
 // An `async` function gives back a promise, a generator an iterator, and an accessor's call is a
@@ -54,10 +60,7 @@ function returnedByFunction(fn: Node): ReturnedValue | null {
   if (hasChildOfType(fn, "async") || hasChildOfType(fn, "*")) return null
   if (["get", "set"].some((keyword) => hasChildOfType(fn, keyword))) return null
   if (fn.childForFieldName("name")?.text === "constructor") return null
-  if (fn.childForFieldName("return_type") !== null) {
-    const type = returnAnnotationType(fn)
-    return type === null ? null : { type }
-  }
+  if (fn.childForFieldName("return_type") !== null) return returnAnnotationOf(fn)
   const body = fn.childForFieldName("body")
   if (body === null) return null
   return body.type === "statement_block" ? returnedByBlock(body) : returnedByValue(body)
@@ -67,9 +70,7 @@ function returnedByFunction(fn: Node): ReturnedValue | null {
 function returnedByBlock(body: Node): ReturnedValue | null {
   const values = returnedValues(body).filter((value) => !isNullish(value))
   if (values.length === 1 && values[0] !== undefined) return returnedByValue(values[0])
-  const types = new Set(values.map(typeOf))
-  const [type, ...others] = types
-  return typeof type === "string" && others.length === 0 ? { type } : null
+  return sameReturned(values.map(returnedInstance))
 }
 
 function returnedByValue(written: Node): ReturnedValue | null {
@@ -80,22 +81,20 @@ function returnedByValue(written: Node): ReturnedValue | null {
     const site = callSiteOf(call)
     return site === null ? null : { call: site }
   }
-  const type = typeOf(value)
-  return type === null ? null : { type }
+  return returnedInstance(value)
 }
 
-function typeOf(written: Node): string | null {
+// `this` in an instance member is the receiver, a value of the class or of a subclass.
+function returnedInstance(written: Node): ReturnedValue | null {
   const value = throughParentheses(written)
-  switch (value.type) {
-    case "this":
-      return instanceClassOf(value)
-    case "new_expression":
-      return constructedClass(value)
-    case "identifier":
-      return nameTypeOf(value)
-    default:
-      return null
-  }
+  if (value.type === "this") return instanceClassOf(value) === null ? null : { self: true }
+  const type =
+    value.type === "new_expression"
+      ? constructedClass(value)
+      : value.type === "identifier"
+        ? nameTypeOf(value)
+        : null
+  return type === null ? null : { type }
 }
 
 function returnedValues(body: Node): Node[] {

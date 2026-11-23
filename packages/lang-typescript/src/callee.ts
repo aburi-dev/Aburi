@@ -51,9 +51,15 @@ function receiverCallOf(callee: Node): CallSiteRef | null {
   return call === null ? null : callSiteOf(call)
 }
 
+// CommonJS hands each module its own `module` and `exports`, and `require(…)` gives back another
+// module's exports, any of which may be the workspace's.
+const MODULE_WRAPPER_NAMES: ReadonlySet<string> = new Set(["module", "exports"])
+
 function isUnboundHead(callee: Node): boolean {
   const head = leadingName(callee)
-  return head !== null && bindingOf(head, head.text) === null
+  if (head === null || bindingOf(head, head.text) !== null) return false
+  if (MODULE_WRAPPER_NAMES.has(head.text)) return false
+  return head.text !== "require" || head.id === callee.id
 }
 
 // The name the target spells first, read down the chain as `describeCallee` reads it.

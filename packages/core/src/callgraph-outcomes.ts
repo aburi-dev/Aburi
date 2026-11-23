@@ -9,17 +9,19 @@ import {
   receiverHead,
 } from "./call-site"
 import {
+  boundClass,
   boundClassWhere,
   collectParameterNames,
+  importedValueClassOf,
   newTrace,
   type ResolutionHit,
   type ResolutionRun,
   type ResolutionTrace,
+  type ResolveTargetContext,
   resolveReference,
   resolveTarget,
-  resolveThroughDeclaredType,
-  resolveThroughImportedValue,
-  resolveThroughReturnedClass,
+  resolveThroughSuper,
+  resolveThroughValueOf,
   splitTargetSegments,
 } from "./callgraph-scopes"
 import type { ReceiverHint } from "./lsp/enrich"
@@ -33,7 +35,7 @@ export type LspHintOutcome =
 export interface CallOutcome {
   readonly hit: ResolutionHit | null
   readonly trace: ResolutionTrace
-  /** The language server's hint, read where the untyped tier left the call unresolved. */
+  /** The language server's hint, where the resolver read one. */
   readonly hinted: LspHintOutcome | null
 }
 
@@ -61,6 +63,7 @@ export class CallResolver {
   readonly #outcomes = new Map<string, CallOutcome>()
   readonly #pending = new Set<string>()
   readonly #parameterNames = new Map<SymbolId, ReadonlySet<string>>()
+  readonly #receiverClasses = new Map<string, IRSymbol | null>()
   readonly #returnedClasses = new Map<SymbolId, IRSymbol | null>()
   #sites: ReadonlyMap<string, WrittenCall | null> | null = null
 
@@ -72,6 +75,8 @@ export class CallResolver {
     const key = makeSymbolCallKey(symbol.id, call.line, call.target)
     const known = this.#outcomes.get(key)
     if (known !== undefined) return known
+    // A receiver that comes round to the call itself has no class to end at.
+    if (this.#pending.has(key)) return { hit: null, trace: newTrace(), hinted: null }
     this.#pending.add(key)
     const outcome = this.#resolve(symbol, call, key)
     this.#pending.delete(key)
@@ -80,23 +85,13 @@ export class CallResolver {
   }
 
   #resolve(symbol: IRSymbol, call: Call, key: string): CallOutcome {
-    const { run, declaredReceiverTypes, importedReceivers, receiverCalls } = this.#input
+    const { run } = this.#input
     const trace = newTrace()
-    const ctx = {
-      run,
-      caller: symbol,
-      target: call.target,
-      imports: run.importsByFile.get(symbol.source.file) ?? [],
-      parameterNames: this.#parametersOf(symbol),
-    }
+    const ctx = this.#contextOf(symbol, call)
     const declaredType = (): ResolutionHit | null => {
-      const type = declaredReceiverTypes.get(key)
-      if (type !== undefined) return resolveThroughDeclaredType(ctx, type)
-      if (importedReceivers.has(key)) return resolveThroughImportedValue(ctx)
-      const site = receiverCalls.get(key)
-      return site === undefined
-        ? null
-        : resolveThroughReturnedClass(ctx, this.#classReturnedAt(site))
+      const type = this.#input.declaredReceiverTypes.get(key)
+      if (type !== undefined && isThroughSuper(call.target)) return resolveThroughSuper(ctx, type)
+      return resolveThroughValueOf(ctx, this.#receiverClassOf(symbol, call))
     }
     // A type the source declares, a receiver's, `super`'s, an imported variable's or a call's
     // result's, is the untyped tier's, so a language server only lifts what it leaves. For
@@ -114,6 +109,37 @@ export class CallResolver {
     return { hit: throughThis ? declaredType() : null, trace, hinted }
   }
 
+  #contextOf(symbol: IRSymbol, call: Call): ResolveTargetContext {
+    const { run } = this.#input
+    return {
+      run,
+      caller: symbol,
+      target: call.target,
+      imports: run.importsByFile.get(symbol.source.file) ?? [],
+      parameterNames: this.#parametersOf(symbol),
+    }
+  }
+
+  // The class of the value the receiver holds, where the source says: a type it is declared with,
+  // an imported variable's, or what the call it is the result of gives back.
+  #receiverClassOf(symbol: IRSymbol, call: Call): IRSymbol | null {
+    const key = makeSymbolCallKey(symbol.id, call.line, call.target)
+    const known = this.#receiverClasses.get(key)
+    if (known !== undefined) return known
+    // Calls resolved before the resolver ran can name each other as receivers with nothing between.
+    this.#receiverClasses.set(key, null)
+    const { declaredReceiverTypes, importedReceivers, receiverCalls } = this.#input
+    const ctx = this.#contextOf(symbol, call)
+    const type = declaredReceiverTypes.get(key)
+    const site = receiverCalls.get(key)
+    let owner: IRSymbol | null = null
+    if (type !== undefined) owner = isThroughSuper(call.target) ? null : boundClass(ctx, type)
+    else if (importedReceivers.has(key)) owner = importedValueClassOf(ctx)
+    else if (site !== undefined) owner = this.#classReturnedAt(site)
+    this.#receiverClasses.set(key, owner)
+    return owner
+  }
+
   #parametersOf(symbol: IRSymbol): ReadonlySet<string> {
     const known = this.#parameterNames.get(symbol.id)
     if (known !== undefined) return known
@@ -122,14 +148,23 @@ export class CallResolver {
     return names
   }
 
-  // A low-confidence callee is a namesake by spelling, whose return says nothing of the call's.
+  // A method that gives back `this` gives back its receiver, whose class the call was made through.
   #classReturnedAt(site: string): IRSymbol | null {
     const written = this.#sitesByKey().get(site)
-    if (written == null || written.call.resolved !== null) return null
+    if (written == null) return null
     const { symbol, call } = written
-    if (this.#pending.has(makeSymbolCallKey(symbol.id, call.line, call.target))) return null
+    const callee = this.#calleeOf(symbol, call)
+    if (callee === null) return null
+    const source = this.#input.returnSources.get(callee)
+    if (source !== undefined && "self" in source) return this.#receiverClassOf(symbol, call)
+    return this.#classReturnedBy(callee)
+  }
+
+  // A low-confidence callee is a namesake by spelling, whose return says nothing of the call's.
+  #calleeOf(symbol: IRSymbol, call: Call): SymbolId | null {
+    if (call.resolved !== null) return call.resolved
     const hit = this.outcomeOf(symbol, call).hit
-    return hit === null || hit.confidence === "low" ? null : this.#classReturnedBy(hit.id)
+    return hit === null || hit.confidence === "low" ? null : hit.id
   }
 
   // Each function names one source, so a chain that comes round again has no class to end at.
@@ -145,10 +180,12 @@ export class CallResolver {
     return owner
   }
 
+  // Reached by name rather than through a call, a method that gives back `this` has no receiver.
   #classOfSource(callee: IRSymbol, source: ReturnSource): IRSymbol | null {
     const { run } = this.#input
     if ("type" in source) return boundClassWhere(run, callee, source.type)
     if ("callSite" in source) return this.#classReturnedAt(source.callSite)
+    if ("self" in source) return null
     const hit = resolveReference(run, callee, source.reference)
     return hit === null || hit.confidence === "low" ? null : this.#classReturnedBy(hit.id)
   }
@@ -166,6 +203,10 @@ export class CallResolver {
     this.#sites = sites
     return sites
   }
+}
+
+function isThroughSuper(target: string): boolean {
+  return splitTargetSegments(target)[0] === "super"
 }
 
 function isThisMember(target: string): boolean {

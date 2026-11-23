@@ -875,6 +875,68 @@ describe("scan — a call through what another call gave back", () => {
   })
 })
 
+describe("scan — a call through a method that gives back `this`", () => {
+  it("reaches the member of the receiver's own class, an override included", async () => {
+    const result = await callsFromMain(
+      {
+        "src/base.ts": [
+          "export class Base {",
+          "  with(n: number): this { return this }",
+          "  chain(n: number) { return this }",
+          "  save() { return 1 }",
+          "}",
+          "export class Sub extends Base {",
+          "  save() { return 2 }",
+          "  only() { return 3 }",
+          "}",
+          "export function makeSub() { return new Sub() }",
+          "export const sub: Sub = new Sub()",
+          "",
+        ].join("\n"),
+      },
+      ['import { Base, makeSub, Sub, sub } from "./base"'],
+      [
+        "sub.chain(1).save()",
+        "new Sub().with(1).save()",
+        "makeSub().with(1).save()",
+        "makeSub().with(1).only()",
+        "new Base().with(1).chain(2).save()",
+      ],
+    )
+    const SUB_SAVE = "ts:src/base.ts#Sub.save"
+    expect(result.resolved?.filter(([target]) => /\.(save|only)$/.test(target ?? ""))).toEqual([
+      ["sub.chain.save", SUB_SAVE],
+      ["<computed>.with.save", SUB_SAVE],
+      ["makeSub.with.save", SUB_SAVE],
+      ["makeSub.with.only", "ts:src/base.ts#Sub.only"],
+      ["<computed>.with.chain.save", "ts:src/base.ts#Base.save"],
+    ])
+  })
+
+  it("reaches the override from a member of the subclass that calls through `this`", async () => {
+    await workspace.writeSource(
+      "src/base.ts",
+      [
+        "export class Base {",
+        "  with(n: number): this { return this }",
+        "  save() { return 1 }",
+        "}",
+        "export class Sub extends Base {",
+        "  save() { return 2 }",
+        "  again() { return this.with(1).save() }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    const { ir } = await scanTypeScript(workspace.root)
+    const again = ir.symbols.find((s) => s.id === "ts:src/base.ts#Sub.again")
+    expect(again?.calls.map((c) => [c.target, c.resolved])).toEqual([
+      ["this.with.save", "ts:src/base.ts#Sub.save"],
+      ["this.with", "ts:src/base.ts#Base.with"],
+    ])
+  })
+})
+
 describe("scan — a call no declaration the scan read can be the callee of", () => {
   it("buckets a global's call and a member nothing in the workspace names `external`", async () => {
     const result = await callsFromMain(

@@ -342,25 +342,42 @@ function valueTypeOf(candidate: SymbolCandidate<OpaqueAstNode>): ValueTypeEntry[
   return variable && typeof valueType === "string" ? [[id, valueType]] : []
 }
 
-// A function says what its call gives back by a type or a call, a variable by the name it holds.
+// A plugin outside the tree may write anything, and a value with two sources names neither.
 function returnSourceOf(
   candidate: SymbolCandidate<OpaqueAstNode>,
   file: string,
 ): ReturnSourceEntry[] {
   const { id, kind, returns } = candidate
   if (typeof returns !== "object" || returns === null) return []
-  const source = returnSourceFrom(returns, kind === "const" || kind === "variable", file)
+  const source = returnSourceFrom(returns, kind, file)
   return source === null ? [] : [[id, source]]
 }
 
-function returnSourceFrom(returns: object, variable: boolean, file: string): ReturnSource | null {
-  if (variable) {
-    const reference = "reference" in returns ? returns.reference : undefined
-    return isName(reference) ? { reference } : null
+const RETURN_SOURCE_KEYS = ["type", "call", "reference", "self"] as const
+
+function returnSourceFrom(returns: object, kind: string, file: string): ReturnSource | null {
+  const written = RETURN_SOURCE_KEYS.filter(
+    (key) => key in returns && Reflect.get(returns, key) !== undefined,
+  )
+  const [key, ...others] = written
+  if (key === undefined || others.length > 0) return null
+  const value: unknown = Reflect.get(returns, key)
+  if (kind === "const" || kind === "variable") {
+    return key === "reference" && isName(value) ? { reference: value } : null
   }
-  if ("type" in returns) return isName(returns.type) ? { type: returns.type } : null
-  if (!("call" in returns) || !isCallSiteRef(returns.call)) return null
-  return { callSite: makeCallSiteKey(file, returns.call.line, returns.call.target) }
+  if (kind !== "function" && kind !== "method") return null
+  switch (key) {
+    case "type":
+      return isName(value) ? { type: value } : null
+    case "self":
+      return value === true ? { self: true } : null
+    case "call":
+      return isCallSiteRef(value)
+        ? { callSite: makeCallSiteKey(file, value.line, value.target) }
+        : null
+    default:
+      return null
+  }
 }
 
 function isName(value: unknown): value is string {

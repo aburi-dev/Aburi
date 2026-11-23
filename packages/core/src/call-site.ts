@@ -49,13 +49,14 @@ export type ValueTypeEntry = readonly [variableId: SymbolId, type: string]
 
 /**
  * What a call of a function gives back: a `type` by name, bound where the function is declared;
- * the value of the call written there at a `makeCallSiteKey`; or what a call of the function a
- * `reference` names there gives back.
+ * the value of the call written there at a `makeCallSiteKey`; what a call of the function a
+ * `reference` names there gives back; or the receiver the method is called on (`self`).
  */
 export type ReturnSource =
   | { readonly type: string }
   | { readonly callSite: string }
   | { readonly reference: string }
+  | { readonly self: true }
 
 /** By function or variable Symbol id: what a call of it gives back. */
 export type ReturnSources = ReadonlyMap<SymbolId, ReturnSource>

@@ -134,10 +134,15 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
 
 /**
  * A named `type`, type arguments aside, as the declaration's module binds that name; the value of
- * the one `call` the body returns, written in the declaration's module; or what a call of the
- * function a variable's `reference` names gives back, bound where the variable is declared.
+ * the one `call` the body returns, written in the declaration's module; what a call of the
+ * function a variable's `reference` names gives back, bound where the variable is declared; or,
+ * for an instance member, `self`: the receiver the member is called on.
  */
-export type ReturnedValue = { type: string } | { call: CallSiteRef } | { reference: string }
+export type ReturnedValue =
+  | { type: string; call?: never; reference?: never; self?: never }
+  | { call: CallSiteRef; type?: never; reference?: never; self?: never }
+  | { reference: string; type?: never; call?: never; self?: never }
+  | { self: true; type?: never; call?: never; reference?: never }
 
 /** A call written in the module at hand, by the target and line its CallCandidate carries. */
 export interface CallSiteRef {

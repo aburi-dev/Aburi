@@ -190,6 +190,7 @@ describe("unresolved calls are bucketed by cause", () => {
     { cause: "a global called by its name", target: "setTimeout", unbound: true },
     { cause: "a member nothing in the workspace names", target: "items.map" },
     { cause: "a member behind a non-null assertion nothing names", target: "items.map!" },
+    { cause: "a function's `bind`, which calls nothing", target: "helper.bind" },
   ])("`external` for $cause, which no declaration the scan read can be", (c) => {
     const result = resolveOneCall(c.target, c)
     expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
@@ -242,6 +243,29 @@ describe("unresolved calls are bucketed by cause", () => {
       bucket: "no-match",
     },
     { cause: "a computed member", target: "items.<computed>", bucket: "no-match" },
+    {
+      cause: "an unbound name behind a non-null assertion that a top-level declaration has",
+      target: "helper!",
+      callees: [makeSymbol("ts:src/script.ts#helper")],
+      unbound: true,
+      bucket: "no-match",
+    },
+    {
+      cause: "`this` a plugin marks unbound",
+      target: "this.save",
+      callees: [namesake("save")],
+      unbound: true,
+      bucket: "dynamic",
+    },
+    {
+      cause: "`super` a plugin marks unbound",
+      target: "super.save",
+      callees: [namesake("save")],
+      unbound: true,
+      bucket: "dynamic",
+    },
+    { cause: "a function's `call`, which runs it", target: "helper.call", bucket: "no-match" },
+    { cause: "a function's `apply`, which runs it", target: "helper.apply", bucket: "no-match" },
   ])("keeps $cause out of `external`, as one the workspace could hold", (c) => {
     expect(resolveOneCall(c.target, c).diagnostics.map((d) => d.bucket)).toEqual([c.bucket])
   })

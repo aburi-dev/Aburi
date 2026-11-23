@@ -78,7 +78,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
   const declaredTypes = new Map<string, string | null>()
   // `false` once one of a key's calls goes through a name no import binds.
   const imported = new Map<string, boolean>()
-  // `false` once one of a key's calls starts with a name a scope around it declares.
+  // `false` once one of a key's calls is not marked `unboundHead`.
   const unbound = new Map<string, boolean>()
   // `null` once a key's calls stop naming one call, a call with none included.
   const receiverCallSites = new Map<string, string | null>()
