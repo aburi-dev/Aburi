@@ -2,10 +2,11 @@ import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } f
 import { type CallCandidate, type CallSiteRef, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
-import { bindingOf } from "./name-binding"
+import { bindingOf, isModuleBinding } from "./name-binding"
 import {
   initializingCall,
   isImportedReceiver,
+  isModuleClassItself,
   receiverTypeOf,
   thisBindingAt,
 } from "./receiver-type"
@@ -37,6 +38,7 @@ export function readCall(node: Node): CallCandidate | null {
     ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
     ...(receiverCall === null ? {} : { receiverCall }),
     ...(isUnboundHead(callee) ? { unboundHead: true } : {}),
+    ...(isLocalHead(callee) ? { localHead: true } : {}),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }
@@ -60,6 +62,13 @@ function isUnboundHead(callee: Node): boolean {
   if (head === null || bindingOf(head, head.text) !== null) return false
   if (MODULE_WRAPPER_NAMES.has(head.text)) return false
   return head.text !== "require" || head.id === callee.id
+}
+
+// In its own body a class declaration's name is the class the module declares.
+function isLocalHead(callee: Node): boolean {
+  const head = leadingName(callee)
+  const binding = head === null ? null : bindingOf(head, head.text)
+  return binding !== null && !isModuleBinding(binding) && !isModuleClassItself(binding)
 }
 
 // The name the target spells first, read down the chain as `describeCallee` reads it.

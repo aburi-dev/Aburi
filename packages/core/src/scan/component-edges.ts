@@ -1,6 +1,12 @@
 import type { Component, ComponentId, Dependency, ImportEdge } from "@aburi/types"
 import { dependencyKey } from "../call-site"
-import { dirname, isRelativeSpecifier, joinPosix } from "../callgraph-specifier"
+import {
+  DEFAULT_EXTENSIONS,
+  dirname,
+  isRelativeSpecifier,
+  joinPosix,
+  resolveRelativeSpecifier,
+} from "../callgraph-specifier"
 import { NPM_MANIFEST, packageName, type WorkspacePackage } from "../component-manifest"
 import { compareCodeUnit } from "../order"
 import { buildComponentAttribution, type ComponentAttribution } from "./attribute"
@@ -11,6 +17,10 @@ export interface ComponentImportEdgesInput {
   withdrawn: ReadonlySet<string>
   components: readonly Component[]
   packages: readonly WorkspacePackage[]
+  /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
+  specifierPaths: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
+  /** Every file the scan read, which a mapped path is probed against. */
+  files: ReadonlySet<string>
 }
 
 /** A package name an import used that the manifests of more than one Component declare. */
@@ -29,6 +39,7 @@ type PackageClaims = ReadonlyMap<string, ReadonlySet<ComponentId>>
 export function componentImportEdges(input: ComponentImportEdgesInput): ComponentImportEdges {
   const attribute = buildComponentAttribution(input.components)
   const claims = packageClaims(input.packages, attribute)
+  const packageNames = new Set(input.packages.map((pkg) => pkg.name))
   const edges = new Map<string, Dependency>()
   const contested = new Set<string>()
   for (const [file, imports] of input.importsByFile) {
@@ -37,9 +48,12 @@ export function componentImportEdges(input: ComponentImportEdgesInput): Componen
     if (from === null) continue
     for (const { source } of imports) {
       const specifier = withoutQuery(source)
+      const name = packageName(specifier)
       const to = isRelativeSpecifier(specifier)
         ? relativeOwner(file, specifier, attribute)
-        : packageOwner(packageName(specifier), claims, contested)
+        : name !== null && packageNames.has(name)
+          ? packageOwner(name, claims, contested)
+          : mappedOwner(input.specifierPaths.get(file)?.get(source), input.files, attribute)
       if (to === null || to === from) continue
       edges.set(dependencyKey(from, to, "import"), {
         from,
@@ -76,6 +90,25 @@ function relativeOwner(
   if (target === null) return null
   // The workspace root directory names no file, but its index is one at the top level.
   return attribute(target === "" ? "index" : target)
+}
+
+// Unlike a relative specifier's path, a mapped one must name a file the scan read: `baseUrl` maps
+// every bare specifier, a registry package's included, to a path under it.
+function mappedOwner(
+  paths: readonly string[] | undefined,
+  files: ReadonlySet<string>,
+  attribute: ComponentAttribution,
+): ComponentId | null {
+  for (const path of paths ?? []) {
+    const found = resolveRelativeSpecifier({
+      fromDirectory: "",
+      specifier: path,
+      extensions: DEFAULT_EXTENSIONS,
+      knownFiles: files,
+    })
+    if (found !== null) return attribute(found)
+  }
+  return null
 }
 
 function packageClaims(

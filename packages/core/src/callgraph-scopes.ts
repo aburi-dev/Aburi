@@ -10,12 +10,14 @@ import {
 import type { ClassHeritages, ValueTypes } from "./call-site"
 import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
+import { packageName } from "./component-manifest"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
 import { DEFAULT_EXPORT_NAME, splitAliasedImportName } from "./import-edge"
 
 export interface ResolutionTrace {
   ambiguousCandidates: Set<SymbolId>
-  parameterShadow: boolean
+  /** A parameter, or a name the language marks a scope inside the module as binding, is the head. */
+  localShadow: boolean
   unnamedReceiver: boolean
   /** A re-export the head's import leads through names a bare specifier outside the workspace. */
   reexportedFromOutside: boolean
@@ -26,7 +28,7 @@ export interface ResolutionTrace {
 export function newTrace(): ResolutionTrace {
   return {
     ambiguousCandidates: new Set(),
-    parameterShadow: false,
+    localShadow: false,
     unnamedReceiver: false,
     reexportedFromOutside: false,
     conflictingExport: false,
@@ -58,6 +60,8 @@ export interface ResolutionRun {
   relativeTargets: Map<string, string | null>
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
+  /** The names the workspace's packages are published under. */
+  workspacePackageNames: ReadonlySet<string>
   mappedTargets: Map<string, string | null>
   /** Every file's import edges, which say what a module re-exports. */
   importsByFile: ReadonlyMap<string, readonly ImportEdge[]>
@@ -73,6 +77,8 @@ export interface ResolveTargetContext {
   target: string
   imports: readonly ImportEdge[]
   parameterNames: ReadonlySet<string>
+  /** The language marks a scope nearer the call than the module as binding the target's head. */
+  localHead?: boolean
   /** The Symbols a binding may reach: the kept ones unless a caller says otherwise. */
   reachable?: { has(id: SymbolId): boolean }
 }
@@ -87,8 +93,8 @@ export function resolveTarget(
     return null
   }
 
-  if (ctx.parameterNames.has(head)) {
-    trace.parameterShadow = true
+  if (ctx.localHead === true || ctx.parameterNames.has(head)) {
+    trace.localShadow = true
     return null
   }
 
@@ -340,7 +346,7 @@ function resolveInImportScope(
     return reached ?? []
   })
   // A member only some of the disagreeing declarations hold would otherwise pick one of them.
-  if (conflicting) return NO_MEMBER
+  if (conflicting || imported.foreign) return NO_MEMBER
   const candidates = new Set<SymbolId>()
   for (const { file, name, rest } of names) {
     const id = memberId(ctx, file, name, rest)
@@ -364,6 +370,11 @@ interface ImportedName {
 interface ImportedNames {
   names: ImportedName[]
   renamed: boolean
+  /**
+   * A bare specifier reaches no file the scan read and names no workspace package, so the head is
+   * a package's export, whatever the workspace declares under the same name.
+   */
+  foreign: boolean
 }
 
 function importedNamesOf(
@@ -373,6 +384,7 @@ function importedNamesOf(
 ): ImportedNames {
   const names: ImportedName[] = []
   let renamed = false
+  let foreign = false
   for (const edge of ctx.imports) {
     if (edge.dynamic) continue
 
@@ -391,9 +403,19 @@ function importedNamesOf(
       if (imported !== local) renamed = true
       const file = importTargetOf(ctx, edge)
       if (file !== null) names.push({ file, name: imported, rest: tail })
+      else foreign ||= isForeignSpecifier(ctx.run, edge.source)
     }
   }
-  return { names, renamed }
+  return { names, renamed, foreign }
+}
+
+// A workspace package whose manifest names only files the scan did not read, such as built output,
+// is still the workspace's, and its Symbols are found by name. That the language maps a specifier
+// says nothing of whose it is, since `baseUrl` maps every bare specifier.
+function isForeignSpecifier(run: ResolutionRun, specifier: string): boolean {
+  if (isRelativeSpecifier(specifier)) return false
+  const name = packageName(specifier)
+  return name !== null && !run.workspacePackageNames.has(name)
 }
 
 function importTargetOf(ctx: ResolveTargetContext, edge: ImportEdge): string | null {

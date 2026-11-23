@@ -188,11 +188,13 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     declaredReceiverTypes: extracted.declaredReceiverTypes,
     importedReceivers: extracted.importedReceivers,
     unboundHeads: extracted.unboundHeads,
+    localHeads: extracted.localHeads,
     classHeritages: extracted.classHeritages,
     valueTypes: extracted.valueTypes,
     returnSources: extracted.returnSources,
     receiverCalls: extracted.receiverCalls,
     specifierPaths: extracted.specifierPaths,
+    workspacePackageNames: new Set((input.workspacePackages ?? []).map((pkg) => pkg.name)),
     moduleFiles: moduleFilesOf(extracted.importsByFile.keys(), router),
   })
   const symbolEdges = projectSymbolEdges(callGraph.edges)
@@ -201,6 +203,8 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     withdrawn: new Set(extracted.skipped.map((file) => file.path)),
     components: input.components ?? [],
     packages: input.workspacePackages ?? [],
+    specifierPaths: extracted.specifierPaths,
+    files: new Set(extracted.importsByFile.keys()),
   })
   for (const { name, components } of componentEdges.contested) {
     logger.warn(

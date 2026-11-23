@@ -54,6 +54,8 @@ export interface ResolveCallGraphInput {
   importedReceivers?: ReadonlySet<string>
   /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
   unboundHeads?: ReadonlySet<string>
+  /** By `makeSymbolCallKey`: each call whose leading name a scope nearer it than the module declares. */
+  localHeads?: ReadonlySet<string>
   classHeritages?: ClassHeritages
   /** By variable Symbol id: the named type its module declares its value with. */
   valueTypes?: ValueTypes
@@ -66,6 +68,11 @@ export interface ResolveCallGraphInput {
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
    */
   specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
+  /**
+   * The names the workspace's packages are published under: a named import from one that reaches
+   * no file the scan read goes on to component scope, and one from any other package ends there.
+   */
+  workspacePackageNames?: ReadonlySet<string>
   /**
    * By language: every file the scan read, Symbols or not, so that a specifier naming a barrel
    * that only re-exports still reaches it.
@@ -100,6 +107,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),
+    workspacePackageNames: input.workspacePackageNames ?? EMPTY_NAMES,
     mappedTargets: new Map(),
     importsByFile: input.importsByFile,
     exportAnswers: new Map(),
@@ -111,6 +119,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     receiverHints,
     declaredReceiverTypes,
     importedReceivers,
+    localHeads: input.localHeads ?? EMPTY_CALL_SITE_KEYS,
     receiverCalls: input.receiverCalls ?? EMPTY_RECEIVER_CALLS,
     returnSources: input.returnSources ?? EMPTY_RETURN_SOURCES,
   })
@@ -180,6 +189,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
 }
 
 const EMPTY_CALL_SITE_KEYS: ReadonlySet<string> = new Set()
+const EMPTY_NAMES: ReadonlySet<string> = new Set()
 const EMPTY_RECEIVER_HINTS: ReadonlyMap<string, ReceiverHint> = new Map()
 const EMPTY_DECLARED_RECEIVER_TYPES: DeclaredReceiverTypes = new Map()
 const EMPTY_RECEIVER_CALLS: ReceiverCalls = new Map()

@@ -56,6 +56,7 @@ export interface ExtractedFiles {
   declaredReceiverTypes: DeclaredReceiverTypes
   importedReceivers: Set<string>
   unboundHeads: Set<string>
+  localHeads: Set<string>
   classHeritages: ClassHeritages
   valueTypes: ValueTypes
   returnSources: ReturnSources
@@ -99,6 +100,7 @@ export class ExtractionCollator {
     declaredReceiverTypes: this.#declaredReceiverTypes,
     importedReceivers: new Set(),
     unboundHeads: new Set(),
+    localHeads: new Set(),
     classHeritages: this.#classHeritages,
     valueTypes: this.#valueTypes,
     returnSources: this.#returnSources,
@@ -302,6 +304,7 @@ export class ExtractionCollator {
         }
         for (const key of result.importedReceivers) out.importedReceivers.add(key)
         for (const key of result.unboundHeads) out.unboundHeads.add(key)
+        for (const key of result.localHeads) out.localHeads.add(key)
         for (const [id, heritage] of result.classHeritages) this.#classHeritages.set(id, heritage)
         for (const [id, type] of result.valueTypes) this.#valueTypes.set(id, type)
         for (const [id, returns] of result.returnSources) this.#returnSources.set(id, returns)

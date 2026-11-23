@@ -1,3 +1,4 @@
+import type { ScanExtras } from "@aburi/test-harness"
 import { useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { scanTypeScript } from "./fixtures/scan"
@@ -10,13 +11,14 @@ async function callsFromMain(
   imports: readonly string[],
   calls: readonly string[],
   file = "src/use.ts",
+  extras: ScanExtras = {},
 ) {
   for (const [path, source] of Object.entries(modules)) await workspace.writeSource(path, source)
   const body = calls.map((call) => `  ${call}`)
   const use = [...imports, "", "export function main() {", ...body, "}", ""].join("\n")
   await workspace.writeSource(file, use)
 
-  const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+  const { ir, unresolvedCalls } = await scanTypeScript(workspace.root, {}, extras)
   const mainId = `ts:${file}#main`
   const main = ir.symbols.find((s) => s.id === mainId)
   return {
@@ -240,15 +242,38 @@ describe("scan — a call through the name of a class that lacks the member", ()
     })
   })
 
+  // Built output the scan does not read is all its manifest names.
+  const LOGGING_PACKAGE: ScanExtras = {
+    workspacePackages: [
+      { name: "@acme/logging", root: "packages/logging", entry: { main: "./dist/index.js" } },
+    ],
+  }
+
   it.each([
     ["a barrel that re-exports it", "src/use.ts", 'import { Logger } from "./barrel"'],
     ["a workspace package", "src/use.ts", 'import { Logger } from "@acme/logging"'],
     ["a `require` in JavaScript", "src/use.js", 'const { Logger } = require("./audit-log")'],
     ["an ambient declaration", "src/use.ts", "declare const Logger: { log(m: string): string }"],
   ])("searches on past %s to the class that declares the member", async (_label, file, head) => {
-    expect(await callsFromMain(MODULES, [head], ['Logger.log("x")'], file)).toEqual({
+    const calls = await callsFromMain(MODULES, [head], ['Logger.log("x")'], file, LOGGING_PACKAGE)
+    expect(calls).toEqual({
       resolved: [["Logger.log", "ts:src/audit-log.ts#Logger.log"]],
       unresolved: [],
+    })
+  })
+
+  it("stops at a package outside the workspace, bucketed `external`, whatever the workspace declares", async () => {
+    const head = 'import { Logger } from "@nestjs/common"'
+    const calls = await callsFromMain(
+      MODULES,
+      [head],
+      ['Logger.log("x")'],
+      "src/use.ts",
+      LOGGING_PACKAGE,
+    )
+    expect(calls).toEqual({
+      resolved: [["Logger.log", null]],
+      unresolved: [["Logger.log", "external"]],
     })
   })
 })
@@ -664,8 +689,8 @@ describe("scan — a call through a variable another module declares", () => {
       ],
       unresolved: [
         ["made.stop", "no-match"],
-        ["manager.stop", "no-match"],
-        ["manager.stop", "no-match"],
+        ["manager.stop", "local-scope"],
+        ["manager.stop", "local-scope"],
       ],
     })
   })
@@ -949,14 +974,12 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
           "",
         ].join("\n"),
       },
-      ['import { Store } from "./store"'],
+      ['import { Store } from "./store"', "const items = [1, 2]", "const store = new Store()"],
       [
         "setTimeout(() => {}, 1)",
         "expect(1).toBe(1)",
-        "const items = [1, 2]",
         "items.map(String)",
         "items.save()",
-        "const store = new Store()",
         "store.flush()",
         "localHelper()",
       ],
@@ -969,6 +992,102 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
       ["items.save", "no-match"],
       ["store.flush", "external"],
       ["localHelper", "external"],
+    ])
+  })
+})
+
+describe("scan — a call through a name a scope inside the module declares", () => {
+  it("leaves the call to the local, bucketed `local-scope`, over the module's and an import's namesakes", async () => {
+    await workspace.writeSource("src/fmt.ts", "export function helper() { return 1 }\n")
+    await workspace.writeSource(
+      "src/use.ts",
+      [
+        'import { helper } from "./fmt"',
+        "function save(x: number) { return x }",
+        "function remove(id: string) { return id }",
+        "export function local(id: string, jobs: Array<(n: number) => void>) {",
+        "  function remove(x: string) { return x }",
+        "  remove(id)",
+        "  const save = (x: number) => x * 2",
+        "  save(1)",
+        "  { const helper = () => 3; helper() }",
+        "  jobs.forEach((save) => save(2))",
+        "  try {} catch (helper) { helper() }",
+        "}",
+        'export function outer() { return [save(3), remove("a"), helper()] }',
+        "",
+      ].join("\n"),
+    )
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (name: string) =>
+      ir.symbols
+        .find((symbol) => symbol.id === `ts:src/use.ts#${name}`)
+        ?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("local")).toEqual([
+      ["remove", null],
+      ["save", null],
+      ["helper", null],
+      ["jobs.forEach", null],
+      ["save", null],
+      ["helper", null],
+    ])
+    expect(
+      unresolvedCalls.filter((d) => d.symbolId === "ts:src/use.ts#local").map((d) => d.bucket),
+    ).toEqual(Array(6).fill("local-scope"))
+    expect(callsOf("outer")).toEqual([
+      ["save", "ts:src/use.ts#save"],
+      ["remove", "ts:src/use.ts#remove"],
+      ["helper", "ts:src/fmt.ts#helper"],
+    ])
+  })
+})
+
+describe("scan — a type a module names through a path alias, in a file that makes no call", () => {
+  it("binds the class an `extends`, a variable's type and a function's return name", async () => {
+    const result = await callsFromMain(
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+        }),
+        "src/repository.ts": [
+          "export class Repository { find(id: string) { return id } }",
+          "export class Manager { setOnline(v: boolean) { return v } }",
+          "",
+        ].join("\n"),
+        "src/admin.ts": [
+          'import { Repository } from "@/repository"',
+          "export class AdminRepository extends Repository {",
+          '  label = "admin"',
+          "}",
+          "",
+        ].join("\n"),
+        "src/manager.ts": [
+          'import { Manager } from "@/repository"',
+          "export let manager: Manager | null = null",
+          "",
+        ].join("\n"),
+        "src/get-repo.ts": [
+          'import { Repository } from "@/repository"',
+          "let repo: Repository",
+          "export function getRepo(): Repository {",
+          "  return repo",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      [
+        'import type { AdminRepository } from "./admin"',
+        'import { manager } from "./manager"',
+        'import { getRepo } from "./get-repo"',
+        "declare const admin: AdminRepository",
+      ],
+      ['admin.find("1")', "manager.setOnline(true)", 'getRepo().find("2")'],
+    )
+    expect(result.resolved).toEqual([
+      ["admin.find", "ts:src/repository.ts#Repository.find"],
+      ["manager.setOnline", "ts:src/repository.ts#Manager.setOnline"],
+      ["getRepo.find", "ts:src/repository.ts#Repository.find"],
+      ["getRepo", "ts:src/get-repo.ts#getRepo"],
     ])
   })
 })

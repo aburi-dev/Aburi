@@ -77,6 +77,36 @@ describe("scan — a destructuring parameter shadows the import it names", () =>
   })
 })
 
+describe("scan — a local named after the import shadows it", () => {
+  beforeEach(async () => {
+    await workspace.writeSource("src/repo.ts", REPO)
+    await workspace.writeSource(
+      "src/form.ts",
+      [
+        'import { save } from "./repo"',
+        "",
+        "export async function arrow() { const save = async (n: number) => n; await save(1) }",
+        "export async function nested() { async function save(n: number) { return n }; await save(2) }",
+        "export async function block() { { const save = async (n: number) => n; await save(3) } }",
+        "export async function caught() { try {} catch (save: any) { await save(4) } }",
+        "export async function callback(list: ((n: number) => Promise<void>)[]) { for (const save of list) await save(5) }",
+        "",
+      ].join("\n"),
+    )
+  })
+
+  it.each(["arrow", "nested", "block", "caught", "callback"])(
+    "%s leaves `save` unresolved and takes no effect",
+    async (qname) => {
+      const result = await scanWorkspace()
+      const symbol = symbolById(result, `ts:src/form.ts#${qname}`)
+
+      expect(symbol.calls.map((c) => [c.target, c.resolved])).toEqual([["save", null]])
+      expect(symbol.effects).toEqual([])
+    },
+  )
+})
+
 describe("scan — a destructuring parameter with text the parser could not place", () => {
   beforeEach(async () => {
     await workspace.writeSource("src/repo.ts", REPO)
@@ -131,7 +161,7 @@ describe("scan — a destructuring parameter with text the parser could not plac
   })
 })
 
-describe("scan — a function a const hands its call is not shadowed", () => {
+describe("scan — a function a const hands its call shadows the import by its parameters", () => {
   beforeEach(async () => {
     await workspace.writeSource("src/repo.ts", REPO)
     await workspace.writeSource(
@@ -147,15 +177,15 @@ describe("scan — a function a const hands its call is not shadowed", () => {
     )
   })
 
-  it.each(["POST", "PUT"])("%s links `save` to the import", async (qname) => {
+  it.each(["POST", "PUT"])("%s leaves `save` unresolved and takes no effect", async (qname) => {
     const result = await scanWorkspace()
     const symbol = symbolById(result, `ts:src/route.ts#${qname}`)
 
     expect(symbol.signature).toBeNull()
     expect(symbol.calls.map((c) => [c.target, c.resolved])).toEqual([
       ["withAuth", null],
-      ["save", "ts:src/repo.ts#save"],
+      ["save", null],
     ])
-    expect(symbol.effects.map((e) => e.id)).toEqual(["db.write"])
+    expect(symbol.effects).toEqual([])
   })
 })

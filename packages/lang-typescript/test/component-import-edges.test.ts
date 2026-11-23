@@ -93,6 +93,47 @@ describe("scan — a Component edge per import that crosses a Component boundary
     expect(edges).toEqual(expected)
   })
 
+  it.each<[string, string, Dependency[]]>([
+    [
+      "a path alias to a file of another Component",
+      'import { format } from "@org/shared"',
+      [WEB_TO_SHARED],
+    ],
+    [
+      "a wildcard alias to a module of another Component",
+      'import { format } from "@lib/shared/src/format"',
+      [WEB_TO_SHARED],
+    ],
+    [
+      "a type-only import through an alias",
+      'import type { Format } from "@org/shared"',
+      [WEB_TO_SHARED],
+    ],
+    ["a side-effect import through an alias", 'import "@org/shared"', [WEB_TO_SHARED]],
+    [
+      "a bare specifier `baseUrl` maps to a file of another Component",
+      'import { format } from "packages/shared/src/format"',
+      [WEB_TO_SHARED],
+    ],
+    ["an alias to no file the scan read", 'import tokens from "@org/tokens"', []],
+    ["a package `baseUrl` maps to no file", 'import { debounce } from "lodash"', []],
+  ])("%s", async (_, source, expected) => {
+    const { edges } = await componentEdges({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@org/shared": ["packages/shared/src/format.ts"],
+            "@org/tokens": ["packages/shared/tokens.json"],
+            "@lib/*": ["packages/*"],
+          },
+        },
+      }),
+      "packages/web/src/app.ts": `${source}\n`,
+    })
+    expect(edges).toEqual(expected)
+  })
+
   it("writes one edge however many imports and files cross the same boundary", async () => {
     const { edges } = await componentEdges({
       "packages/web/src/a.ts":
