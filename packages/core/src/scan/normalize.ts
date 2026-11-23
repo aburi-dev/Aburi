@@ -38,6 +38,8 @@ function normalizeCandidateStrings(
   const writtenValueType = candidate.valueType
   const valueType =
     typeof writtenValueType === "string" ? toNfc(writtenValueType) : writtenValueType
+  const writtenReturns = candidate.returns
+  const returns = normalizeReturnedValue(writtenReturns)
   const members = candidate.instanceMembers
   const instanceMembers = Array.isArray(members)
     ? mapPreservingIdentity(members, (name) => (typeof name === "string" ? toNfc(name) : name))
@@ -48,7 +50,8 @@ function normalizeCandidateStrings(
     decorators === candidate.decorators &&
     superclass === written &&
     instanceMembers === members &&
-    valueType === writtenValueType
+    valueType === writtenValueType &&
+    returns === writtenReturns
   ) {
     return candidate
   }
@@ -61,7 +64,28 @@ function normalizeCandidateStrings(
   if (superclass !== undefined) next.superclass = superclass
   if (instanceMembers !== undefined) next.instanceMembers = instanceMembers
   if (valueType !== undefined) next.valueType = valueType
+  if (returns !== undefined) next.returns = returns
   return next
+}
+
+// A plugin outside the tree may write anything here: what is not a string is left for the reader
+// to refuse.
+function normalizeReturnedValue<T>(written: T): T {
+  if (typeof written !== "object" || written === null) return written
+  const value: Record<string, unknown> = { ...(written as Record<string, unknown>) }
+  let changed = false
+  for (const key of ["type", "reference"]) {
+    const text = value[key]
+    if (typeof text !== "string" || toNfc(text) === text) continue
+    value[key] = toNfc(text)
+    changed = true
+  }
+  const call = normalizeCallSiteRef(value.call)
+  if (call !== value.call) {
+    value.call = call
+    changed = true
+  }
+  return changed ? (value as T) : written
 }
 
 function mapPreservingIdentity<L extends readonly unknown[]>(
@@ -143,8 +167,20 @@ export function normalizeCallStrings(call: CallCandidate): CallCandidate {
   const target = toNfc(call.target)
   const written = call.receiverType
   const receiverType = typeof written === "string" ? toNfc(written) : written
-  if (target === call.target && receiverType === written) return call
+  const writtenCall = call.receiverCall
+  const receiverCall = normalizeCallSiteRef(writtenCall)
+  if (target === call.target && receiverType === written && receiverCall === writtenCall) {
+    return call
+  }
   const next: CallCandidate = { ...call, target }
   if (receiverType !== undefined) next.receiverType = receiverType
+  if (receiverCall !== undefined) next.receiverCall = receiverCall
   return next
+}
+
+function normalizeCallSiteRef<T>(written: T): T {
+  if (typeof written !== "object" || written === null || !("target" in written)) return written
+  const { target } = written
+  if (typeof target !== "string" || toNfc(target) === target) return written
+  return { ...written, target: toNfc(target) }
 }

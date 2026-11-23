@@ -13,30 +13,24 @@ import {
   type DeclaredReceiverTypes,
   makeCallSiteKey,
   makeSymbolCallKey,
-  receiverHead,
+  type ReceiverCalls,
+  type ReturnSources,
   type ValueTypes,
 } from "./call-site"
 import {
   buildCallResolutionStats,
   classifyUnresolved,
   compareDiagnostic,
+  type WorkspaceNames,
+  workspaceNamesOf,
 } from "./callgraph-diagnostics"
 import { buildSymbolTable } from "./callgraph-index"
-import {
-  collectParameterNames,
-  mappedTargetOf,
-  newTrace,
-  type ResolutionHit,
-  type ResolutionRun,
-  resolveTarget,
-  resolveThroughDeclaredType,
-  resolveThroughImportedValue,
-  splitTargetSegments,
-} from "./callgraph-scopes"
+import { CallResolver } from "./callgraph-outcomes"
+import { mappedTargetOf, type ResolutionRun } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
 import { CoreError } from "./errors"
 import type { ReceiverHint } from "./lsp/enrich"
-import { emptyHintUsage, type LspConsumerRejection, type LspHintUsage } from "./lsp/stats"
+import { emptyHintUsage, type LspHintUsage } from "./lsp/stats"
 import { compareCodeUnit } from "./order"
 
 export interface CallEdge {
@@ -58,9 +52,15 @@ export interface ResolveCallGraphInput {
   declaredReceiverTypes?: DeclaredReceiverTypes
   /** By `makeSymbolCallKey`: each call whose receiver's leading name an import of its file binds. */
   importedReceivers?: ReadonlySet<string>
+  /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
+  unboundHeads?: ReadonlySet<string>
   classHeritages?: ClassHeritages
   /** By variable Symbol id: the named type its module declares its value with. */
   valueTypes?: ValueTypes
+  /** By function or variable Symbol id: what a call of it gives back, as its declaration says. */
+  returnSources?: ReturnSources
+  /** By `makeSymbolCallKey`: the call whose result each call's receiver is. */
+  receiverCalls?: ReceiverCalls
   /**
    * By importing file, then by bare specifier: the workspace-relative paths the language's import
    * resolver maps the specifier to, probed in order as a relative specifier's path is.
@@ -87,6 +87,12 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const dynamicCallSites = input.dynamicCallSites ?? EMPTY_CALL_SITE_KEYS
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const importedReceivers = input.importedReceivers ?? EMPTY_CALL_SITE_KEYS
+  const unboundHeads = input.unboundHeads ?? EMPTY_CALL_SITE_KEYS
+  let names: WorkspaceNames | null = null
+  const workspaceNames = (): WorkspaceNames => {
+    names ??= workspaceNamesOf(input.symbols, input.importsByFile)
+    return names
+  }
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
     classHeritages: input.classHeritages ?? new Map(),
@@ -98,6 +104,16 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     importsByFile: input.importsByFile,
     exportAnswers: new Map(),
   }
+
+  const resolver = new CallResolver({
+    run,
+    symbols: input.symbols,
+    receiverHints,
+    declaredReceiverTypes,
+    importedReceivers,
+    receiverCalls: input.receiverCalls ?? EMPTY_RECEIVER_CALLS,
+    returnSources: input.returnSources ?? EMPTY_RETURN_SOURCES,
+  })
 
   const nextSymbols: IRSymbol[] = []
   const edges: CallEdge[] = []
@@ -113,55 +129,31 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     }
     totalCalls += symbol.calls.length
     const imports = input.importsByFile.get(symbol.source.file) ?? []
-    const parameterNames = collectParameterNames(symbol)
     const updatedCalls = symbol.calls.map((call) => {
       if (call.resolved !== null) {
         resolvedCalls++
         return call
       }
-      const trace = newTrace()
-      const ctx = { run, caller: symbol, target: call.target, imports, parameterNames }
-      const symbolCallKey = makeSymbolCallKey(symbol.id, call.line, call.target)
-      const declaredType = () => {
-        const type = declaredReceiverTypes.get(symbolCallKey)
-        if (type !== undefined) return resolveThroughDeclaredType(ctx, type)
-        return importedReceivers.has(symbolCallKey) ? resolveThroughImportedValue(ctx) : null
-      }
-      // A type the source declares, a receiver's, `super`'s or an imported variable's, is the
-      // untyped tier's, so a language server only lifts what it leaves. For `this.<method>` the
-      // server reads the class `this` is, inherited members included, so the class's own member
-      // answers only what its hint leaves.
-      const throughThis = isThisMember(call.target)
-      let hit = resolveTarget(ctx, trace) ?? (throughThis ? null : declaredType())
+      const { hit, trace, hinted } = resolver.outcomeOf(symbol, call)
+      if (hinted?.outcome === "rejected") lspHintUsage[hinted.reason] += 1
+      if (hinted?.outcome === "hit") lspHintUsage.consumed += 1
       if (hit === null) {
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
-        const hinted = resolveViaLspHint(
-          call.target,
-          receiverHints.get(callSiteKey),
-          run.table.keptSymbolIds,
+        diagnostics.push(
+          classifyUnresolved({
+            caller: symbol,
+            target: call.target,
+            line: call.line,
+            imports,
+            trace,
+            dynamicReceiver: dynamicCallSites.has(callSiteKey),
+            reachesWorkspace: (specifier) =>
+              mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
+            unboundHead: unboundHeads.has(makeSymbolCallKey(symbol.id, call.line, call.target)),
+            names: workspaceNames(),
+          }),
         )
-        if (hinted.outcome === "rejected") lspHintUsage[hinted.reason] += 1
-        if (hinted.outcome === "hit") {
-          lspHintUsage.consumed += 1
-          hit = hinted.hit
-        } else if (throughThis) {
-          hit = declaredType()
-        }
-        if (hit === null) {
-          diagnostics.push(
-            classifyUnresolved({
-              caller: symbol,
-              target: call.target,
-              line: call.line,
-              imports,
-              trace,
-              dynamicReceiver: dynamicCallSites.has(callSiteKey),
-              reachesWorkspace: (specifier) =>
-                mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
-            }),
-          )
-          return call
-        }
+        return call
       }
       resolvedCalls++
       edges.push({
@@ -190,6 +182,8 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
 const EMPTY_CALL_SITE_KEYS: ReadonlySet<string> = new Set()
 const EMPTY_RECEIVER_HINTS: ReadonlyMap<string, ReceiverHint> = new Map()
 const EMPTY_DECLARED_RECEIVER_TYPES: DeclaredReceiverTypes = new Map()
+const EMPTY_RECEIVER_CALLS: ReceiverCalls = new Map()
+const EMPTY_RETURN_SOURCES: ReturnSources = new Map()
 
 function assertReceiverHintKeys(hints: ReadonlyMap<string, ReceiverHint>): void {
   for (const key of hints.keys()) {
@@ -199,29 +193,6 @@ function assertReceiverHintKeys(hints: ReadonlyMap<string, ReceiverHint>): void 
       { code: "receiver-hint-key-malformed", value: key },
     )
   }
-}
-
-function isThisMember(target: string): boolean {
-  const segments = splitTargetSegments(target)
-  return segments.length === 2 && segments[0] === "this"
-}
-
-type LspHintOutcome =
-  | { outcome: "hit"; hit: ResolutionHit }
-  | { outcome: "absent" }
-  | { outcome: "rejected"; reason: LspConsumerRejection }
-
-function resolveViaLspHint(
-  target: string,
-  hint: ReceiverHint | undefined,
-  keptSymbolIds: ReadonlySet<SymbolId>,
-): LspHintOutcome {
-  if (hint === undefined) return { outcome: "absent" }
-  if (receiverHead(target) !== hint.kind) return { outcome: "rejected", reason: "kindMismatch" }
-  if (!keptSymbolIds.has(hint.targetSymbolId)) {
-    return { outcome: "rejected", reason: "targetDropped" }
-  }
-  return { outcome: "hit", hit: { id: hint.targetSymbolId, confidence: "high" } }
 }
 
 export function reconstructCallEdgesFromIR(ir: IR): CallEdge[] {

@@ -223,6 +223,10 @@ function formatRun(environment) {
   return `${environment.cpus}× ${environment.cpuModel} · Node ${environment.node}`
 }
 
+function percentOf(part, whole) {
+  return whole > 0 && part != null ? `${((part / whole) * 100).toFixed(1)}%` : "—"
+}
+
 function formatExitCodes(scan) {
   const codes = scan.exitCodes ?? [scan.exitCode]
   if (codes.every((code) => code === codes[0])) return formatCount(codes[0])
@@ -232,10 +236,17 @@ function formatExitCodes(scan) {
 /**
  * The census of the code a repository's authors wrote: a build script's output can hold more
  * calls than the code around it, and its calls are counted apart so they do not set the rate.
+ * `reachableCalls` leaves out the `external` ones too, which no declaration the scan read can be
+ * the callee of.
  */
 export function authoredCalls(census) {
   if (census === null) return null
-  return { ...authoredCallCensus(census), generatedCalls: census.generated?.totalCalls ?? 0 }
+  const authored = authoredCallCensus(census)
+  return {
+    ...authored,
+    reachableCalls: authored.totalCalls - authored.unresolved.external,
+    generatedCalls: census.generated?.totalCalls ?? 0,
+  }
 }
 
 export function renderReport(report) {
@@ -292,8 +303,11 @@ export function renderReport(report) {
     )
   }
   lines.push("")
-  // A sample recorded before generated files were counted apart renders as it always did.
+  // A sample recorded before generated files were counted apart renders as it always did, and so
+  // does one recorded before `external` took every call out of the workspace's reach.
   const generatedCounted = results.some((result) => result.metrics?.generatedCalls != null)
+  const reachableCounted = results.some((result) => result.metrics?.reachableCalls != null)
+  const callColumns = (generatedCounted ? 1 : 0) + (reachableCounted ? 2 : 0)
   lines.push("## Call resolution and losses")
   lines.push("")
   lines.push(
@@ -303,6 +317,7 @@ export function renderReport(report) {
       "Calls",
       "Resolved",
       "Resolved %",
+      ...(reachableCounted ? ["Reachable", "Resolved % of reachable"] : []),
       ...(generatedCounted ? ["Generated calls"] : []),
       "Deps",
       "Parse errors",
@@ -310,19 +325,14 @@ export function renderReport(report) {
       "Reasons",
     ]),
   )
-  lines.push(`|---|---:|---:|---:|---:|${generatedCounted ? "---:|" : ""}---:|---:|---:|---|`)
+  lines.push(`|---|---:|---:|---:|---:|${"---:|".repeat(callColumns)}---:|---:|---:|---|`)
   for (const result of results) {
     if (result.failed) {
-      lines.push(
-        row([`\`${result.id}\``, ...dashes(generatedCounted ? 8 : 7), `✗ ${result.failed}`]),
-      )
+      lines.push(row([`\`${result.id}\``, ...dashes(7 + callColumns), `✗ ${result.failed}`]))
       continue
     }
     const metrics = result.metrics
-    const share =
-      metrics.totalCalls > 0 && metrics.resolvedCalls != null
-        ? `${((metrics.resolvedCalls / metrics.totalCalls) * 100).toFixed(1)}%`
-        : "—"
+    const share = percentOf(metrics.resolvedCalls, metrics.totalCalls)
     const reasons =
       Object.entries(metrics.skippedByReason)
         .map(([reason, count]) => `${reason} ${count}`)
@@ -334,6 +344,12 @@ export function renderReport(report) {
         formatCount(metrics.totalCalls),
         formatCount(metrics.resolvedCalls),
         share,
+        ...(reachableCounted
+          ? [
+              formatCount(metrics.reachableCalls),
+              percentOf(metrics.resolvedCalls, metrics.reachableCalls),
+            ]
+          : []),
         ...(generatedCounted ? [formatCount(metrics.generatedCalls)] : []),
         formatCount(metrics.dependencies),
         String(countRecoverableParseErrors(result.scan.warnings ?? "")),

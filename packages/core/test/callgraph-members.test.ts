@@ -95,11 +95,14 @@ describe("a dotted call target reaches the member Symbol it names", () => {
   it.each([
     ["is not declared", "Cls.absent"],
     ["cannot be spelled as a Symbol id", "Cls.not an identifier"],
-  ])("leaves a call unresolved, without failing, when the member %s", (_why, target) => {
-    const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 3 }])
-    const cls = makeSymbol("ts:src/a.ts#Cls", { kind: "class" })
-    const result = resolveCallGraph({ symbols: [caller, cls], importsByFile: NO_IMPORTS })
-    expect(result.edges).toEqual([])
-    expect(result.diagnostics.map((d) => [d.target, d.bucket])).toEqual([[target, "no-match"]])
-  })
+  ])(
+    "leaves a call `external`, without failing, when the member %s and nothing else is named so",
+    (_why, target) => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 3 }])
+      const cls = makeSymbol("ts:src/a.ts#Cls", { kind: "class" })
+      const result = resolveCallGraph({ symbols: [caller, cls], importsByFile: NO_IMPORTS })
+      expect(result.edges).toEqual([])
+      expect(result.diagnostics.map((d) => [d.target, d.bucket])).toEqual([[target, "external"]])
+    },
+  )
 })

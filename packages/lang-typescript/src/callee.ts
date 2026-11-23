@@ -1,8 +1,14 @@
 import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } from "@aburi/core"
-import { type CallCandidate, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
+import { type CallCandidate, type CallSiteRef, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
-import { isImportedReceiver, receiverTypeOf, thisBindingAt } from "./receiver-type"
+import { bindingOf } from "./name-binding"
+import {
+  initializingCall,
+  isImportedReceiver,
+  receiverTypeOf,
+  thisBindingAt,
+} from "./receiver-type"
 
 export function readCall(node: Node): CallCandidate | null {
   const isNew = node.type === "new_expression"
@@ -15,6 +21,7 @@ export function readCall(node: Node): CallCandidate | null {
     (arg): arg is Node => arg !== null && arg.type !== "comment",
   )
   const receiverType = receiverTypeOf(callee)
+  const receiverCall = receiverType === null ? receiverCallOf(callee) : null
   const thisBinding = THIS_RECEIVERS.has(receiverHead(shape.target) ?? "")
     ? thisBindingAt(node)
     : null
@@ -28,11 +35,68 @@ export function readCall(node: Node): CallCandidate | null {
     ...(shape.dynamic ? { dynamicReceiver: true } : {}),
     ...(receiverType === null ? {} : { receiverType }),
     ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
+    ...(receiverCall === null ? {} : { receiverCall }),
+    ...(isUnboundHead(callee) ? { unboundHead: true } : {}),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }
 
 const THIS_RECEIVERS: ReadonlySet<string> = new Set(["this", "super"])
+
+function receiverCallOf(callee: Node): CallSiteRef | null {
+  if (callee.type !== "member_expression") return null
+  const receiver = callee.childForFieldName("object")
+  if (receiver?.type === "call_expression") return callSiteOf(receiver)
+  const call = receiver?.type === "identifier" ? initializingCall(receiver) : null
+  return call === null ? null : callSiteOf(call)
+}
+
+// CommonJS hands each module its own `module` and `exports`, and `require(…)` gives back another
+// module's exports, any of which may be the workspace's.
+const MODULE_WRAPPER_NAMES: ReadonlySet<string> = new Set(["module", "exports"])
+
+function isUnboundHead(callee: Node): boolean {
+  const head = leadingName(callee)
+  if (head === null || bindingOf(head, head.text) !== null) return false
+  if (MODULE_WRAPPER_NAMES.has(head.text)) return false
+  return head.text !== "require" || head.id === callee.id
+}
+
+// The name the target spells first, read down the chain as `describeCallee` reads it.
+function leadingName(callee: Node): Node | null {
+  let node: Node | null = callee
+  while (node !== null) {
+    switch (node.type) {
+      case "identifier":
+        return node
+      case "member_expression":
+      case "subscript_expression":
+        node = node.childForFieldName("object")
+        break
+      case "call_expression":
+        node = node.childForFieldName("function")
+        break
+      case "parenthesized_expression":
+        node = parenthesizedReceiver(node)
+        break
+      case "as_expression":
+      case "satisfies_expression":
+      case "type_assertion":
+      case "non_null_expression":
+        node = wrappedExpression(node)
+        break
+      default:
+        return null
+    }
+  }
+  return null
+}
+
+export function callSiteOf(call: Node): CallSiteRef | null {
+  const callee = call.childForFieldName("function") ?? call.namedChild(0)
+  const shape = callee === null ? null : describeCallee(callee)
+  return shape === null ? null : { target: shape.target, line: call.startPosition.row + 1 }
+}
 
 function literalOf(node: Node): string | null {
   switch (node.type) {

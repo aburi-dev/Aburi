@@ -17,7 +17,7 @@ import { readLeadingJsDoc } from "./leading-jsdoc"
 import { objectEntryOf, objectLiteralOf } from "./object-members"
 import { collectPatternBindings } from "./pattern-bindings"
 import { makeTsSymbolId, nestedQname } from "./qname"
-import { heldTypeOf } from "./receiver-type"
+import { heldTypeOf, referenceOf } from "./receiver-type"
 import { buildSignature } from "./signature"
 
 export function makeVariableCandidates(
@@ -115,6 +115,7 @@ function makeVariableCandidate(
   const { bodies, evidence } =
     initializer === null ? { bodies: [], evidence: [] } : callBodies(initializer, initializer)
   const valueType = heldTypeOf(declarator)
+  const reference = referenceOf(declarator)
   return [
     {
       id,
@@ -128,6 +129,7 @@ function makeVariableCandidate(
       derivedBy: [...evidence, ...exportEvidence(statement)],
       ...layOutBodies(bodies, statement),
       ...(valueType === null ? {} : { valueType }),
+      ...(reference === null ? {} : { returns: { reference } }),
     },
   ]
 }

@@ -11,6 +11,9 @@ import type {
   ClassHeritage,
   ClassHeritages,
   DeclaredReceiverTypes,
+  ReceiverCalls,
+  ReturnSource,
+  ReturnSources,
   ThisBindingSites,
   ValueTypes,
 } from "../call-site"
@@ -52,8 +55,11 @@ export interface ExtractedFiles {
   thisBindings: ThisBindingSites
   declaredReceiverTypes: DeclaredReceiverTypes
   importedReceivers: Set<string>
+  unboundHeads: Set<string>
   classHeritages: ClassHeritages
   valueTypes: ValueTypes
+  returnSources: ReturnSources
+  receiverCalls: ReceiverCalls
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: Map<string, ReadonlyMap<string, readonly string[]>>
 }
@@ -74,6 +80,8 @@ export class ExtractionCollator {
   readonly #declaredReceiverTypes = new Map<string, string>()
   readonly #classHeritages = new Map<SymbolId, ClassHeritage>()
   readonly #valueTypes = new Map<SymbolId, string>()
+  readonly #returnSources = new Map<SymbolId, ReturnSource>()
+  readonly #receiverCalls = new Map<string, string>()
   readonly #out: ExtractedFiles = {
     symbols: [],
     skipped: [],
@@ -90,8 +98,11 @@ export class ExtractionCollator {
     thisBindings: this.#thisBindings,
     declaredReceiverTypes: this.#declaredReceiverTypes,
     importedReceivers: new Set(),
+    unboundHeads: new Set(),
     classHeritages: this.#classHeritages,
     valueTypes: this.#valueTypes,
+    returnSources: this.#returnSources,
+    receiverCalls: this.#receiverCalls,
     specifierPaths: new Map(),
   }
   readonly #onceSeen = new Set<string>()
@@ -290,8 +301,11 @@ export class ExtractionCollator {
           this.#declaredReceiverTypes.set(key, type)
         }
         for (const key of result.importedReceivers) out.importedReceivers.add(key)
+        for (const key of result.unboundHeads) out.unboundHeads.add(key)
         for (const [id, heritage] of result.classHeritages) this.#classHeritages.set(id, heritage)
         for (const [id, type] of result.valueTypes) this.#valueTypes.set(id, type)
+        for (const [id, returns] of result.returnSources) this.#returnSources.set(id, returns)
+        for (const [key, site] of result.receiverCalls) this.#receiverCalls.set(key, site)
         if (result.specifierPaths.length > 0) {
           out.specifierPaths.set(result.path, new Map(result.specifierPaths))
         }

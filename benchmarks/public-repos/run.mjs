@@ -81,6 +81,7 @@ function readIrMetrics(ir, irBytes) {
     dependencies: ir.dependencies?.length ?? null,
     totalCalls: calls?.totalCalls ?? null,
     resolvedCalls: calls?.resolvedCalls ?? null,
+    reachableCalls: calls?.reachableCalls ?? null,
     unresolved: calls?.unresolved ?? null,
     generatedCalls: calls?.generatedCalls ?? null,
     skippedFiles: skipped.length,

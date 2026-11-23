@@ -372,6 +372,49 @@ describe("runFilePipeline — effect classification", () => {
     ])
   })
 
+  it("keys each call whose leading name nothing declares, and no key one of whose calls has one", async () => {
+    const global = (line: number, unboundHead?: boolean) =>
+      makeCall({
+        target: "runtime.tick",
+        line,
+        ...(unboundHead === undefined ? {} : { unboundHead }),
+      })
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        global(3, true),
+        global(3, true),
+        global(4, true),
+        global(4),
+        global(5, false),
+      ),
+    })
+
+    expect(result.unboundHeads).toEqual([makeSymbolCallKey("stub:test.stub#Fn", 3, "runtime.tick")])
+  })
+
+  it("keys the call each receiver is the result of, and no key whose calls name two or none", async () => {
+    const through = (line: number, from?: number) =>
+      makeCall({
+        target: "s.run",
+        line,
+        ...(from === undefined ? {} : { receiverCall: { target: "make", line: from } }),
+      })
+    const result = await extractOneSymbol({
+      body: bodyCalling(
+        through(3, 2),
+        through(3, 2),
+        through(4, 2),
+        through(4, 1),
+        through(5),
+        through(5, 2),
+      ),
+    })
+
+    expect(result.receiverCalls).toEqual([
+      [makeSymbolCallKey("stub:test.stub#Fn", 3, "s.run"), makeCallSiteKey("test.stub", 2, "make")],
+    ])
+  })
+
   it("hands the effect plugin each owner decorator's receiver, and none for a bare one", async () => {
     const seen: ClassifyContext["owner"]["decorators"][] = []
     const candidate = stubCandidate("Fn", {

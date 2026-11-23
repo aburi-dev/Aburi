@@ -2,6 +2,7 @@ import { makeCall, sig } from "@aburi/test-support"
 import type { CallCandidate, ImportEdge } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import type { ExtractedFile } from "../../src"
+import { makeCallSiteKey } from "../../src/call-site"
 import {
   extractOneSymbol,
   type OneSymbolFile,
@@ -107,6 +108,33 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
       [`${composed}.Manager`],
     ],
     [
+      "what a function's call gives back",
+      {
+        candidate: stubCandidate("Fn", {
+          returns: { call: { target: `${decomposed}.create`, line: 4 } },
+        }),
+      },
+      (file) => file.returnSources.map(([, returns]) => returns),
+      [{ callSite: makeCallSiteKey("test.stub", 4, `${composed}.create`) }],
+    ],
+    [
+      "the call a receiver is the result of",
+      {
+        body: {
+          rules: [],
+          calls: [
+            makeCall({
+              target: "s.run",
+              line: 3,
+              receiverCall: { target: `${decomposed}.make`, line: 2 },
+            }),
+          ],
+        },
+      },
+      (file) => file.receiverCalls.map(([, site]) => site),
+      [makeCallSiteKey("test.stub", 2, `${composed}.make`)],
+    ],
+    [
       "an unclassified call target",
       { body: { rules: [], calls: [makeCall({ target: `${decomposed}.doWork` })] } },
       (file) => file.symbols[0]?.calls.map((c) => c.target),
@@ -187,6 +215,36 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
       candidate: stubCandidate("Fn", { kind, valueType: "Manager" }),
     })
     expect(file.valueTypes).toEqual([["stub:test.stub#Fn", "Manager"]])
+  })
+
+  it.each([
+    [
+      "a function's named type",
+      { kind: "function" as const, returns: { type: "Manager" } },
+      { type: "Manager" },
+    ],
+    [
+      "a variable's reference",
+      { kind: "const" as const, returns: { reference: "B.create" } },
+      { reference: "B.create" },
+    ],
+  ])("reads what a call of %s gives back", async (_case, written, expected) => {
+    const file = await extractOneSymbol({ candidate: stubCandidate("Fn", written) })
+    expect(file.returnSources).toEqual([["stub:test.stub#Fn", expected]])
+  })
+
+  it.each([
+    ["a type that is not a string", { kind: "function" as const, returns: { type: 7 } as never }],
+    [
+      "a call with no line",
+      { kind: "method" as const, returns: { call: { target: "f" } } as never },
+    ],
+    ["a reference on a function", { kind: "function" as const, returns: { reference: "f" } }],
+    ["a type on a variable", { kind: "const" as const, returns: { type: "Manager" } }],
+  ])("keeps the file and reads nothing a call gives back from %s", async (_case, written) => {
+    const file = await extractOneSymbol({ candidate: stubCandidate("Fn", written) })
+    expect(file.symbols).toHaveLength(1)
+    expect(file.returnSources).toEqual([])
   })
 
   it.each([

@@ -34,6 +34,7 @@ import {
 import { readLeadingJsDoc } from "./leading-jsdoc"
 import { isControlStatement, makeModuleScopeCandidate, runsCode } from "./module-scope"
 import { defaultExportQname, makeTsSymbolId, nestedQname } from "./qname"
+import { returnedValueOf } from "./returned-value"
 import { buildSignature } from "./signature"
 import {
   ENUM_SHAPE,
@@ -54,7 +55,12 @@ export function extractSymbols(tree: Tree, ctx: ExtractionContext): SymbolCandid
   }
   const moduleScope = makeModuleScopeCandidate(state.moduleScope, ctx)
   if (moduleScope !== null) out.add(moduleScope)
-  return promoteDetachedExports(root, out.list())
+  return promoteDetachedExports(root, out.list()).map(withReturnedValue)
+}
+
+function withReturnedValue(candidate: SymbolCandidate<Node>): SymbolCandidate<Node> {
+  const returns = returnedValueOf(candidate)
+  return returns === null ? candidate : { ...candidate, returns }
 }
 
 interface FileState {

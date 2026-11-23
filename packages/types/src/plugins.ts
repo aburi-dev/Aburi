@@ -125,6 +125,29 @@ export interface SymbolCandidate<TNode = OpaqueAstNode> {
    * `const` the class it is constructed from, as its module binds that name.
    */
   valueType?: string
+  /**
+   * For a function, a method or a variable naming one: what a call of it gives back, as its
+   * declaration says.
+   */
+  returns?: ReturnedValue
+}
+
+/**
+ * A named `type`, type arguments aside, as the declaration's module binds that name; the value of
+ * the one `call` the body returns, written in the declaration's module; what a call of the
+ * function a variable's `reference` names gives back, bound where the variable is declared; or,
+ * for an instance member, `self`: the receiver the member is called on.
+ */
+export type ReturnedValue =
+  | { type: string; call?: never; reference?: never; self?: never }
+  | { call: CallSiteRef; type?: never; reference?: never; self?: never }
+  | { reference: string; type?: never; call?: never; self?: never }
+  | { self: true; type?: never; call?: never; reference?: never }
+
+/** A call written in the module at hand, by the target and line its CallCandidate carries. */
+export interface CallSiteRef {
+  target: string
+  line: number
 }
 
 /** The nodes of one declaration that merged into a Symbol another declaration leads. */
@@ -152,6 +175,16 @@ export interface CallCandidate {
    * call declares again.
    */
   importedReceiver?: boolean
+  /**
+   * The call whose result the receiver is: the call the receiver is written as, or the one that
+   * initializes the `const` the receiver names.
+   */
+  receiverCall?: CallSiteRef
+  /**
+   * `true` when no scope around the call, the module's included, declares the callee's leading
+   * name: a global the runtime or the test runner provides, or a name nothing declares.
+   */
+  unboundHead?: boolean
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding
 }

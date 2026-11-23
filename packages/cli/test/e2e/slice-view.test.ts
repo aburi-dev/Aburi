@@ -83,7 +83,7 @@ describe("e2e slice-view — 3-layer feature addition clusters into 1 slice", ()
     })
   })
 
-  it("marks the singleton a dynamic-dispatch call splits off", async () => {
+  it("marks the singleton an unresolved call splits off", async () => {
     const baseScan = await scanFixture(fixture.root)
 
     await writeHead({
@@ -104,8 +104,7 @@ export class RecordService {
     })
     const headScan = await scanFixture(fixture.root)
 
-    expect(headScan.ir.stats.callResolution?.unresolved.dynamic).toBeGreaterThan(0)
-    expect(headScan.unresolvedCalls.some((call) => call.bucket === "dynamic")).toBe(true)
+    expect(headScan.unresolvedCalls.map((call) => call.target)).toContain("getRecordService.save")
 
     const diff = diffIRs(baseScan.ir, headScan.ir)
 

@@ -1,4 +1,4 @@
-import type { SymbolId, ThisBinding } from "@aburi/types"
+import type { CallSiteRef, SymbolId, ThisBinding } from "@aburi/types"
 
 export const CALL_SITE_KEY_SEPARATOR = "\t"
 
@@ -47,6 +47,30 @@ export type ValueTypes = ReadonlyMap<SymbolId, string>
 
 export type ValueTypeEntry = readonly [variableId: SymbolId, type: string]
 
+/**
+ * What a call of a function gives back: a `type` by name, bound where the function is declared;
+ * the value of the call written there at a `makeCallSiteKey`; what a call of the function a
+ * `reference` names there gives back; or the receiver the method is called on (`self`).
+ */
+export type ReturnSource =
+  | { readonly type: string }
+  | { readonly callSite: string }
+  | { readonly reference: string }
+  | { readonly self: true }
+
+/** By function or variable Symbol id: what a call of it gives back. */
+export type ReturnSources = ReadonlyMap<SymbolId, ReturnSource>
+
+export type ReturnSourceEntry = readonly [symbolId: SymbolId, returns: ReturnSource]
+
+/**
+ * By `makeSymbolCallKey`: the `makeCallSiteKey` of the call whose result each call's receiver is. A
+ * key whose calls do not all name one call is left out.
+ */
+export type ReceiverCalls = ReadonlyMap<string, string>
+
+export type ReceiverCallEntry = readonly [key: string, callSite: string]
+
 export function receiverHead(target: string): string | undefined {
   return target.split(".").find((segment) => segment.length > 0)
 }
@@ -70,4 +94,13 @@ export function thisBindingOfSite(sites: ThisBindingSites, key: string): ThisBin
 
 export function isThisBinding(value: unknown): value is ThisBinding {
   return value === "class" || value === "instance"
+}
+
+// A plugin outside the tree may write anything, and a call it names is only a hint.
+export function isCallSiteRef(value: unknown): value is CallSiteRef {
+  if (typeof value !== "object" || value === null) return false
+  const { target, line } = value as Partial<Record<keyof CallSiteRef, unknown>>
+  return (
+    typeof target === "string" && target.length > 0 && Number.isInteger(line) && Number(line) > 0
+  )
 }

@@ -21,9 +21,11 @@ import type {
 import {
   type CallSiteBinding,
   type DeclaredReceiverType,
+  isCallSiteRef,
   isThisBinding,
   makeCallSiteKey,
   makeSymbolCallKey,
+  type ReceiverCallEntry,
 } from "../call-site"
 import { CoreError } from "../errors"
 import type { DropCFilter } from "./drop-c"
@@ -64,6 +66,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
   thisBindings: CallSiteBinding[]
   declaredReceiverTypes: DeclaredReceiverType[]
   importedReceivers: string[]
+  receiverCalls: ReceiverCallEntry[]
+  unboundHeads: string[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
@@ -74,6 +78,10 @@ export function classifyCalls(input: ClassifyCallsInput): {
   const declaredTypes = new Map<string, string | null>()
   // `false` once one of a key's calls goes through a name no import binds.
   const imported = new Map<string, boolean>()
+  // `false` once one of a key's calls is not marked `unboundHead`.
+  const unbound = new Map<string, boolean>()
+  // `null` once a key's calls stop naming one call, a call with none included.
+  const receiverCallSites = new Map<string, string | null>()
   const owner: OwnerSummary = {
     id: input.candidate.id,
     kind: input.candidate.kind,
@@ -154,12 +162,23 @@ export function classifyCalls(input: ClassifyCallsInput): {
       const seen = declaredTypes.get(symbolKey)
       declaredTypes.set(symbolKey, seen === undefined || seen === type ? type : null)
       imported.set(symbolKey, imported.get(symbolKey) !== false && call.importedReceiver === true)
+      unbound.set(symbolKey, unbound.get(symbolKey) !== false && call.unboundHead === true)
+      const written = call.receiverCall
+      const site = isCallSiteRef(written)
+        ? makeCallSiteKey(input.file.path, written.line, written.target)
+        : null
+      const seenSite = receiverCallSites.get(symbolKey)
+      receiverCallSites.set(symbolKey, seenSite === undefined || seenSite === site ? site : null)
     }
   }
   const declaredReceiverTypes: DeclaredReceiverType[] = []
   for (const [key, type] of declaredTypes)
     if (type !== null) declaredReceiverTypes.push([key, type])
   const importedReceivers = [...imported].flatMap(([key, through]) => (through ? [key] : []))
+  const unboundHeads = [...unbound].flatMap(([key, none]) => (none ? [key] : []))
+  const receiverCalls = [...receiverCallSites].flatMap(([key, site]): ReceiverCallEntry[] =>
+    site === null ? [] : [[key, site]],
+  )
 
   // Left in the plugin's order, which is source order: the Symbol sorts by line with a stable sort,
   // so two effects on one line keep the order they are written in, which `logic` reads.
@@ -170,6 +189,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
     thisBindings,
     declaredReceiverTypes,
     importedReceivers,
+    receiverCalls,
+    unboundHeads,
     declinedCalls,
   }
 }

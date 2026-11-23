@@ -19,11 +19,16 @@ import type {
   VocabRegistry,
   WalkContext,
 } from "@aburi/types"
-import type {
-  CallSiteBinding,
-  ClassHeritageEntry,
-  DeclaredReceiverType,
-  ValueTypeEntry,
+import {
+  type CallSiteBinding,
+  type ClassHeritageEntry,
+  type DeclaredReceiverType,
+  isCallSiteRef,
+  makeCallSiteKey,
+  type ReceiverCallEntry,
+  type ReturnSource,
+  type ReturnSourceEntry,
+  type ValueTypeEntry,
 } from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
@@ -55,6 +60,12 @@ export interface ExtractedFile extends FileOutcomeCommon {
   classHeritages: readonly ClassHeritageEntry[]
   /** Each variable the file declares with a named type or constructs from a class, dropped or kept. */
   valueTypes: readonly ValueTypeEntry[]
+  /** What a call of each function the file declares gives back, dropped or kept, where it says. */
+  returnSources: readonly ReturnSourceEntry[]
+  /** By `makeSymbolCallKey`: the call each call's receiver is the result of. */
+  receiverCalls: readonly ReceiverCallEntry[]
+  /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
+  unboundHeads: readonly string[]
   /** What the language maps the file's bare specifiers to, for call resolution to probe. */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
@@ -158,6 +169,9 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         importedReceivers: [],
         classHeritages: [],
         valueTypes: [],
+        returnSources: [],
+        receiverCalls: [],
+        unboundHeads: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -176,12 +190,15 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
     const classHeritages = candidates.flatMap(classHeritageOf)
     const valueTypes = candidates.flatMap(valueTypeOf)
+    const returnSources = candidates.flatMap((candidate) => returnSourceOf(candidate, file.path))
     const symbols: IRSymbol[] = []
     const dynamicCallSites: string[] = []
     const declinedCalls: DeclinedCall[] = []
     const thisBindings: CallSiteBinding[] = []
     const declaredReceiverTypes: DeclaredReceiverType[] = []
     const importedReceivers: string[] = []
+    const receiverCalls: ReceiverCallEntry[] = []
+    const unboundHeads: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
 
@@ -246,12 +263,16 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         thisBindings: fileThisBindings,
         declaredReceiverTypes: fileDeclaredReceiverTypes,
         importedReceivers: fileImportedReceivers,
+        receiverCalls: fileReceiverCalls,
+        unboundHeads: fileUnboundHeads,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
       thisBindings.push(...fileThisBindings)
       declaredReceiverTypes.push(...fileDeclaredReceiverTypes)
       importedReceivers.push(...fileImportedReceivers)
+      receiverCalls.push(...fileReceiverCalls)
+      unboundHeads.push(...fileUnboundHeads)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -294,6 +315,9 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       importedReceivers,
       classHeritages,
       valueTypes,
+      returnSources,
+      receiverCalls,
+      unboundHeads,
       specifierPaths,
       fault: null,
     }
@@ -316,6 +340,48 @@ function valueTypeOf(candidate: SymbolCandidate<OpaqueAstNode>): ValueTypeEntry[
   const { id, kind, valueType } = candidate
   const variable = kind === "const" || kind === "variable"
   return variable && typeof valueType === "string" ? [[id, valueType]] : []
+}
+
+// A plugin outside the tree may write anything, and a value with two sources names neither.
+function returnSourceOf(
+  candidate: SymbolCandidate<OpaqueAstNode>,
+  file: string,
+): ReturnSourceEntry[] {
+  const { id, kind, returns } = candidate
+  if (typeof returns !== "object" || returns === null) return []
+  const source = returnSourceFrom(returns, kind, file)
+  return source === null ? [] : [[id, source]]
+}
+
+const RETURN_SOURCE_KEYS = ["type", "call", "reference", "self"] as const
+
+function returnSourceFrom(returns: object, kind: string, file: string): ReturnSource | null {
+  const written = RETURN_SOURCE_KEYS.filter(
+    (key) => key in returns && Reflect.get(returns, key) !== undefined,
+  )
+  const [key, ...others] = written
+  if (key === undefined || others.length > 0) return null
+  const value: unknown = Reflect.get(returns, key)
+  if (kind === "const" || kind === "variable") {
+    return key === "reference" && isName(value) ? { reference: value } : null
+  }
+  if (kind !== "function" && kind !== "method") return null
+  switch (key) {
+    case "type":
+      return isName(value) ? { type: value } : null
+    case "self":
+      return value === true ? { self: true } : null
+    case "call":
+      return isCallSiteRef(value)
+        ? { callSite: makeCallSiteKey(file, value.line, value.target) }
+        : null
+    default:
+      return null
+  }
+}
+
+function isName(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
 }
 
 function reexportsAny(edge: ImportEdge): boolean {

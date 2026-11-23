@@ -199,6 +199,12 @@ function bindStatement(statement: Node, bind: Bind): void {
       bindDeclarators(statement, bind)
       return
     case "expression_statement": {
+      // The grammar reads a namespace no `export` or `declare` leads as an expression.
+      const written = firstNonCommentChild(statement)
+      if (written !== null && NAMESPACE_SCOPES.has(written.type)) {
+        bindStatement(written, bind)
+        return
+      }
       const declaration = usingDeclaration(statement)
       const name = declaration?.childForFieldName("left")
       if (declaration != null && name != null) bindPattern(name, declaration, bind)
@@ -208,9 +214,14 @@ function bindStatement(statement: Node, bind: Bind): void {
     case "ambient_declaration": {
       const declaration =
         statement.childForFieldName("declaration") ?? firstNonCommentChild(statement)
-      if (declaration !== null && declaration.type !== "variable_declaration") {
-        bindStatement(declaration, bind)
+      if (declaration === null || declaration.type === "variable_declaration") return
+      // `declare global { … }` declares its names in the scope every module sees.
+      if (declaration.type === "statement_block") {
+        for (const inner of declaration.namedChildren)
+          if (inner !== null) bindStatement(inner, bind)
+        return
       }
+      bindStatement(declaration, bind)
       return
     }
     case "import_statement":
