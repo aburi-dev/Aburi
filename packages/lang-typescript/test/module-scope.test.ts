@@ -44,14 +44,14 @@ describe("a module's top-level statements", () => {
   })
 
   it.each([
-    ["an if", "if (ready) start()", ["start"], []],
+    ["an if", "if (ready) start()", ["start"], ["branch"]],
     ["a for", "for (let i = 0; i < 3; i++) tick(i)", ["tick"], ["loop"]],
     ["a for…of", "for (const job of jobs) run(job)", ["run"], ["loop"]],
     ["a for await", "for await (const job of queue()) run(job)", ["queue", "run"], ["loop"]],
     ["a while", "while (pending()) drain()", ["pending", "drain"], ["loop"]],
     ["a do…while", "do drain(); while (pending())", ["drain", "pending"], ["loop"]],
     ["a try", "try { connect() } catch { retry() }", ["connect", "retry"], ["try"]],
-    ["a switch", "switch (mode()) { case 1: a() }", ["mode", "a"], ["switch"]],
+    ["a switch", "switch (mode()) { case 1: a() }", ["mode", "a"], ["switch", "case"]],
     ["a block", "{ setup() }", ["setup"], []],
     ["a labelled statement", "outer: for (const x of xs) visit(x)", ["visit"], ["loop"]],
     ["a throw", 'throw new Error("unsupported")', ["Error"], ["throw"]],

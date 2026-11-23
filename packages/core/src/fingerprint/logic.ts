@@ -25,16 +25,25 @@ const SHAPE_ONLY_RULE_FIELDS: ReadonlySet<string> = new Set([
   "loopKind",
 ] satisfies (keyof LogicInput["rules"][number])[])
 
+/**
+ * The rules whose text recurs across unrelated declarations: a declared value (`true`, `0`,
+ * `"admin"`) and a loop's header (`const item of items`).
+ */
+const SHARED_TEXT_RULE_TYPES: ReadonlySet<string> = new Set(["value", "loop"])
+
 // Middleware is not read: one guard such as `auth` fronts many routes, so sharing it says no
-// more about which route a body is than sharing a rule's type does.
+// more about which route a body is than sharing a rule's type does. The rules above are read
+// the same way, for the same reason.
 export function logicNamesNothing(symbol: IRSymbol): boolean {
   const input = buildLogicInput(symbol)
   return (
     input.effects.length === 0 &&
-    input.rules.every((rule) =>
-      Object.entries(rule).every(
-        ([field, value]) => SHAPE_ONLY_RULE_FIELDS.has(field) || value === null,
-      ),
+    input.rules.every(
+      (rule) =>
+        SHARED_TEXT_RULE_TYPES.has(rule.type) ||
+        Object.entries(rule).every(
+          ([field, value]) => SHAPE_ONLY_RULE_FIELDS.has(field) || value === null,
+        ),
     )
   )
 }

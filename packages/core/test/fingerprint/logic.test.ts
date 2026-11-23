@@ -197,6 +197,17 @@ describe("logicNamesNothing", () => {
   it.each<[string, IRSymbol]>([
     ["a body with no rules and no effects", withRules()],
     ["a loop", withRules(rule({ type: "loop", loopKind: "for" }))],
+    [
+      "a loop with its header",
+      withRules(rule({ type: "loop", loopKind: "for", condition: "const item of items" })),
+    ],
+    [
+      "declared values alone",
+      withRules(
+        rule({ type: "value", expr: "5000" }),
+        rule({ type: "value", expr: 'Red = "red"' }),
+      ),
+    ],
     ["a try", withRules(rule({ type: "try" }))],
     [
       "a guard and a throw it could not read",
@@ -214,6 +225,10 @@ describe("logicNamesNothing", () => {
     ["a rule carrying a condition", withRules(loop, rule({ type: "guard", condition: "!id" }))],
     ["a rule carrying a thrown value", withRules(loop, rule({ type: "throw", what: "Error" }))],
     ["a rule carrying an expression", withRules(loop, rule({ type: "return", expr: "a + b" }))],
+    [
+      "a branch beside a declared value",
+      withRules(rule({ type: "value", expr: "0" }), rule({ type: "branch", condition: "debug" })),
+    ],
     ["a local effect", caller(WRITE)],
     ["a propagated effect alone", caller(propagatedEffect("db.write", "prisma.invoice.create"))],
   ])("fails on %s", (_what, symbol) => {

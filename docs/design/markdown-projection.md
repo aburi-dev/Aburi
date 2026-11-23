@@ -443,16 +443,20 @@ Example:
 | type | Display |
 |---|---|
 | guard | ``- guard: `<condition>` (L<line>)`` |
+| branch | ``- branch: `<condition>` (L<line>)`` |
 | throw | ``- throw: `<what>` (L<line>)`` |
 | return | ``- return: `<expr>` (L<line>)`` |
-| loop | ``- loop (`<loopKind>`) (L<line>)`` |
+| value | ``- value: `<expr>` (L<line>)`` |
+| loop | ``- loop: `<condition>` (`<loopKind>`) (L<line>)``, or ``- loop (`<loopKind>`) (L<line>)`` when its header is empty |
 | try | `- try (L<line>)` |
 | switch | ``- switch: `<condition>` (L<line>)`` |
+| case | ``- case: `<condition>` (L<line>)`` |
 | match | ``- match: `<condition>` (L<line>)`` |
 
 A payload that §3.4 sends to a fenced block — over 80 characters, or multiline — takes a
 second row shape, because the compact one cannot hold a block. The line tag moves ahead of the
-colon so the fence is last, and the fence is indented two spaces into the list item:
+colon so the fence is last (a loop keeps its kind beside the type, ``- loop (`for`) (L9):``), and
+the fence is indented two spaces into the list item:
 
 ````md
 **Rules**:
@@ -460,7 +464,7 @@ colon so the fence is last, and the fence is indented two spaces into the list i
   ```
   user.role === 'admin' && flags.enabled && !session.expired && ctx.tenant === wantedTenant
   ```
-- loop (`for`) (L9)
+- loop: `const item of items` (`for`) (L9)
 ````
 
 At column 0 the fence would end the list instead: `(L3)` would become a paragraph of its own
@@ -644,11 +648,11 @@ An entry whose locally detected effects appear in another order (`delta.effectsR
 
 #### Delta rows
 
-A delta body lists rules, effects and calls in that order, each array's `added`, `removed` and `modified` buckets in that order. Their rows are the component page's rows (§5.6–§5.8) nested one level, and inline however long the payload: a bucket lists the elements that moved rather than showing each in full, and a widened code span holds any condition on one line. So a loop carries its kind and an effect its plugin and confidence badge (§3.5) in every bucket:
+A delta body lists rules, effects and calls in that order, each array's `added`, `removed` and `modified` buckets in that order. Their rows are the component page's rows (§5.6–§5.8) nested one level, and inline however long the payload: a bucket lists the elements that moved rather than showing each in full, and a widened code span holds any condition on one line. So a loop carries its header and its kind and an effect its plugin and confidence badge (§3.5) in every bucket:
 
 ```md
 - rules added:
-  - loop (`while`) (L12)
+  - loop: `queue.length > 0` (`while`) (L12)
 - effects removed:
   - event.publish: `eventBus.emit` (L78) [effects-nest] ⚠ medium
 ```
@@ -657,7 +661,7 @@ A `modified` element is one the diff paired with a base element of the same key 
 
 | Array (key) | Compared beside the key | Modified row |
 |---|---|---|
-| rules (`type`) | `condition`, `what`, `expr`, `loopKind` | ``loop (`for` → `while`) (L3)``, ``guard: `amount < 0` → `amount <= 0` (L4)`` |
+| rules (`type`) | `condition`, `what`, `expr`, `loopKind` | ``loop: `const x of xs` → `xs.length > 0` (`for` → `while`) (L3)``, ``guard: `amount < 0` → `amount <= 0` (L4)`` |
 | effects (`id`, `target`) | origin (`propagated`, `derivedFrom`), `plugin`, `confidence` | ``db.write: `prisma.user.create` (L5) [effects-drizzle → effects-prisma] ⚠ medium (was high)`` |
 | calls (`target`) | `resolved` | ``` `useInvoices` (L15) resolved: `ts:src/hooks.ts#useInvoices` → none ``` |
 | decorators (`name`) | `qualifier`, `arguments` | ``decorator modified: `@UseGuards(AuthGuard)` → `@UseGuards(AuthGuard, RoleGuard)` `` |
@@ -769,7 +773,7 @@ the row a reviewer reads is the file's. A move within a file, or one that change
 the Symbol in its route and keeps a row of its own.
 
 Each fold's summary says what it counts, and counts one in the singular: `1 moved (no semantic
-change)`, `1 entry`, `1 symbol (implementation refactor only, no semantic change)`.
+change)`, `1 entry`, `1 symbol (edited outside the API, rules, effects and middleware)`.
 
 #### 🧱 Component changes
 
@@ -862,7 +866,7 @@ The Unknown group is not split by level the way the added and removed groups are
 
 ```md
 <details>
-<summary>3 symbols (implementation refactor only, no semantic change)</summary>
+<summary>3 symbols (edited outside the API, rules, effects and middleware)</summary>
 
 - `InvoiceService.findAll` (`apps/billing/src/InvoiceService.ts:88`)
 - ...
@@ -1250,7 +1254,7 @@ All Markdown projection output is **English, with fixed wording**.
 | MP16 | A value holding `_x_`, `*x*`, `<T>`, a backtick, `~~s~~` and a newline followed by `## `, as a thrown type, as a propagated effect's direct source (Symbol block, Boundary effect surface, delta row), as a Component `name`, as a component-level Dependency endpoint (component page, `workspace.md` list), as the generator's `name` or `version` or the `generatedAt` of the `workspace.md` header, as either ref of the `diff.md` title, and as a `dropReason` (component page, Dropped changes, `explain`) | Rendered as CommonMark, each shows the value as written, its newline as a space: no emphasis, no HTML and no block of its own (§3.4.2) |
 | MP16a | A `diff.md` title whose ref is a commit SHA of 40 or of 7 lowercase hex digits, and one whose ref is six hex digits, uppercase hex or a branch name | The SHA bare, which GitHub links; every other ref in a span (§6.1) |
 | MP16b | A Component `name` holding `\n`, `\r\n` or a lone `\r`, then a fence line, then `# Injected` | One mermaid node line, each line ending written as `<br/>`: the fence stays open and no heading is written (§4.2) |
-| MP17 | diff entry whose delta lists a loop, an effect, a call or a decorator, in any bucket | The loop row carries its kind, ``loop (`<loopKind>`) (L<line>)``, and the effect row its `[plugin]` and, at medium or low confidence, its badge, as on the component page. Under `calls modified` the row names what the call resolves to (`none` when nothing); a decorator row prints its `raw`, arguments included, in every bucket |
+| MP17 | diff entry whose delta lists a loop, an effect, a call or a decorator, in any bucket | The loop row carries its header and its kind, ``loop: `<condition>` (`<loopKind>`) (L<line>)``, and the effect row its `[plugin]` and, at medium or low confidence, its badge, as on the component page. Under `calls modified` the row names what the call resolves to (`none` when nothing); a decorator row prints its `raw`, arguments included, in every bucket |
 | MP17a | `modified` rule, effect, call, decorator or input whose entry's `before` holds the base element it was paired with, differing in a compared field | That field reads `<base> → <head>` in its place: ``loop (`for` → `while`)``, `[effects-drizzle → effects-prisma]`, an origin `(L5) → [propagated from …]`, ``resolved: `<id>` → none``, `` `@nest.Post()` → `@Post()` ``, `` `limit: number` → `limit?: number` ``; a confidence as `⚠ medium (was high)`, or `(was ⚠ medium)` when it rose to `high`. A field the diff does not compare (`line`, `derivedBy`) gets no base value, and neither does a field whose base value reads like its head value. A base element under another key, in `removed`, or equal to the head element is not taken for the paired one, nor are the base elements equal to an unchanged head element while there are no more of them than of such head elements |
 | MP17b | `modified` element with several candidate bases: several `modified` elements under one key, or base elements equal but for their line | A field the candidates disagree on, or one of them shares with the head element, shows the head value alone; a field they agree on and differ from the head element on still gets their value |
 | MP17c | diff entry whose delta flags `asyncChanged`, `generatorChanged`, `typeParametersChanged`, `componentChanged` or `visibilityChanged` | One row per flag with the base value before the head one: `- signature.async: false → true`, ``- signature.typeParameters: none → `<T>` ``, ``- component: `billing` → none``, ``- visibility: `internal` → `public` `` |

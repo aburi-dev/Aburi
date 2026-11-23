@@ -470,30 +470,35 @@ The `boundary: true` determination is made by the framework plugin. The Aburi co
 
 ## 8. Rule
 
-Semantically meaningful branches, exceptions, loops, and compound returns in the control flow.
+Semantically meaningful branches, exceptions, loops, compound returns and declared values in the control flow.
 
 ```jsonc
 {
   "type": "guard",                            // required, enum §8.1
   "line": 58,                                 // required
-  "condition": "customer.creditLimit < invoice.total",  // type=guard/switch/match only
+  "condition": "customer.creditLimit < invoice.total",  // type=guard/branch/switch/case/match; a loop's header, or null
   "what": null,                               // type=throw only
-  "expr": null,                               // type=return only
+  "expr": null,                               // type=return/value only
   "loopKind": null                            // type=loop only ("for"|"while"|"do")
 }
 ```
 
 ### 8.1 `type` (enum)
 
-`"guard" | "throw" | "return" | "loop" | "try" | "switch" | "match"`
+`"guard" | "branch" | "throw" | "return" | "value" | "loop" | "try" | "switch" | "case" | "match"`
 
 - `guard`: an `if` statement whose consequence can leave the flow the `if` sits in, through a `throw`, a `process.exit()` call or a `return`, through a `break` whose loop, `switch` or label is outside the `if`, or through a `continue` whose loop or label is outside it. Only the consequence is read, so `if (a) {} else { return }` is not a guard. A `return`, `break` or `continue` inside a function, method or class static block written in the consequence cannot leave that function or block and does not count; a `throw` or `process.exit()` there does, since a callback called synchronously throws or exits through the `if`
+- `branch`: every other `if` statement, by its condition. `if (user.isAdmin) openVault(user)` decides as much of what the body does as a guard does, and an edit to its condition is an edit to the body's logic
 - `throw`: a throw statement
 - `return`: any non-trivial return (trivial determination per `drop-list.md`), a walk-root arrow's expression body included
-- `loop`: for / while / do
+- `value`: a value a declaration holds rather than computes, by its text (`expr`): the initializer of a `const` (or a module-level `let` / `var`) that holds neither a function, a class, an object literal, a call nor a `new` (`export const TIMEOUT_MS = 5000` gives `5000`); each entry of an object literal a `const` holds, at any depth, that is neither a Symbol of its own nor an object literal whose entries are read in turn (`export const config = { retries: 3, db: { host: "x" } }` gives `retries: 3` and `host: "x"`); and each member of an `enum`, every declaration of a merged one included (`Red = "red"`, or `Up` for a member with no initializer). A declaration holding a call leaves its arguments to the call's own record (§10), and a destructured binding has no initializer of its own
+- `loop`: for / while / do, with `loopKind` and, in `condition`, what decides how often it runs: a `while` or `do` loop's condition, or the whole header between a `for` statement's parentheses (`let i = 0; i < xs.length; i++`, `const x of xs`), prefixed with `await ` for a `for await`. `null` only when the header is empty
 - `try`: a `try` statement, with or without a `catch` or a `finally` clause (what each clause contributes to the Symbol is §8.2)
 - `switch`: a switch statement
+- `case`: a clause of a `switch` statement, by its label (`"admin"`), and `default` for the default clause
 - `match`: pattern matching (used only in symbols with `extKind: "fp:match"`)
+
+A Rule is one input to the `logic` fingerprint ([fingerprint.md](./fingerprint.md) §4), so what the types above leave out moves `syntax` alone; fingerprint.md §4.6 lists it.
 
 ### 8.2 Extraction conventions
 
@@ -502,7 +507,7 @@ Semantically meaningful branches, exceptions, loops, and compound returns in the
   - Comments are not part of them: the language plugin takes them out, replacing each with a space, because telling a comment from the code around it takes the grammar ([`lang-plugin.md`](./lang-plugin.md) §4.4, LP19b). A `/* … */` inside a string literal is string content and stays
   - Characters are code points, which is what the schema's `maxLength: 123` counts; a cut keeps the first 120 and appends `...`, and never splits a surrogate pair
   - The scan applies the whitespace collapse and the cut again at the plugin boundary (`normalizeRuleText` in `@aburi/core`), so a plugin that skips them still writes a Document the schema accepts. The cut is idempotent, so a string a plugin already cut passes unchanged
-  - The outer parentheses an `if` or `switch` requires are not part of the `condition`; any others are (`if ((a) || (b))` gives `(a) || (b)`)
+  - The outer parentheses an `if`, `switch`, `while`, `do` or `for` requires are not part of the `condition`; any others are (`if ((a) || (b))` gives `(a) || (b)`)
 - Simple returns such as `return x` / `return true` do not become Rules (inclusion follows the trivial determination in `drop-list.md`)
 - A `try` statement's `try` block and its `finally` block are walked like any block: their rules and their calls are the Symbol's. The `finally` block is included because it runs on every path through the statement.
 - A `catch` clause contributes its calls only. A call inside it is the Symbol's exactly when it would be in the `try` block, since the drop list applies to both alike, and so is any effect an effect plugin classifies from that call. Rules inside it — a guard, a `throw`, a nested `try` — are not expanded into the Symbol's rules, so rewriting an error handler's control flow does not move the `logic` fingerprint. Nothing on such an effect says it runs only when the `try` block throws: it is recorded, and propagated to callers, like an effect on any other path.
