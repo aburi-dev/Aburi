@@ -55,11 +55,9 @@ clause-exported handler gaining or losing a verb (`export { handler as GET }` be
 the export names it gained and lost. A handler exported by its keyword is named by its verb, so
 changing the verb reports it as removed and added.
 
-Component roles accept both React (`.tsx` / `.jsx`) and non-React (`.ts` / `.js`)
-extensions. `route.*` intentionally does **not** accept `.tsx` / `.jsx`: route
-files export named HTTP verb handlers and do not participate in JSX rendering,
-so restricting extensions matches the Next.js runtime and prevents `route.tsx`
-siblings from being misclassified.
+Every role, `route` included, accepts `.ts`, `.tsx`, `.js` and `.jsx`, the extensions Next.js
+matches App Router files against by default: an Open Graph image handler renders JSX, so it is
+written as `app/api/og/route.tsx`.
 
 Not classified today (documented for completeness): `default`, `global-error`,
 `middleware`, `instrumentation`, and the metadata files (`sitemap`, `icon`,

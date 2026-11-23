@@ -141,6 +141,25 @@ describe("scan — App Router special files", () => {
     }
   })
 
+  it.each(["tsx", "jsx"])("classifies the verb of a route.%s that renders JSX", async (ext) => {
+    const file = `app/api/og/route.${ext}`
+    await workspace.writeSource(
+      file,
+      [
+        'import { ImageResponse } from "next/og"',
+        "export async function GET() {",
+        "  return new ImageResponse(<div>Hello</div>, { width: 1200, height: 630 })",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const handler = symbolById(await scanWorkspace(), `ts:${file}#GET`)
+
+    expect(handler.extKind).toBe("framework:next:route")
+    expect(handler.derivedBy).toContain("framework:next:route:GET")
+  })
+
   it.each([
     [
       "a function of a route file named after a verb the module does not export",

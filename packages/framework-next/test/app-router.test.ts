@@ -14,6 +14,8 @@ describe("recognizeAppRouterFile", () => {
     ["app/not-found.tsx", "not-found"],
     ["app/api/users/route.ts", "route"],
     ["app/api/route.js", "route"],
+    ["app/api/og/route.tsx", "route"],
+    ["app/api/og/route.jsx", "route"],
   ])("recognizes %s as a %s", (path, role) => {
     expect(recognizeAppRouterFile(path)).toEqual({ role })
   })
@@ -30,8 +32,6 @@ describe("recognizeAppRouterFile", () => {
     ["app/lib/page.ts.bak", "an unrecognized extension"],
     ["app/page.mdx", "an unrecognized extension"],
     ["src/page.py", "an unrecognized extension"],
-    ["app/api/route.tsx", "a route never renders JSX"],
-    ["app/api/route.jsx", "a route never renders JSX"],
     ["app\\dashboard\\page.tsx", "separated by backslashes"],
     ["app/page", "no extension"],
     ["app/", "no file name"],
