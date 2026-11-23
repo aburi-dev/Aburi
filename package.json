@@ -32,7 +32,7 @@
     "@biomejs/biome": "^2.6.3",
     "@changesets/cli": "catalog:",
     "oxc-parser": "^0.158.0",
-    "turbo": "^2.11.10",
+    "turbo": "^2.11.11",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
