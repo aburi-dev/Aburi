@@ -1,5 +1,13 @@
 # @aburi/config
 
+## 0.5.2
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- 1f9485d: An entry `"..."` in `testFiles` stands for the default list, so `["...", "examples/**"]` adds one pattern to it instead of replacing it. A config that copied the default to add a pattern can write this instead, and keeps up when a release adds a default pattern, which the copy would not. A `!` pattern takes files out of the combined list, so `["...", "!src/test"]` keeps a production `src/test/` out of the default, and a list without `"..."` still replaces it. `"!..."` is rejected as `config-invalid`, since as a `!` pattern it would take nothing out.
+- Updated dependencies: `@aburi/plugin-registry@0.8.0`, `@aburi/types@0.9.0`
+
 ## 0.5.1
 
 ### Patch Changes

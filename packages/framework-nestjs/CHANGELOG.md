@@ -1,5 +1,20 @@
 # @aburi/framework-nestjs
 
+## 0.6.0
+
+### Minor Changes
+
+- 36383bb: Refuse a decorator the scan traced to another framework's package, instead of classifying it at `medium`. **Behaviour change:** a class decorated `@Controller()` from `routing-controllers` is no longer a `framework:nestjs:controller`, nor is one decorated `@Injectable()` from `@angular/core` a provider. The same holds for every module, controller, provider, filter, route and handler decorator from `tsoa` or a package under `@angular/`, `@decorators/`, `@foal/`, `@inversifyjs/`, `@midwayjs/`, `@overnightjs/`, `@tsed/` or `@tsoa/`, whether it is imported by name, renamed, as a default import, through a namespace import or through a workspace barrel that re-exports it. A NestJS decorator on the same class or method still classifies. Any other decorator that may be NestJS's is graded `medium` as before. That covers one from another package outside the workspace, which may wrap NestJS's as `@nestia/core` does, one a barrel reaches only through `export *`, one from a workspace package imported by its name, and one behind a chain the scan could not follow.
+  
+  `@aburi/framework-nestjs` API: `resolveDecoratorName` returns `null` for a refused decorator, `ImportedBindings.namespaces` maps a receiver to every namespace edge that binds it, and an entry of `ImportedBindings.names` carries `provenance` in place of `source` and `fromNestjs`.
+  
+  `ImportEdge.origins` now holds a key only for a name whose chain ended at a package outside the workspace, one that is neither a workspace file nor a workspace package. The key is recorded even when that package is the edge's own specifier, so `import { Controller } from "routing-controllers"` maps `Controller` to `routing-controllers`. A workspace package's name, or a path under it, ends the chain with no key, where a barrel's re-export of it used to be recorded as an origin. So does a specifier that can name no package: a subpath import (`#decorators`), or a bundler alias spelled `@/` or `~/`. The scan reads the package names from `ScanInput.workspacePackages`, and a caller that leaves it out has every package imported by its name, with no `paths` key, recorded as outside the workspace. `ExtractionJob` carries the names to every extractor as `workspacePackageNames`. `aburi scan` now lists every workspace package there, not only those a Component holds. It reads each manifest no Component holds on its own, and reports one it cannot read as a scan incident.
+
+### Patch Changes
+
+- 6e1e180: Declare `engines.node` as `>=24`, the Node.js version the documentation already requires, so a package manager can say so on an older Node instead of the package failing at run time.
+- Updated dependencies: `@aburi/core@0.9.0`, `@aburi/plugin-registry@0.8.0`, `@aburi/types@0.9.0`
+
 ## 0.5.1
 
 ### Patch Changes

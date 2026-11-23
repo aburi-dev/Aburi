@@ -1,5 +1,12 @@
 # @aburi/github-action
 
+## 0.6.1
+
+### Patch Changes
+
+- 6d3cd20: Run `pnpm/action-setup` v6.1.1 and `actions/setup-node` v7.1.0, the releases the repository's actions lockfile pins, instead of whatever their `v6` and `v7` tags point to when a job starts.
+- 6e1e180: Refuse an `output-dir` that holds a line break with exit 2, before `aburi diff` runs, as the other inputs are refused. Each line the action writes to `$GITHUB_OUTPUT` is an output of its own, so such a path could set another one; the step that names the reports also publishes no path whose resolved directory holds one.
+
 ## 0.6.0
 
 ### Minor Changes
