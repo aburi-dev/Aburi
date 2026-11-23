@@ -13,18 +13,36 @@ Recognised shapes:
 | `const Widget = () => <div/>` | `framework:react:component` | PascalCase name + JSX return |
 | `function useThing() { … }` | `framework:react:hook` | `/^use[A-Z]/` name |
 | `function useX() { useState(…); … }` | `framework:react:hook` (+ `hook-call` signal) | naming + inner hook call |
-| `const Ctx = createContext(…)` | `framework:react:context` | that const's own initializer is a `createContext(...)` / `React.createContext(...)` call |
+| `const Ctx = createContext(…)` | `framework:react:context` | that const's own initializer is a `createContext(...)` call, or `React.createContext(...)` on a name an import from React binds |
 | `const B = forwardRef((p,r) => …)` | `framework:react:forward-ref` | that const's own initializer is a `forwardRef(...)` / `React.forwardRef(...)` call |
 | `const M = memo(Inner)` | `framework:react:memo` | that const's own initializer is a `memo(...)` / `React.memo(...)` call |
 | `export default forwardRef((p,r) => …)` | `framework:react:forward-ref` | the default export is a `forwardRef(...)` call |
 | `export default memo(function Row() { … })`, `export default memo(Row)` | `framework:react:memo` | the default export is a `memo(...)` call |
 | `export default createContext(…)` | `framework:react:context` | the default export is a `createContext(...)` call |
 | `function P() { return <Ctx.Provider>…</Ctx.Provider> }` | `framework:react:provider` | PascalCase + a returned `<X.Provider>` |
-| `function withAuth(C) { … }` | `framework:react:hoc` | `/^with[A-Z]/` name |
+| `function withAuth(C) { … }` | `framework:react:hoc` | `/^with[A-Z]/` name + a body that renders JSX or returns a function |
 
 Priorities are first-match-wins in the order listed above: a `useX` function
 that also returns JSX still classifies as `hook`, and a `<Ctx.Provider>`-shaped
 component classifies as `provider` rather than `component`.
+
+A role read off a name is `high` only in a file that imports React (`react`,
+`react/*`, `preact/compat` or `preact/compat/*`, a type-only import included),
+and `medium` elsewhere, which the report badges: `useCounter` is a Vue
+composable's name too, and `memo` or `createContext` can be any library's. That
+covers a hook that calls no other hook, a context, memo or forward-ref call,
+and a HOC that returns a function without rendering JSX. A hook that calls
+another is `high` in any file, since calling one is what makes a function a
+hook by React's rules, and a hook file often imports only the hooks it builds
+on (`next/navigation`, `@tanstack/react-query`). JSX needs no import under the
+automatic runtime, so a component, a provider and a HOC that renders JSX are
+`high` in any file too.
+
+The name alone makes no HOC: `withRetry(fn)`, which returns what `fn` resolves
+to, has no role. Nor does it make a context on just any receiver:
+`vm.createContext({})` has no role, because no import from React binds `vm`. A
+bare `createContext(...)` is a context whatever module it came from, graded as
+above.
 
 A const is read from its own declarator, so in
 `export const PAGE_SIZE = 20, Row = memo(RowImpl)` only `Row` is a memo. The
@@ -81,6 +99,11 @@ Not classified today (documented for completeness):
   type resolves to `ReactNode`, whether an HOC parameter is typed as a
   component). The JSX-body heuristic used here is the most reliable pre-LSP
   signal.
+- A HOC that composes others (`(C) => compose(withA, withB)(C)`): its body
+  neither renders JSX nor returns a function.
+- React bound by CommonJS (`const React = require("react")`). `require` is no
+  import, so the file's name-read roles are `medium`, and
+  `React.createContext(...)` there has no role.
 - A wrapper behind an old-style type assertion (`<Context<T>>createContext(…)`,
   `<any>memo(Inner)`, written in a `.ts` file) — the initializer is read
   through `as`, `satisfies`, `!` and parentheses only, as

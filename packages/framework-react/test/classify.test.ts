@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { classifyReactSymbol } from "../src/index"
-import { candidateNamed, candidatesOf, makeCandidate, makeCtx } from "./fixtures/symbol"
+import { extracted, extractedNamed, makeCandidate, makeCtx } from "./fixtures/symbol"
+
+const REACT_IMPORT = 'import React, { createContext, forwardRef, memo, useState } from "react"'
 
 async function classified(source: string, name: string) {
-  return classifyReactSymbol(await candidateNamed(source, name), makeCtx("src/f.tsx", source))
+  const { candidate, ctx } = await extractedNamed(source, name)
+  return classifyReactSymbol(candidate, ctx)
 }
 
 describe("classifyReactSymbol", () => {
@@ -128,9 +131,10 @@ describe("classifyReactSymbol", () => {
       "component",
     ],
   ])("classifies %s", async (_label, source, name, kind, tag) => {
-    expect(await classified(source, name)).toEqual({
+    expect(await classified(`${REACT_IMPORT}\n${source}`, name)).toEqual({
       extKind: `framework:react:${kind}`,
       derivedBy: `framework:react:${tag}`,
+      confidence: "high",
     })
   })
 
@@ -151,6 +155,110 @@ describe("classifyReactSymbol", () => {
     expect(await classified(source, name)).toBeNull()
   })
 
+  it.each<[string, string, string, [string, string] | null]>([
+    [
+      "a hook in a file that imports nothing",
+      "export function useDatabase(url: string) { return { url } }",
+      "useDatabase",
+      ["hook", "medium"],
+    ],
+    [
+      "a Vue composable",
+      'import { ref } from "vue"\nexport function useCounter() { return ref(0) }',
+      "useCounter",
+      ["hook", "medium"],
+    ],
+    [
+      "a hook that calls another hook in a file that imports nothing from React",
+      'import { useRouter } from "next/navigation"\nexport function useBack() { const router = useRouter(); return () => router.back() }',
+      "useBack",
+      ["hook", "high"],
+    ],
+    [
+      "a hook in a file that imports only a type from React",
+      'import type { ReactNode } from "react"\nexport function useSlot(): ReactNode { return null }',
+      "useSlot",
+      ["hook", "high"],
+    ],
+    [
+      "a hook in a file that imports Preact's compatibility layer",
+      'import { useState } from "preact/compat"\nexport function useToggle() { return useState(false) }',
+      "useToggle",
+      ["hook", "high"],
+    ],
+    [
+      "a with* function that renders JSX in a file that imports nothing",
+      "export function withAuth(C) { return (p) => <C {...p} /> }",
+      "withAuth",
+      ["hoc", "high"],
+    ],
+    [
+      "a with* arrow that returns a function in a file that imports nothing",
+      "export const withLogging = (fn) => (...args) => fn(...args)",
+      "withLogging",
+      ["hoc", "medium"],
+    ],
+    [
+      "a with* function that returns a function in a file that imports React",
+      `${REACT_IMPORT}\nexport function withTheme(C) { return function Themed(p) { return React.createElement(C, p) } }`,
+      "withTheme",
+      ["hoc", "high"],
+    ],
+    [
+      "a with* function that returns what its callback resolves to",
+      `${REACT_IMPORT}\nexport async function withRetry(fn) { try { return await fn() } catch { return await fn() } }`,
+      "withRetry",
+      null,
+    ],
+    [
+      "a with* function that returns a call",
+      "export function withTransaction(db, fn) { return db.transaction(fn) }",
+      "withTransaction",
+      null,
+    ],
+    [
+      "a bare createContext(...) in a file that imports nothing",
+      "export const Ctx = createContext(null)",
+      "Ctx",
+      ["context", "medium"],
+    ],
+    [
+      "vm.createContext(...)",
+      'import vm from "node:vm"\nexport const sandbox = vm.createContext({})',
+      "sandbox",
+      null,
+    ],
+    [
+      "React.createContext(...) in a file that does not import React",
+      "export const Ctx = React.createContext(null)",
+      "Ctx",
+      null,
+    ],
+    [
+      "createContext(...) on a namespace React's import binds",
+      'import * as R from "react"\nexport const Ctx = R.createContext(null)',
+      "Ctx",
+      ["context", "high"],
+    ],
+    [
+      "a memo(...) in a file that imports nothing",
+      "export const M = memo(Inner)",
+      "M",
+      ["memo", "medium"],
+    ],
+    [
+      "a component in a file that imports nothing",
+      "export function Section() { return <section /> }",
+      "Section",
+      ["component", "high"],
+    ],
+  ])("grades %s against the file's imports", async (_label, source, name, expected) => {
+    const role = await classified(source, name)
+    expect(role === null ? null : [role.extKind, role.confidence]).toEqual(
+      expected === null ? null : [`framework:react:${expected[0]}`, expected[1]],
+    )
+  })
+
   it.each(["class", "method", "interface", "type", "enum", "namespace"] as const)(
     "returns null for a %s",
     (kind) => {
@@ -162,8 +270,8 @@ describe("classifyReactSymbol", () => {
 describe("classifyReactSymbol — a const read from its own initializer", () => {
   /** `"<name> <extKind> <derivedBy>"` per const Symbol, `"<name> -"` for one with no role, sorted. */
   async function constRoles(source: string, path = "src/f.tsx"): Promise<string[]> {
-    const ctx = makeCtx(path, source)
-    return (await candidatesOf(source, path))
+    const { candidates, ctx } = await extracted(source, path)
+    return candidates
       .filter((candidate) => candidate.kind === "const")
       .map((candidate) => {
         const role = classifyReactSymbol(candidate, ctx)
@@ -254,7 +362,7 @@ describe("classifyReactSymbol — a const read from its own initializer", () => 
   it.each([
     [
       "type arguments on the call",
-      "export const Ctx = React.createContext<Theme | null>(null)",
+      'import React from "react"\nexport const Ctx = React.createContext<Theme | null>(null)',
       "Ctx framework:react:context framework:react:context:React.createContext",
     ],
     [

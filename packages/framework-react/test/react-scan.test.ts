@@ -152,7 +152,7 @@ describe("scan — a call's derivedBy", () => {
   }
 
   const classifiedConst = (initializer: string) =>
-    classified(`export const X = ${initializer}\n`, "X")
+    classified(`import React from "react"\nexport const X = ${initializer}\n`, "X")
   const classifiedHook = (returned: string) =>
     classified(`export function useCounter() {\n  return ${returned}\n}\n`, "useCounter")
 
@@ -209,5 +209,43 @@ describe("scan — a call's derivedBy", () => {
     ],
   ])("names a receiver that is %s", async (_label, initializer, expected) => {
     expect(await classifiedConst(initializer)).toBe(expected)
+  })
+})
+
+describe("scan — React's naming conventions in a file that does not import React", () => {
+  it("gives a retry helper and a vm context no role, and grades a use* function medium", async () => {
+    await workspace.writeSource(
+      "src/db.ts",
+      [
+        'import vm from "node:vm"',
+        "",
+        "export async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {",
+        "  for (let i = 0; ; i++) {",
+        "    try {",
+        "      return await fn()",
+        "    } catch (error) {",
+        "      if (i + 1 >= attempts) throw error",
+        "    }",
+        "  }",
+        "}",
+        "",
+        "export function useDatabase(url: string) {",
+        "  return { url }",
+        "}",
+        "",
+        "export const sandbox = vm.createContext({})",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWith(workspace.root, {
+      languages: [langTypescriptPlugin],
+      frameworks: [reactFrameworkPlugin],
+    })
+    const hook = symbolNamed(result, "useDatabase")
+
+    expect(symbolNamed(result, "withRetry").extKind).toBeNull()
+    expect(symbolNamed(result, "sandbox").extKind).toBeNull()
+    expect([hook.extKind, hook.confidence]).toEqual(["framework:react:hook", "medium"])
   })
 })
