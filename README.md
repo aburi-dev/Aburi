@@ -74,8 +74,8 @@ Exit code `3` means a gate tripped. The full walkthrough is in
 ```yaml
 - uses: actions/checkout@v7
   with: { fetch-depth: 0 }
+# The pnpm your package.json pins in `packageManager`; add `with: { version: 10 }` if it pins none.
 - uses: pnpm/action-setup@v6
-  with: { version: 10 }
 - uses: actions/setup-node@v7
   with: { node-version: 24, cache: pnpm }
 - run: pnpm install --frozen-lockfile

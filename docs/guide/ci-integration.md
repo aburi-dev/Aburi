@@ -23,8 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
+      # The pnpm your package.json pins in `packageManager`; add `with: { version: 10 }`
+      # if it pins none. Beside a pin, pnpm/action-setup refuses any other version.
       - uses: pnpm/action-setup@v6
-        with: { version: 10 }
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -113,8 +114,8 @@ lockfile already pinned it.
 ```yaml
 - uses: actions/checkout@v7
   with: { fetch-depth: 0 }
+# The pnpm your package.json pins in `packageManager`; add `with: { version: 10 }` if it pins none.
 - uses: pnpm/action-setup@v6
-  with: { version: 10 }
 - uses: actions/setup-node@v7
   with:
     node-version: 24

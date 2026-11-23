@@ -100,9 +100,13 @@ inputs:
   pnpm-version:
     description: >-
       pnpm version to install via `pnpm/action-setup`. Only for `cli: dlx`; under
-      `cli: workspace` the action installs nothing and runs on the caller's pnpm.
+      `cli: workspace` the action installs nothing and runs on the caller's pnpm. Empty (the
+      default) installs the version the repository's root `package.json` pins in
+      `packageManager` or `devEngines.packageManager`, and pnpm 10 when it pins none. A version
+      given here is passed as it is, so beside a `packageManager` pin it has to be that exact
+      version: `pnpm/action-setup` refuses any other.
     required: false
-    default: "10"
+    default: ""
 
 outputs:
   diff-json-path:
@@ -133,6 +137,7 @@ runs:
         CLI: ${{ inputs.cli }}
         MAX_BYTES: ${{ inputs.max-bytes }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
+        PNPM_VERSION: ${{ inputs.pnpm-version }}
       run: |
         set -euo pipefail
         refuse() {
@@ -164,18 +169,32 @@ runs:
         case "$OUTPUT_DIR" in
           *$'\n'*|*$'\r'*) refuse "output-dir must not hold a line break." ;;
         esac
-
-    - name: "Setup pnpm"
-      if: inputs.cli == 'dlx'
-      uses: "pnpm/action-setup@v6.1.1"
-      with:
-        version: ${{ inputs.pnpm-version }}
+        case "$PNPM_VERSION" in
+          *$'\n'*|*$'\r'*) refuse "pnpm-version must not hold a line break." ;;
+        esac
 
     - name: "Setup Node.js"
       if: inputs.cli == 'dlx'
       uses: "actions/setup-node@v7.1.0"
       with:
         node-version: ${{ inputs.node-version }}
+
+    - name: "Aburi: resolve pnpm version"
+      id: pnpm-version
+      if: inputs.cli == 'dlx'
+      shell: bash
+      env:
+        PNPM_VERSION: ${{ inputs.pnpm-version }}
+      run: |
+        set -euo pipefail
+        version=$(node "$GITHUB_ACTION_PATH/scripts/resolve-pnpm-version.mjs")
+        echo "value=$version" >> "$GITHUB_OUTPUT"
+
+    - name: "Setup pnpm"
+      if: inputs.cli == 'dlx'
+      uses: "pnpm/action-setup@v6.1.1"
+      with:
+        version: ${{ steps.pnpm-version.outputs.value }}
 
     # After the toolchain so the resolver uses the pinned Node when there is one, and from
     # `working-directory` because the commit it reads has to be the one the CLI scans as the head.

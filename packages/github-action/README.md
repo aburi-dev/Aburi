@@ -24,9 +24,9 @@ jobs:
         with:
           fetch-depth: 0
       # The CLI and the plugins your aburi.json names, from your own lockfile.
+      # pnpm/action-setup installs the pnpm your package.json pins in `packageManager`,
+      # and refuses a `version` beside it; give it `with: { version: 10 }` if it pins none.
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -96,7 +96,7 @@ uses the alias.
 | `max-bytes` | *(empty)* | Cap for `diff.md`, in UTF-8 bytes, forwarded to `--max-bytes`. Empty means `65507` — GitHub's 65536-byte comment limit less the hidden marker. `0` means no cap. See [Report size](#report-size). |
 | `token` | `${{ github.token }}` | Token used for the comment API. |
 | `node-version` | `24` | Node.js version installed via `actions/setup-node`. `cli: dlx` only. |
-| `pnpm-version` | `10` | pnpm version installed via `pnpm/action-setup`. `cli: dlx` only. |
+| `pnpm-version` | *(empty)* | pnpm version installed via `pnpm/action-setup`. `cli: dlx` only. Empty installs the version your root `package.json` pins in `packageManager` or `devEngines.packageManager`, and pnpm 10 when it pins none. A version set here must equal a `packageManager` pin, because `pnpm/action-setup` refuses any other. |
 
 ## Outputs
 
@@ -127,9 +127,8 @@ installed the workspace is the one that should run it.
 - uses: actions/checkout@v7
   with:
     fetch-depth: 0
+# The pnpm your package.json pins in `packageManager`; add `with: { version: 10 }` if it pins none.
 - uses: pnpm/action-setup@v6
-  with:
-    version: 10
 - uses: actions/setup-node@v7
   with:
     node-version: 24
