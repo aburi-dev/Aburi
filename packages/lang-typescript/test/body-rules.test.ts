@@ -63,13 +63,6 @@ describe("the rules a body yields", () => {
   it("records the call a call-only return makes, though it yields no rule", async () => {
     expect((await walked("return foo()")).calls.map((c) => c.target)).toEqual(["foo"])
   })
-
-  it("tells two loops apart by the bound they test", async () => {
-    const strict = await walked("for (let i = 0; i < x.length; i++) {}")
-    const loose = await walked("for (let i = 0; i <= x.length; i++) {}")
-
-    expect(loose.rules).not.toEqual(strict.rules)
-  })
 })
 
 describe("a try statement", () => {

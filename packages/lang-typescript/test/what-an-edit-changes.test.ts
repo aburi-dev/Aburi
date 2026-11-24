@@ -426,7 +426,7 @@ describe("an edit to a condition, a case label or a declared value is a logic ch
     ])
   })
 
-  it("leaves a constant that holds a call to the call's own record", async () => {
+  it("leaves the arguments of a call a constant holds to `syntax`", async () => {
     const diff = await diffOfEdit(
       workspace,
       FILE,

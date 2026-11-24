@@ -1,33 +1,42 @@
-import { unwrapValue } from "@aburi/core"
+import { lastQnameSegment } from "@aburi/core"
 import type { Rule, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild } from "./ast-helpers"
+import { findChild, walkDescendants } from "./ast-helpers"
 import { makeRule, ruleText } from "./rules"
 
-/**
- * The values a declaration with no body of its own holds: an enum's members, and the initializer of
- * a variable that is neither a function, a class, an object literal nor a call, whose arguments the
- * call's own record carries.
- */
 export function declaredValueRules(symbol: SymbolCandidate<Node>): Rule[] {
-  if (symbol.kind === "enum") {
-    const declarations = [
-      symbol.fullNode,
-      ...(symbol.mergedDeclarations ?? []).map((d) => d.fullNode),
-    ]
-    return declarations.flatMap(enumMemberRules)
-  }
+  // An enum merges with a namespace written before or after it, so the declarations are told apart
+  // by their own type rather than by the Symbol's kind.
+  const declarations = [
+    symbol.fullNode,
+    ...(symbol.mergedDeclarations ?? []).map((d) => d.fullNode),
+  ]
+  const enums = declarations.flatMap((declaration) => {
+    const found = enumDeclarationOf(declaration)
+    return found === null ? [] : [found]
+  })
+  if (enums.length > 0) return enums.flatMap(enumMemberRules)
   if (symbol.kind !== "const" || symbol.bodyNode !== null) return []
   if (symbol.derivedBy.includes("destructured-binding")) return []
-  const value = initializerOf(symbol.fullNode, lastSegment(symbol.name))
+  const value = initializerOf(symbol.fullNode, lastQnameSegment(symbol.name))
   return value === null || !holdsValue(value) ? [] : [valueRule(value)]
 }
 
-/** A value rule for an object literal's entry that no Symbol of its own holds. */
 export function objectEntryValueRule(entry: Node): Rule | null {
   if (entry.type === "comment") return null
   const value = entry.type === "pair" ? entry.childForFieldName("value") : entry
   return value === null || !holdsValue(value) ? null : valueRule(entry)
+}
+
+function enumDeclarationOf(declaration: Node): Node | null {
+  let node: Node | null = declaration
+  while (node?.type === "export_statement" || node?.type === "ambient_declaration") {
+    node =
+      node.type === "export_statement"
+        ? node.childForFieldName("declaration")
+        : (node.namedChildren.find((child) => child !== null && child.type !== "comment") ?? null)
+  }
+  return node?.type === "enum_declaration" ? node : null
 }
 
 function enumMemberRules(declaration: Node): Rule[] {
@@ -49,15 +58,24 @@ function initializerOf(statement: Node, name: string): Node | null {
   return null
 }
 
+// A function's body is walked for rules of its own, and which function a call calls, and with what,
+// moves `syntax` alone, so a value holding either anywhere would read them twice or read them at all.
+const NOT_A_VALUE_TYPES: ReadonlySet<string> = new Set([
+  "arrow_function",
+  "await_expression",
+  "call_expression",
+  "class",
+  "function_expression",
+  "generator_function",
+  "method_definition",
+  "new_expression",
+])
+
 function holdsValue(value: Node): boolean {
-  const inner = unwrapValue(value)
-  return inner.type !== "call_expression" && inner.type !== "new_expression"
+  for (const node of walkDescendants(value)) if (NOT_A_VALUE_TYPES.has(node.type)) return false
+  return true
 }
 
 function valueRule(node: Node): Rule {
   return makeRule("value", node, { expr: ruleText(node) })
-}
-
-function lastSegment(qname: string): string {
-  return qname.slice(qname.lastIndexOf(".") + 1)
 }

@@ -40,6 +40,30 @@ describe("the values a declaration holds", () => {
     ],
     ["a const enum's members", "const enum Dir { Up, Down }", "Dir", ["Up", "Down"]],
     [
+      "an enum's members alone, beside a namespace merged after it",
+      'export enum Color { Red = "red" }\nexport namespace Color {\n  export function parse(s: string) { return s + "x" }\n  export const X = 1\n}',
+      "Color",
+      ['Red = "red"'],
+    ],
+    [
+      "an enum's members, beside a namespace merged before it",
+      'export namespace Color {\n  export const X = 1\n}\nexport enum Color { Red = "red" }',
+      "Color",
+      ['Red = "red"'],
+    ],
+    [
+      "a constant a namespace declares",
+      "export namespace Limits {\n  export const MAX = 10\n}",
+      "Limits.MAX",
+      ["10"],
+    ],
+    [
+      "an object's entries, past the members that are functions or hold a call",
+      "export const o = {\n  [k]() { if (a) go(); return a + b },\n  [j]: () => a - b,\n  c: await make({ n: 3 }),\n  n: 1,\n}",
+      "o",
+      ["n: 1"],
+    ],
+    [
       "the members of every declaration of a merged enum",
       "export enum Merged { A = 1 }\nexport enum Merged { B = 2 }",
       "Merged",
@@ -53,6 +77,10 @@ describe("the values a declaration holds", () => {
     ["a call", "export const client = createClient({ retries: 3 })", "client"],
     ["a call behind `as`", "export const client = createClient() as Client", "client"],
     ["a `new`", "export const cache = new Map()", "cache"],
+    ["a call a member is read off", "export const db = createClient({ retries: 3 }).db", "db"],
+    ["a call beside a fallback", "export const port = readPort({ fallback: 3 }) ?? 8080", "port"],
+    ["an `await`", "export const ready = await connected", "ready"],
+    ["an array of functions", "export const handlers = [() => a, () => b]", "handlers"],
     ["a destructured binding", "export const { host } = config", "host"],
     ["an ambient declaration", "export declare const ambient: number", "ambient"],
   ])("reads no value for %s", async (_label, source, name) => {
