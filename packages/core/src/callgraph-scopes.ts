@@ -277,8 +277,9 @@ interface BoundHead {
 
 const NO_MEMBER: BoundHead = { hit: null }
 
-// A declaration that writes an import, as `const { x } = require("./m")` does, says where `x` is
-// declared only through that import. `import type { X }` beside a `const X` binds X's type alone.
+// `const { x } = require("./m")` declares `x` only as the import's alias, so the import answers
+// first. An import on another line, like `import type { X }` beside `const X`, binds the type
+// alone, so file scope stays first.
 function resolveBoundHead(
   ctx: ResolveTargetContext,
   head: string,
@@ -292,7 +293,9 @@ function resolveBoundHead(
   }
   const imported = resolveInImportScope(ctx, head, tail, trace)
   if (imported?.hit != null) return imported
-  return resolveInFileScope(ctx, head, tail, trace) ?? imported
+  // What `require()` gives back is `module.exports`, whose members its module need not declare at
+  // its top level, so a member the import does not find is left to the later scopes.
+  return resolveInFileScope(ctx, head, tail, trace)
 }
 
 function declaredByItsImport(ctx: ResolveTargetContext, head: string): boolean {

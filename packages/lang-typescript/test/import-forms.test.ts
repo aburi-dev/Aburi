@@ -147,6 +147,104 @@ describe("a CommonJS require()", () => {
     ])
   })
 
+  it.each<[string, string, ImportEdge]>([
+    [
+      "a rest pattern at the declaration's first line",
+      'const {\n  ...rest\n} = require(\n  "./m",\n)',
+      { ...m, symbols: "*" },
+    ],
+    [
+      "an array pattern at the declaration's first line",
+      'const [\n  first,\n] = require("./m")',
+      { ...m, symbols: "*" },
+    ],
+    [
+      "a destructured property at the declaration's first line",
+      'const {\n  a,\n} = require("./m")\n  .nested',
+      { ...m, symbols: "*" },
+    ],
+    [
+      "a call of what it gives back at the call's line",
+      'const app =\n  require("./m")()',
+      { ...m, symbols: "*", line: 2 },
+    ],
+  ])("over several lines, puts the edge of %s", async (_label, source, edge) => {
+    const { imports } = await importsOf(source, "src/a.js")
+
+    expect(imports).toEqual([edge])
+  })
+
+  it.each<[string, string, ImportEdge]>([
+    [
+      "a destructuring",
+      'export const { a, b: c } = require("./m")',
+      {
+        ...m,
+        symbols: ["a", "b as c"],
+        reexports: [
+          { imported: "a", exported: "a" },
+          { imported: "b", exported: "c" },
+        ],
+      },
+    ],
+    [
+      "a module object",
+      'export const m = require("./m")',
+      { ...m, symbols: "*", namespaceBinding: "m", reexports: [{ imported: "*", exported: "m" }] },
+    ],
+  ])(
+    "reads an exported declaration as it reads one that is not, and republishes %s",
+    async (_label, source, edge) => {
+      const { imports } = await importsOf(source)
+
+      expect(imports).toEqual([edge])
+    },
+  )
+
+  it.each([
+    ["an empty key", 'const X = require("./m")[""]'],
+    ["a blank key", 'const X = require("./m")[" "]'],
+    ["a key that spells an alias", 'const X = require("./m")["a as b"]'],
+  ])("binds no name for a property no identifier spells: %s", async (_label, source) => {
+    const { imports, errors } = await importsOf(source, "src/a.js")
+
+    expect(imports).toEqual([{ ...m, symbols: "*" }])
+    expect(errors).toEqual([])
+  })
+
+  it("leaves out a destructured key no identifier spells", async () => {
+    const { imports } = await importsOf(
+      'const { "": a, " ": b, "a as b": c, ok } = require("./m")',
+      "src/a.js",
+    )
+
+    expect(imports).toEqual([{ ...m, symbols: ["ok"] }])
+  })
+
+  it.each([
+    ["a function's parameter", 'function load(require) {\n  return require("./m")\n}'],
+    [
+      "a function's own declaration",
+      'function load() {\n  const require = make()\n  return require("./m")\n}',
+    ],
+  ])("records nothing for a `require` %s binds", async (_label, source) => {
+    const { imports } = await importsOf(source, "src/a.js")
+
+    expect(imports).toEqual([])
+  })
+
+  it("reads a `require` the module binds itself, as `createRequire` gives one", async () => {
+    const { imports } = await importsOf(
+      'import { createRequire } from "node:module"\nconst require = createRequire(import.meta.url)\nconst m = require("./m")',
+      "src/a.mjs",
+    )
+
+    expect(imports).toEqual([
+      { source: "node:module", symbols: ["createRequire"], line: 1, dynamic: false },
+      { ...m, symbols: "*", namespaceBinding: "m", line: 3 },
+    ])
+  })
+
   it("republishes what an export clause exports, as it would an import's", async () => {
     const { imports } = await importsOf('const { a } = require("./a")\nexport { a as b }')
 

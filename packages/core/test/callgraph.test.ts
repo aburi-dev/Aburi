@@ -94,7 +94,7 @@ describe("resolveCallGraph", () => {
       scope: "the caller's file over an import written apart from its declaration",
       target: "helper",
       callees: [makeSymbol("ts:src/a.ts#helper"), makeSymbol("ts:src/util.ts#helper")],
-      imports: importsOf("src/a.ts", { source: "./util", symbols: ["helper"], line: 12 }),
+      imports: importsOf("src/a.ts", { source: "./util", symbols: ["helper"] }),
       to: "ts:src/a.ts#helper",
     },
     {

@@ -8,6 +8,7 @@ import type { ImportEdge, ParseError, Reexport } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
 import { maskedImportSpecifier } from "./import-type-reparse"
+import { bindingOf, isModuleBinding } from "./name-binding"
 
 export interface ImportExtraction {
   edges: ImportEdge[]
@@ -30,6 +31,17 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
     } else if (child.type === "lexical_declaration" || child.type === "variable_declaration") {
       for (const edge of readRequireDeclaration(child, boundRequires, errors)) imports.push(edge)
     } else if (child.type === "export_statement") {
+      const declaration = child.childForFieldName("declaration")
+      if (
+        declaration?.type === "lexical_declaration" ||
+        declaration?.type === "variable_declaration"
+      ) {
+        for (const edge of readRequireDeclaration(declaration, boundRequires, errors)) {
+          imports.push(edge)
+          // The declaration exports each name it binds under that name.
+          for (const local of boundLocals(edge)) addExportedLocal(exportedLocals, local, local)
+        }
+      }
       if (child.childForFieldName("source") === null) readLocalExports(child, exportedLocals)
       else {
         const edge = readReExport(child, errors)
@@ -47,12 +59,25 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
   return { edges: dedupeEdges(edges), errors }
 }
 
+function addExportedLocal(
+  exportedLocals: Map<string, string[]>,
+  local: string,
+  exported: string,
+): void {
+  const names = exportedLocals.get(local)
+  if (names === undefined) exportedLocals.set(local, [exported])
+  else names.push(exported)
+}
+
+function boundLocals(edge: ImportEdge): string[] {
+  if (edge.symbols === "*")
+    return edge.namespaceBinding === undefined ? [] : [edge.namespaceBinding]
+  return edge.symbols.map((raw) => splitAliasedImportName(raw).local)
+}
+
 function readLocalExports(node: Node, exportedLocals: Map<string, string[]>): void {
-  const add = (local: string, exported: string): void => {
-    const names = exportedLocals.get(local)
-    if (names === undefined) exportedLocals.set(local, [exported])
-    else names.push(exported)
-  }
+  const add = (local: string, exported: string): void =>
+    addExportedLocal(exportedLocals, local, exported)
   const value = node.childForFieldName("value")
   if (value !== null) {
     if (value.type === "identifier") add(value.text, DEFAULT_EXPORT_NAME)
@@ -206,14 +231,26 @@ function propertyRead(access: Node): string | null {
   }
   if (access.type !== "subscript_expression") return null
   const index = access.childForFieldName("index")
-  return index === null ? null : readStaticString(index)
+  return index === null ? null : bindableKey(readStaticString(index))
 }
 
-/** The argument of a call of the bare `require` given exactly one, read past comments. */
+// An import binding spells the name it takes, so a key no identifier spells is taken by none.
+const IDENTIFIER_NAME = /^[$_\p{ID_Start}][$\p{ID_Continue}]*$/u
+
+function bindableKey(key: string | null): string | null {
+  return key !== null && IDENTIFIER_NAME.test(key) ? key : null
+}
+
+/**
+ * The argument of a call of the bare `require` given exactly one, read past comments. A `require`
+ * the module binds itself is `createRequire`'s, and one a function binds is its own.
+ */
 function requireSpecifier(call: Node): Node | null {
   if (call.type !== "call_expression") return null
   const callee = call.childForFieldName("function")
   if (callee?.type !== "identifier" || callee.text !== "require") return null
+  const binding = bindingOf(callee, callee.text)
+  if (binding !== null && !isModuleBinding(binding)) return null
   const args = call.childForFieldName("arguments")
   if (args?.type !== "arguments") return null
   const values = args.namedChildren.filter((arg) => arg !== null && arg.type !== "comment")
@@ -257,8 +294,12 @@ function destructuredNames(pattern: Node): string[] {
 function destructuredPair(pair: Node): string | null {
   const key = pair.childForFieldName("key")
   const imported =
-    key === null ? null : key.type === "property_identifier" ? key.text : readStaticString(key)
-  if (imported === null || imported.length === 0) return null
+    key === null
+      ? null
+      : key.type === "property_identifier"
+        ? key.text
+        : bindableKey(readStaticString(key))
+  if (imported === null) return null
   let local = pair.childForFieldName("value")
   if (local?.type === "assignment_pattern") local = local.childForFieldName("left")
   return local?.type === "identifier" ? importedAs(imported, local.text) : null
