@@ -1,6 +1,10 @@
 import type { Config } from "@aburi/types"
 import { EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
-import { type PrismaClientModuleMatcher, prismaClientModuleMatcher } from "./imports"
+import {
+  moduleSegments,
+  type PrismaClientModuleMatcher,
+  prismaClientModuleMatcher,
+} from "./imports"
 
 /** `pluginOptions["effects-prisma"]`. */
 export interface PrismaPluginOptions {
@@ -32,13 +36,19 @@ export function readPrismaOptions(config: Config): PrismaPluginOptions {
   }
   const clientModules: unknown = Reflect.get(written, "clientModules")
   if (clientModules === undefined) return {}
+  // An entry with no path segment to match, such as `"./"` or `"index"`, would match no import.
   if (
     !Array.isArray(clientModules) ||
-    !clientModules.every((entry) => typeof entry === "string" && entry.trim().length > 0)
+    !clientModules.every(
+      (entry): entry is string =>
+        typeof entry === "string" && moduleSegments(entry.trim()).length > 0,
+    )
   ) {
-    throw new PrismaOptionsError(".clientModules must be a list of non-empty module specifiers")
+    throw new PrismaOptionsError(
+      ".clientModules must be a list of module specifiers, each naming a module by its path",
+    )
   }
-  return { clientModules }
+  return { clientModules: clientModules.map((entry) => entry.trim()) }
 }
 
 const matchers = new WeakMap<Config, PrismaClientModuleMatcher>()

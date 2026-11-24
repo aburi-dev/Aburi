@@ -193,12 +193,21 @@ function importBindingHalves(raw: string): ImportBindingHalves {
 }
 
 /**
- * How far the file's imports place a call's client: `direct` when the file, or the import that
- * binds the call's leading name, leads to a matching module; `reached` when only a workspace module
- * the file imports from does, beside what it binds (`ImportEdge.upstream`), as `./prisma.service`
- * does for `PrismaService` beside `@prisma/client`; `null` when nothing does.
+ * How far the file's imports place a call's client. The import that binds the call's leading name
+ * answers first, wherever the scan followed it: a name whose re-exports end at another package, or
+ * that a workspace module declares without importing a matching one, is `null` whatever else the
+ * file imports. A name no import binds, or one bound by an import the scan could not follow, is
+ * answered by the file as a whole.
+ * - `direct`: that import is of a matching module, or its re-exports end at one
+ *   (`ImportEdge.origins`); answered by the file as a whole, the file imports a matching module.
+ * - `bound`: that import leads to a workspace module that imports a matching one
+ *   (`ImportEdge.upstream`), as `import { prisma } from "./db"` does: the name is declared beside
+ *   the library, which does not make it the library's client.
+ * - `reached`: only a workspace module the file imports another name from does, as
+ *   `./prisma.service` does for `PrismaService` beside `this.prisma`.
+ * - `null`: nothing does.
  */
-export type ImportGate = "direct" | "reached" | null
+export type ImportGate = "direct" | "bound" | "reached" | null
 
 export function importGate(
   imports: readonly ImportEdge[],
@@ -217,18 +226,25 @@ export function importGate(
     reached ||= fact.reaches
     bound = edgeBinding(edge, head, origin) ?? bound
   }
+  // What the name is bound to says more than what else the file imports, so a type imported from
+  // the library beside it leaves the answer as it was.
+  const binding = bound === null ? "unfollowed" : bindingGate(bound, matches)
+  if (binding !== "unfollowed") return binding
   if (direct) return "direct"
-  if (bound !== null && bindingReachesMatchingImport(bound, matches)) return "direct"
   return reached ? "reached" : null
 }
 
-// Through its own specifier, or through what the workspace module declaring the name imports.
-function bindingReachesMatchingImport(
+function bindingGate(
   bound: BoundImport,
   matches: (source: string) => boolean,
-): boolean {
-  if (matches(bound.edge.source)) return true
-  return (bound.edge.upstream?.get(bound.imported) ?? []).some(matches)
+): ImportGate | "unfollowed" {
+  const { edge, imported } = bound
+  const reexported = edge.origins?.get(imported)
+  if (matches(edge.source) || (reexported !== undefined && matches(reexported))) return "direct"
+  if (reexported !== undefined) return null
+  const upstream = edge.upstream?.get(imported)
+  if (upstream === undefined) return "unfollowed"
+  return upstream.some(matches) ? "bound" : null
 }
 
 interface EdgeFacts {

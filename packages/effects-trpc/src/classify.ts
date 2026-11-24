@@ -34,10 +34,10 @@ export function classifyTrpcCall(
   const { segments, last: terminal } = assertNonEmptySegments(call.target, origin)
 
   // A tRPC client has no name of its own to place it by, so what only a module the file imports
-  // from reaches is not enough: the client must be the file's import, or bound by one that leads
-  // to the client's module, as `import { api } from "~/trpc/react"` does.
-  if (importGate(ctx.file.imports, segments[0], origin, isTrpcClientModule) !== "direct")
-    return null
+  // another name from reaches is not enough: the client must be the file's import, or bound by one
+  // that leads to the client's module, as `import { api } from "~/trpc/react"` does.
+  const gate = importGate(ctx.file.imports, segments[0], origin, isTrpcClientModule)
+  if (gate !== "direct" && gate !== "bound") return null
 
   const clientPath = segments[0] === "this" ? segments.slice(1) : segments
   if (clientPath.length < MIN_CLIENT_SEGMENTS) return null

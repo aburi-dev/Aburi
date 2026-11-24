@@ -1,12 +1,15 @@
-import type {
-  CallCandidate,
-  ExtractionContext,
-  ImportEdge,
-  ImportResolver,
-  LanguagePlugin,
-  OpaqueAstNode,
-  SourceFile,
-  SymbolCandidate,
+import {
+  type CallCandidate,
+  EXPORT_CLAUSE_DERIVED_BY_PREFIX,
+  EXPORT_DEFAULT_DERIVED_BY,
+  EXPORT_KEYWORD_DERIVED_BY,
+  type ExtractionContext,
+  type ImportEdge,
+  type ImportResolver,
+  type LanguagePlugin,
+  type OpaqueAstNode,
+  type SourceFile,
+  type SymbolCandidate,
 } from "@aburi/types"
 import { AsyncMemo } from "../async-memo"
 import {
@@ -43,6 +46,8 @@ export interface ImportOriginsInput {
   router: LanguageRouter
   loadSource(file: DiscoveredFile): Promise<SourceFile>
   record(event: ExtractionEvent): void
+  /** Set where effect plugins are loaded, whose reads take a module's declarations as well. */
+  declarations?: DeclarationReadContext
 }
 
 interface Hop {
@@ -67,6 +72,12 @@ interface Upstream {
   readonly origin: string | null
 }
 
+/**
+ * What following a name into a module found: where it leads, `absent` for an `export *` target
+ * that does not export it, `null` where it could not be followed.
+ */
+type Followed = Upstream | "absent" | null
+
 /** A class a module declares: the members it declares itself and the name its `extends` writes. */
 export interface DeclaredClass {
   readonly members: ReadonlySet<string>
@@ -76,16 +87,34 @@ export interface DeclaredClass {
 /** The classes a module declares at its top level, by name. */
 export type DeclaredClasses = ReadonlyMap<string, DeclaredClass>
 
-/** What reading another module's classes takes from the file being extracted. */
-export type ClassReadContext = Pick<ExtractionContext, "registry" | "config">
+/** What a module's own top-level declarations are: its classes, and the names it exports them by. */
+export interface ModuleDeclarations {
+  readonly classes: DeclaredClasses
+  /** The declared name behind each name the module exports from its own declarations. */
+  readonly exports: ReadonlyMap<string, string>
+}
+
+/** What reading another module's declarations takes from the scan. */
+export type DeclarationReadContext = Pick<ExtractionContext, "registry" | "config">
+
+/**
+ * One parse of a module: its edges, `null` where it could not be read, and its declarations, `null`
+ * where the parse was not asked for them.
+ */
+interface ModuleRead {
+  readonly edges: readonly ImportEdge[] | null
+  readonly declarations: ModuleDeclarations | null
+}
 
 /** A bare specifier a file imports through and the paths its language maps it to, in order. */
 export type SpecifierPaths = readonly [specifier: string, paths: readonly string[]]
 
 const NAMESPACE = "*"
 
-// A module another file leads to is parsed once per thread, so an effect plugin's gate and a
-// decorator's origin cost one parse of each module the workspace imports from.
+// A module another file leads to is parsed once per thread, so an effect plugin's gate, a call's
+// class and a decorator's origin cost one parse of each module the workspace imports from. Its
+// declarations are read in that parse only where they are asked for, which is costlier than its
+// edges, and a module asked for them only after its edges were read is parsed again.
 export class ImportOrigins {
   readonly #input: ImportOriginsInput
   readonly #files: ReadonlyMap<string, DiscoveredFile>
@@ -98,7 +127,9 @@ export class ImportOrigins {
   readonly #mapped = new AsyncMemo<string, readonly string[] | "fault">()
   readonly #sources = new Map<string, readonly string[]>()
   readonly #upstreamTargets = new AsyncMemo<string, Target>()
-  readonly #classes = new AsyncMemo<string, DeclaredClasses>()
+  readonly #declarations = new AsyncMemo<string, ModuleDeclarations>()
+  readonly #reads = new AsyncMemo<string, ModuleRead>()
+  readonly #unreadable = new Set<string>()
 
   constructor(input: ImportOriginsInput) {
     this.#input = input
@@ -111,8 +142,8 @@ export class ImportOrigins {
     this.#edges.prime(path, edges)
   }
 
-  rememberClasses(path: string, classes: DeclaredClasses): void {
-    this.#classes.prime(path, classes)
+  rememberDeclarations(path: string, declarations: ModuleDeclarations): void {
+    this.#declarations.prime(path, declarations)
   }
 
   async attach(
@@ -175,7 +206,6 @@ export class ImportOrigins {
     imports: readonly ImportEdge[],
     classes: DeclaredClasses,
     calls: readonly CallCandidate[],
-    ctx: ClassReadContext,
   ): Promise<ReadonlySet<CallCandidate>> {
     const found = new Set<CallCandidate>()
     for (const call of calls) {
@@ -186,7 +216,6 @@ export class ImportOrigins {
         { file: fromFile, edges: imports, classes },
         toNfc(type),
         toNfc(member),
-        ctx,
         new Set(),
       )
       if (declares) found.add(call)
@@ -198,25 +227,23 @@ export class ImportOrigins {
     module: ClassModule,
     type: string,
     member: string,
-    ctx: ClassReadContext,
     visited: Set<string>,
   ): Promise<boolean> {
     const state = `${module.file}\0${type}\0extends`
     if (visited.has(state)) return false
     visited.add(state)
-    const declared = await this.#classNamed(module, type, ctx, visited)
+    const declared = await this.#classNamed(module, type, visited)
     if (declared === null) return false
     if (declared.shape.members.has(member)) return true
     const superclass = declared.shape.superclass
     if (superclass === undefined) return false
-    return this.#declaresMember(declared.module, superclass, member, ctx, visited)
+    return this.#declaresMember(declared.module, superclass, member, visited)
   }
 
   // The class a name the module binds is: its own, or the one an import of it leads to.
   async #classNamed(
     module: ClassModule,
     name: string,
-    ctx: ClassReadContext,
     visited: Set<string>,
   ): Promise<{ readonly module: ClassModule; readonly shape: DeclaredClass } | null> {
     const own = module.classes.get(name)
@@ -225,29 +252,28 @@ export class ImportOrigins {
     if (hop === null) return null
     const target = await this.#upstreamTarget(module.file, hop.source)
     if (typeof target !== "object") return null
-    return this.#exportedClass(target.file, hop.imported, ctx, visited)
+    return this.#exportedClass(target.file, hop.imported, visited)
   }
 
   async #exportedClass(
     file: string,
     name: string,
-    ctx: ClassReadContext,
     visited: Set<string>,
   ): Promise<{ readonly module: ClassModule; readonly shape: DeclaredClass } | null> {
     const state = `${file}\0${name}`
     if (visited.has(state)) return null
     visited.add(state)
-    const classes = await this.#classes.get(file, () => this.#readClasses(file, ctx))
+    const { classes, exports } = await this.#declarationsOf(file)
     const edges = await this.#edges.get(file, () => this.#readEdges(file))
     const module: ClassModule = { file, edges, classes }
-    const own = classes.get(name)
+    const own = classes.get(exports.get(name) ?? name)
     if (own !== undefined) return { module, shape: own }
     const hop = reexportOf(edges, name)
     if (hop !== null) {
       if (hop.imported === NAMESPACE) return null
       const target = await this.#upstreamTarget(file, hop.source)
       return typeof target === "object"
-        ? this.#exportedClass(target.file, hop.imported, ctx, visited)
+        ? this.#exportedClass(target.file, hop.imported, visited)
         : null
     }
     if (name === DEFAULT_EXPORT_NAME) return null
@@ -255,28 +281,43 @@ export class ImportOrigins {
       if (edge.reexportsAll !== true) continue
       const target = await this.#upstreamTarget(file, edge.source)
       if (typeof target !== "object") continue
-      const reached = await this.#exportedClass(target.file, name, ctx, visited)
+      const reached = await this.#exportedClass(target.file, name, visited)
       if (reached !== null) return reached
     }
     return null
   }
 
-  async #readClasses(path: string, ctx: ClassReadContext): Promise<DeclaredClasses> {
+  // Asked for before the module's edges wherever both are wanted, so one parse gives both.
+  #declarationsOf(file: string): Promise<ModuleDeclarations> {
+    return this.#declarations.get(file, async () => {
+      const read = await this.#read(file, true)
+      return (
+        read.declarations ?? (await this.#readModule(file, true)).declarations ?? NO_DECLARATIONS
+      )
+    })
+  }
+
+  #read(path: string, withDeclarations: boolean): Promise<ModuleRead> {
+    return this.#reads.get(path, () => this.#readModule(path, withDeclarations))
+  }
+
+  async #readModule(path: string, withDeclarations: boolean): Promise<ModuleRead> {
     const discovered = this.#files.get(path)
     const language = this.#input.router.route(path)
-    if (discovered === undefined || language === null) return NO_CLASSES
+    if (discovered === undefined || language === null) return this.#unread(path)
     const once = edgesReadOnce(path)
     try {
       const file = await this.#input.loadSource(discovered)
       const parsed = await language.parseFile(file)
-      this.#edges.prime(path, parsed.imports.map(normalizeImportEdge))
-      if (parsed.tree === null) return NO_CLASSES
+      const edges = parsed.imports.map(normalizeImportEdge)
+      if (parsed.tree === null) return { edges, declarations: NO_DECLARATIONS }
+      // A barrel is asked what it exports itself before what its `export *` targets do.
+      const wanted = withDeclarations || edges.some((edge) => edge.reexportsAll === true)
       try {
-        const candidates = normalizeCandidates(
-          language.extractSymbols(parsed.tree, { file, ...ctx }),
-          language.manifest.name,
-        )
-        return Array.isArray(candidates) ? declaredClasses(candidates) : NO_CLASSES
+        return {
+          edges,
+          declarations: wanted ? this.#extractDeclarations(language, parsed.tree, file) : null,
+        }
       } finally {
         const failures: TreeReleaseFailure[] = []
         releaseParsedTree(language, parsed.tree, file, failures)
@@ -289,29 +330,55 @@ export class ImportOrigins {
       this.#input.record({
         kind: "log",
         level: "debug",
-        message: `scan/import-origins: ${path} gave no classes: ${describeThrown(error)}`,
+        message: `scan/import-origins: ${path} gave no import edges: ${describeThrown(error)}`,
         once,
       })
-      return NO_CLASSES
+      return this.#unread(path)
     }
+  }
+
+  #extractDeclarations(language: Language, tree: unknown, file: SourceFile): ModuleDeclarations {
+    const ctx = this.#input.declarations
+    if (ctx === undefined) return NO_DECLARATIONS
+    const candidates = normalizeCandidates(
+      language.extractSymbols(tree, { file, ...ctx }),
+      language.manifest.name,
+    )
+    return Array.isArray(candidates) ? moduleDeclarations(candidates) : NO_DECLARATIONS
+  }
+
+  #unread(path: string): ModuleRead {
+    this.#unreadable.add(path)
+    return { edges: null, declarations: NO_DECLARATIONS }
   }
 
   /** `null` where the edge's own module is outside the workspace, which its specifier says. */
   async #upstreamOf(fromFile: string, specifier: string, name: string): Promise<Upstream | null> {
     const first = await this.#upstreamTarget(fromFile, specifier)
     if (typeof first !== "object") return null
-    return this.#declaringImports(first.file, name, new Set())
+    const followed = await this.#declaringImports(first.file, name, true, new Set())
+    return followed === "absent" ? null : followed
   }
 
+  /**
+   * `asserted` where an import or a named re-export says the module exports the name, so a name its
+   * declarations do not show is taken to be declared there all the same. An `export *` target makes
+   * no such claim, and one that shows no such name is `absent`.
+   */
   async #declaringImports(
     file: string,
     name: string,
+    asserted: boolean,
     visited: Set<string>,
-  ): Promise<Upstream | null> {
+  ): Promise<Followed> {
     const state = `${file}\0${name}`
-    if (visited.has(state)) return null
+    // An `export *` back into a module already on the path passes on nothing new.
+    if (visited.has(state)) return asserted ? null : "absent"
     visited.add(state)
+    // An `export *` target is asked what it exports.
+    if (!asserted) await this.#declarationsOf(file)
     const edges = await this.#edges.get(file, () => this.#readEdges(file))
+    if (this.#unreadable.has(file)) return null
     const own = this.#sourcesOf(file, edges)
     if (name !== NAMESPACE) {
       const hop = reexportOf(edges, name)
@@ -322,22 +389,33 @@ export class ImportOrigins {
           return { sources: own, origin: this.#isForeign(hop.source) ? hop.source : null }
         }
         if (hop.imported === NAMESPACE) return { sources: own, origin: null }
-        return this.#declaringImports(target.file, hop.imported, visited)
+        return this.#declaringImports(target.file, hop.imported, true, visited)
       }
     }
-    // `export *` may be where the name comes from; what it leads to joins the module's own imports.
-    const throughAll = new Set<string>()
-    if (name !== NAMESPACE && name !== DEFAULT_EXPORT_NAME) {
-      for (const edge of edges) {
-        if (edge.reexportsAll !== true) continue
-        const target = await this.#upstreamTarget(file, edge.source)
-        if (typeof target !== "object") continue
-        const reached = await this.#declaringImports(target.file, name, visited)
-        for (const source of reached?.sources ?? []) throughAll.add(source)
+    if (name === NAMESPACE || name === DEFAULT_EXPORT_NAME) return { sources: own, origin: null }
+    const barrel = edges.some((edge) => edge.reexportsAll === true)
+    if (asserted && !barrel) return { sources: own, origin: null }
+    if ((await this.#declarationsOf(file)).exports.has(name)) return { sources: own, origin: null }
+    // `export *` passes on only what a target exports, so the name is the target's that has it.
+    const found: Upstream[] = []
+    let fromPackage = false
+    let unknown = false
+    for (const edge of edges) {
+      if (edge.reexportsAll !== true) continue
+      const target = await this.#upstreamTarget(file, edge.source)
+      if (target === "outside") fromPackage = true
+      else if (target === "fault") unknown = true
+      else {
+        const reached = await this.#declaringImports(target.file, name, false, visited)
+        if (reached === null) unknown = true
+        else if (reached !== "absent") found.push(reached)
       }
     }
-    if (throughAll.size === 0) return { sources: own, origin: null }
-    return { sources: [...new Set([...own, ...throughAll])].sort(compareCodeUnit), origin: null }
+    if (found.length > 0) return joinedUpstream(found)
+    // A target that could not be read may be the one that exports the name.
+    if (unknown) return null
+    // A package's `export *` is not read and may pass the name on, so the module's own imports stand.
+    return asserted || fromPackage ? { sources: own, origin: null } : "absent"
   }
 
   #sourcesOf(file: string, edges: readonly ImportEdge[]): readonly string[] {
@@ -519,31 +597,7 @@ export class ImportOrigins {
   }
 
   async #readEdges(path: string): Promise<readonly ImportEdge[]> {
-    const discovered = this.#files.get(path)
-    const language = this.#input.router.route(path)
-    if (discovered === undefined || language === null) return []
-    const once = edgesReadOnce(path)
-    try {
-      const file = await this.#input.loadSource(discovered)
-      const parsed = await language.parseFile(file)
-      if (parsed.tree !== null) {
-        const failures: TreeReleaseFailure[] = []
-        releaseParsedTree(language, parsed.tree, file, failures)
-        for (const failure of failures) {
-          this.#input.record({ kind: "tree-release-failure", failure, once })
-        }
-      }
-      return parsed.imports.map(normalizeImportEdge)
-    } catch (error) {
-      // The file's own turn in the scan reports the fault; here it only ends the chain.
-      this.#input.record({
-        kind: "log",
-        level: "debug",
-        message: `scan/import-origins: ${path} gave no import edges: ${describeThrown(error)}`,
-        once,
-      })
-      return []
-    }
+    return (await this.#read(path, false)).edges ?? []
   }
 
   #fault(language: Language, what: string, error: unknown, once: string): void {
@@ -598,22 +652,27 @@ interface ClassModule {
   readonly classes: DeclaredClasses
 }
 
-const NO_CLASSES: DeclaredClasses = new Map()
+const NO_DECLARATIONS: ModuleDeclarations = { classes: new Map(), exports: new Map() }
 
-/** The classes the candidates of one module declare at its top level, by name. */
-export function declaredClasses(
+/** What the candidates of one module declare at its top level. */
+export function moduleDeclarations(
   candidates: readonly SymbolCandidate<OpaqueAstNode>[],
-): DeclaredClasses {
+): ModuleDeclarations {
   const members = new Map<string, Set<string>>()
   const classes = new Map<string, { superclass: string | undefined; members: Set<string> }>()
+  const exports = new Map<string, string>()
   for (const candidate of candidates) {
     const name = toNfc(candidate.name)
     const dot = name.indexOf(".")
     if (dot < 0) {
+      if (candidate.kind === "call") continue
+      for (const exported of exportedNames(candidate)) exports.set(exported, name)
       if (candidate.kind !== "class") continue
       const own = members.get(name) ?? new Set<string>()
       members.set(name, own)
-      for (const member of candidate.instanceMembers ?? []) {
+      // A plugin outside the tree may write anything here.
+      const written: unknown = candidate.instanceMembers
+      for (const member of Array.isArray(written) ? written : []) {
         if (typeof member === "string") own.add(member)
       }
       const superclass = typeof candidate.superclass === "string" ? candidate.superclass : undefined
@@ -626,7 +685,30 @@ export function declaredClasses(
     members.set(owner, own)
     own.add(name.slice(dot + 1))
   }
-  return classes
+  return { classes, exports }
+}
+
+// The names the export tokens a language plugin writes in `derivedBy` give the declaration.
+function exportedNames(candidate: SymbolCandidate<OpaqueAstNode>): string[] {
+  const written: unknown = candidate.derivedBy
+  const names: string[] = []
+  for (const token of Array.isArray(written) ? written : []) {
+    if (token === EXPORT_KEYWORD_DERIVED_BY) names.push(toNfc(candidate.name))
+    else if (token === EXPORT_DEFAULT_DERIVED_BY) names.push(DEFAULT_EXPORT_NAME)
+    else if (typeof token === "string" && token.startsWith(EXPORT_CLAUSE_DERIVED_BY_PREFIX)) {
+      names.push(toNfc(token.slice(EXPORT_CLAUSE_DERIVED_BY_PREFIX.length)))
+    }
+  }
+  return names
+}
+
+// Several `export *` targets exporting one name: what any of them leads to.
+function joinedUpstream(found: readonly Upstream[]): Upstream {
+  const [first, ...others] = found
+  if (first === undefined || others.length === 0) return first ?? { sources: [], origin: null }
+  const sources = [...new Set(found.flatMap((upstream) => upstream.sources))].sort(compareCodeUnit)
+  const origin = others.every((upstream) => upstream.origin === first.origin) ? first.origin : null
+  return { sources, origin }
 }
 
 // The import that binds `local`, or for `<namespace>.<name>` the namespace import, as a hop.

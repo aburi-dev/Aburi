@@ -9,12 +9,6 @@ const workspace = useScratchWorkspace("drizzle-imported-client")
 const scanWorkspace = () =>
   scanWith(workspace.root, { languages: [langTypescriptPlugin], effects: [drizzleEffectsPlugin] })
 
-async function writeSources(sources: Readonly<Record<string, readonly string[]>>): Promise<void> {
-  for (const [path, lines] of Object.entries(sources)) {
-    await workspace.writeSource(path, [...lines, ""].join("\n"))
-  }
-}
-
 const DB = [
   'import { drizzle } from "drizzle-orm/node-postgres"',
   "",
@@ -44,7 +38,7 @@ const USERS_REPO = [
 
 describe("scan — a Drizzle client another module of the workspace builds", () => {
   it("classifies a call on the client the file imports", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/db.ts": DB,
       "src/schema.ts": SCHEMA,
       "src/sign-up.ts": [
@@ -63,7 +57,7 @@ describe("scan — a Drizzle client another module of the workspace builds", () 
   })
 
   it("classifies a call on a client a workspace type alias declares", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/db.ts": DB,
       "src/schema.ts": SCHEMA,
       "src/users.repo.ts": USERS_REPO,
@@ -75,7 +69,7 @@ describe("scan — a Drizzle client another module of the workspace builds", () 
   })
 
   it("resolves a call of a repository's own method, whose write reaches the caller", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/db.ts": DB,
       "src/schema.ts": SCHEMA,
       "src/users.repo.ts": USERS_REPO,
@@ -100,4 +94,63 @@ describe("scan — a Drizzle client another module of the workspace builds", () 
       ["db.write", true],
     ])
   })
+
+  it("leaves a call on an instance whose module imports Drizzle in the calls, on a name no client word places", async () => {
+    await workspace.writeSources({
+      "src/db.ts": DB,
+      "src/schema.ts": SCHEMA,
+      "src/users.repo.ts": [
+        'import { eq } from "drizzle-orm"',
+        'import { db } from "./db"',
+        'import { users } from "./schema"',
+        "",
+        "class UsersRepo {",
+        "  update(id: string, dto: object) {",
+        "    return db.update(users).set(dto).where(eq(users.id, id))",
+        "  }",
+        "}",
+        "",
+        "export const usersRepo = new UsersRepo()",
+      ],
+      "src/users.controller.ts": [
+        'import { usersRepo } from "./users.repo"',
+        "",
+        "export function save(id: string, dto: object) {",
+        "  return usersRepo.update(id, dto)",
+        "}",
+      ],
+    })
+    const save = symbolById(await scanWorkspace(), "ts:src/users.controller.ts#save")
+    expect(save.calls.map((call) => call.target)).toEqual(["usersRepo.update"])
+    expect(save.effects.filter((effect) => effect.propagated !== true)).toEqual([])
+  })
+
+  it.each([
+    [
+      "a client its name places",
+      "this.db.update(users).set({ name })",
+      [["db.write", "this.db.update"]],
+    ],
+    ["no receiver a client word places", "this.cache.update(users)", []],
+  ])(
+    "where only a module the file imports a table from uses Drizzle, classifies %s",
+    async (_case, call, expected) => {
+      await workspace.writeSources({
+        "src/schema.ts": SCHEMA,
+        "src/accounts.ts": [
+          'import { users } from "./schema"',
+          "",
+          "export class Accounts {",
+          "  constructor(private readonly db, private readonly cache) {}",
+          "",
+          "  rename(name: string) {",
+          `    return ${call}`,
+          "  }",
+          "}",
+        ],
+      })
+      const rename = symbolById(await scanWorkspace(), "ts:src/accounts.ts#Accounts.rename")
+      expect(rename.effects.map((effect) => [effect.id, effect.target])).toEqual(expected)
+    },
+  )
 })

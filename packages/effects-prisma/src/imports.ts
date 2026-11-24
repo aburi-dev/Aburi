@@ -54,8 +54,8 @@ function isPrismaClientModule(source: string, configured: readonly (readonly str
   return isGeneratedClient(segments) || configured.some((entry) => endsWith(segments, entry))
 }
 
-// A module's segments as an import spells them, an extension and an `index` file left off.
-function moduleSegments(specifier: string): readonly string[] {
+/** A module's segments as an import spells them, an extension and an `index` file left off. */
+export function moduleSegments(specifier: string): readonly string[] {
   const segments = specifier.replace(SCRIPT_EXTENSION, "").split("/")
   if (segments.at(-1) === "index") segments.pop()
   return segments.filter((segment) => segment !== "" && segment !== "." && segment !== "..")

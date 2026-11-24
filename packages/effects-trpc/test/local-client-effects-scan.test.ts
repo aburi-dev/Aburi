@@ -9,12 +9,6 @@ const workspace = useScratchWorkspace("trpc-local-client")
 const scanWorkspace = () =>
   scanWith(workspace.root, { languages: [langTypescriptPlugin], effects: [trpcEffectsPlugin] })
 
-async function writeSources(sources: Readonly<Record<string, readonly string[]>>): Promise<void> {
-  for (const [path, lines] of Object.entries(sources)) {
-    await workspace.writeSource(path, [...lines, ""].join("\n"))
-  }
-}
-
 const CLIENT = [
   'import { createTRPCReact } from "@trpc/react-query"',
   'import type { AppRouter } from "../server/router"',
@@ -25,7 +19,7 @@ const CLIENT = [
 
 describe("scan — a tRPC client the workspace wraps in a module of its own", () => {
   it("classifies a call on the client the file imports from the wrapper", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/utils/trpc.ts": CLIENT,
       "src/posts.ts": [
         'import { api } from "./utils/trpc"',
@@ -42,7 +36,7 @@ describe("scan — a tRPC client the workspace wraps in a module of its own", ()
   })
 
   it("leaves a call on another name alone though the file imports from the wrapper", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/utils/trpc.ts": CLIENT,
       "src/feed.ts": [
         'import { formatDate } from "./utils/trpc"',

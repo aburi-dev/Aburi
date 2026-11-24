@@ -14,12 +14,6 @@ const scanWorkspace = (config: Config = {}) =>
     config,
   )
 
-async function writeSources(sources: Readonly<Record<string, readonly string[]>>): Promise<void> {
-  for (const [path, lines] of Object.entries(sources)) {
-    await workspace.writeSource(path, [...lines, ""].join("\n"))
-  }
-}
-
 const effectsOf = async (id: string, config?: Config) =>
   symbolById(await scanWorkspace(config), id).effects.map(
     (effect) => `${effect.id} ${effect.target} ${effect.confidence}`,
@@ -133,12 +127,12 @@ describe("scan — a Prisma client another module of the workspace builds", () =
       ["db.write prisma.user.create high"],
     ],
   ])("classifies a call on one %s", async (_case, sources, id, expected) => {
-    await writeSources(sources)
+    await workspace.writeSources(sources)
     expect(await effectsOf(id)).toEqual(expected)
   })
 
   it("leaves a receiver no name places alone where only an imported module leads to Prisma", async () => {
-    await writeSources({
+    await workspace.writeSources({
       "src/prisma.service.ts": PRISMA_SERVICE,
       "src/cache.service.ts": [
         'import { PrismaService } from "./prisma.service"',
@@ -155,23 +149,51 @@ describe("scan — a Prisma client another module of the workspace builds", () =
     expect(await effectsOf("ts:src/cache.service.ts#CacheService.evict")).toEqual([])
   })
 
-  it("gives the same effects whether or not the file also imports a Prisma type", async () => {
-    const consumer = (typeImport: readonly string[]) => [
-      ...typeImport,
-      'import { prisma } from "./db"',
-      "",
-      "export async function createUser(email: string) {",
-      "  return prisma.user.create({ data: { email } })",
-      "}",
-    ]
-    await writeSources({ "src/db.ts": LIB_DB, "src/users.ts": consumer([]) })
-    const without = await effectsOf("ts:src/users.ts#createUser")
-    await writeSources({
-      "src/users.ts": consumer(['import type { User } from "@prisma/client"']),
+  it("leaves a name an `export *` target beside the client's exports alone", async () => {
+    await workspace.writeSources({
+      "src/lib/db.ts": LIB_DB,
+      "src/lib/cache.ts": ["export const cache = new Map<string, unknown>()"],
+      "src/lib/index.ts": ['export * from "./db"', 'export * from "./cache"'],
+      "src/cache.ts": [
+        'import { cache } from "./lib"',
+        "",
+        "export function evict(key: string) {",
+        "  return cache.entries.delete({ key })",
+        "}",
+      ],
     })
-    expect(await effectsOf("ts:src/users.ts#createUser")).toEqual(without)
-    expect(without).toEqual(["db.write prisma.user.create high"])
+    expect(await effectsOf("ts:src/cache.ts#evict")).toEqual([])
   })
+
+  it.each([
+    ["a client its name places", "prisma", "./db", ["db.write prisma.user.create high"]],
+    ["a client imported under a name that places none", "prisma as store", "./db", []],
+    ["a name a module without Prisma declares", "cache", "./cache", []],
+  ])(
+    "gives %s the same effects whether or not the file also imports a Prisma type",
+    async (_case, binding, module, expected) => {
+      const local = binding.split(" as ").at(-1)
+      const consumer = (typeImport: readonly string[]) => [
+        ...typeImport,
+        `import { ${binding} } from "${module}"`,
+        "",
+        "export async function createUser(email: string) {",
+        `  return ${local}.user.create({ data: { email } })`,
+        "}",
+      ]
+      await workspace.writeSources({
+        "src/db.ts": LIB_DB,
+        "src/cache.ts": ["export const cache = new Map<string, unknown>()"],
+        "src/users.ts": consumer([]),
+      })
+      const without = await effectsOf("ts:src/users.ts#createUser")
+      await workspace.writeSources({
+        "src/users.ts": consumer(['import type { User } from "@prisma/client"']),
+      })
+      expect(await effectsOf("ts:src/users.ts#createUser")).toEqual(without)
+      expect(without).toEqual(expected)
+    },
+  )
 })
 
 describe("scan — a client generated where the plugin's options say", () => {
@@ -189,7 +211,7 @@ describe("scan — a client generated where the plugin's options say", () => {
   }
 
   it("classifies the client's calls once `clientModules` names its module", async () => {
-    await writeSources(sources)
+    await workspace.writeSources(sources)
     const config: Config = { pluginOptions: { "effects-prisma": { clientModules: ["db/client"] } } }
     expect(await effectsOf("ts:src/users.ts#listUsers", config)).toEqual([
       "db.read prisma.user.findMany high",
@@ -197,48 +219,73 @@ describe("scan — a client generated where the plugin's options say", () => {
   })
 
   it("leaves them alone without it", async () => {
-    await writeSources(sources)
+    await workspace.writeSources(sources)
     expect(await effectsOf("ts:src/users.ts#listUsers")).toEqual([])
   })
 })
 
 describe("scan — a call of a service's own method, in a file that imports a Prisma type", () => {
-  it("resolves the call to the service's method, whose write reaches the caller", async () => {
-    await writeSources({
-      "src/prisma.service.ts": PRISMA_SERVICE,
-      "src/users.service.ts": [
-        'import type { Prisma } from "@prisma/client"',
-        'import { PrismaService } from "./prisma.service"',
-        "",
-        "export class UsersService {",
-        "  constructor(private readonly prisma: PrismaService) {}",
-        "",
-        "  create(data: Prisma.UserCreateInput) {",
-        "    return this.prisma.user.create({ data })",
-        "  }",
-        "}",
-      ],
-      "src/users.controller.ts": [
-        'import type { Prisma } from "@prisma/client"',
-        'import { UsersService } from "./users.service"',
-        "",
-        "export class UsersController {",
-        "  constructor(private readonly usersService: UsersService) {}",
-        "",
-        "  create(dto: Prisma.UserCreateInput) {",
-        "    return this.usersService.create(dto)",
-        "  }",
-        "}",
-      ],
-    })
-    const result = await scanWorkspace()
-    const create = symbolById(result, "ts:src/users.controller.ts#UsersController.create")
+  const SERVICE_BODY = [
+    "  constructor(private readonly prisma: PrismaService) {}",
+    "",
+    "  create(data: Prisma.UserCreateInput) {",
+    "    return this.prisma.user.create({ data })",
+    "  }",
+    "}",
+  ]
 
-    expect(create.calls.map((call) => [call.target, call.resolved])).toEqual([
-      ["this.usersService.create", "ts:src/users.service.ts#UsersService.create"],
-    ])
-    expect(create.effects.map((effect) => [effect.id, effect.propagated === true])).toEqual([
-      ["db.write", true],
-    ])
-  })
+  it.each([
+    [
+      "by its name",
+      ["export class UsersService {", ...SERVICE_BODY],
+      'import { UsersService } from "./users.service"',
+      "UsersService.create",
+    ],
+    [
+      "as its default",
+      ["export default class UsersService {", ...SERVICE_BODY],
+      'import UsersService from "./users.service"',
+      "UsersService.create",
+    ],
+    [
+      "under the name an export clause gives it",
+      ["class Service {", ...SERVICE_BODY, "", "export { Service as UsersService }"],
+      'import { UsersService } from "./users.service"',
+      "Service.create",
+    ],
+  ])(
+    "resolves the call to the method of a class the service module exports %s, whose write reaches the caller",
+    async (_case, service, serviceImport, method) => {
+      await workspace.writeSources({
+        "src/prisma.service.ts": PRISMA_SERVICE,
+        "src/users.service.ts": [
+          'import type { Prisma } from "@prisma/client"',
+          'import { PrismaService } from "./prisma.service"',
+          "",
+          ...service,
+        ],
+        "src/users.controller.ts": [
+          'import type { Prisma } from "@prisma/client"',
+          serviceImport,
+          "",
+          "export class UsersController {",
+          "  constructor(private readonly usersService: UsersService) {}",
+          "",
+          "  create(dto: Prisma.UserCreateInput) {",
+          "    return this.usersService.create(dto)",
+          "  }",
+          "}",
+        ],
+      })
+      const result = await scanWorkspace()
+      const create = symbolById(result, "ts:src/users.controller.ts#UsersController.create")
+
+      expect(create.calls.map((call) => [call.target, call.resolved])).toEqual([
+        ["this.usersService.create", `ts:src/users.service.ts#${method}`],
+      ])
+      expect(create.effects.map((effect) => [effect.id, effect.propagated === true])).toEqual([
+        ["db.write", true],
+      ])
+    },
+  )
 })

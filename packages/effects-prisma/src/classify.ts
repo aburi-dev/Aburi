@@ -40,10 +40,12 @@ export function classifyPrismaCall(
   const matches = clientModuleMatcherFor(ctx.config)
   const gate = importGate(ctx.file.imports, segments[0], origin, matches)
   if (gate === null) return null
-  // What only reaches the file through a module it imports from is a weaker sign than its own
-  // import, so there the client must be one its name places.
+  // A receiver declared with the library's own type is its client whatever it is called.
+  const typed = receiverTypeFromMatchingModule(ctx.file.imports, call.receiverType, origin, matches)
+  // A module the file imports from using Prisma is a weaker sign than the file's own import, so
+  // there the client must be one its type or its name places.
   const placed = (clientSegment: string | undefined): boolean =>
-    gate === "direct" || (clientSegment !== undefined && namesPrismaClient(clientSegment))
+    gate === "direct" || typed || (clientSegment !== undefined && namesPrismaClient(clientSegment))
 
   if (isPrismaTransactionMethod(method)) {
     // A bare `$transaction()` is not a Prisma call; the API is a method on the client.
@@ -52,7 +54,9 @@ export function classifyPrismaCall(
     if (!placed(segments.at(-2))) return null
     return {
       effectId: "db.transaction",
-      confidence: classificationConfidence(segments.at(-2), call, PRISMA_TRANSACTION_MAX_ARGUMENTS),
+      confidence: typed
+        ? typedReceiverConfidence(call, PRISMA_TRANSACTION_MAX_ARGUMENTS)
+        : classificationConfidence(segments.at(-2), call, PRISMA_TRANSACTION_MAX_ARGUMENTS),
       derivedBy: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:tx`,
     }
   }
@@ -90,12 +94,8 @@ export function classifyPrismaCall(
 
   if (!placed(clientSegment)) return null
 
-  const confidence = receiverTypeFromMatchingModule(
-    ctx.file.imports,
-    call.receiverType,
-    origin,
-    matches,
-  )
+  // The receiver here is the model's delegate, so only one declared as such carries a type.
+  const confidence = typed
     ? typedReceiverConfidence(call, PRISMA_DELEGATE_MAX_ARGUMENTS)
     : classificationConfidence(clientSegment, call, PRISMA_DELEGATE_MAX_ARGUMENTS)
 

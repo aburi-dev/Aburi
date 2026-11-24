@@ -49,12 +49,14 @@ Drizzle are ignored outright. The import gate uses a **prefix match** rather
 than a closed allowlist because Drizzle publishes 20+ driver-specific subpaths
 and adds new drivers per release.
 
-The import may be made by a module of the workspace the file imports from.
-`import { db } from "./db"`, where `db.ts` calls `drizzle(…)`, places `db` as
-the client, whatever barrels or `export *` lie between. A file that imports
-something else from a module that uses Drizzle (a schema, a repository) passes
-the gate too, but that places no receiver, so there a call is classified only on
-a receiver the client vocabulary names.
+The import may be made by a module of the workspace the file imports from:
+`import { db } from "./db"`, where `db.ts` calls `drizzle(…)`, whatever barrels
+lie between (through `export *`, only the target that exports `db` counts), or
+any other module the file imports from that uses Drizzle (a schema, a
+repository). Such a module may export something else beside the client, so
+there a call is classified only on a receiver the client vocabulary names or a
+Drizzle type declares: `db.insert(users)` is, and `usersRepo.update(id, dto)` on
+a repository instance `./users.repo` exports is not.
 
 ### Receiver identification
 

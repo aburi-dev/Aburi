@@ -69,9 +69,10 @@ export interface ImportEdge {
    * Set by the scan, never by the language plugin, and only on the edges an effect plugin is
    * handed, for an edge whose module is a workspace file. Keyed by each name the edge binds as the
    * edge's module exports it (`*` for a namespace import): the specifiers of the imports made by
-   * the last workspace module the name's re-exports lead to, its `export *` targets' joined, as
-   * that module writes them. Where the chain ends at a package, `origins` names it. A name without
-   * a key could not be followed.
+   * the last workspace module the name's re-exports lead to, or the `export *` targets that export
+   * it, as that module writes them. Where the chain ends at a package, `origins` names it. A name
+   * has no key where a module it may come from could not be read or resolved, or its re-exports
+   * loop.
    */
   upstream?: ReadonlyMap<string, readonly string[]>
 }

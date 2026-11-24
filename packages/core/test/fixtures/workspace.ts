@@ -19,6 +19,7 @@ export function useWorkspaceTree(prefix: string): WorkspaceTree {
       return scratch.root
     },
     writeSource: (rel, content) => scratch.writeSource(rel, content),
+    writeSources: (sources) => scratch.writeSources(sources),
     async mkdir(rel) {
       await mkdir(join(scratch.root, rel), { recursive: true })
     },

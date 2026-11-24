@@ -37,9 +37,9 @@ import { decideDropReason, mergeFrameworkClassification } from "./classify-symbo
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
 import {
-  type DeclaredClasses,
-  declaredClasses,
   type ImportOrigins,
+  type ModuleDeclarations,
+  moduleDeclarations,
   type SpecifierPaths,
 } from "./import-origins"
 import { normalizeCandidates, normalizeImportEdge } from "./normalize"
@@ -213,10 +213,10 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     // follows none.
     let effectImports: readonly ImportEdge[] | null =
       origins === undefined || effects.length === 0 ? imports : null
-    // Another file's calls may be made on a class this one declares.
-    const classes: DeclaredClasses | null =
-      origins === undefined || effects.length === 0 ? null : declaredClasses(candidates)
-    if (classes !== null) origins?.rememberClasses(file.path, classes)
+    // Another file's calls may be made on a class this one declares, or on a name it exports.
+    const declarations: ModuleDeclarations | null =
+      origins === undefined || effects.length === 0 ? null : moduleDeclarations(candidates)
+    if (declarations !== null) origins?.rememberDeclarations(file.path, declarations)
 
     for (const written of candidates) {
       if (deadline.expired()) return abandonedFile()
@@ -255,14 +255,12 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       const walkCtx: WalkContext<OpaqueAstNode> = { ...extractCtx, symbol: candidate }
       const body: BodyExtraction = language.walkBody(candidate, walkCtx)
       let memberCalls: ReadonlySet<CallCandidate> = NO_CALLS
-      if (origins !== undefined && classes !== null && body.calls.length > 0) {
-        effectImports ??= await deadline.excluding(() => origins.attachUpstream(file.path, imports))
+      if (origins !== undefined && declarations !== null && body.calls.length > 0) {
+        // First, so a module a receiver's class is read from is parsed once for both.
         memberCalls = await deadline.excluding(() =>
-          origins.callsOnWorkspaceMembers(file.path, imports, classes, body.calls, {
-            registry,
-            config,
-          }),
+          origins.callsOnWorkspaceMembers(file.path, imports, declarations.classes, body.calls),
         )
+        effectImports ??= await deadline.excluding(() => origins.attachUpstream(file.path, imports))
       }
 
       const classifyCallsInput: ClassifyCallsInput = {

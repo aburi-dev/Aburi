@@ -28,14 +28,19 @@ Prisma 7's: `../generated/prisma`, `…/generated/prisma/client`, `/edge`,
 `/browser`), or a module the options below name. It reaches one by importing
 it, or through a module of the workspace it imports from:
 
-- **The client's own module.** `import { prisma } from "./lib/db"`, where
-  `lib/db.ts` builds the client, places `prisma` as the client, whatever
-  barrels or `export *` lie between.
+- **The module the call's client is imported from.** `import { prisma } from
+  "./lib/db"`, where `lib/db.ts` builds the client, leads `prisma` to Prisma,
+  whatever barrels lie between; through `export *`, only the target that
+  exports `prisma` counts.
 - **Another module the file imports from.** A NestJS service that injects
-  `PrismaService` imports nothing from Prisma, but `./prisma.service` does. That
-  places no receiver by itself, so there a call is classified only on a
-  receiver the client vocabulary names: `this.prisma.user.create(…)` is, and
-  `this.store.items.delete({ key })` is not.
+  `PrismaService` imports nothing from Prisma, but `./prisma.service` does.
+
+Either way the module may export something else beside the client, so there a
+call is classified only on a receiver the client vocabulary names or Prisma's
+own type declares: `prisma.user.findMany()` and `this.prisma.user.create(…)`
+are, and the same client imported as `store`, or `this.store.items.delete({
+key })`, are not. The import that binds the call's client decides first, so an
+`import type { User } from "@prisma/client"` beside it changes nothing.
 
 A delegate call needs at least three
 `.`-separated segments (`<client>.<model>.<verb>`), so a random `foo.findMany()`
@@ -92,14 +97,19 @@ Naming your client something this vocabulary does not know is not an error — i
 costs the effect its `high` tier, and the table in `src/receivers.ts` is one
 literal list if a house convention deserves to be in it.
 
-A receiver declared with a type `@prisma/client` binds (`private db:
-PrismaClient`, or one a workspace barrel re-exports from it) is the client
-whatever it is called, and gets `high` on that alone.
+A receiver declared with a type `@prisma/client` binds, or one a workspace
+barrel re-exports from it, is the client whatever it is called, and gets `high`
+on that alone. The receiver is the object the method is called on: beside
+`private store: PrismaClient` that is `this.store` for `$transaction` and the
+raw queries, while `this.store.user.findMany()` calls a delegate no declaration
+types and is graded by the name `store`, as above. A delegate declared as one
+(`private users: Prisma.UserDelegate`) places `this.users.findMany()`.
 
 A call of a method your own class declares is never Prisma's:
 `this.usersService.create(dto)` beside `constructor(private usersService:
 UsersService)` stays in `calls[]`, resolved to `UsersService.create`, and the
-write that method makes reaches the caller as a propagated effect.
+write that method makes reaches the caller as a propagated effect, whether the
+module exports the class by its name, as its default or under another name.
 
 ## Options
 

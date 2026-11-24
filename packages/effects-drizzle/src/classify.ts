@@ -49,10 +49,17 @@ export function classifyDrizzleCall(
   // Every Drizzle write and transaction takes an argument, so a bare call is another API's.
   if (call.argumentCount < minArgumentsFor(method)) return null
 
-  // What only reaches the file through a module it imports from is a weaker sign than its own
-  // import, so there the client must be one its name places.
+  // A receiver declared with the library's own type is its client whatever it is called.
+  const typed = receiverTypeFromMatchingModule(
+    ctx.file.imports,
+    call.receiverType,
+    origin,
+    isDrizzleModule,
+  )
+  // A module the file imports from using Drizzle is a weaker sign than the file's own import, so
+  // there the client must be one its type or its name places.
   const placed = (clientSegment: string | undefined): boolean =>
-    gate === "direct" || (clientSegment !== undefined && namesDrizzleClient(clientSegment))
+    gate === "direct" || typed || (clientSegment !== undefined && namesDrizzleClient(clientSegment))
 
   if (segments.length >= 4 && segments.at(-3) === "query" && isDrizzleQueryMethod(method)) {
     if (hasLiteralFirstArgument(call)) return null
@@ -68,12 +75,6 @@ export function classifyDrizzleCall(
   const clientSegment = segments.at(-2)
   if (!placed(clientSegment)) return null
 
-  const typed = receiverTypeFromMatchingModule(
-    ctx.file.imports,
-    call.receiverType,
-    origin,
-    isDrizzleModule,
-  )
   const confidence = (maxArguments: number) =>
     typed
       ? typedReceiverConfidence(call, maxArguments)

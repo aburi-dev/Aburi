@@ -5,78 +5,26 @@ import {
   starReexportEdge,
   useScratchWorkspace,
 } from "@aburi/test-support"
-import type { CallCandidate, ImportEdge, LanguagePlugin, SymbolCandidate } from "@aburi/types"
+import type { CallCandidate, ImportEdge, LanguagePlugin } from "@aburi/types"
 import { describe, expect, it } from "vitest"
+import { scanStubs, stubEffectsPlugin, stubFrameworkPlugin } from "../fixtures/plugins"
 import {
-  fileCandidate,
-  scanStubs,
-  stubCandidate,
-  stubEffectsPlugin,
-  stubFrameworkPlugin,
-  stubLanguagePlugin,
-} from "../fixtures/plugins"
+  type Aliases,
+  CONSUMER,
+  moduleLanguage,
+  named,
+  newRecorder,
+  type StubModule,
+  type StubModules,
+  writeModules,
+} from "../fixtures/stub-modules"
 
 const workspace = useScratchWorkspace("effect-imports")
 
-interface DeclaredClass {
-  readonly name: string
-  readonly superclass?: string
-  readonly members?: readonly string[]
-}
-
-/** What a `.stub` file holds: its import edges, the classes it declares and the calls its body makes. */
-interface Module {
-  readonly imports?: readonly ImportEdge[]
-  readonly classes?: readonly DeclaredClass[]
-  readonly calls?: readonly CallCandidate[]
-}
-
-type Modules = Readonly<Record<string, Module>>
-
-const CONSUMER = "src/app.stub"
-const ALIASES: Readonly<Record<string, readonly string[]>> = { "@app/db": ["libs/db/index.stub"] }
+const ALIASES: Aliases = { "@app/db": ["libs/db/index.stub"] }
 const WORKSPACE_PACKAGES = [
   { name: "@acme/db", root: "packages/db", entry: { main: "./index.stub" } },
 ]
-
-const read = (content: string): Module => JSON.parse(content) as Module
-
-function classCandidates(file: string, declared: DeclaredClass): SymbolCandidate[] {
-  const members = declared.members ?? []
-  return [
-    stubCandidate(declared.name, {
-      file,
-      kind: "class",
-      ...(declared.superclass === undefined
-        ? {}
-        : { superclass: declared.superclass, instanceMembers: [...members] }),
-    }),
-    ...members.map((member) =>
-      stubCandidate(`${declared.name}.${member}`, { file, kind: "method" }),
-    ),
-  ]
-}
-
-function moduleLanguage(): LanguagePlugin {
-  return stubLanguagePlugin({
-    parseFile: async (file) => ({
-      tree: { file: file.path },
-      errors: [],
-      imports: [...(read(file.content).imports ?? [])],
-    }),
-    extractSymbols: (_tree, ctx) => [
-      fileCandidate(ctx.file.path),
-      ...(read(ctx.file.content).classes ?? []).flatMap((declared) =>
-        classCandidates(ctx.file.path, declared),
-      ),
-    ],
-    walkBody: (symbol, ctx) => ({
-      rules: [],
-      calls: symbol.kind === "function" ? [...(read(ctx.file.content).calls ?? [])] : [],
-    }),
-    createImportResolver: () => ({ resolve: async (specifier) => ALIASES[specifier] ?? [] }),
-  })
-}
 
 interface Seen {
   /** The edges each file's calls were classified against, by file. */
@@ -87,10 +35,11 @@ interface Seen {
   readonly frameworkImports: Map<string, readonly ImportEdge[]>
 }
 
-async function scanModules(modules: Modules): Promise<Seen> {
-  for (const [path, module] of Object.entries(modules)) {
-    await workspace.writeSource(path, JSON.stringify(module))
-  }
+async function scanModules(
+  modules: StubModules,
+  language: LanguagePlugin = moduleLanguage({ aliases: ALIASES }),
+): Promise<Seen> {
+  await writeModules(workspace, modules)
   const seen: Seen = { imports: new Map(), asked: new Map(), frameworkImports: new Map() }
   const effects = stubEffectsPlugin("effects-stub", (call, ctx) => {
     seen.imports.set(ctx.file.path, ctx.file.imports)
@@ -106,7 +55,7 @@ async function scanModules(modules: Modules): Promise<Seen> {
     },
   })
   await scanStubs(workspace.root, {
-    languages: [moduleLanguage()],
+    languages: [language],
     frameworks: [framework],
     effects: [effects],
     workspacePackages: WORKSPACE_PACKAGES,
@@ -116,12 +65,8 @@ async function scanModules(modules: Modules): Promise<Seen> {
 
 const ANY_CALL = makeCall({ target: "client.user.findMany" })
 
-function consumerOf(...imports: ImportEdge[]): Module {
+function consumerOf(...imports: ImportEdge[]): StubModule {
   return { imports, calls: [ANY_CALL] }
-}
-
-function named(source: string, ...symbols: string[]): ImportEdge {
-  return importEdge({ source, symbols })
 }
 
 function upstreamOf(edges: readonly ImportEdge[] | undefined): [string, object | null][] {
@@ -132,7 +77,7 @@ function upstreamOf(edges: readonly ImportEdge[] | undefined): [string, object |
 }
 
 describe("scan — what the modules a file imports from import, as an effect plugin reads them", () => {
-  it.each<[string, Modules, [string, object | null][]]>([
+  it.each<[string, StubModules, [string, object | null][]]>([
     [
       "a relative module that declares the name",
       {
@@ -159,13 +104,56 @@ describe("scan — what the modules a file imports from import, as an effect plu
       [["./index.stub", { client: ["@vendor/orm"] }]],
     ],
     [
-      "a barrel's `export *`, beside the barrel's own imports",
+      "a barrel's `export *`, through to the target that exports the name",
       {
         [CONSUMER]: consumerOf(named("./index.stub", "client")),
-        "src/index.stub": { imports: [starReexportEdge("./db.stub")] },
+        "src/index.stub": {
+          imports: [starReexportEdge("./cache.stub"), starReexportEdge("./db.stub")],
+        },
+        "src/cache.stub": { imports: [named("@vendor/kv", "Store")], exports: ["cache"] },
+        "src/db.stub": { imports: [named("@vendor/orm", "Client")], exports: ["client"] },
+      },
+      [["./index.stub", { client: ["@vendor/orm"] }]],
+    ],
+    [
+      "a barrel's own imports, where no `export *` target shows the name",
+      {
+        [CONSUMER]: consumerOf(named("./index.stub", "client")),
+        "src/index.stub": {
+          imports: [starReexportEdge("./db.stub"), named("@vendor/log", "log")],
+        },
         "src/db.stub": { imports: [named("@vendor/orm", "Client")] },
       },
-      [["./index.stub", { client: ["./db.stub", "@vendor/orm"] }]],
+      [["./index.stub", { client: ["./db.stub", "@vendor/log"] }]],
+    ],
+    [
+      "a barrel's own imports, where its `export *` targets lead back to it",
+      {
+        [CONSUMER]: consumerOf(named("./a.stub", "client")),
+        "src/a.stub": { imports: [starReexportEdge("./b.stub"), named("@vendor/log", "log")] },
+        "src/b.stub": { imports: [starReexportEdge("./a.stub")] },
+      },
+      [["./a.stub", { client: ["./b.stub", "@vendor/log"] }]],
+    ],
+    [
+      "an `export *` target whose own `export *` passes on what a package exports",
+      {
+        [CONSUMER]: consumerOf(named("./index.stub", "Client")),
+        "src/index.stub": { imports: [starReexportEdge("./orm.stub")] },
+        "src/orm.stub": { imports: [starReexportEdge("@vendor/orm")] },
+      },
+      [["./index.stub", { Client: ["@vendor/orm"] }]],
+    ],
+    [
+      "a namespace import of an `export *` barrel, under `*` with the barrel's own imports",
+      {
+        [CONSUMER]: consumerOf(
+          importEdge({ source: "./index.stub", symbols: "*", namespaceBinding: "lib" }),
+        ),
+        "src/index.stub": { imports: [starReexportEdge("./db.stub")] },
+        "src/db.stub": { imports: [named("@vendor/orm", "Client")], exports: ["client"] },
+      },
+      [["./index.stub", { "*": ["./db.stub"] }]],
     ],
     [
       "a re-export that ends at a package, which becomes the name's origin",
@@ -231,6 +219,32 @@ describe("scan — what the modules a file imports from import, as an effect plu
     expect(upstreamOf(seen.imports.get(CONSUMER))).toEqual(expected)
   })
 
+  const BROKEN = "src/broken.stub"
+
+  it.each<[string, StubModules]>([
+    [
+      "comes from a module that cannot be parsed",
+      { [CONSUMER]: consumerOf(named("./broken.stub", "client")), [BROKEN]: {} },
+    ],
+    [
+      "may come from a barrel's `export *` target that cannot be parsed",
+      {
+        [CONSUMER]: consumerOf(named("./index.stub", "client")),
+        "src/index.stub": {
+          imports: [starReexportEdge("./broken.stub"), starReexportEdge("./cache.stub")],
+        },
+        [BROKEN]: {},
+        "src/cache.stub": { imports: [named("@vendor/kv", "Store")], exports: ["cache"] },
+      },
+    ],
+  ])("follows nothing for a name that %s", async (_case, modules) => {
+    const seen = await scanModules(
+      modules,
+      moduleLanguage({ aliases: ALIASES, unparsable: BROKEN }),
+    )
+    expect(upstreamOf(seen.imports.get(CONSUMER)).map(([, upstream]) => upstream)).toEqual([null])
+  })
+
   it("keeps the origin a re-export chain ends at on the edge", async () => {
     const seen = await scanModules({
       [CONSUMER]: consumerOf(named("./index.stub", "Client")),
@@ -254,7 +268,7 @@ describe("scan — a call of a method the workspace declares on the receiver's c
     makeCall({ target: "this.users.create", receiverType }),
   ]
 
-  it.each<[string, Modules]>([
+  it.each<[string, StubModules]>([
     [
       "a class the file imports",
       {
@@ -265,6 +279,42 @@ describe("scan — a call of a method the workspace declares on the receiver's c
     [
       "a class the file declares",
       { [CONSUMER]: { classes: [{ name: "Users", members: ["create"] }], calls: create("Users") } },
+    ],
+    [
+      "a class the module exports as its default",
+      {
+        [CONSUMER]: {
+          imports: [named("./users.stub", "default as Users")],
+          calls: create("Users"),
+        },
+        "src/users.stub": {
+          classes: [{ name: "UsersService", members: ["create"], exported: "default" }],
+        },
+      },
+    ],
+    [
+      "a class the module exports under the name an export clause gives it",
+      {
+        [CONSUMER]: { imports: [named("./users.stub", "Users")], calls: create("Users") },
+        "src/users.stub": {
+          classes: [{ name: "Service", members: ["create"], exported: { as: "Users" } }],
+        },
+      },
+    ],
+    [
+      "a class imported under another name",
+      {
+        [CONSUMER]: { imports: [named("./users.stub", "Users as Repo")], calls: create("Repo") },
+        "src/users.stub": { classes: [{ name: "Users", members: ["create"] }] },
+      },
+    ],
+    [
+      "a class a barrel re-exports by name",
+      {
+        [CONSUMER]: { imports: [named("./index.stub", "Users")], calls: create("Users") },
+        "src/index.stub": { imports: [reexportEdge("./users.stub", "Users")] },
+        "src/users.stub": { classes: [{ name: "Users", members: ["create"] }] },
+      },
     ],
     [
       "a class a barrel's `export *` leads to",
@@ -300,7 +350,7 @@ describe("scan — a call of a method the workspace declares on the receiver's c
     expect(seen.asked.get(CONSUMER)).toBeUndefined()
   })
 
-  it.each<[string, Modules]>([
+  it.each<[string, StubModules]>([
     [
       "a class whose method comes from a package class it extends",
       {
@@ -340,5 +390,37 @@ describe("scan — a call of a method the workspace declares on the receiver's c
   ])("asks the effect plugins about %s", async (_case, modules) => {
     const seen = await scanModules(modules)
     expect(seen.asked.get(CONSUMER)).toEqual(["this.users.create"])
+  })
+})
+
+describe("scan — a module the chain reaches, read for its edges and its declarations", () => {
+  it.each<[string, StubModules, string]>([
+    [
+      "the module a receiver's class is read from",
+      {
+        [CONSUMER]: {
+          imports: [named("./users.stub", "Users")],
+          calls: [makeCall({ target: "this.users.create", receiverType: "Users" })],
+        },
+        "src/users.stub": {
+          imports: [named("@vendor/orm", "Client")],
+          classes: [{ name: "Users", members: ["find"] }],
+        },
+      },
+      "src/users.stub",
+    ],
+    [
+      "an `export *` target",
+      {
+        [CONSUMER]: consumerOf(named("./index.stub", "client")),
+        "src/index.stub": { imports: [starReexportEdge("./db.stub")] },
+        "src/db.stub": { imports: [named("@vendor/orm", "Client")], exports: ["client"] },
+      },
+      "src/db.stub",
+    ],
+  ])("parses %s once for the chain, and once in its own turn", async (_case, modules, module) => {
+    const recorder = newRecorder()
+    await scanModules(modules, moduleLanguage({ aliases: ALIASES, recorder }))
+    expect(recorder.parsed.filter((path) => path === module)).toHaveLength(2)
   })
 })

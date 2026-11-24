@@ -8,6 +8,7 @@ import {
   defineEffectsManifest,
   hasLiteralFirstArgument,
   hasMatchingImport,
+  type ImportGate,
   identifierMentions,
   identifierWords,
   importBindingOf,
@@ -142,17 +143,28 @@ describe("importGate", () => {
   const isOrm = (source: string) => source === "example-orm"
   const upstream = (entries: Record<string, string[]>) => new Map(Object.entries(entries))
 
-  it.each<[string, ImportEdge[], string, "direct" | "reached" | null]>([
+  const db = (dbUpstream: string[]) =>
+    importEdge({ source: "./db", symbols: ["db"], upstream: upstream({ db: dbUpstream }) })
+  const typeImport = importEdge({ source: "example-orm", symbols: ["Model"] })
+
+  it.each<[string, ImportEdge[], string, ImportGate]>([
     ["the file's own import", [importEdge({ source: "example-orm" })], "db", "direct"],
     [
-      "the module declaring the call's leading name",
-      [
-        importEdge({
-          source: "./db",
-          symbols: ["db"],
-          upstream: upstream({ db: ["example-orm"] }),
-        }),
-      ],
+      "a binding whose re-exports end at the library",
+      [importEdge({ source: "./db", symbols: ["db"], origins: new Map([["db", "example-orm"]]) })],
+      "db",
+      "direct",
+    ],
+    ["the module declaring the call's leading name", [db(["example-orm"])], "db", "bound"],
+    [
+      "the module declaring the call's leading name, beside a type the file imports from the library",
+      [typeImport, db(["example-orm"])],
+      "db",
+      "bound",
+    ],
+    [
+      "the file's own import, where no import the scan followed binds the leading name",
+      [typeImport, importEdge({ source: "./db", symbols: ["db"] })],
       "db",
       "direct",
     ],
@@ -169,26 +181,40 @@ describe("importGate", () => {
       "reached",
     ],
     [
-      "a module whose other names lead to the library, which leaves the leading name's unplaced",
-      [
-        importEdge({
-          source: "./db",
-          symbols: ["db", "schema"],
-          upstream: upstream({ db: ["./env"], schema: ["example-orm"] }),
-        }),
-      ],
-      "db",
-      "reached",
-    ],
-    [
       "nothing that leads to the library",
-      [importEdge({ source: "./db", symbols: ["db"], upstream: upstream({ db: ["./env"] }) })],
-      "db",
+      [importEdge({ source: "./env", symbols: ["env"], upstream: upstream({ env: [] }) })],
+      "this",
       null,
     ],
   ])("places the client through %s", (_case, imports, head, expected) => {
     expect(importGate(imports, head, ORIGIN, isOrm)).toBe(expected)
   })
+
+  it.each<[string, ImportEdge]>([
+    ["a workspace module that imports no matching one", db(["./env"])],
+    [
+      "a workspace module that imports no matching one, beside another name that leads to one",
+      importEdge({
+        source: "./db",
+        symbols: ["db", "schema"],
+        upstream: upstream({ db: ["./env"], schema: ["example-orm"] }),
+      }),
+    ],
+    [
+      "re-exports that end at another package",
+      importEdge({
+        source: "./db",
+        symbols: ["db"],
+        origins: new Map([["db", "other-orm"]]),
+        upstream: upstream({ db: ["example-orm", "other-orm"] }),
+      }),
+    ],
+  ])(
+    "places nothing for a leading name bound to %s, whatever else the file imports",
+    (_case, binding) => {
+      expect(importGate([typeImport, binding], "db", ORIGIN, isOrm)).toBeNull()
+    },
+  )
 
   it("validates every edge, a match before a broken one included", () => {
     expect(() =>
