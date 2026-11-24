@@ -7,7 +7,6 @@ import {
   isNestEmitMethod,
   isNestEventEmitterIdentifier,
   isNestPublishMethod,
-  NEST_EMIT_METHOD,
   NEST_EMIT_METHODS,
   NEST_EVENT_EMITTER_IDENTIFIERS,
   NEST_PUBLISH_METHODS,
@@ -19,6 +18,10 @@ const PATH = "src/orders/service.ts"
 
 function edge(source: string, line = 1): ImportEdge {
   return importEdge({ source, symbols: ["EventEmitter2"], line })
+}
+
+function cqrsEdge(name: string): ImportEdge {
+  return importEdge({ source: "@nestjs/cqrs", symbols: [name], line: 1 })
 }
 
 describe("hasNestEmitterImport", () => {
@@ -158,19 +161,35 @@ describe("namesNestEventBusClass", () => {
       "CommandBus",
       false,
     ],
-    ["a class of that name from another module", [edge("./bus")], "EventBus", false],
+    [
+      "a class of that name from another module",
+      [importEdge({ source: "./bus", symbols: ["EventBus"] })],
+      "EventBus",
+      false,
+    ],
   ])("answers for %s", (_label, imports, typeName, expected) => {
     expect(namesNestEventBusClass(imports, typeName, PATH)).toBe(expected)
   })
 })
 
-describe.each([
-  ["hasNestEmitterImport", (imports: ImportEdge[]) => hasNestEmitterImport(imports, PATH)],
+describe.each<[string, (imports: ImportEdge[]) => boolean, ImportEdge]>([
+  [
+    "hasNestEmitterImport",
+    (imports) => hasNestEmitterImport(imports, PATH),
+    edge("@nestjs/event-emitter"),
+  ],
   [
     "namesNestEmitterClass",
-    (imports: ImportEdge[]) => namesNestEmitterClass(imports, "EventEmitter2", PATH),
+    (imports) => namesNestEmitterClass(imports, "EventEmitter2", PATH),
+    edge("@nestjs/event-emitter"),
   ],
-])("%s on a broken ImportEdge", (_name, read) => {
+  ["hasNestCqrsImport", (imports) => hasNestCqrsImport(imports, PATH), cqrsEdge("EventBus")],
+  [
+    "namesNestEventBusClass",
+    (imports) => namesNestEventBusClass(imports, "EventBus", PATH),
+    cqrsEdge("EventBus"),
+  ],
+])("%s on a broken ImportEdge", (_name, read, match) => {
   it("throws on an empty ImportEdge.source, naming the plugin, the file, and the line", () => {
     expect(() => read([edge("", 9)])).toThrow(
       `effects-nest (${PATH}, line 9): ImportEdge.source is empty`,
@@ -178,9 +197,7 @@ describe.each([
   })
 
   it("throws even when a broken ImportEdge sits after a legitimate match", () => {
-    expect(() => read([edge("@nestjs/event-emitter", 1), edge("", 2)])).toThrow(
-      /ImportEdge\.source is empty/,
-    )
+    expect(() => read([match, edge("", 2)])).toThrow(/ImportEdge\.source is empty/)
   })
 })
 
@@ -207,9 +224,11 @@ describe("event-emitter identifier vocabulary", () => {
 
 describe("emit methods", () => {
   it("are `emit` and `emitAsync`, which waits for the listeners", () => {
-    expect([...NEST_EMIT_METHODS]).toEqual([NEST_EMIT_METHOD, "emitAsync"])
-    expect(isNestEmitMethod("emit")).toBe(true)
-    expect(isNestEmitMethod("emitAsync")).toBe(true)
+    expect(NEST_EMIT_METHODS).toEqual(new Set(["emit", "emitAsync"]))
+  })
+
+  it.each(["emit", "emitAsync"])("accept %s", (name) => {
+    expect(isNestEmitMethod(name)).toBe(true)
   })
 
   it.each(["emitAsyncSerial", "emits", "emitEvent", "publish"])("reject %s", (name) => {
@@ -219,7 +238,11 @@ describe("emit methods", () => {
 
 describe("publish methods", () => {
   it("are EventBus's `publish` and `publishAll`", () => {
-    expect([...NEST_PUBLISH_METHODS]).toEqual(["publish", "publishAll"])
+    expect(NEST_PUBLISH_METHODS).toEqual(new Set(["publish", "publishAll"]))
+  })
+
+  it.each(["publish", "publishAll"])("accept %s", (name) => {
+    expect(isNestPublishMethod(name)).toBe(true)
   })
 
   it.each(["emit", "execute", "publishes", "Publish"])("reject %s", (name) => {

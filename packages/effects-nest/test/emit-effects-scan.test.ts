@@ -320,4 +320,66 @@ describe("scan — the publishing calls NestJS documents beside emit", () => {
       "this.commandBus.execute",
     ])
   })
+
+  it("publishes through each library in a service that injects both", async () => {
+    await workspace.writeSource(
+      "src/orders.service.ts",
+      [
+        'import { Injectable } from "@nestjs/common"',
+        'import { EventBus } from "@nestjs/cqrs"',
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        "",
+        "@Injectable()",
+        "export class OrdersService {",
+        "  constructor(",
+        "    private readonly emitter: EventEmitter2,",
+        "    private readonly bus: EventBus,",
+        "  ) {}",
+        "",
+        "  create(id: string) {",
+        '    this.emitter.emit("order.created", { id })',
+        "    this.bus.publish({ id })",
+        "    this.bus.publishAll([{ id }])",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const create = symbolNamed(await scanWorkspace(), "OrdersService.create")
+
+    expect(create.effects.map((effect) => effect.derivedBy)).toEqual([
+      "effects-plugin:nest:EventEmitter2.emit",
+      "effects-plugin:nest:EventBus.publish",
+      "effects-plugin:nest:EventBus.publishAll",
+    ])
+    expect(create.calls).toEqual([])
+  })
+
+  it("publishes nothing for the events an aggregate publishes itself", async () => {
+    await workspace.writeSource(
+      "src/hero.model.ts",
+      [
+        'import { AggregateRoot } from "@nestjs/cqrs"',
+        "",
+        "export class Hero extends AggregateRoot {",
+        "  kill(event: object) {",
+        "    this.apply(event)",
+        "    this.publish(event)",
+        "    this.publishAll([event])",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const kill = symbolNamed(await scanWorkspace(), "Hero.kill")
+
+    expect(kill.effects).toEqual([])
+    expect(kill.calls.map((c) => c.target)).toEqual([
+      "this.apply",
+      "this.publish",
+      "this.publishAll",
+    ])
+  })
 })

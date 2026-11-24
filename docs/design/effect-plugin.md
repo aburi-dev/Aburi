@@ -512,7 +512,7 @@ Prisma is used from TS and from Python alike (`prisma-client-py`). Because effec
 
 ### 11.5 Why using owner.extKind is allowed
 
-It enables context-dependent determinations such as "treat `this.eventBus.publish(...)` as `event.publish` only inside `framework:nestjs:provider`". owner.extKind has already been determined by the framework plugin (extraction order per lang-plugin §5.3).
+It enables context-dependent determinations such as "treat `this.bus.send(...)` as `event.publish` only inside `framework:nestjs:provider`". owner.extKind has already been determined by the framework plugin (extraction order per lang-plugin §5.3).
 
 ### 11.6 Why literal analysis of SQL strings is included from the start
 

@@ -3,7 +3,7 @@
 NestJS effect plugin for `@aburi/core`. Classifies the calls that publish an
 event, through `@nestjs/event-emitter`'s `EventEmitter2` or through
 `@nestjs/cqrs`'s `EventBus`, into the core `event.publish` effect so the IR
-captures out-of-process signalling without conflating it with regular method
+captures decoupled event signalling without conflating it with regular method
 calls.
 
 Recognised shapes, where `<emit>` is `emit` or `emitAsync` (which waits for the
@@ -19,10 +19,11 @@ listeners) and `<publish>` is `publish` or `publishAll`:
 | `eventBus.<publish>(...)`, and `<publish>` on a receiver declared as `@nestjs/cqrs`'s `EventBus` (`constructor(private readonly events: EventBus)`) | `event.publish` |
 
 The receiver is recognised by its name or by its declared type. The name check
-is a case-sensitive exact match against a fixed set (currently
-`["eventBus", "EventEmitter2"]`) — `eventemitter2.emit(...)` and
-`myBus.emit(...)` intentionally fall through so the recognizer is loud and
-narrow rather than heuristic. The type check covers the injection NestJS
+is a case-sensitive exact match against a fixed set per method: `eventBus` and
+`EventEmitter2` for `<emit>`, `eventBus` alone for `<publish>`, the name
+NestJS's CQRS documentation injects its `EventBus` under.
+`eventemitter2.emit(...)` and `myBus.emit(...)` intentionally fall through so
+the recognizer is loud and narrow rather than heuristic. The type check covers the injection NestJS
 documents, whatever the field is called:
 
 ```ts
@@ -50,9 +51,9 @@ whatever `eventBus` is declared as.
 
 `EventBus` is read the same way, through the `@nestjs/cqrs` import that binds it
 (under its own name, an alias or a namespace; the package has no default
-export), and of the names only `eventBus` stands for it, the name NestJS's CQRS
-documentation injects it under. Its `CommandBus` and `QueryBus` hand a command
-or a query to one handler in the same process, so `execute` stays a call.
+export). `CommandBus` and `QueryBus` hand a command or a query to exactly one
+handler and return its result, so `execute` is a call to that handler rather
+than a broadcast.
 
 Layered gate: an `<emit>` needs the owning file to import a recognised
 event-emitter module (`@nestjs/event-emitter` or `eventemitter2`), a `<publish>`
@@ -62,9 +63,10 @@ needs it to import `@nestjs/cqrs`, and the receiver must be recognised.
 neither is `eventBus.publish(...)` in a file that imports the emitter module
 alone. Both signals required.
 
-Not classified: an event an aggregate applies (`hero.apply(event)`) and
-publishes on `commit()` after `EventPublisher.mergeObjectContext(hero)`, since
-nothing at the call names the bus, and the listeners (`@OnEvent()`,
+Not classified: an aggregate's own events, `this.apply(event)` inside an
+`AggregateRoot` and its `commit()`, `publish()` and `publishAll()` after
+`EventPublisher.mergeObjectContext(hero)`, since nothing at the call names the
+bus; and the listeners (`@OnEvent()`,
 `eventEmitter.on(…)`, `@EventsHandler()`), which receive an event rather than
 publish one.
 
