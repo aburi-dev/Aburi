@@ -30,8 +30,8 @@ A role read off a name is `high` only in a file that imports React, and
 `medium` elsewhere, which the report badges: `useCounter` is a Vue composable's
 name too, and `memo` or `createContext` can be any library's. A file imports
 React through any edge to `react`, `react/*`, `preact/compat` or
-`preact/compat/*`: a type-only import, a re-export, a side-effect import and an
-`import()` count, while `react-dom`, `react-router` and `preact` do not. That
+`preact/compat/*`: a type-only import, a re-export, a side-effect import, an
+`import()` and a `require()` count, while `react-dom`, `react-router` and `preact` do not. That
 covers a hook that calls no other hook, a bare context, memo or forward-ref
 call no import binds, and a HOC that returns a function or a class without
 rendering JSX.
@@ -130,10 +130,6 @@ Not classified today (documented for completeness):
 - A HOC that hands back a call, in a file that does not import React
   (`(C) => connect(mapState)(C)` under the automatic runtime): the call may
   give back anything, so the function has no role.
-- React bound by CommonJS (`const React = require("react")`). `require` is no
-  import, so the file's name-read roles are `medium`, and
-  `React.createContext(...)`, `React.memo(...)` and `React.forwardRef(...)`
-  there have no role unless handed JSX.
 - React's factories through a module of the project's own
   (`import { forwardRef } from "@/lib/react"`): another import binds the name,
   so the call has no role unless handed JSX.

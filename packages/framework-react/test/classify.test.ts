@@ -197,11 +197,6 @@ describe("classifyReactSymbol", () => {
       "export const M = React.memo(Inner)",
       "M",
     ],
-    [
-      "React.memo(...) on a React that require binds",
-      'const React = require("react")\nexport const M = React.memo(Inner)',
-      "M",
-    ],
   ])("returns null for %s", async (_label, source, name) => {
     expect(await classified(source, name)).toBeNull()
   })
@@ -254,6 +249,12 @@ describe("classifyReactSymbol", () => {
       "export const Ctx = createContext(null)",
       "Ctx",
       ["context", "medium"],
+    ],
+    [
+      "React.memo(...) on a React that require binds",
+      'const React = require("react")\nexport const M = React.memo(Inner)',
+      "M",
+      ["memo", "high"],
     ],
     [
       "createContext(...) on a namespace React's import binds",
@@ -393,6 +394,7 @@ describe("classifyReactSymbol", () => {
     ["a re-export", 'export { useState } from "react"'],
     ["a side-effect import", 'import "react"'],
     ["a dynamic import", 'export const load = () => import("react")'],
+    ["a CommonJS require", 'const React = require("react")'],
   ])("reads the file as importing React through %s", async (_label, line) => {
     const role = await classified(`${line}\nexport function useThing() { return 1 }`, "useThing")
     expect(role?.confidence).toBe("high")
