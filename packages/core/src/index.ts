@@ -46,6 +46,7 @@ export {
   lastQnameSegment,
   logicFingerprint,
   logicNamesNothing,
+  logicShapeFingerprint,
   normalizeFingerprintString,
   syntaxFingerprint,
   ZERO_FINGERPRINT,

@@ -25,6 +25,10 @@ export function maskedImportSpecifier(node: Node): string | undefined {
   return MASKS.get(node.tree)?.get(node.startIndex)
 }
 
+export function masksImportTypes(tree: Tree): boolean {
+  return MASKS.has(tree)
+}
+
 const MASKS = new WeakMap<Tree, Map<number, string>>()
 
 interface Span {
