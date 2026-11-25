@@ -294,44 +294,75 @@ schema and every integrity invariant, and the only symptom is a Symbol whose `lo
 someone edits a comment or runs a formatter: it is reported as changed, with nothing to say why.
 
 The TypeScript plugin writes the text from the syntax tree's tokens rather than copying the
-source, so the spellings a formatter chooses between read alike, and two spellings of different
-programs never do:
+source, so the spellings a formatter chooses between read alike, and spellings of different code
+stay apart:
 
 - **Layout.** Comments and line breaks are left out and the spacing is regenerated: one space
   between two tokens, and none just inside `(` and `[`, before `)` `]` `,` `;` `.` `?.`, after
   `.` `?.` `...` `@` and a prefix operator, before a postfix operator and a non-null `!`, inside
-  a type's `<` `>`, or before the bracket of a call or an index after a name. `:` and `?` are
+  a type's `<` `>`, or before the bracket of a call or an index after a name, a quoted key
+  included (`"m"(a) {}`). A prefix `-` or `+` keeps its space before a token that begins with the
+  same sign, so `- -a`, which negates twice, never reads `--a`, which decrements. `:` and `?` are
   spaced only between a conditional's branches. `a||b`, `a || b` and `a/**/||b` are one string,
-  and `a-/**/-b` reads `a - -b`, never `a--b`.
-- **Literals.** A string is quoted with `"` unless its content holds a `"` or a `\'`. A property
-  key, a member name or an enum member written as a quoted name that needs no quotes is written
-  bare, so `{ 'a': 1 }` reads `{ a: 1 }`. A number is written in lower case, with a `0` before a
-  leading `.`, and without trailing fractional zeros, a trailing `.`, or a `+` or leading zeros
-  in its exponent: `1.50` reads `1.5`, `0XFF` reads `0xff`, `.5E+01` reads `0.5e1`. A template
-  keeps its text and only what `${}` holds is respaced, and a regex is kept as written.
+  and `a-/**/-b` reads `a - -b`.
+- **Literals.** A string is written as its value between `"`: `'it\'s'` and `"it's"` both read
+  `"it's"`, and `'a"b'` and `"a\"b"` both read `"a\"b"`. A `"` and a `\` are escaped, as JSON
+  writes them, and so are a control or format character and any whitespace but the space, which
+  a reader could not see or which the collapse below would merge with a space (`'\u00a0'` reads
+  `"\u00a0"`); every other escape is decoded (`'\x41'` reads `"A"`). A string holding an escape
+  ECMAScript gives no value in a module (`'\1'`, `'\8'`, `'\u{110000}'`) is kept as written. A
+  JSX attribute's string holds no escapes, and is quoted with `"` unless its content holds one. A
+  property key, a member name or an enum member written as a quoted name that needs no quotes is
+  written bare, so `{ 'a': 1 }` reads `{ a: 1 }`. A number is written in lower case, with a `0`
+  before a leading `.`, and without trailing fractional zeros, a trailing `.`, a `+` or leading
+  zeros in its exponent, or an exponent of zero: `1.50` reads `1.5`, `0XFF` reads `0xff`,
+  `.5E+01` reads `0.5e1`, `1e0` reads `1`. A template keeps its text and only what `${}` holds is
+  respaced, and a regex is kept as written.
 - **Separators.** A `,` before a closing bracket and a `;` before `}` are left out, except the
-  `,` of an array hole (`[a, ,]` keeps one, `[a,]` none). An arrow's lone parameter is written in
-  parentheses. A block's statements are joined by `; ` whether or not the source ends each with
-  `;`, as an object type's members are. A union's or an intersection's leading operator is left
-  out.
-- **Parentheses.** Those the grouping does not need are left out, and those that spell out a
-  grouping readers mix up are written whether or not the source has them: around `&&` inside
-  `||` and the other way round, a bitwise operator inside another operator, `%` inside
-  arithmetic, `*` and `/` inside each other, an equality inside an equality, a shift inside a
-  shift, `**` inside `**`, `await` inside a binary operator, a spread of more than one term, a
-  conditional's branch holding `??` or `as`, and an arrow's body that is a conditional. So
-  `a && b || c`, `(a && b) || c` and `((a && b)) || (c)` all read `(a && b) || c`, and
-  `return (\n  <div />\n)` reads `return <div />`. The ones kept as written are those a statement
-  is written with, those around a sequence, an object literal, a `function` or a `class` at the
-  head of a statement or an arrow's body, an optional chain an access goes on from (`(a?.b).c`),
-  a call `new` constructs (`new (a())()`), a number an access follows (`(1).toFixed()`), a unary
-  left operand of `**`, and any the grammar repaired.
-- **JSX.** No space is added between two children, since that space is content; the text
-  between tags reads as React renders it, a line break and the indentation around it dropped
-  and a line holding nothing else left out; a self-closing element ends ` />`, and an expression
-  container holding only a comment is left out.
+  `,` of an array hole (`[a, ,]` keeps one, `[a,]` none). The `;` that ends a statement is left
+  out wherever the statement is written, since automatic semicolon insertion lets a formatter
+  leave it out (`if (x) g(); else h();` reads `if (x) g() else h()`), except an empty statement's
+  and the one that ends the declaration a `for` starts with. A block's statements are joined by
+  `; `, as a class's members and an object type's are, whatever the source separates them with.
+  An arrow's lone parameter is written in parentheses, `new A` is written `new A()`, and a
+  union's or an intersection's leading operator is left out.
+- **Parentheses.** Those the grouping does not need are left out: around an operand precedence
+  already groups (`(a - b) + c`, `!(!a)`, `-(-a)`, `(a)++`, `(a) as T`), the head of an access, a
+  call or a non-null assertion (`(a.b).c`, `(new A()).b`), a name `new` constructs
+  (`new (a.b)()`), anything but a sequence in a slot that takes any expression (an argument, an
+  array element, a spread, an index, a `case` value, what a `for … in` or `for … of` walks, what
+  an object entry, an assignment, a declarator or `export default` holds, a conditional's branch,
+  an arrow's body, and what `return`, `throw`, `yield` and `${}` hold), and around a type that
+  binds tighter than any operator (`(A)[]`, `(A<B>)`, `("a")`). Those that spell out a grouping
+  readers mix up are written whether or not the source has them: around `&&` inside `||` and the
+  other way round, an operator inside a different bitwise operator and a bitwise operator inside
+  a different operator (`a + b | c` reads `(a + b) | c`), `*`, `/` and `%` inside a different one
+  of them (`a * b % c` reads `(a * b) % c`), `%` inside `+` or `-`, an equality inside an
+  equality, a shift inside a shift, `**` inside `**`, `await` inside a binary operator, a spread
+  of more than one term, a conditional's branch holding `??`, `as` or `satisfies`, and an arrow's
+  body that is a conditional. So `a && b || c`, `(a && b) || c` and `((a && b)) || (c)` all read
+  `(a && b) || c`, and `return (\n  <div />\n)` reads `return <div />`. Everywhere else they are
+  kept as written, among them those a statement is written with, those around a sequence, an
+  object literal, a `function` or a `class` at the head of a statement or an arrow's body, an
+  optional chain an access or a call goes on from (`(a?.b).c`, `(a?.b)()`), a call `new`
+  constructs (`new (a())()`), a number an access follows (`(1).toFixed()`), a unary left operand
+  of `**`, those a non-null `!` follows (the grammar reads `x || (a?.b)!.c` as
+  `(x || (a?.b))!.c`, and without them `a?.b!.c` would go on with the chain), a type an operator
+  applies to (`(A | B)[]`, `(keyof T)[]`), and any the grammar repaired.
+- **JSX.** No space is added between two children, since that space is content. The text between
+  tags reads as React renders it: a run of text is read whole, character references included, a
+  line break and the indentation around it dropped and a line holding nothing else left out, and
+  a container that holds only spaces, `{" "}`, which a formatter writes where it breaks a line
+  after meaningful text, reads as those spaces. So `<p>Hello <b>…</b></p>` and the same element
+  wrapped with `Hello{" "}` at the end of a line read alike, where `<p>a&nbsp;\n  b</p>` keeps the
+  space that joins its lines and `<p>a&nbsp;b</p>` has none. A self-closing element ends ` />`,
+  and an expression container holding only a comment is left out.
 - **Repairs.** Inside a node the grammar repaired, a token's role is not the one its type names,
   so the source's spacing around it is kept.
+
+Whitespace inside a literal is the one place two different programs share a string: the collapse
+below makes one space of every run, so `"a  b"` and `"a b"` give one string, as they do for
+every plugin.
 
 A type (LP11e) and a decorator's `raw` and `arguments` (LP11f, LP14) are written in the same
 spelling, uncut.
@@ -971,7 +1002,7 @@ Every language plugin must pass the following tests.
 | LP11b | `f(a?: string, limit = 10, ...ids: string[])` | inputs = `[{name:"a",type:"string",optional:true},{name:"limit",type:"",optional:true},{name:"ids",type:"string[]",rest:true}]`, and a required parameter carries neither key. What a caller sees of a parameter's form has fields of its own because the api fingerprint reads them and not `name` (fingerprint.md §3.1, §3.4): a `...` spelled into the name would reach no axis. `optional` marks an optional parameter and a defaulted one alike, since a caller may omit either; the default's value is not recorded. `name` is the bare binding and `type` the annotation alone. Renderers print the markers in the parameter's spelling (`a?: string`, `...ids: string[]`, and `limit?` for a default) |
 | LP11c | a parameter whose binding the parser repaired — `function f(...: string[])`, `function f(...,)`, `class C { m(...: T) {} }`, `function f(?: string)` | inputs = `[{name:"...",type:"string[]",rest:true}]`, `[{name:"...",type:"",rest:true}]`, `[{name:"...: T",type:"",rest:true}]` and `[{name:"?: string",type:"string",optional:true}]`. The parser inserts a zero-width MISSING identifier for the binding, or, in the method, wraps the `:` in an ERROR node. fingerprint.md §5.1(6) treats a MISSING node as not written and an ERROR node is no binding, so the name is the text of the nearest node the source did write: the pattern, else the whole parameter. Neither rule gives way — nothing the parser invented becomes a name, and no name is the empty string the schema's `minLength: 1` refuses |
 | LP11d | a destructuring parameter — `f({ save }: D)`, `f([a, b = c])`, `f({ p: { q } })`, `f(...[x])` | `name` = the pattern text, without a rest parameter's `...` (`[x]`, beside `rest: true`); `bindings` = the names it binds in source order (`["save"]`, `["a","b"]`, `["q"]`, `["x"]`). A single-name parameter omits `bindings`, a rest one included: `f(...ids)` is `{name:"ids",type:"",rest:true}`. So does a pattern that binds no name: `f({}: P)` is `{name:"{}",type:"P"}`. `name` is always the written text, and `bindings` lists the names the parser placed in binding position. Anything else in the pattern binds nothing and is passed over, and the file is still scanned. A MISSING identifier binds nothing (`f({ a: })` has no `bindings`), and neither does the text of an ERROR node: `f({ a, ? })`, `f({ a = })` and `f({ a b })` bind `["a"]`, `f({ a, ?, b })` binds `["a","b"]`, and `f([...])` and `f({ ... })` have no `bindings`. Nor does an expression the grammar places where a binding belongs, which no compiler accepts in a parameter, so such a pattern drops only that binding: `f({ a: b!, c })` binds `["c"]`, and `f({ a: obj.b })`, `f([obj.a])`, `f([a[0]])` and `f({ a: undefined })` have no `bindings`. A malformed array pattern the parser could keep only as an expression, by inserting a `!` after it (`non_null_expression > array`, the `!` MISSING), is read as the pattern it spells: `f([a, ?, b])` and `f([a, b c])` bind `["a","b"]`, and `f({ q, k: [a, ?] })`, which the same repair turns into an object expression, binds `["q","a"]`. A parameter the parser read as some other expression is no pattern and has no `bindings`: `f([a, b c], [d, ?])` is one subscript expression. A destructuring declaration refuses the ERROR node, the placed expression and the repaired pattern alike, since each name it lists becomes a Symbol; a parameter reads around them |
-| LP11e | a type broken over lines — `provider:\n  \| ClassProvider\n  \| FactoryProvider`, `parts: Array<\n  \| A\n  \| B\n>`, `handler: (\n  req: Request,\n) => void`, `x: A &\n  B`, `o: {\n  a: A\n  b: B\n}` — and the same punctuation or a comment written on one line, `Map<\| A \| B, \| C>`, `(): & Base & Extra`, `<T extends \| A = \| B>`, `o: { a: A, b: B, }`, `x: /* c */ A` | the type as it reads on one line: `ClassProvider \| FactoryProvider`, `Array<A \| B>`, `(req: Request) => void`, `A & B`, `{ a: A; b: B }`, `Map<A \| B, C>`, `Base & Extra`, `T extends A = B`, `{ a: A; b: B }`, `A`, in a parameter type, a return type and a type parameter alike. A formatter that breaks a type over lines adds line breaks, a trailing comma before a closing bracket and a union's leading `\|` (an intersection it breaks after each `&`), drops the `;` between an object type's members, and undoes each of these when it joins the type, so keeping any of them would move `api` (fingerprint.md §3.4) and put a row whose two sides read alike in ⚠ API changes. The text is rebuilt from the syntax tree's tokens in the rule-string contract's spelling (§4.4), uncut: comments and line breaks are left out and the spacing is regenerated, a `,` before a closing bracket is left out, an object type's members are joined by `; ` whatever separated them, the operator of a `union_type` or `intersection_type` whose first child is that operator is left out, and a string literal type is quoted with `"` unless its content needs `'`, so `'fast' \| 'slow'` and `"fast" \| "slow"` record one type. A `\|` or `,` inside a string literal type (`"a, \| b"`) stays, a template literal type keeps its text and respaces only what its `${}` holds, and an operator the parser gave no operand (`x: \|` records `\|`) stays |
+| LP11e | a type broken over lines — `provider:\n  \| ClassProvider\n  \| FactoryProvider`, `parts: Array<\n  \| A\n  \| B\n>`, `handler: (\n  req: Request,\n) => void`, `x: A &\n  B`, `o: {\n  a: A\n  b: B\n}` — and the same punctuation or a comment written on one line, `Map<\| A \| B, \| C>`, `(): & Base & Extra`, `<T extends \| A = \| B>`, `o: { a: A, b: B, }`, `x: /* c */ A` | the type as it reads on one line: `ClassProvider \| FactoryProvider`, `Array<A \| B>`, `(req: Request) => void`, `A & B`, `{ a: A; b: B }`, `Map<A \| B, C>`, `Base & Extra`, `T extends A = B`, `{ a: A; b: B }`, `A`, in a parameter type, a return type and a type parameter alike. A formatter that breaks a type over lines adds line breaks, a trailing comma before a closing bracket and a union's leading `\|` (an intersection it breaks after each `&`), drops the `;` between an object type's members, and undoes each of these when it joins the type, so keeping any of them would move `api` (fingerprint.md §3.4) and put a row whose two sides read alike in ⚠ API changes. The text is rebuilt from the syntax tree's tokens in the rule-string contract's spelling (§4.4), uncut: comments and line breaks are left out and the spacing is regenerated, a `,` before a closing bracket is left out, an object type's members are joined by `; ` whatever separated them, the operator of a `union_type` or `intersection_type` whose first child is that operator is left out, parentheses around a type that binds tighter than any operator are left out (`(A)[]` records `A[]`, `(A \| B)[]` keeps them), and a string literal type is written as its value between `"`, so `'fast' \| 'slow'` and `"fast" \| "slow"` record one type. A `\|` or `,` inside a string literal type (`"a, \| b"`) stays, a template literal type keeps its text and respaces only what its `${}` holds, and an operator the parser gave no operand (`x: \|` records `\|`) stays |
 | LP11f | a parameter written with a **modifier or a decorator** — `constructor(private readonly repo: Repo)`, `constructor(public override t?: number)`, `constructor(@Inject(TOKEN) /* c */ protected s: S)`, `find(@Param("id") id: string, @Body() dto: D)`, `constructor(@Optional() @Inject(T) s = make())` — and a decorator broken over lines or holding a comment, `@Inject(\n  TOKEN,\n)`, `@Inject(/* legacy */ TOKEN)`, `@Inject(A /* c */, B)`, `@Use({\n  a: 1,\n})` | the input carries `modifiers` (`["private", "readonly"]`, `["public", "override"]`, `["protected"]`) and `decorators` (`["Inject(TOKEN)"]`, `["Param(\"id\")"]` and `["Body()"]` on the two inputs, `["Optional()", "Inject(T)"]`), each in source order and each left out when the parameter has none ([ir-schema.md](./ir-schema.md) §7); the decorators broken over lines record `Inject(TOKEN)`, `Inject(TOKEN)`, `Inject(A, B)` and `Use({ a: 1 })`. A parameter property's modifier declares a member, so `private s` → `public s` adds `C.s` to what callers can read, and a parameter's decorator decides what a DI container or a router hands the parameter, so the api axis reads both ([fingerprint.md](./fingerprint.md) §3.1, A27), as the syntax axis reads the parameter list that carries them (LP8p1). A modifier is read off the parameter's own tokens, so a comment beside one is passed over. A decorator is recorded after its `@` in the rule-string contract's spelling (§4.4), uncut, as LP11e records a type, since a formatter breaks a decorator's arguments over lines, adds a trailing comma and picks its quotes as it does a type's: `@Param('id')` and `@Param("id")` both record `Param("id")`. A decorator's arguments still run where the class is defined, on the owner's walk (LP20d). A member's own decorators are written the same way (LP14) |
 | LP12 | `function f<T>()` | typeParameters = ["T"] |
 | LP13 | `function f() { throw new MyError() }` | throws = ["MyError"] |
@@ -1015,7 +1046,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP19a | an arrow with an expression body — `(u) => u.role === "admin"`, wherever the arrow is a walk root (a variable, a class field per LP20f, a property of a binding's object literal per LP7d, a registered handler per LP20g, a function a `const` or a class field hands its call per LP7c and LP20f1, a default export) | the rules its block twin `function f(u) { return u.role === "admin" }` gets: the body is the arrow's return value, so it goes through the triviality and call-only tests a `return` does (`drop-list.md` §5.3–§5.5). Parentheses around the value are taken off before the tests, every pair and past a comment inside one, and the block `return` reads its value the same way, so `() => (g())`, `return (g())` and `return g()` are all call-only, and `() => (a ? b : c)` and `return (a ? b : c)` both give `expr: a ? b : c` (`drop-list.md` §5.3). The two record the same calls: the body is walked whole, and a block `return` is walked unless it is trivial, which an expression holding a call never is, so `(a) => a[g()]` and `return a[g()]` both take the rule and record `g` (`drop-list.md` §5.5). Read as a bare expression the body earned no rule, and an edit to it moved no `logic` fingerprint where the block twin's does. The rule is the only addition: the body's own walk is unchanged, so it records the same calls whether or not the rule is added |
 | LP19b | rule strings differing only in a comment — `if (a /* why */ \|\| b)` against `if (a \|\| b)`, `a/**/\|\|b` against `a\|\|b`, a line comment ending one line of a wrapped guard, a comment in a `throw` value, in a return expression or in a `switch` value | identical strings, holding no comment: `a \|\| b`. The spacing is regenerated from the tokens (§4.4, rule-string contract), so a comment between two tokens leaves no trace: `a-/**/-b` gives `a - -b`, never `a--b`. A `/* … */` inside a string literal is not a comment and stays |
 | LP19c | rule strings differing only in whitespace — a guard re-wrapped over several lines, re-indented, with a run of spaces made longer or shorter, or with a space written or left out between two tokens | identical strings: a guard wrapped as `a < 18 \|\|` / `b \|\|` / `c === 1` over three lines gives `a < 18 \|\| b \|\| c === 1`, as its one-line spelling does, and `a\|\|b` and `a \|\| b` both give `a \|\| b` |
-| LP19d | rule strings differing only in a spelling a formatter chooses — the quotes around a string or a key, a trailing comma, the parentheses around an arrow's lone parameter, optional semicolons, the parentheses a formatter wraps around JSX laid out over lines, takes off where precedence groups the operands or adds where operators are mixed, a number's letter case and zeros, the spacing inside a template's `${}` | identical strings in the rule-string contract's spelling (§4.4): `xs.some(x=>x.kind==='a')` and `xs.some((x) => x.kind === "a")` give `xs.some((x) => x.kind === "a")`, `a && b \|\| c` and `(a && b) \|\| c` give `(a && b) \|\| c`, and `return (\n  <div>\n    <p>{x}</p>\n  </div>\n)` and `return <div><p>{x}</p></div>` give `<div><p>{x}</p></div>`. Two programs never share a string: `'it\'s'` keeps its quotes, `(a + b) * c` its parentheses, `[a, ,]` the comma of its hole, and the text between JSX tags is content |
+| LP19d | rule strings differing only in a spelling a formatter chooses — the quotes around a string and the escapes they take, the quotes around a key, a trailing comma, the parentheses around an arrow's lone parameter, the `;` that ends a statement, inside a block or not, `new A` against `new A()`, the parentheses a formatter wraps around JSX laid out over lines, takes off where precedence groups the operands or adds where operators are mixed, the `{" "}` it writes where it breaks JSX after meaningful text, a number's letter case and zeros, the spacing inside a template's `${}` | identical strings in the rule-string contract's spelling (§4.4): `xs.some(x=>x.kind==='a')` and `xs.some((x) => x.kind === "a")` give `xs.some((x) => x.kind === "a")`, `'it\'s'` and `"it's"` give `"it's"`, `xs.some((x) => { if (!x) return; return x.ok; })` and the same without its semicolons give `xs.some((x) => { if (!x) return; return x.ok })`, `a && b \|\| c` and `(a && b) \|\| c` give `(a && b) \|\| c`, and `return (\n  <div>\n    <p>{x}</p>\n  </div>\n)` and `return <div><p>{x}</p></div>` give `<div><p>{x}</p></div>`. Spellings of different code stay apart: `- -a` and `--a`, `(a + b) * c` and `a + b * c`, `[a, ,]` and `[a,]`, `(a?.b).c` and `a?.b.c`, `<p>a&nbsp;\n  b</p>` and `<p>a&nbsp;b</p>`, and the text between JSX tags is content. Whitespace inside a literal is the exception, since every plugin's strings pass through the collapse (§4.4) |
 | LP20 | `for (let i...) ...` | loop in rules (loopKind: "for") |
 | LP20a | a type whose members are Symbols of their own — a class and its methods, and a binding's object literal and its members (LP7d) | the owner's walk reports **its own** body only: field initialisers, static blocks, and whatever the language runs on construction — for an object literal, the values defining it evaluates, at every depth LP7e reads. A member body reported twice is reported on two Symbols, and any resolution that reaches the owner (`call-resolution.md` CR15 resolves `new C()` to the class) carries the duplicate up into callers that touch nothing |
 | LP20b | the construction path — a constructor body | reported on the owner, because that is the Symbol an instantiation resolves to, **and** on the member's own Symbol. Reporting it twice costs nothing only while no call resolves to a constructor; a resolver that grew `super()` resolution ([`call-resolution.md`](./call-resolution.md) CR18 is adjacent) would make the second copy propagate, so the plugin owes this row a check against its core. Whether a static member named `constructor` is on the construction path is the language's answer, not the name's: in ECMAScript it is not |

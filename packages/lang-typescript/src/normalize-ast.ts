@@ -3,7 +3,15 @@ import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Language, Node, TreeCursor } from "web-tree-sitter"
 import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
 import { redundantlyParenthesized } from "./parentheses"
-import { canonicalNumber, cleanJsxText, holdsKeys, unquotedKey } from "./spelling"
+import {
+  canonicalNumber,
+  cleanJsxText,
+  holdsKeys,
+  isBareNew,
+  JsxTextRun,
+  stringValueOf,
+  unquotedKey,
+} from "./spelling"
 
 export function normalizeAst(symbol: SymbolCandidate<Node>): string {
   if (symbol.kind === "call") return serialize(symbol.fullNode)
@@ -137,12 +145,22 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
     const operand = reducibleOperand(cursor.currentNode)
     if (operand !== null) return serialize(operand)
   }
-  if (type === "parenthesized_expression") {
+  if (type === "parenthesized_expression" || type === "parenthesized_type") {
     const held = redundantlyParenthesized(cursor.currentNode)
     if (held !== null) return serialize(held)
   }
 
+  if (type === "string") {
+    const value = stringValueOf(cursor.currentNode)
+    if (value !== null) return stringLeaf(value)
+  }
+
   const children: string[] = []
+  const jsxText = type === "jsx_element" ? new JsxTextRun() : null
+  const flushText = () => {
+    const run = jsxText?.flush() ?? ""
+    if (run.length > 0) children.push(`(jsx_text ${JSON.stringify(run)})`)
+  }
   const hasChildren = cursor.gotoFirstChild()
   if (hasChildren) {
     let previousType: string | null = null
@@ -152,6 +170,10 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
       const typeId = cursor.nodeTypeId
       const childType = grammar.typeName(typeId)
       if (grammar.mayBeExtra.has(childType) && cursor.currentNode.isExtra) continue
+      if (jsxText !== null && grammar.isNamed(typeId)) {
+        if (jsxText.takes(cursor.currentNode)) continue
+        flushText()
+      }
       if (grammar.isNamed(typeId)) {
         const lone = parameterField !== null && cursor.currentFieldId === parameterField
         const key =
@@ -175,6 +197,9 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
     } while (cursor.gotoNextSibling())
     cursor.gotoParent()
   }
+  flushText()
+  // `new A` calls `A` with no arguments, as `new A()` does.
+  if (type === "new_expression" && isBareNew(cursor.currentNode)) children.push("(arguments)")
 
   // An ERROR whose children are all dropped would leave a bare level: a stray `)` read as an edit.
   if (type === ERROR_TYPE && hasChildren && children.length === 0) return ""
@@ -188,6 +213,12 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
   if (children.length === 0 && leafText === null) return `(${type})`
   if (children.length === 0 && leafText !== null) return `(${type} ${leafText})`
   return `(${type} ${children.join(" ")})`
+}
+
+// A string is read by its value, as a rule's strings are, so the quotes a formatter picks and the
+// escapes they take read alike; the shape is the one a string with a single fragment has.
+function stringLeaf(value: string): string {
+  return value.length === 0 ? "(string)" : `(string (string_fragment ${JSON.stringify(value)}))`
 }
 
 // Recovery merges the characters it cannot lex into one leaf, across whitespace and line breaks.

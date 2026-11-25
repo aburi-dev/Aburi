@@ -2,31 +2,65 @@ import type { Node } from "web-tree-sitter"
 import { hasErrorChild } from "./ast-helpers"
 
 /**
- * The expression a pair of parentheses holds when the program parses the same without them: the
- * parentheses a formatter wraps around JSX laid out over lines, or takes off where precedence
- * already groups the operands, are a spelling, not the code.
+ * The expression or type a pair of parentheses holds when the program parses the same without
+ * them: the parentheses a formatter wraps around JSX laid out over lines, or takes off where
+ * precedence already groups the operands, are a spelling, not the code.
  */
 export function redundantlyParenthesized(node: Node): Node | null {
+  if (node.type === "parenthesized_type") return redundantTypeParentheses(node)
   if (node.type !== "parenthesized_expression") return null
   const held = soleExpression(node)
   const parent = node.parent
   if (held === null || parent === null || STATEMENT_PARENTHESES.has(parent.type)) return null
+  if (precedesNonNull(node)) return null
   if (parent.type === "parenthesized_expression") {
     return soleExpression(parent) === null ? null : held
   }
   const inner = innermost(held)
-  if (inner === null || (startsWithDeclarationKeyword(inner) && opensStatementOrArrowBody(node))) {
-    return null
-  }
+  if (inner === null || opensAmbiguously(node, parent, inner)) return null
   return isGroupedAlike(node, parent, inner) ? held : null
 }
 
+// The grammar reads `x || (a?.b)!.c` as `(x || (a?.b))!.c`, where TypeScript asserts `(a?.b)` alone,
+// and without the parentheses `a?.b!.c` goes on with the chain, so those a `!` follows are kept.
+function precedesNonNull(node: Node): boolean {
+  for (let cursor = node.parent; cursor !== null; cursor = cursor.parent) {
+    if (cursor.type === "non_null_expression") {
+      return cursor.firstNamedChild?.endIndex === node.endIndex
+    }
+    if (cursor.endIndex !== node.endIndex) return false
+  }
+  return false
+}
+
+// A type that binds tighter than any operator reads the same without the parentheses around it, in
+// any position: `(A)[]` is `A[]`, where `(A | B)[]` and `(keyof T)[]` are not.
+function redundantTypeParentheses(node: Node): Node | null {
+  const held = soleExpression(node)
+  return held !== null && PRIMARY_TYPE_TYPES.has(held.type) ? held : null
+}
+
+const PRIMARY_TYPE_TYPES: ReadonlySet<string> = new Set([
+  "type_identifier",
+  "nested_type_identifier",
+  "generic_type",
+  "predefined_type",
+  "literal_type",
+  "template_literal_type",
+  "this_type",
+  "object_type",
+  "tuple_type",
+  "array_type",
+  "lookup_type",
+  "parenthesized_type",
+])
+
 /**
  * The operand to write between parentheses whether or not the source does: where operators that
- * readers mix up meet (`&&` and `||`, a bitwise operator and another, `%` and arithmetic, `await`
- * inside a comparison), a spread takes more than one term, a branch holds `??` or `as`, or an
- * arrow returns a conditional, the grouping is spelled out, as formatters do, so leaving those
- * parentheses out reads the same as writing them.
+ * readers mix up meet (`&&` and `||`, a bitwise operator and any other, `%` and arithmetic, `await`
+ * inside a binary operator), a spread takes more than one term, a branch holds `??`, `as` or
+ * `satisfies`, or an arrow returns a conditional, the grouping is spelled out, as formatters do,
+ * so leaving those parentheses out reads the same as writing them.
  */
 export function clarifiedOperand(parent: Node, child: Node): Node | null {
   if (!CLARIFIED_PARENTS.has(parent.type) || !child.isNamed || child.isExtra) return null
@@ -126,7 +160,12 @@ function isGroupedAlike(node: Node, parent: Node, inner: Node): boolean {
       return holds(parent, "condition", node) && level >= LOWEST_BINARY
     case "unary_expression":
     case "await_expression":
+      return level >= UNARY
+    case "update_expression":
       return level >= POSTFIX
+    case "as_expression":
+    case "satisfies_expression":
+      return parent.firstNamedChild?.id === node.id && level >= UNARY
     case "member_expression":
     case "subscript_expression":
       return holds(parent, "object", node) && isChainHead(inner)
@@ -141,7 +180,7 @@ function isGroupedAlike(node: Node, parent: Node, inner: Node): boolean {
   }
 }
 
-// A slot the grammar fills with any expression short of a comma-separated sequence.
+// A slot where only a sequence needs its parentheses.
 const ANY_EXPRESSION_PARENTS: ReadonlySet<string> = new Set([
   "arguments",
   "array",
@@ -155,6 +194,10 @@ const ANY_EXPRESSION_PARENTS: ReadonlySet<string> = new Set([
 
 const ANY_EXPRESSION_FIELDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["pair", ["value"]],
+  ["subscript_expression", ["index"]],
+  ["switch_case", ["value"]],
+  ["for_in_statement", ["right"]],
+  ["export_statement", ["value"]],
   ["assignment_expression", ["right"]],
   ["augmented_assignment_expression", ["right"]],
   ["variable_declarator", ["value"]],
@@ -274,9 +317,11 @@ function levelOf(node: Node): number {
 }
 
 // The head of a member access or a call reads the same bare only when no `?.` in it would then
-// short-circuit the rest of the chain, and a number would swallow the `.` as its decimal point.
+// short-circuit the rest of the chain, and a number would swallow the `.` as its decimal point. A
+// `new` is written with its argument list, so `(new A).b` is `new A().b`.
 const CHAIN_HEAD_TYPES: ReadonlySet<string> = new Set([
   "identifier",
+  "new_expression",
   "this",
   "super",
   "string",
@@ -311,22 +356,26 @@ function isPlainName(node: Node): boolean {
   return object !== null && isPlainName(object)
 }
 
-const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set([
-  "{",
-  "function",
-  "class",
-  "let",
-  "async",
-])
+// Bare at the start of a statement, a leading `{` opens a block, a leading `function`, `class` or
+// `async function` a declaration, and a leading `let [` a declaration too; `export default` reads
+// all of those but `{` the same way. In an arrow's body only `{` is read otherwise, and the other
+// keywords are kept there as a precaution.
+const STATEMENT_KEYWORDS: ReadonlySet<string> = new Set(["{", "function", "class", "let", "async"])
 
-function startsWithDeclarationKeyword(node: Node): boolean {
-  let cursor: Node | null = node
-  while (cursor !== null && cursor.childCount > 0) cursor = cursor.firstChild
-  return cursor !== null && DECLARATION_KEYWORDS.has(cursor.type)
+const EXPORTED_KEYWORDS: ReadonlySet<string> = new Set(["function", "class", "let", "async"])
+
+function opensAmbiguously(node: Node, parent: Node, inner: Node): boolean {
+  const keyword = firstToken(inner)
+  if (parent.type === "export_statement") return EXPORTED_KEYWORDS.has(keyword)
+  return STATEMENT_KEYWORDS.has(keyword) && opensStatementOrArrowBody(node)
 }
 
-// Bare at the start of a statement or of an arrow's body, a leading `{` opens a block and a
-// leading `function` or `class` a declaration.
+function firstToken(node: Node): string {
+  let cursor: Node | null = node
+  while (cursor !== null && cursor.childCount > 0) cursor = cursor.firstChild
+  return cursor?.type ?? ""
+}
+
 function opensStatementOrArrowBody(node: Node): boolean {
   let cursor: Node = node
   for (;;) {

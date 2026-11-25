@@ -1,14 +1,24 @@
 import type { Node } from "web-tree-sitter"
 import { leadingOperatorOperand } from "./ast-helpers"
 import { clarifiedOperand, redundantlyParenthesized } from "./parentheses"
-import { canonicalNumber, canonicalString, cleanJsxText, holdsKeys, unquotedKey } from "./spelling"
+import {
+  canonicalJsxAttributeString,
+  canonicalNumber,
+  canonicalString,
+  holdsKeys,
+  isBareNew,
+  isKeyPosition,
+  JsxTextRun,
+  unquotedKey,
+} from "./spelling"
 
 /**
  * The text a rule, a type or a decorator records: rebuilt from its tokens on one line, with the
  * spacing between them regenerated rather than copied, so the spellings a formatter chooses between
- * — quotes around a string or a key that needs neither, a trailing comma, parentheses the grouping
- * does not need or an arrow's lone parameter takes either way, optional semicolons, a number's
- * zeros and case, line breaks and comments — read alike.
+ * — the quotes and escapes of a string, quotes around a key that needs none, a trailing comma,
+ * parentheses the grouping does not need or an arrow's lone parameter takes either way, optional
+ * semicolons, `new` without an argument list, a number's zeros and case, line breaks and comments —
+ * read alike. Reading stops once `enough` UTF-16 units of non-space text are written.
  */
 export function canonicalText(
   node: Node,
@@ -21,7 +31,6 @@ export function canonicalText(
   return join(tokens)
 }
 
-/** Reading stops once this many UTF-16 units of non-space text are written. */
 const UNBOUNDED = Number.POSITIVE_INFINITY
 
 /**
@@ -73,7 +82,10 @@ function collect(node: Node, range: Range, out: Token[], place: Place): void {
   if (whole) {
     const verbatim = verbatimText(node, place.parent, range.budget.left)
     if (verbatim !== null) {
-      emit(tokenOf(node, verbatim, place), range, out)
+      const token = tokenOf(node, verbatim, place)
+      // A quoted key is a name, and is spaced as one: `"m"(a) {}`, as `m(a) {}`.
+      const key = holdsKeys(place.parent) && isKeyPosition(node)
+      emit(key ? { ...token, type: "property_identifier" } : token, range, out)
       return
     }
   }
@@ -116,7 +128,7 @@ function collectChildren(node: Node, range: Range, out: Token[], repaired: boole
     (child) => !child.isMissing && child.type !== "comment" && (range.parked || !child.isExtra),
   )
   const statements = STATEMENT_CONTAINERS.has(node.type) ? statementIds(node, children) : null
-  const objectType = node.type === "object_type"
+  const members = MEMBER_CONTAINERS.has(node.type)
   let previousMember = false
   for (const [index, child] of children.entries()) {
     const place: Place = {
@@ -131,7 +143,7 @@ function collectChildren(node: Node, range: Range, out: Token[], repaired: boole
         if (previousMember) out.push(synthetic(";", node.type, child.startIndex))
         previousMember = true
       }
-    } else if (objectType) {
+    } else if (members) {
       if (SEPARATORS.has(child.type)) continue
       if (child.isNamed) {
         if (previousMember) out.push(synthetic(";", node.type, child.startIndex))
@@ -148,6 +160,10 @@ function collectChildren(node: Node, range: Range, out: Token[], repaired: boole
       continue
     }
     collect(child, range, out, place)
+  }
+  if (!repaired && isBareNew(node) && within(node, range)) {
+    out.push(synthetic("(", "arguments", node.endIndex))
+    out.push(synthetic(")", "arguments", node.endIndex))
   }
 }
 
@@ -174,13 +190,17 @@ function synthetic(text: string, parent: string, at: number): Token {
   }
 }
 
-// A statement block's statements are joined by `;` whether or not the source ends each with one.
+// Automatic semicolon insertion makes the `;` that ends a statement a formatter's choice, so the
+// statements of a block, a program or a `case` are joined by one whatever the source writes, and
+// the members of a class or an object type the same way.
 const STATEMENT_CONTAINERS: ReadonlySet<string> = new Set([
   "statement_block",
   "program",
   "switch_case",
   "switch_default",
 ])
+
+const MEMBER_CONTAINERS: ReadonlySet<string> = new Set(["class_body", "object_type"])
 
 function statementIds(container: Node, children: readonly Node[]): ReadonlySet<number> {
   const label = container.childForFieldName("value")
@@ -193,13 +213,19 @@ function statementIds(container: Node, children: readonly Node[]): ReadonlySet<n
   return ids
 }
 
+// An empty statement is nothing but its `;`, and the declaration a `for` starts with ends at its own.
 function isStatementTerminator(token: Node): boolean {
   if (token.type !== ";") return false
   const statement = token.parent
-  const container = statement?.parent
-  if (statement === null || container === null || container === undefined) return false
-  return STATEMENT_CONTAINERS.has(container.type) && statement.lastChild?.id === token.id
+  if (statement === null || statement.lastChild?.id !== token.id) return false
+  if (!STATEMENT_TYPE.test(statement.type) || statement.type === "empty_statement") return false
+  const loop = statement.parent
+  return (
+    loop?.type !== "for_statement" || loop.childForFieldName("initializer")?.id !== statement.id
+  )
 }
+
+const STATEMENT_TYPE = /_(?:statement|declaration|signature)$|^import_alias$/
 
 function isLoneArrowParameter(parent: Node, child: Node): boolean {
   if (parent.type !== "arrow_function") return false
@@ -212,7 +238,7 @@ const SEPARATORS: ReadonlySet<string> = new Set([",", ";"])
 function verbatimText(node: Node, parent: string, enough: number): string | null {
   switch (node.type) {
     case "string":
-      return (holdsKeys(parent) ? unquotedKey(node) : null) ?? canonicalString(node.text)
+      return (holdsKeys(parent) ? unquotedKey(node) : null) ?? canonicalString(node)
     case "number":
       return canonicalNumber(node.text)
     case "template_string":
@@ -316,7 +342,8 @@ function spaced(previous: Token, token: Token): boolean {
   if (previous.repaired || token.repaired) return previous.end < token.start
   if (GLUED_AFTER.has(previous.type) || GLUED_BEFORE.has(token.type)) return false
   if (previous.type === "{" && token.type === "}") return false
-  if (isPrefixOperator(previous) || isPostfixOperator(token)) return false
+  if (isPrefixOperator(previous)) return mergesWith(previous, token)
+  if (isPostfixOperator(token)) return false
   if (previous.type === "<" && isTypeAngle(previous)) return false
   if (token.type === ">" && isTypeAngle(token)) return false
   if (token.type === "<" && isTypeAngle(token)) return !endsName(previous)
@@ -344,6 +371,11 @@ function isPrefixOperator(token: Token): boolean {
   )
 }
 
+// `- -a` negates twice where `--a` decrements, so a sign keeps its space before another of its kind.
+function mergesWith(sign: Token, token: Token): boolean {
+  return (sign.type === "-" || sign.type === "+") && token.text.startsWith(sign.type)
+}
+
 function isPostfixOperator(token: Token): boolean {
   return !token.first && POSTFIX_OPERATORS.has(token.type) && token.parent === "update_expression"
 }
@@ -358,12 +390,18 @@ function jsxText(node: Node, enough: number): string {
   if (node.type === "jsx_self_closing_element") return `<${jsxTag(node)} />`
   let out = ""
   let written = 0
-  for (const child of named(node)) {
-    if (written >= enough) break
-    const piece = jsxChild(child, enough - written)
+  const text = new JsxTextRun()
+  const write = (piece: string) => {
     out += piece
     if (enough !== UNBOUNDED) written += nonSpaceLength(piece)
   }
+  for (const child of named(node)) {
+    if (written >= enough) break
+    if (text.takes(child)) continue
+    write(text.flush())
+    write(jsxChild(child, enough - written))
+  }
+  write(text.flush())
   return out
 }
 
@@ -375,8 +413,6 @@ function jsxChild(child: Node, enough: number): string {
       const name = child.childForFieldName("name")
       return `</${name === null ? "" : jsxName(name)}>`
     }
-    case "jsx_text":
-      return cleanJsxText(child.text)
     case "jsx_expression":
       return jsxExpression(child, enough)
     case "jsx_element":
@@ -409,7 +445,7 @@ function jsxAttribute(attribute: Node): string {
   if (value === undefined) return jsxName(name)
   const written =
     value.type === "string"
-      ? canonicalString(value.text)
+      ? canonicalJsxAttributeString(value.text)
       : value.type === "jsx_expression"
         ? jsxExpression(value, UNBOUNDED)
         : jsxText(value, UNBOUNDED)
