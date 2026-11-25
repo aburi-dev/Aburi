@@ -116,7 +116,7 @@ function parametersOf(body: Node): Node | null {
 export function parameterDefaultsRecordAnything(body: Node): boolean {
   const parameters = parametersOf(body)
   if (parameters === null) return false
-  // A default is an expression, so no `if` in it asks whether a call exits.
+  // An exit call is itself a recorded call, so the answer does not depend on which calls exit.
   const walk: Walk = { rules: [], calls: [], exitCalls: NO_EXIT_CALLS }
   visitParameterDefaults(parameters, walk)
   return walk.rules.length > 0 || walk.calls.length > 0

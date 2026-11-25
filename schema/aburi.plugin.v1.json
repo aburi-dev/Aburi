@@ -223,7 +223,7 @@
           },
           "minItems": 1,
           "uniqueItems": true,
-          "description": "The names the module exports them under; default for its default export."
+          "description": "The exported names of the functions that never return; default names the default export."
         }
       }
     },

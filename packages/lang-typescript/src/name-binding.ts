@@ -42,8 +42,9 @@ export interface ImportedValue {
 }
 
 /**
- * The export `use` reads: a named or default import's local name, or a member of a namespace
- * import (`nav.redirect`). `null` where a scope nearer than the module binds the name.
+ * The export `use` reads: the local name of a named or default import, or a member (`nav.redirect`)
+ * of a module bound whole, by `import * as nav` or `import nav = require(…)`. `null` for any other
+ * use, and unless the name's only binding is a module-scope import.
  */
 export function importedValueOf(use: Node): ImportedValue | null {
   if (use.type === "identifier") {

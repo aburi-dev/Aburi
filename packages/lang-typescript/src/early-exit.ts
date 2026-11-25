@@ -9,6 +9,15 @@ export type ExitCalls = Pick<VocabRegistry, "isExitCall">
 
 export const NO_EXIT_CALLS: ExitCalls = { isExitCall: () => false }
 
+// A host older than this plugin passes a registry without `isExitCall`. Refused here, the scan ends
+// naming the host, where the walk would throw in each file that calls an import and withdraw it.
+export function assertAnswersExitCalls(registry: VocabRegistry): void {
+  if (typeof registry.isExitCall === "function") return
+  throw new Error(
+    "the host's plugin registry has no isExitCall, which this @aburi/lang-typescript reads to tell whether a call returns. Update @aburi/cli to the version released with it.",
+  )
+}
+
 export function containsEarlyExit(node: Node, exitCalls: ExitCalls): boolean {
   return exitsFrom(node, { ...NO_INNER_TARGETS, exitCalls })
 }
@@ -65,10 +74,10 @@ function exitsFrom(node: Node, scope: ExitScope): boolean {
   return false
 }
 
-// A call the configured plugins declare never returns is read through the import that binds it,
-// so a local of the same name does not count.
 function callsExit(callee: Node, exitCalls: ExitCalls): boolean {
   if (describeCallee(callee)?.target === "process.exit") return true
+  // A call a plugin declares never returns is read through the import that binds it, so a local of
+  // the same name does not count.
   const imported = importedValueOf(callee)
   return imported !== null && exitCalls.isExitCall(imported.module, imported.exported)
 }

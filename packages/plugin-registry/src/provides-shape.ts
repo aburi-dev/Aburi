@@ -1,4 +1,4 @@
-import type { PluginManifest, Provides } from "@aburi/types"
+import type { ExitCall, PluginManifest, Provides } from "@aburi/types"
 import { raise } from "./errors"
 
 const PROVIDES_ENTRIES = {
@@ -82,4 +82,9 @@ export function assertProvidesShape(m: PluginManifest): void {
       if (typeof name !== "string") refuse(`exitCalls[${i}].exports[${j}]`, "a string", name)
     }
   }
+}
+
+/** The `exitCalls` the gate checked: an inherited one declares nothing, as it was never read. */
+export function ownExitCalls(provides: Provides): readonly ExitCall[] {
+  return Object.hasOwn(provides, "exitCalls") ? (provides.exitCalls ?? []) : []
 }

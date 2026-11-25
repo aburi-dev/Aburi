@@ -160,7 +160,7 @@ describe("an `if` whose consequence leaves early is a guard", () => {
 describe("a call a plugin declares never returns", () => {
   const EXITS: ReadonlyMap<string, readonly string[]> = new Map([
     ["next/navigation", ["redirect", "notFound"]],
-    ["./deny", ["default"]],
+    ["./deny", ["default", "refuse"]],
   ])
   const declaring: VocabRegistry = {
     ...noopRegistry,
@@ -181,10 +181,26 @@ describe("a call a plugin declares never returns", () => {
       'import { notFound as missing } from "next/navigation"\nexport function f(x: any) { if (!x) missing() }',
     ],
     [
+      "an import of a name written as a string",
+      'import { "redirect" as go } from "next/navigation"\nexport function f(x: any) { if (!x) go("/") }',
+    ],
+    [
       "a member of a namespace import",
       'import * as nav from "next/navigation"\nexport function f(x: any) { if (!x) nav.redirect("/") }',
     ],
+    [
+      "a member of a module `import … = require()` binds",
+      'import nav = require("next/navigation")\nexport function f(x: any) { if (!x) nav.redirect("/") }',
+    ],
     ["a default import", 'import deny from "./deny"\nexport function f(x: any) { if (!x) deny() }'],
+    [
+      "a default import written beside named ones",
+      'import deny, { refuse } from "./deny"\nexport function f(x: any) { if (!x) deny() }',
+    ],
+    [
+      "a named import written beside a default one",
+      'import deny, { refuse } from "./deny"\nexport function f(x: any) { if (!x) refuse() }',
+    ],
     [
       "a call inside a callback, as a throw there counts",
       'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) { run(() => redirect("/")) } }',
@@ -193,7 +209,7 @@ describe("a call a plugin declares never returns", () => {
     expect(await guardsOf(source)).toEqual(["!x"])
   })
 
-  it.each([
+  it.each<[string, string, VocabRegistry?]>([
     [
       "an export the plugin does not declare",
       'import { useRouter } from "next/navigation"\nexport function f(x: any) { if (!x) useRouter() }',
@@ -207,18 +223,28 @@ describe("a call a plugin declares never returns", () => {
       'import { redirect } from "next/navigation"\nexport function f(x: any, redirect: any) { if (!x) redirect("/") }',
     ],
     [
+      "a local that hides the import",
+      'import { redirect } from "next/navigation"\nexport function f(x: any) { const redirect = (to: string) => to; if (!x) redirect("/") }',
+    ],
+    [
       "a namespace member the plugin does not declare",
       'import * as nav from "next/navigation"\nexport function f(x: any) { if (!x) nav.useRouter() }',
     ],
-    ["a name no import binds", 'export function f(x: any) { if (!x) redirect("/") }'],
-  ])("leaves the `if` alone for %s", async (_label, source) => {
-    expect(await guardsOf(source)).toEqual([])
-  })
-
-  it("leaves the `if` alone where no plugin declares the call", async () => {
-    const source =
-      'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) redirect("/") }'
-
-    expect(await guardsOf(source, noopRegistry)).toEqual([])
+    [
+      "a module `import … = require()` binds, called itself",
+      'import deny = require("./deny")\nexport function f(x: any) { if (!x) deny() }',
+    ],
+    [
+      "a function of the same name the module declares",
+      'function redirect(to: string) {}\nexport function f(x: any) { if (!x) redirect("/") }',
+    ],
+    ["a name nothing binds", 'export function f(x: any) { if (!x) redirect("/") }'],
+    [
+      "a scan where no plugin declares the call",
+      'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) redirect("/") }',
+      noopRegistry,
+    ],
+  ])("leaves the `if` alone for %s", async (_label, source, registry) => {
+    expect(await guardsOf(source, registry)).toEqual([])
   })
 })

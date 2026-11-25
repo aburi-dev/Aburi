@@ -9,7 +9,7 @@ import type {
 import { HINT_NAMESPACE, isUnderPrefix } from "./constants"
 import { type RegistryErrorCode, raise } from "./errors"
 import { validateManifestRules } from "./manifest-rules"
-import { assertProvidesShape } from "./provides-shape"
+import { assertProvidesShape, ownExitCalls } from "./provides-shape"
 import { stableStringify } from "./stable-stringify"
 
 interface Owned {
@@ -125,7 +125,7 @@ export class VocabRegistry implements VocabRegistryContract {
   readonly #frameworks = new Map<string, FrameworkVocab>()
   readonly #derivedByPrefixes = new Map<string, OwnedPrefix>()
   readonly #languages = new Map<string, PluginManifest>()
-  // Two plugins may both declare an export never returns: neither owns the module.
+  // Two plugins may both declare that an export never returns: neither owns the module.
   readonly #exitCalls = new Map<string, Set<string>>()
 
   register(manifest: PluginManifest): void {
@@ -179,7 +179,7 @@ export class VocabRegistry implements VocabRegistryContract {
     for (const p of manifest.provides.derivedByPrefixes) {
       this.#derivedByPrefixes.set(p, { prefix: p, owner: manifest })
     }
-    for (const { module, exports } of manifest.provides.exitCalls ?? []) {
+    for (const { module, exports } of ownExitCalls(manifest.provides)) {
       const known = this.#exitCalls.get(module)
       if (known === undefined) this.#exitCalls.set(module, new Set(exports))
       else for (const name of exports) known.add(name)

@@ -14,6 +14,7 @@ import type {
 } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import { classifySymbolDropHint, TYPESCRIPT_FILE_DROP_PATTERNS } from "./drop-hints"
+import { assertAnswersExitCalls } from "./early-exit"
 import { extractSymbols } from "./extract-symbols"
 import { langTypescriptManifest } from "./manifest"
 import { normalizeAst } from "./normalize-ast"
@@ -39,7 +40,9 @@ class LangTypescriptPlugin implements LanguagePlugin<Tree, Node> {
   }
   readonly fileDropPatterns: string[] = [...TYPESCRIPT_FILE_DROP_PATTERNS]
 
-  async init(_ctx: PluginContext): Promise<void> {}
+  async init(ctx: PluginContext): Promise<void> {
+    assertAnswersExitCalls(ctx.registry)
+  }
 
   async parseFile(file: SourceFile): Promise<ParseResult<Tree>> {
     return parseTypescriptFile(file)

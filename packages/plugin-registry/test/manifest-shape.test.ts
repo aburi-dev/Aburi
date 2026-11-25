@@ -51,6 +51,17 @@ describe("a manifest whose shape register cannot read", () => {
     expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["lang-demo"] })
   })
 
+  it("refuses a provides that inherits exitCalls from an object of its own", async () => {
+    const m = frameworkManifest({ name: "framework-demo" })
+    const inherited = { exitCalls: [{ module: 1, exports: "ab" }] }
+    const err = await refusal({
+      ...m,
+      provides: Object.assign(Object.create(inherited), m.provides),
+    })
+    expect(err.code).toBe("manifest-invalid")
+    expect(err.message).toContain("non-plain object (Object) at $.provides;")
+  })
+
   it.each([
     ["effects", "null", null],
     ["effects", "array", []],
