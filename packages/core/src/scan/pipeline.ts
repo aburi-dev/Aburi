@@ -74,7 +74,10 @@ export interface ExtractedFile extends FileOutcomeCommon {
   unboundHeads: readonly string[]
   /** By `makeSymbolCallKey`: each call whose leading name a scope nearer it than the module declares. */
   localHeads: readonly string[]
-  /** What the language maps the file's bare specifiers to, for call resolution to probe. */
+  /**
+   * What the language maps the file's bare specifiers to, which call resolution and the Component
+   * import edges probe.
+   */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
   fault: FileFault | null

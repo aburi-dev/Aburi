@@ -20,6 +20,18 @@ const PACKAGES = [
 
 const WEB_TO_SHARED = dependency({ from: "web", to: "shared" })
 
+const ALIASES = {
+  "@org/shared": ["packages/shared/src/format.ts"],
+  "@org/tokens": ["packages/shared/tokens.json"],
+  "@org/fallback": [
+    "packages/missing/index.ts",
+    "packages/shared/src/format.ts",
+    "packages/api/src/handler.ts",
+  ],
+  "@acme/common": ["packages/shared/src/format.ts"],
+  "@lib/*": ["packages/*"],
+}
+
 async function componentEdges(
   files: Record<string, string>,
   packages = PACKAGES,
@@ -116,23 +128,46 @@ describe("scan — a Component edge per import that crosses a Component boundary
       'import { format } from "packages/shared/src/format"',
       [WEB_TO_SHARED],
     ],
+    [
+      "a dynamic import through an alias",
+      'export const load = () => import("@org/shared")',
+      [WEB_TO_SHARED],
+    ],
+    ["an alias asked for with a query", 'import raw from "@org/shared?raw"', [WEB_TO_SHARED]],
+    [
+      "an alias whose first path names no file, then files of two Components",
+      'import { format } from "@org/fallback"',
+      [WEB_TO_SHARED],
+    ],
     ["an alias to no file the scan read", 'import tokens from "@org/tokens"', []],
     ["a package `baseUrl` maps to no file", 'import { debounce } from "lodash"', []],
   ])("%s", async (_, source, expected) => {
     const { edges } = await componentEdges({
-      "tsconfig.json": JSON.stringify({
-        compilerOptions: {
-          baseUrl: ".",
-          paths: {
-            "@org/shared": ["packages/shared/src/format.ts"],
-            "@org/tokens": ["packages/shared/tokens.json"],
-            "@lib/*": ["packages/*"],
-          },
-        },
-      }),
+      "tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: ".", paths: ALIASES } }),
+      "packages/api/src/handler.ts": "export const handle = String\n",
       "packages/web/src/app.ts": `${source}\n`,
     })
     expect(edges).toEqual(expected)
+  })
+
+  it.each([
+    [
+      "two Components claim",
+      [
+        { name: "@acme/common", root: "packages/shared" },
+        { name: "@acme/common", root: "packages/api" },
+      ],
+    ],
+    ["no Component holds", [{ name: "@acme/common", root: "tools/common" }]],
+  ])("draws no edge through an alias of a package name %s", async (_, packages) => {
+    const { edges } = await componentEdges(
+      {
+        "tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: ".", paths: ALIASES } }),
+        "packages/web/src/app.ts": 'import { format } from "@acme/common"\n',
+      },
+      [...PACKAGES, ...packages],
+    )
+    expect(edges).toEqual([])
   })
 
   it("writes one edge however many imports and files cross the same boundary", async () => {

@@ -69,8 +69,11 @@ export interface ResolveCallGraphInput {
    */
   specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
   /**
-   * The names the workspace's packages are published under: a named import from one that reaches
-   * no file the scan read goes on to component scope, and one from any other package ends there.
+   * The `package.json` names of the workspace's packages, private ones included. A named import of
+   * a bare specifier that reaches no file the scan read ends the search when the specifier's
+   * package name is none of these, and goes on to component scope otherwise, as an alias with no
+   * package name (`@/lib`, `#lib`) does. Left out, no package is the workspace's, so a call into one
+   * whose manifest names only built output finds nothing by name.
    */
   workspacePackageNames?: ReadonlySet<string>
   /**
@@ -86,6 +89,11 @@ export interface ResolveCallGraphResult {
   stats: CallResolutionStats
   diagnostics: UnresolvedCallDiagnostic[]
   lspHintUsage: Readonly<LspHintUsage>
+  /**
+   * By bare specifier, in code-unit order: how many calls ended unresolved at a package's export
+   * that a Symbol of the workspace shares the spelling of.
+   */
+  foreignNamesakes: ReadonlyMap<string, number>
 }
 
 export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraphResult {
@@ -128,6 +136,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const edges: CallEdge[] = []
   const diagnostics: UnresolvedCallDiagnostic[] = []
   const lspHintUsage = emptyHintUsage()
+  const foreignNamesakes = new Map<string, number>()
   let totalCalls = 0
   let resolvedCalls = 0
 
@@ -147,6 +156,10 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
       if (hinted?.outcome === "rejected") lspHintUsage[hinted.reason] += 1
       if (hinted?.outcome === "hit") lspHintUsage.consumed += 1
       if (hit === null) {
+        const specifier = trace.foreignNamesake
+        if (specifier !== null) {
+          foreignNamesakes.set(specifier, (foreignNamesakes.get(specifier) ?? 0) + 1)
+        }
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
         diagnostics.push(
           classifyUnresolved({
@@ -185,6 +198,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     stats: buildCallResolutionStats(totalCalls, resolvedCalls, diagnostics),
     diagnostics,
     lspHintUsage,
+    foreignNamesakes: new Map([...foreignNamesakes].sort(([a], [b]) => compareCodeUnit(a, b))),
   }
 }
 

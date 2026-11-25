@@ -23,6 +23,11 @@ export interface ResolutionTrace {
   reexportedFromOutside: boolean
   /** The head's import reaches a name its module's star exports disagree on. */
   conflictingExport: boolean
+  /**
+   * The bare specifier of the package whose export ended the search, where component or
+   * workspace scope holds a Symbol the target spells.
+   */
+  foreignNamesake: string | null
 }
 
 export function newTrace(): ResolutionTrace {
@@ -32,6 +37,7 @@ export function newTrace(): ResolutionTrace {
     unnamedReceiver: false,
     reexportedFromOutside: false,
     conflictingExport: false,
+    foreignNamesake: null,
   }
 }
 
@@ -60,7 +66,7 @@ export interface ResolutionRun {
   relativeTargets: Map<string, string | null>
   /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
   specifierPaths: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
-  /** The names the workspace's packages are published under. */
+  /** The `package.json` names of the workspace's packages, private ones included. */
   workspacePackageNames: ReadonlySet<string>
   mappedTargets: Map<string, string | null>
   /** Every file's import edges, which say what a module re-exports. */
@@ -106,6 +112,9 @@ export function resolveTarget(
   // Component and workspace scope match the whole target by spelling, so past the declaration a
   // head is bound to they could only find a namesake.
   const bound = resolveBoundHead(ctx, head, tail, trace)
+  if (bound?.foreign !== undefined && tail.length > 0 && hasNamesake(ctx)) {
+    trace.foreignNamesake = bound.foreign
+  }
   if (bound !== null) return bound.hit
   if (tail.length === 0) return null
   return resolveInComponentScope(ctx, trace) ?? resolveInWorkspaceScope(ctx, trace)
@@ -279,6 +288,11 @@ export function boundClassWhere(
 
 interface BoundHead {
   hit: ResolutionHit | null
+  /**
+   * The bare specifier of the package the head is an export of, which component and workspace
+   * scope could find only a namesake of.
+   */
+  foreign?: string
 }
 
 const NO_MEMBER: BoundHead = { hit: null }
@@ -300,8 +314,10 @@ function resolveBoundHead(
   const imported = resolveInImportScope(ctx, head, tail, trace)
   if (imported?.hit != null) return imported
   // What `require()` gives back is `module.exports`, whose members its module need not declare at
-  // its top level, so a member the import does not find is left to the later scopes.
-  return resolveInFileScope(ctx, head, tail, trace)
+  // its top level, so a member the import does not find in a workspace module is left to the
+  // later scopes. A package's export has no namesake there to find.
+  const declared = resolveInFileScope(ctx, head, tail, trace)
+  return imported?.foreign === undefined ? declared : (declared ?? imported)
 }
 
 function declaredByItsImport(ctx: ResolveTargetContext, head: string): boolean {
@@ -372,8 +388,9 @@ function resolveInImportScope(
     if (reached === null) conflicting = true
     return reached ?? []
   })
+  if (imported.foreign !== null) return { hit: null, foreign: imported.foreign }
   // A member only some of the disagreeing declarations hold would otherwise pick one of them.
-  if (conflicting || imported.foreign) return NO_MEMBER
+  if (conflicting) return NO_MEMBER
   const candidates = new Set<SymbolId>()
   for (const { file, name, rest } of names) {
     const id = memberId(ctx, file, name, rest)
@@ -398,10 +415,10 @@ interface ImportedNames {
   names: ImportedName[]
   renamed: boolean
   /**
-   * A bare specifier reaches no file the scan read and names no workspace package, so the head is
-   * a package's export, whatever the workspace declares under the same name.
+   * A bare specifier that reaches no file the scan read and names no workspace package, so the head
+   * is a package's export, whatever the workspace declares under the same name.
    */
-  foreign: boolean
+  foreign: string | null
 }
 
 function importedNamesOf(
@@ -411,7 +428,7 @@ function importedNamesOf(
 ): ImportedNames {
   const names: ImportedName[] = []
   let renamed = false
-  let foreign = false
+  let foreign: string | null = null
   for (const edge of ctx.imports) {
     if (edge.dynamic) continue
 
@@ -430,7 +447,7 @@ function importedNamesOf(
       if (imported !== local) renamed = true
       const file = importTargetOf(ctx, edge)
       if (file !== null) names.push({ file, name: imported, rest: tail })
-      else foreign ||= isForeignSpecifier(ctx.run, edge.source)
+      else if (foreign === null && isForeignSpecifier(ctx.run, edge.source)) foreign = edge.source
     }
   }
   return { names, renamed, foreign }
@@ -724,6 +741,10 @@ function resolveInComponentScope(
     ?.get(componentKeyOf(ctx.caller.component))
   const hit = soleCandidate(perComponent?.get(ctx.target), trace)
   return hit === null ? null : { id: hit.id, confidence: "medium" }
+}
+
+function hasNamesake(ctx: ResolveTargetContext): boolean {
+  return (ctx.run.table.byWorkspace.get(ctx.caller.language)?.get(ctx.target)?.length ?? 0) > 0
 }
 
 function resolveInWorkspaceScope(

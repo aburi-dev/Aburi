@@ -139,7 +139,7 @@ function moduleClassName(expression: Node | null): string | null {
 
 // In its own body a class declaration's name is the class, which is the module's where the module
 // binds the declaration.
-export function isModuleClassItself(binding: NameBinding): boolean {
+function isModuleClassItself(binding: NameBinding): boolean {
   const { scope } = binding
   if (!CLASS_DECLARATIONS.has(scope.type)) return false
   const name = nameFieldText(scope)

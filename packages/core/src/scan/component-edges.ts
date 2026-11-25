@@ -17,9 +17,12 @@ export interface ComponentImportEdgesInput {
   withdrawn: ReadonlySet<string>
   components: readonly Component[]
   packages: readonly WorkspacePackage[]
-  /** By importing file, then by bare specifier: the paths its language maps the specifier to. */
+  /**
+   * By importing file, then by bare specifier without its query: the paths its language maps the
+   * specifier to.
+   */
   specifierPaths: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
-  /** Every file the scan read, which a mapped path is probed against. */
+  /** Every file the scan read, parsed in time or not, which a mapped path is probed against. */
   files: ReadonlySet<string>
 }
 
@@ -53,7 +56,7 @@ export function componentImportEdges(input: ComponentImportEdgesInput): Componen
         ? relativeOwner(file, specifier, attribute)
         : name !== null && packageNames.has(name)
           ? packageOwner(name, claims, contested)
-          : mappedOwner(input.specifierPaths.get(file)?.get(source), input.files, attribute)
+          : mappedOwner(input.specifierPaths.get(file)?.get(specifier), input.files, attribute)
       if (to === null || to === from) continue
       edges.set(dependencyKey(from, to, "import"), {
         from,
@@ -74,7 +77,7 @@ export function componentImportEdges(input: ComponentImportEdgesInput): Componen
 }
 
 /** A bundler's `?raw` or `?inline` asks for the module in another form; the module is the same one. */
-function withoutQuery(specifier: string): string {
+export function withoutQuery(specifier: string): string {
   const query = specifier.indexOf("?")
   return query === -1 ? specifier : specifier.slice(0, query)
 }

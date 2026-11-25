@@ -1,5 +1,5 @@
 import type { ScanExtras } from "@aburi/test-harness"
-import { useScratchWorkspace } from "@aburi/test-support"
+import { recordingLogger, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { scanTypeScript } from "./fixtures/scan"
 
@@ -337,19 +337,45 @@ describe("scan — a call through the name of a class that lacks the member", ()
     })
   })
 
-  it("stops at a package outside the workspace, bucketed `external`, whatever the workspace declares", async () => {
-    const head = 'import { Logger } from "@nestjs/common"'
+  it.each([
+    ["an import", "src/use.ts", "@nestjs/common", 'import { Logger } from "@nestjs/common"'],
+    [
+      "an alias no tsconfig maps",
+      "src/use.ts",
+      "@app/logging",
+      'import { Logger } from "@app/logging"',
+    ],
+    ["a `require` in JavaScript", "src/use.js", "winston", 'const { Logger } = require("winston")'],
+  ])(
+    "stops at a package outside the workspace through %s, bucketed `external`, and warns that the workspace declares the name",
+    async (_label, file, specifier, head) => {
+      const logger = recordingLogger()
+      const extras = { ...LOGGING_PACKAGE, logger }
+      const calls = await callsFromMain(MODULES, [head], ['Logger.log("x")'], file, extras)
+      expect(calls).toEqual({
+        resolved: [["Logger.log", null]],
+        unresolved: [["Logger.log", "external"]],
+      })
+      expect(logger.warnings).toEqual([
+        `${specifier} maps to no file the scan read and names no workspace package, so 1 call through it ends unresolved, though a workspace Symbol shares the name. If it is a path alias, map it in a tsconfig the scan reads.`,
+      ])
+    },
+  )
+
+  it("stops at a package outside the workspace without a warning where the workspace declares no namesake", async () => {
+    const logger = recordingLogger()
     const calls = await callsFromMain(
       MODULES,
-      [head],
-      ['Logger.log("x")'],
+      ['import { Logger } from "@nestjs/common"'],
+      ['Logger.warn("x")'],
       "src/use.ts",
-      LOGGING_PACKAGE,
+      { ...LOGGING_PACKAGE, logger },
     )
     expect(calls).toEqual({
-      resolved: [["Logger.log", null]],
-      unresolved: [["Logger.log", "external"]],
+      resolved: [["Logger.warn", null]],
+      unresolved: [["Logger.warn", "external"]],
     })
+    expect(logger.warnings).toEqual([])
   })
 })
 
@@ -1038,7 +1064,7 @@ describe("scan — a call through a method that gives back `this`", () => {
 })
 
 describe("scan — a call no declaration the scan read can be the callee of", () => {
-  it("buckets a global's call and a member nothing in the workspace names `external`", async () => {
+  it("buckets a global's call and a member nothing in the workspace names `external`, and a local's member `local-scope`", async () => {
     const result = await callsFromMain(
       {
         "src/store.ts": [
@@ -1057,6 +1083,8 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
         "items.save()",
         "store.flush()",
         "localHelper()",
+        "const list = [3]",
+        "list.map(String)",
       ],
     )
     expect(result.unresolved).toEqual([
@@ -1067,6 +1095,7 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
       ["items.save", "no-match"],
       ["store.flush", "external"],
       ["localHelper", "external"],
+      ["list.map", "local-scope"],
     ])
   })
 })
