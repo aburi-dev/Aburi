@@ -103,14 +103,157 @@ describe("a type is recorded as it reads on one line", () => {
 describe("what a function throws", () => {
   it.each([
     ["the constructor of `throw new`", "throw new MyError()", ["MyError"]],
-    ["an identifier thrown", "throw err", ["err"]],
+    ["an identifier the module binds", "throw TIMEOUT", ["TIMEOUT"]],
+    ["an identifier nothing binds", "throw unknownError", ["unknownError"]],
     ["the callee of a factory thrown", "throw makeError()", ["makeError"]],
     ["the whole callee of a member factory", "throw errors.gone()", ["errors.gone"]],
     ["nothing for a thrown literal", 'throw "bad"', []],
+    ["nothing for a parameter thrown", "throw err", []],
+    ["nothing for a `catch` binding thrown", "try { run() } catch (e) { throw e }", []],
+    [
+      "nothing for a module name a `catch` binding hides",
+      "try {} catch (TIMEOUT) { throw TIMEOUT }",
+      [],
+    ],
+    ["nothing for a local thrown", "const gone = new Gone(); throw gone", []],
+    ["nothing for a local factory's call", "const make = () => new Gone(); throw make()", []],
+    ["nothing for a member of a local", "const errors = load(); throw errors.gone()", []],
+    ["nothing for a local class constructed", "class Local extends Error {} throw new Local()", []],
   ])("records %s", async (_label, statement, throws) => {
-    const source = `export function f(err: Error) { ${statement} }`
+    const source = `const TIMEOUT = new Error()\nexport function f(err: Error) { ${statement} }`
 
     expect((await signatureOf(source))?.throws).toEqual(throws)
+  })
+
+  it.each([
+    [
+      "a class an import binds",
+      'import { Gone } from "./errors"\nexport function f() { throw new Gone() }',
+      "ts:src/a.ts#f",
+      ["Gone"],
+    ],
+    [
+      "a class a namespace import holds",
+      'import * as errors from "./errors"\nexport function f() { throw new errors.Gone() }',
+      "ts:src/a.ts#f",
+      ["errors.Gone"],
+    ],
+    [
+      "a chain from an import through a subscript, a `!` and a call",
+      'import { errs } from "./errors"\nexport function f(kind: string) { throw errs[kind]!.make()() }',
+      "ts:src/a.ts#f",
+      ["errs[kind]!.make()"],
+    ],
+    [
+      "a class the module declares",
+      "class Gone extends Error {}\nexport function f() { throw new Gone() }",
+      "ts:src/a.ts#f",
+      ["Gone"],
+    ],
+    [
+      "a factory the module declares",
+      "function makeError() { return new Error() }\nexport function f() { throw makeError() }",
+      "ts:src/a.ts#f",
+      ["makeError"],
+    ],
+    [
+      "a class and a `const` a namespace declares",
+      "export namespace N {\n  export class NotFound extends Error {}\n  export const TIMEOUT = new Error()\n  export function f(x: boolean) { if (x) throw new NotFound(); throw TIMEOUT }\n}",
+      "ts:src/a.ts#N.f",
+      ["NotFound", "TIMEOUT"],
+    ],
+    [
+      "a class's own name in its method",
+      "export class E extends Error { m() { throw new E() } }",
+      "ts:src/a.ts#E.m",
+      ["E"],
+    ],
+    [
+      "a class's own name in its static method",
+      "export class E extends Error { static of() { throw new E() } }",
+      "ts:src/a.ts#E::of",
+      ["E"],
+    ],
+    [
+      "a namespace class's own name in its method",
+      "export namespace N {\n  export class C extends Error { m() { throw new C() } }\n}",
+      "ts:src/a.ts#N.C.m",
+      ["C"],
+    ],
+    [
+      "a chain that starts from `this`",
+      "export class C extends B { m() { throw this.make() } }",
+      "ts:src/a.ts#C.m",
+      ["this.make"],
+    ],
+    [
+      "a chain that starts from `super`",
+      "export class C extends B { m() { throw super.make() } }",
+      "ts:src/a.ts#C.m",
+      ["super.make"],
+    ],
+    [
+      "a chain that starts from a `new` of a module class",
+      "class Builder {}\nexport function f() { throw new Builder().code(1).build() }",
+      "ts:src/a.ts#f",
+      ["new Builder().code(1).build"],
+    ],
+    [
+      "a class expression's own name in its method",
+      "export const E = class Err extends Error { m() { throw new Err() } }",
+      "ts:src/a.ts#E.m",
+      ["Err"],
+    ],
+    [
+      "a chain that starts in parentheses from a name",
+      "export function f() { throw new (pick())() }",
+      "ts:src/a.ts#f",
+      ["(pick())"],
+    ],
+    [
+      "nothing for a chain that starts from no name",
+      'export function f(a: any, b: any) { if (a) throw (a || b).fail(); throw "bad".toError() }',
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a member of a local constructed",
+      "export function f() { const errors = load(); throw new errors.Gone() }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a local reached through a subscript, called or constructed",
+      "export function f(kind: string, x: boolean) { const fs = load(); if (x) throw fs[kind](); throw new fs[kind]() }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a local reached through a call",
+      "export function f(x: boolean) { const errs = load(); const make = load(); if (x) throw errs.get('x').gone(); throw make()() }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a class's own name where the function declares the class",
+      "export function f() { class E extends Error { m() { throw new E() } } return E }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a parameter that hides a module name",
+      "const TIMEOUT = new Error()\nexport function f(TIMEOUT: Error) { throw TIMEOUT }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+    [
+      "nothing for a block's own binding of a module name",
+      "const TIMEOUT = new Error()\nexport function f(x: boolean) { if (x) { const TIMEOUT = new Error(); throw TIMEOUT } }",
+      "ts:src/a.ts#f",
+      [],
+    ],
+  ])("records %s", async (_label, source, id, throws) => {
+    expect((await signatureOf(source, id))?.throws).toEqual(throws)
   })
 
   it("joins what the body throws with what the JSDoc says, once each and sorted", async () => {

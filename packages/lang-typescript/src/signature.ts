@@ -1,9 +1,16 @@
 import { compareCodeUnit } from "@aburi/core"
 import type { Signature } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild, firstNonCommentChild, thrownValue, walkDescendants } from "./ast-helpers"
+import {
+  findChild,
+  firstNonCommentChild,
+  type ThrownValue,
+  thrownValue,
+  walkDescendants,
+} from "./ast-helpers"
 import { canonicalPlacedText } from "./canonical-text"
 import { decoratorNodes } from "./decorators"
+import { bindingOf } from "./name-binding"
 import { collectPatternBindings, isRepairedPattern } from "./pattern-bindings"
 
 export function buildSignature(declaration: Node, jsDocText: string | null): Signature {
@@ -157,7 +164,7 @@ function readThrows(node: Node, jsDocText: string | null): string[] {
   if (body !== null) {
     for (const descendant of walkDescendants(body)) {
       if (descendant.type !== "throw_statement") continue
-      const thrown = extractThrownType(descendant)
+      const thrown = extractThrownType(descendant, node)
       if (thrown !== null) seen.add(thrown)
     }
   }
@@ -167,15 +174,55 @@ function readThrows(node: Node, jsDocText: string | null): string[] {
   return [...seen].sort(compareCodeUnit)
 }
 
-function extractThrownType(throwNode: Node): string | null {
+// A name the Symbol binds itself (a parameter, a `catch` clause, a local) says nothing a caller can
+// rely on, and renaming one is no api change.
+function extractThrownType(throwNode: Node, declaration: Node): string | null {
   const thrown = thrownValue(throwNode)
-  if (thrown === null) return null
-  if (thrown.viaNew) return thrown.node.text
-  if (thrown.node.type === "identifier") return thrown.node.text
-  if (thrown.node.type === "call_expression") {
-    return thrown.node.childForFieldName("function")?.text ?? null
+  const named = thrown === null ? null : thrownName(thrown)
+  const head = named === null ? null : leadingName(named)
+  if (named === null || head === null) return null
+  if (head.type !== "identifier") return named.text
+  const binding = bindingOf(head, head.text)
+  return binding === null || !isWithin(binding.scope, declaration) ? named.text : null
+}
+
+function thrownName({ node, viaNew }: ThrownValue): Node | null {
+  if (viaNew || node.type === "identifier") return node
+  return node.type === "call_expression" ? node.childForFieldName("function") : null
+}
+
+// `this` and `super` read the class, which the Symbol does not bind. A chain that starts from no
+// name, from a literal or `(a || b)`, names nothing a caller could look up.
+function leadingName(name: Node): Node | null {
+  let head: Node | null = name
+  while (head !== null && !CHAIN_STARTS.has(head.type)) head = chainHead(head)
+  return head
+}
+
+const CHAIN_STARTS: ReadonlySet<string> = new Set(["identifier", "this", "super"])
+
+function chainHead(link: Node): Node | null {
+  switch (link.type) {
+    case "member_expression":
+    case "subscript_expression":
+      return link.childForFieldName("object")
+    case "call_expression":
+      return link.childForFieldName("function")
+    case "new_expression":
+      return link.childForFieldName("constructor")
+    case "non_null_expression":
+    case "parenthesized_expression":
+      return firstNonCommentChild(link)
+    default:
+      return null
   }
-  return null
+}
+
+function isWithin(node: Node, ancestor: Node): boolean {
+  for (let cursor: Node | null = node; cursor !== null; cursor = cursor.parent) {
+    if (cursor.id === ancestor.id) return true
+  }
+  return false
 }
 
 const JSDOC_THROWS_PATTERN =
