@@ -141,13 +141,18 @@ or recognise a call wins, so put your project-specific plugins first, and list
 handler that renders JSX is then a route rather than a component.
 
 Options for an individual plugin go under `pluginOptions`, keyed by the
-plugin's manifest name. None of the plugins that ship with Aburi takes options;
-a third-party plugin that takes options documents them:
+plugin's manifest name. Of the plugins that ship with Aburi, `effects-prisma`
+takes one: `clientModules`, the modules a Prisma client generated to a custom
+`output` is imported from. An entry matches an import whose last path segments
+are the entry's, so `"db/client"` matches `"../db/client"` and
+`"@/db/client.ts"`. A client generated to `generated/prisma`, Prisma's default,
+needs no entry. A third-party plugin that takes options documents them:
 
 ```jsonc
 {
-  "effects": ["@myorg/aburi-effects"],
+  "effects": ["effects-prisma", "@myorg/aburi-effects"],
   "pluginOptions": {
+    "effects-prisma": { "clientModules": ["db/client"] },
     "effects-myorg": { "queues": ["billing", "mail"] }
   }
 }
@@ -277,7 +282,7 @@ setting in CI.
 | `languages` | `[]` | Language plugins to load. A scan needs at least one; `aburi init` writes the ones it detects. |
 | `frameworks` | `[]` | Framework plugins, in priority order. |
 | `effects` | `[]` | Effects plugins, in priority order. |
-| `pluginOptions` | `{}` | Options for third-party plugins, keyed by manifest name. |
+| `pluginOptions` | `{}` | Options for individual plugins, keyed by manifest name. |
 | `components` | autodetect | Explicit component boundaries. |
 | `suppress` | `[]` | Identifier prefixes to drop from effects and calls. |
 | `keep` | `[]` | Exceptions to `suppress` and to the built-in drop rules. |

@@ -55,6 +55,7 @@ describe("scan — a Component edge per import that crosses a Component boundary
     ["a namespace re-export", 'export * from "@acme/shared"', [WEB_TO_SHARED]],
     ["a side-effect import", 'import "@acme/shared"', [WEB_TO_SHARED]],
     ["an import-equals declaration", 'import shared = require("@acme/shared")', [WEB_TO_SHARED]],
+    ["a CommonJS require", 'const { format } = require("@acme/shared")', [WEB_TO_SHARED]],
     [
       "a dynamic import",
       'export async function load() {\n  return import("@acme/shared")\n}',

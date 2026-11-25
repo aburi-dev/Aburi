@@ -30,6 +30,35 @@ describe("diff — pairing a Symbol that moved file on its logic fingerprint", (
     ])
   })
 
+  it("reports a deleted body whose only rule is a branch as removed, not as moved", async () => {
+    const diff = await diffOfMove(
+      workspace,
+      { "src/a.ts": "export function notifyIfEnabled() {\n  if (enabled) send()\n}\n" },
+      { "src/b.ts": "export function logIfEnabled() {\n  if (enabled) log()\n}\n" },
+    )
+    expect(pairingOutcome(diff)).toEqual(["added logIfEnabled", "removed notifyIfEnabled"])
+  })
+
+  it.each([
+    [
+      "a constant whose value changed",
+      "export const REQUEST_TIMEOUT_MS = 5000\n",
+      "export const REQUEST_TIMEOUT_MS = 10000\n",
+      "REQUEST_TIMEOUT_MS",
+    ],
+    [
+      "an enum that gained a member",
+      "export enum UserRole {\n  Admin,\n  Guest,\n}\n",
+      "export enum UserRole {\n  Admin,\n  Guest,\n  Owner,\n}\n",
+      "UserRole",
+    ],
+  ])("pairs %s as it moves file", async (_label, before, after, name) => {
+    const diff = await diffOfMove(workspace, { "src/a.ts": before }, { "src/b.ts": after })
+    expect(pairingOutcome(diff)).toEqual([
+      `moved+changed ${name} -> ${name} (logic-fingerprint+name-disambiguation)`,
+    ])
+  })
+
   it.each([
     [
       "a concise arrow",

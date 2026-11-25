@@ -1,4 +1,4 @@
-import { logicNamesNothing, ZERO_FINGERPRINT } from "@aburi/core"
+import { logicNamesNothing, logicShapeFingerprint, ZERO_FINGERPRINT } from "@aburi/core"
 import type { Symbol as IRSymbol, SymbolId } from "@aburi/types"
 import { createNameScorer, type NameScorer } from "../similarity"
 import {
@@ -66,7 +66,8 @@ function carriesLogic(symbol: IRSymbol): boolean {
 }
 
 function logicKey(symbol: IRSymbol, evidenceless: boolean): string {
-  return JSON.stringify([symbol.kind, symbol.fingerprint.logic, evidenceless])
+  const logic = evidenceless ? logicShapeFingerprint(symbol) : symbol.fingerprint.logic
+  return JSON.stringify([symbol.kind, logic, evidenceless])
 }
 
 function groupByLogic(symbols: readonly IRSymbol[]): Map<string, LogicGroup> {

@@ -1,7 +1,10 @@
 import {
   assertNonEmptySegments,
   hasLiteralFirstArgument,
+  importGate,
   type PluginInputOrigin,
+  receiverTypeFromMatchingModule,
+  typedReceiverConfidence,
 } from "@aburi/plugin-registry/plugin-input"
 import type {
   CallCandidate,
@@ -10,7 +13,7 @@ import type {
   EffectDecline,
 } from "@aburi/types"
 import { EFFECTS_DRIZZLE_DERIVED_BY_PREFIX, EFFECTS_DRIZZLE_PLUGIN_NAME } from "./constants"
-import { hasDrizzleImport } from "./imports"
+import { isDrizzleModule } from "./imports"
 import {
   DRIZZLE_FLUENT_ROOT_METHODS,
   DRIZZLE_RAW_SQL_METHOD,
@@ -31,7 +34,8 @@ export function classifyDrizzleCall(
 
   const { segments, last: method } = assertNonEmptySegments(call.target, origin)
 
-  if (!hasDrizzleImport(ctx.file.imports, ctx.file.path)) return null
+  const gate = importGate(ctx.file.imports, segments[0], origin, isDrizzleModule)
+  if (gate === null) return null
 
   // A bare `select()` has no client receiver and is not Drizzle.
   if (segments.length < 2) return null
@@ -45,8 +49,21 @@ export function classifyDrizzleCall(
   // Every Drizzle write and transaction takes an argument, so a bare call is another API's.
   if (call.argumentCount < minArgumentsFor(method)) return null
 
+  // A receiver declared with the library's own type is its client whatever it is called.
+  const typed = receiverTypeFromMatchingModule(
+    ctx.file.imports,
+    call.receiverType,
+    origin,
+    isDrizzleModule,
+  )
+  // A module the file imports from using Drizzle is a weaker sign than the file's own import, so
+  // there the client must be one its type or its name places.
+  const placed = (clientSegment: string | undefined): boolean =>
+    gate === "direct" || typed || (clientSegment !== undefined && namesDrizzleClient(clientSegment))
+
   if (segments.length >= 4 && segments.at(-3) === "query" && isDrizzleQueryMethod(method)) {
     if (hasLiteralFirstArgument(call)) return null
+    if (!placed(segments.at(-4))) return null
     return {
       effectId: "db.read",
       confidence: classificationConfidence(segments.at(-4), call, maxArgumentsFor(method)),
@@ -56,12 +73,18 @@ export function classifyDrizzleCall(
 
   // Every remaining shape is a call directly on the client, so the client is at -2.
   const clientSegment = segments.at(-2)
+  if (!placed(clientSegment)) return null
+
+  const confidence = (maxArguments: number) =>
+    typed
+      ? typedReceiverConfidence(call, maxArguments)
+      : classificationConfidence(clientSegment, call, maxArguments)
 
   if (isDrizzleReadMethod(method)) {
     if (hasLiteralFirstArgument(call)) return null
     return {
       effectId: "db.read",
-      confidence: classificationConfidence(clientSegment, call, maxArgumentsFor(method)),
+      confidence: confidence(maxArgumentsFor(method)),
       derivedBy: `${EFFECTS_DRIZZLE_DERIVED_BY_PREFIX}:read`,
     }
   }
@@ -70,7 +93,7 @@ export function classifyDrizzleCall(
     if (hasLiteralFirstArgument(call)) return null
     return {
       effectId: "db.write",
-      confidence: classificationConfidence(clientSegment, call, maxArgumentsFor(method)),
+      confidence: confidence(maxArgumentsFor(method)),
       derivedBy: `${EFFECTS_DRIZZLE_DERIVED_BY_PREFIX}:write`,
     }
   }
@@ -80,7 +103,7 @@ export function classifyDrizzleCall(
     if (hasLiteralFirstArgument(call)) return null
     return {
       effectId: "db.transaction",
-      confidence: classificationConfidence(clientSegment, call, maxArgumentsFor(method)),
+      confidence: confidence(maxArgumentsFor(method)),
       derivedBy: `${EFFECTS_DRIZZLE_DERIVED_BY_PREFIX}:tx`,
     }
   }

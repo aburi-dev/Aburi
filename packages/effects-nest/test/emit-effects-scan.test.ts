@@ -235,3 +235,151 @@ describe("scan — event emitters in a NestJS service file", () => {
     expect(symbolNamed(result, "raise").calls.map((c) => c.target)).toEqual(["eventBus.emit"])
   })
 })
+
+describe("scan — the publishing calls NestJS documents beside emit", () => {
+  it("publishes through EventEmitter2's emitAsync, which waits for the listeners", async () => {
+    await workspace.writeSource(
+      "src/orders.service.ts",
+      [
+        'import { Injectable } from "@nestjs/common"',
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        "",
+        "@Injectable()",
+        "export class OrdersService {",
+        "  constructor(private readonly eventEmitter: EventEmitter2) {}",
+        "",
+        "  async createAndWait(id: string) {",
+        '    await this.eventEmitter.emitAsync("order.created", { id })',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const createAndWait = symbolNamed(await scanWorkspace(), "OrdersService.createAndWait")
+
+    expect(createAndWait.effects).toMatchObject([
+      {
+        id: "event.publish",
+        target: "this.eventEmitter.emitAsync",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:EventEmitter2.emitAsync",
+      },
+    ])
+    expect(createAndWait.calls).toEqual([])
+  })
+
+  it("publishes through @nestjs/cqrs's EventBus, and leaves its CommandBus a call", async () => {
+    await workspace.writeSource(
+      "src/heroes.service.ts",
+      [
+        'import { Injectable } from "@nestjs/common"',
+        'import { CommandBus, EventBus } from "@nestjs/cqrs"',
+        "",
+        "export class HeroKilledDragonEvent {",
+        "  constructor(public readonly heroId: string) {}",
+        "}",
+        "",
+        "@Injectable()",
+        "export class HeroesService {",
+        "  constructor(",
+        "    private readonly eventBus: EventBus,",
+        "    private readonly events: EventBus,",
+        "    private readonly commandBus: CommandBus,",
+        "  ) {}",
+        "",
+        "  kill(heroId: string) {",
+        "    this.eventBus.publish(new HeroKilledDragonEvent(heroId))",
+        "    this.events.publishAll([new HeroKilledDragonEvent(heroId)])",
+        "    return this.commandBus.execute({ heroId })",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const kill = symbolNamed(await scanWorkspace(), "HeroesService.kill")
+
+    expect(kill.effects).toMatchObject([
+      {
+        id: "event.publish",
+        target: "this.eventBus.publish",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:eventBus.publish",
+      },
+      {
+        id: "event.publish",
+        target: "this.events.publishAll",
+        confidence: "high",
+        derivedBy: "effects-plugin:nest:EventBus.publishAll",
+      },
+    ])
+    expect(kill.calls.map((c) => c.target)).toEqual([
+      "HeroKilledDragonEvent",
+      "HeroKilledDragonEvent",
+      "this.commandBus.execute",
+    ])
+  })
+
+  it("publishes through each library in a service that injects both", async () => {
+    await workspace.writeSource(
+      "src/orders.service.ts",
+      [
+        'import { Injectable } from "@nestjs/common"',
+        'import { EventBus } from "@nestjs/cqrs"',
+        'import { EventEmitter2 } from "@nestjs/event-emitter"',
+        "",
+        "@Injectable()",
+        "export class OrdersService {",
+        "  constructor(",
+        "    private readonly emitter: EventEmitter2,",
+        "    private readonly bus: EventBus,",
+        "  ) {}",
+        "",
+        "  create(id: string) {",
+        '    this.emitter.emit("order.created", { id })',
+        "    this.bus.publish({ id })",
+        "    this.bus.publishAll([{ id }])",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const create = symbolNamed(await scanWorkspace(), "OrdersService.create")
+
+    expect(create.effects.map((effect) => effect.derivedBy)).toEqual([
+      "effects-plugin:nest:EventEmitter2.emit",
+      "effects-plugin:nest:EventBus.publish",
+      "effects-plugin:nest:EventBus.publishAll",
+    ])
+    expect(create.calls).toEqual([])
+  })
+
+  it("publishes nothing for the events an aggregate publishes itself", async () => {
+    await workspace.writeSource(
+      "src/hero.model.ts",
+      [
+        'import { AggregateRoot } from "@nestjs/cqrs"',
+        "",
+        "export class Hero extends AggregateRoot {",
+        "  kill(event: object) {",
+        "    this.apply(event)",
+        "    this.publish(event)",
+        "    this.publishAll([event])",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const kill = symbolNamed(await scanWorkspace(), "Hero.kill")
+
+    expect(kill.effects).toEqual([])
+    expect(kill.calls.map((c) => c.target)).toEqual([
+      "this.apply",
+      "this.publish",
+      "this.publishAll",
+    ])
+  })
+})
