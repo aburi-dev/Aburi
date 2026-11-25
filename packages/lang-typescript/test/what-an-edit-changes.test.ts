@@ -119,18 +119,6 @@ const check = (...condition: string[]) =>
     "",
   ].join("\n")
 
-const returning = (open: string, close: string) =>
-  [
-    "export function total(a: number, b: number): number {",
-    `  return ${open}compute(a, b)${close}`,
-    "}",
-    "",
-    "export function larger(a: number, b: number): number {",
-    `  return ${open}a > b ? a : b${close}`,
-    "}",
-    "",
-  ].join("\n")
-
 const accessor = (parameter: string) =>
   `export class C {\n  get x() {\n    return 1\n  }\n  set x(${parameter}: number) {\n    use()\n  }\n}\n`
 
@@ -465,10 +453,10 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
       ["Registry"],
     ],
     [
-      "parentheses a formatter puts around a returned call and a returned conditional",
-      returning("", ""),
-      returning("(\n    ", "\n  )"),
-      ["larger", "total"],
+      "a renamed `catch` binding a function rethrows",
+      "export function load(id: string) {\n  try {\n    return fetchUser(id)\n  } catch (e) {\n    report(e)\n    throw e\n  }\n}\n",
+      "export function load(id: string) {\n  try {\n    return fetchUser(id)\n  } catch (error) {\n    report(error)\n    throw error\n  }\n}\n",
+      ["load"],
     ],
     [
       "a concise conditional rewritten as a block that returns it in parentheses",
