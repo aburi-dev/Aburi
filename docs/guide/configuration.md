@@ -135,8 +135,10 @@ The plugins under `@aburi` are named with their kind as a prefix (`lang-`,
 as the language id `"ts"`, stops the scan with exit 2 and names the plugin to write
 instead.
 
-Order matters in `effects` alone. The first plugin to recognise a call wins, so
-put your project-specific plugins first.
+Order matters in `frameworks` and `effects`. The first plugin to classify a symbol
+or recognise a call wins, so put your project-specific plugins first, and list
+`framework-next` ahead of `framework-react`, as `aburi init` does: a Next.js route
+handler that renders JSX is then a route rather than a component.
 
 Options for an individual plugin go under `pluginOptions`, keyed by the
 plugin's manifest name. None of the plugins that ship with Aburi takes options;
@@ -273,7 +275,7 @@ setting in CI.
 | `respectGitignore` | `true` | Honour `.gitignore` files, in the scan and in finding components. |
 | `testFiles` | test-file globs | Files whose Symbols are test code: reported apart in `diff.md` and skipped by `--fail-on-scope non-test`. |
 | `languages` | `[]` | Language plugins to load. A scan needs at least one; `aburi init` writes the ones it detects. |
-| `frameworks` | `[]` | Framework plugins to load. |
+| `frameworks` | `[]` | Framework plugins, in priority order. |
 | `effects` | `[]` | Effects plugins, in priority order. |
 | `pluginOptions` | `{}` | Options for third-party plugins, keyed by manifest name. |
 | `components` | autodetect | Explicit component boundaries. |
