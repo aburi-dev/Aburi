@@ -8,3 +8,7 @@ export function makeNestEmitterImport(): ImportEdge {
 export function makeEventemitter2Import(): ImportEdge {
   return importEdge({ source: "eventemitter2", symbols: ["EventEmitter2"] })
 }
+
+export function makeNestCqrsImport(): ImportEdge {
+  return importEdge({ source: "@nestjs/cqrs", symbols: ["EventBus"] })
+}
