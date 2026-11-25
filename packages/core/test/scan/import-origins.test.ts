@@ -5,11 +5,9 @@ import {
   noopRegistry,
   recordingLogger,
   reexportEdge,
-  spend,
   useScratchWorkspace,
 } from "@aburi/test-support"
 import type {
-  Decorator,
   ImportEdge,
   ImportResolver,
   ImportResolverContext,
@@ -17,26 +15,20 @@ import type {
 } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { type ParsePoolFactory, serializeCanonical } from "../../src"
+import { extractorPool, scanStubs, stubFrameworkPlugin } from "../fixtures/plugins"
 import {
-  extractorPool,
-  fileCandidate,
-  scanStubs,
-  stubFrameworkPlugin,
-  stubLanguagePlugin,
-} from "../fixtures/plugins"
+  type Aliases,
+  CONSUMER,
+  moduleLanguage,
+  named,
+  newRecorder,
+  type StubModule,
+  type StubModules,
+  writeModules,
+} from "../fixtures/stub-modules"
 
 const workspace = useScratchWorkspace("import-origins")
 
-/** What a `.stub` file holds: its import edges, and the decorators of the one Symbol it declares. */
-interface Module {
-  imports?: readonly ImportEdge[]
-  decorators?: readonly Decorator[]
-}
-
-type Modules = Readonly<Record<string, Module>>
-type Aliases = Readonly<Record<string, readonly string[]>>
-
-const CONSUMER = "src/app.stub"
 const BARREL = "libs/common/index.stub"
 const ALIASES: Aliases = {
   "@app/common": [BARREL],
@@ -45,80 +37,18 @@ const ALIASES: Aliases = {
 const SHARED = "@acme/shared"
 const WORKSPACE_PACKAGES = [{ name: SHARED, root: "packages/shared" }]
 const decorated = [decorator({ name: "Decorate" })]
-const importsDecorate = (source: string): Module => ({
+const importsDecorate = (source: string): StubModule => ({
   imports: [named(source, "Decorate")],
   decorators: decorated,
 })
 
-/** An import that binds names and republishes none of them. */
-function named(source: string, ...symbols: string[]): ImportEdge {
-  return importEdge({ source, symbols })
-}
-
-interface Recorder {
-  parsed: string[]
-  released: unknown[]
-  resolversCreated: number
-}
-
-const newRecorder = (): Recorder => ({ parsed: [], released: [], resolversCreated: 0 })
-
-interface ModuleLanguage {
-  recorder?: Recorder
-  resolve?: (specifier: string) => Promise<readonly string[]>
-  createResolver?: (ctx: ImportResolverContext) => ImportResolver
-  /** A file whose parse throws. */
-  unparsable?: string
-  /** Files whose trees cannot be released. */
-  unreleasable?: readonly string[]
-  /** A file whose every parse takes this long. */
-  slow?: { readonly path: string; readonly ms: number }
-}
-
-function moduleLanguage(options: ModuleLanguage = {}): LanguagePlugin {
-  const recorder = options.recorder ?? newRecorder()
-  const resolve = options.resolve ?? (async (specifier: string) => ALIASES[specifier] ?? [])
-  const read = (content: string): Module => JSON.parse(content) as Module
-  return stubLanguagePlugin({
-    parseFile: async (file) => {
-      recorder.parsed.push(file.path)
-      if (file.path === options.unparsable) throw new Error("grammar crashed")
-      if (file.path === options.slow?.path) spend(options.slow.ms)
-      return {
-        tree: { file: file.path },
-        errors: [],
-        imports: [...(read(file.content).imports ?? [])],
-      }
-    },
-    releaseTree: (tree) => {
-      recorder.released.push(tree)
-      if (options.unreleasable?.includes((tree as { file: string }).file)) {
-        throw new Error("tree pinned")
-      }
-    },
-    extractSymbols: (_tree, ctx) => [
-      fileCandidate(ctx.file.path, { decorators: [...(read(ctx.file.content).decorators ?? [])] }),
-    ],
-    createImportResolver: (ctx) => {
-      recorder.resolversCreated++
-      return options.createResolver === undefined ? { resolve } : options.createResolver(ctx)
-    },
-  })
-}
-
-async function writeModules(modules: Modules): Promise<void> {
-  for (const [path, module] of Object.entries(modules)) {
-    await workspace.writeSource(path, JSON.stringify(module))
-  }
-}
-
 /** The import edges each file's framework classification was handed, by file. */
 async function importsSeen(
-  modules: Modules,
-  language: LanguagePlugin = moduleLanguage(),
+  modules: StubModules,
+  language: LanguagePlugin = moduleLanguage({ aliases: ALIASES }),
   logger = recordingLogger(),
 ): Promise<Map<string, readonly ImportEdge[]>> {
-  await writeModules(modules)
+  await writeModules(workspace, modules)
   const seen = new Map<string, readonly ImportEdge[]>()
   const framework = stubFrameworkPlugin("framework-stub", {
     classifySymbol: (_symbol, ctx) => {
@@ -143,7 +73,7 @@ function originsOf(imports: readonly ImportEdge[] | undefined): [string, object 
 }
 
 describe("scan — where a decorator's imported name is declared", () => {
-  it.each<[string, Modules, [string, object | null][]]>([
+  it.each<[string, StubModules, [string, object | null][]]>([
     [
       "a path alias to a barrel that re-exports a package",
       {
@@ -264,7 +194,7 @@ describe("scan — where a decorator's imported name is declared", () => {
     expect(originsOf(seen.get(CONSUMER))).toEqual(expected)
   })
 
-  it.each<[string, Modules]>([
+  it.each<[string, StubModules]>([
     [
       "a barrel that re-exports the name under another one",
       {
@@ -358,7 +288,7 @@ describe("scan — where a decorator's imported name is declared", () => {
         [CONSUMER]: {
           imports: [{ ...named(SHARED, "Decorate"), origins: { Decorate: "@forged/kit" } }],
           decorators: decorated,
-        } as unknown as Module,
+        } as unknown as StubModule,
       },
     ],
   ])("records no origin for %s", async (_case, modules) => {
@@ -409,7 +339,7 @@ describe("scan — where a decorator's imported name is declared", () => {
 
   it("asks for no resolver and parses no barrel when no framework plugin would read an origin", async () => {
     const recorder = newRecorder()
-    await writeModules({
+    await writeModules(workspace, {
       [CONSUMER]: {
         imports: [named("@app/common", "Decorate"), named("./z-barrel.stub", "Decorate")],
         decorators: decorated,
@@ -425,7 +355,7 @@ describe("scan — where a decorator's imported name is declared", () => {
 
   it("asks the resolver for a barrel's bare re-exports, which a call through it follows", async () => {
     const recorder = newRecorder()
-    await writeModules({
+    await writeModules(workspace, {
       [CONSUMER]: { imports: [named("./z-barrel.stub", "Decorate")] },
       "src/z-barrel.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
     })
@@ -436,7 +366,7 @@ describe("scan — where a decorator's imported name is declared", () => {
   })
 
   it("charges a barrel's parse to the barrel, not to the file whose chain reached it", async () => {
-    await writeModules({
+    await writeModules(workspace, {
       [CONSUMER]: importsDecorate("./z-barrel.stub"),
       "src/z-barrel.stub": { imports: [reexportEdge("@vendor/kit", "Decorate")] },
     })
@@ -560,7 +490,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
     "@app/bad": [UNPARSABLE],
     "@app/late": [LATE_BARREL],
   }
-  const modules: Modules = {
+  const modules: StubModules = {
     // Reaches a barrel discovered after it, whose edges no extractor has yet.
     "a/early.stub": importsDecorate("@app/late"),
     // Extracted before its importers, and every one of them reaches the same hop, which the
@@ -616,7 +546,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
   }
 
   it("says each shared computation once, at the first file in the run that needed it", async () => {
-    await writeModules(modules)
+    await writeModules(workspace, modules)
     const alone = await scanned(resolver)
 
     expect(alone.warnings.filter((line) => line.startsWith("tsconfig.json"))).toHaveLength(1)
@@ -667,7 +597,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
   )(
     "reports what one extractor does when $pooled share the files, with $created",
     async ({ size, assign, createResolver }) => {
-      await writeModules(modules)
+      await writeModules(workspace, modules)
       const alone = await scanned(createResolver)
       const pool = extractorPool(
         size,
@@ -687,7 +617,7 @@ describe("scan — extracted by several extractors, each with plugins of its own
 
 describe("scan — the context a language's import resolver is created with", () => {
   const INSTALLED = "/checkouts/head"
-  const modules: Modules = {
+  const modules: StubModules = {
     [CONSUMER]: importsDecorate("@app/common"),
     "src/second.stub": importsDecorate("@app/common"),
     [BARREL]: { imports: [reexportEdge("@vendor/kit", "Decorate")] },
@@ -697,7 +627,7 @@ describe("scan — the context a language's import resolver is created with", ()
     input: { installedRoot?: string },
     pooled: boolean,
   ): Promise<(string | undefined)[]> {
-    await writeModules(modules)
+    await writeModules(workspace, modules)
     const seen: (string | undefined)[] = []
     const language = () =>
       moduleLanguage({

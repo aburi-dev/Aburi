@@ -63,6 +63,13 @@ Aburi detects an effect at the call site, then carries it up the calls it
 resolved: a method that calls a repository method that writes to the database
 gets `db.write` too, marked `[propagated from …]` with the symbol it came from.
 
+The client does not need to be built in the file that calls it. A Prisma or
+Drizzle client exported from `lib/db.ts`, a NestJS `PrismaService`, and a tRPC
+client wrapped in `utils/trpc.ts` are recognised from the files that import
+them. A Prisma client generated to `generated/prisma` is recognised as
+`@prisma/client` is; one generated elsewhere is named in
+[`pluginOptions`](./configuration.md#choose-plugins).
+
 ## Example setups
 
 ::: code-group

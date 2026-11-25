@@ -6,8 +6,8 @@ import {
 } from "@aburi/core"
 import type { ImportEdge, ParseError, Reexport } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
-import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
-import { maskedImportSpecifier } from "./import-type-reparse"
+import { findChild, firstNonCommentChild } from "./ast-helpers"
+import { maskedImportSpecifier, masksImportTypes } from "./import-type-reparse"
 import { bindingOf, isModuleBinding } from "./name-binding"
 
 export interface ImportExtraction {
@@ -52,7 +52,7 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
   for (const edge of imports) edges.push(withRepublished(edge, exportedLocals))
 
   // A module loaded at run time can be written anywhere in the tree, so scan the whole thing.
-  walkForDynamicImports(root, boundRequires, edges, errors)
+  walkForDynamicImports(tree, boundRequires, edges, errors)
 
   edges.sort((a, b) => a.line - b.line || compareCodeUnit(a.source, b.source))
   errors.sort((a, b) => a.line - b.line || a.column - b.column)
@@ -382,13 +382,18 @@ function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
 }
 
 // `import()` and a `require()` no top-level declaration binds: neither binds a name of the module.
+// The grammar finds the nodes itself: a walk would build a node object for every node in the file.
 function walkForDynamicImports(
-  root: Node,
+  tree: Tree,
   boundRequires: ReadonlySet<number>,
   edges: ImportEdge[],
   errors: ParseError[],
 ): void {
-  for (const node of walkDescendants(root)) {
+  // Identifiers are most of a file's nodes, and only a tree whose import() types were masked has
+  // one to read.
+  const types = masksImportTypes(tree) ? ["call_expression", "identifier"] : ["call_expression"]
+  for (const node of tree.rootNode.descendantsOfType(types)) {
+    if (node === null) continue
     const masked = node.type === "identifier" ? maskedImportSpecifier(node) : undefined
     if (masked !== undefined) {
       edges.push({ source: masked, symbols: "*", line: node.startPosition.row + 1, dynamic: true })

@@ -213,6 +213,41 @@ describe("scan — a Prisma client loaded through CommonJS", () => {
   })
 })
 
+describe("scan — a receiver declared with Prisma's own type, whatever it is called", () => {
+  it.each([
+    ["a client's transaction", "store: PrismaClient", "this.store.$transaction([])", "high"],
+    ["a model's delegate", "users: Prisma.UserDelegate", "this.users.findMany()", "high"],
+    [
+      "a delegate read off a typed client, which is the receiver the call names",
+      "store: PrismaClient",
+      "this.store.user.findMany()",
+      "medium",
+    ],
+  ])("grades %s", async (_case, parameter, call, confidence) => {
+    await workspace.writeSource(
+      "src/accounts.ts",
+      [
+        'import { Prisma, PrismaClient } from "@prisma/client"',
+        "",
+        "export class Accounts {",
+        `  constructor(private readonly ${parameter}) {}`,
+        "",
+        "  run() {",
+        `    return ${call}`,
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const run = symbolNamed(await scanWorkspace(), "Accounts.run")
+
+    expect(run.effects.map((effect) => [effect.target, effect.confidence])).toEqual([
+      [call.slice(0, call.indexOf("(")), confidence],
+    ])
+  })
+})
+
 describe("scan — a Map beside the client that shares the delegate verbs", () => {
   it("records a Map delete at medium and the client's own delete at high", async () => {
     await workspace.writeSource(
