@@ -1,11 +1,12 @@
+import type { Confidence } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { classifyReactSymbol } from "../src/index"
 import { extracted, extractedNamed, makeCandidate, makeCtx } from "./fixtures/symbol"
 
 const REACT_IMPORT = 'import React, { createContext, forwardRef, memo, useState } from "react"'
 
-async function classified(source: string, name: string) {
-  const { candidate, ctx } = await extractedNamed(source, name)
+async function classified(source: string, name: string, path?: string) {
+  const { candidate, ctx } = await extractedNamed(source, name, path)
   return classifyReactSymbol(candidate, ctx)
 }
 
@@ -151,11 +152,61 @@ describe("classifyReactSymbol", () => {
       "export default function() { return <div /> }",
       "<default>",
     ],
+    [
+      "a with* function that returns what its callback resolves to",
+      `${REACT_IMPORT}\nexport async function withRetry(fn) { try { return await fn() } catch { return await fn() } }`,
+      "withRetry",
+    ],
+    [
+      "a with* function that returns a call through its parameter",
+      `${REACT_IMPORT}\nexport function withTransaction(db, fn) { return db.transaction(fn) }`,
+      "withTransaction",
+    ],
+    [
+      "a with* function that returns a call in a file that does not import React",
+      "export function withSpan(name, fn) { return tracer.startActiveSpan(name, fn) }",
+      "withSpan",
+    ],
+    [
+      "vm.createContext(...) beside an import of React",
+      'import React from "react"\nimport vm from "node:vm"\nexport const sandbox = vm.createContext({})',
+      "sandbox",
+    ],
+    [
+      "a createContext(...) that node:vm's import binds",
+      'import { createContext } from "node:vm"\nexport const sandbox = createContext({})',
+      "sandbox",
+    ],
+    [
+      "a createContext(...) that solid-js's import binds",
+      'import { createContext } from "solid-js"\nexport const Ctx = createContext()',
+      "Ctx",
+    ],
+    [
+      "a memo(...) on another receiver beside an import of React",
+      `${REACT_IMPORT}\nexport const cached = cache.memo(compute)`,
+      "cached",
+    ],
+    [
+      "React.createContext(...) in a file that does not import React",
+      "export const Ctx = React.createContext(null)",
+      "Ctx",
+    ],
+    [
+      "React.memo(...) in a file that does not import React",
+      "export const M = React.memo(Inner)",
+      "M",
+    ],
+    [
+      "React.memo(...) on a React that require binds",
+      'const React = require("react")\nexport const M = React.memo(Inner)',
+      "M",
+    ],
   ])("returns null for %s", async (_label, source, name) => {
     expect(await classified(source, name)).toBeNull()
   })
 
-  it.each<[string, string, string, [string, string] | null]>([
+  it.each<[string, string, string, [string, Confidence]]>([
     [
       "a hook in a file that imports nothing",
       "export function useDatabase(url: string) { return { url } }",
@@ -175,16 +226,10 @@ describe("classifyReactSymbol", () => {
       ["hook", "high"],
     ],
     [
-      "a hook in a file that imports only a type from React",
-      'import type { ReactNode } from "react"\nexport function useSlot(): ReactNode { return null }',
-      "useSlot",
-      ["hook", "high"],
-    ],
-    [
-      "a hook in a file that imports Preact's compatibility layer",
-      'import { useState } from "preact/compat"\nexport function useToggle() { return useState(false) }',
-      "useToggle",
-      ["hook", "high"],
+      "a use* function that calls a method of a lowercase object",
+      'import { vi } from "vitest"\nexport function useFakeClock() { vi.useFakeTimers() }',
+      "useFakeClock",
+      ["hook", "medium"],
     ],
     [
       "a with* function that renders JSX in a file that imports nothing",
@@ -205,34 +250,10 @@ describe("classifyReactSymbol", () => {
       ["hoc", "high"],
     ],
     [
-      "a with* function that returns what its callback resolves to",
-      `${REACT_IMPORT}\nexport async function withRetry(fn) { try { return await fn() } catch { return await fn() } }`,
-      "withRetry",
-      null,
-    ],
-    [
-      "a with* function that returns a call",
-      "export function withTransaction(db, fn) { return db.transaction(fn) }",
-      "withTransaction",
-      null,
-    ],
-    [
       "a bare createContext(...) in a file that imports nothing",
       "export const Ctx = createContext(null)",
       "Ctx",
       ["context", "medium"],
-    ],
-    [
-      "vm.createContext(...)",
-      'import vm from "node:vm"\nexport const sandbox = vm.createContext({})',
-      "sandbox",
-      null,
-    ],
-    [
-      "React.createContext(...) in a file that does not import React",
-      "export const Ctx = React.createContext(null)",
-      "Ctx",
-      null,
     ],
     [
       "createContext(...) on a namespace React's import binds",
@@ -247,17 +268,159 @@ describe("classifyReactSymbol", () => {
       ["memo", "medium"],
     ],
     [
+      "a forwardRef(...) in a file that imports nothing",
+      "export const Field = forwardRef(Input)",
+      "Field",
+      ["forward-ref", "medium"],
+    ],
+    [
+      "a forwardRef(...) handed JSX in a file that imports nothing",
+      "export const Field = forwardRef((p, ref) => <input ref={ref} />)",
+      "Field",
+      ["forward-ref", "high"],
+    ],
+    [
+      "a library's own forwardRef(...) handed JSX",
+      'import { forwardRef } from "@chakra-ui/react"\nexport const Field = forwardRef((p, ref) => <input ref={ref} />)',
+      "Field",
+      ["forward-ref", "high"],
+    ],
+    [
       "a component in a file that imports nothing",
       "export function Section() { return <section /> }",
       "Section",
       ["component", "high"],
     ],
-  ])("grades %s against the file's imports", async (_label, source, name, expected) => {
+    [
+      "a provider in a file that imports nothing",
+      "export function ThemeProvider({ children }) { return <ThemeCtx.Provider value={null}>{children}</ThemeCtx.Provider> }",
+      "ThemeProvider",
+      ["provider", "high"],
+    ],
+  ])("grades %s against the file's imports", async (_label, source, name, [kind, confidence]) => {
     const role = await classified(source, name)
-    expect(role === null ? null : [role.extKind, role.confidence]).toEqual(
-      expected === null ? null : [`framework:react:${expected[0]}`, expected[1]],
-    )
+    expect([role?.extKind, role?.confidence]).toEqual([`framework:react:${kind}`, confidence])
   })
+
+  it.each<[string, string, string, string, Confidence]>([
+    [
+      "returns a function it declares, in a .ts file",
+      "src/f.ts",
+      'import React from "react"\nexport function withTheme(C) { const Themed = (p) => React.createElement(C, p); Themed.displayName = "Themed"; return Themed }',
+      "withTheme",
+      "high",
+    ],
+    [
+      "returns a function it declares, in a .ts file that does not import React",
+      "src/f.ts",
+      "export function withTheme(C) { const Themed = (p) => createElement(C, p); return Themed }",
+      "withTheme",
+      "medium",
+    ],
+    [
+      "returns a function declaration it declares",
+      "src/f.ts",
+      'import React from "react"\nexport function withTheme(C) { function Themed(p) { return React.createElement(C, p) } return Themed }',
+      "withTheme",
+      "high",
+    ],
+    [
+      "returns a class",
+      "src/f.ts",
+      'import React from "react"\nexport function withTheme(C) { return class extends React.Component { render() { return React.createElement(C, this.props) } } }',
+      "withTheme",
+      "high",
+    ],
+    [
+      "returns a call handed a function it declares",
+      "src/f.ts",
+      'import React from "react"\nexport function withX(C) { function W(p) { return React.createElement(C, p) } return hoistNonReactStatics(W, C) }',
+      "withX",
+      "medium",
+    ],
+    [
+      "returns memo(...)",
+      "src/f.ts",
+      'import React, { memo } from "react"\nexport const withY = (C) => memo((p) => React.createElement(C, p))',
+      "withY",
+      "medium",
+    ],
+    [
+      "returns React.forwardRef(...)",
+      "src/f.ts",
+      'import React from "react"\nexport function withRef(C) { return React.forwardRef((p, ref) => React.createElement(C, { ...p, ref })) }',
+      "withRef",
+      "medium",
+    ],
+    [
+      "returns a const holding a call",
+      "src/f.ts",
+      'import React from "react"\nexport function withMemo(C) { const Memoized = React.memo(C); return Memoized }',
+      "withMemo",
+      "medium",
+    ],
+    [
+      "returns what a call's call gives back, in a .tsx file without JSX",
+      "src/f.tsx",
+      'import React from "react"\nexport const withUser = (C) => connect((s) => ({ user: s.user }))(C)',
+      "withUser",
+      "medium",
+    ],
+  ])("grades a with* function that %s", async (_label, path, source, name, confidence) => {
+    const role = await classified(source, name, path)
+    expect([role?.extKind, role?.confidence]).toEqual(["framework:react:hoc", confidence])
+  })
+
+  it.each([
+    ["react", "high"],
+    ["react/jsx-runtime", "high"],
+    ["preact/compat", "high"],
+    ["preact/compat/client", "high"],
+    ["react-dom", "medium"],
+    ["react-dom/client", "medium"],
+    ["react-router", "medium"],
+    ["preact", "medium"],
+  ])("grades a hook that calls no hook beside an import of %s %s", async (module, confidence) => {
+    const role = await classified(
+      `import { version } from "${module}"\nexport function useThing() { return 1 }`,
+      "useThing",
+    )
+    expect(role?.confidence).toBe(confidence)
+  })
+
+  it.each([
+    ["a type-only import", 'import type { ReactNode } from "react"'],
+    ["a re-export", 'export { useState } from "react"'],
+    ["a side-effect import", 'import "react"'],
+    ["a dynamic import", 'export const load = () => import("react")'],
+  ])("reads the file as importing React through %s", async (_label, line) => {
+    const role = await classified(`${line}\nexport function useThing() { return 1 }`, "useThing")
+    expect(role?.confidence).toBe("high")
+  })
+
+  it.each([
+    "vue",
+    "vue-router",
+    "pinia",
+    "nuxt",
+    "nuxt/app",
+    "#app",
+    "#imports",
+    "@vue/reactivity",
+    "@vueuse/core",
+    "solid-js",
+    "solid-js/store",
+    "@solidjs/router",
+  ])(
+    "reads a use* function's call of another as no hook call beside an import of %s",
+    async (module) => {
+      const role = await classified(
+        `import { useOther } from "${module}"\nexport function useThing() { return useOther() }`,
+        "useThing",
+      )
+      expect([role?.derivedBy, role?.confidence]).toEqual(["framework:react:hook:naming", "medium"])
+    },
+  )
 
   it.each(["class", "method", "interface", "type", "enum", "namespace"] as const)(
     "returns null for a %s",
@@ -303,7 +466,7 @@ describe("classifyReactSymbol — a const read from its own initializer", () => 
     ],
     [
       "two wrappers",
-      "export const A = memo(X), B = React.forwardRef(Y)",
+      'import React from "react"\nexport const A = memo(X), B = React.forwardRef(Y)',
       [
         "A framework:react:memo framework:react:memo:memo",
         "B framework:react:forward-ref framework:react:forward-ref:React.forwardRef",

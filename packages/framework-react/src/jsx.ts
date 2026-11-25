@@ -14,7 +14,7 @@ const JSX_ELEMENT_TYPES: ReadonlySet<string> = new Set([
 ])
 
 /** Node types that open a new function scope: a nested arrow's return is not the enclosing body's. */
-const FUNCTION_SCOPE_TYPES: ReadonlySet<string> = new Set([
+export const FUNCTION_SCOPE_TYPES: ReadonlySet<string> = new Set([
   "function_declaration",
   "function_expression",
   "arrow_function",

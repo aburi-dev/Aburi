@@ -453,7 +453,7 @@ for a reference plugin that keys off PascalCase naming, `use[A-Z]` naming, JSX
 return detection, and `createContext(...)` / `forwardRef(...)` / `memo(...)`
 call-shape recognition, with no decorators involved. A role read off a name
 alone is graded `medium` unless the file imports React (`ctx.imports`), so the
-report badges a Vue composable named `useCounter`.
+report badges a composable named `useCounter` in a file that imports Vue.
 
 ## Effects plugin
 

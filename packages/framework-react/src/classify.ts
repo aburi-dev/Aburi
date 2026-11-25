@@ -1,4 +1,4 @@
-import { lastQnameSegment } from "@aburi/core"
+import { calleeName, lastQnameSegment, type SyntaxNode } from "@aburi/core"
 import type {
   Confidence,
   FrameworkClassifyContext,
@@ -7,17 +7,17 @@ import type {
   SymbolCandidate,
   SymbolClassification,
 } from "@aburi/types"
-import { hasHocBody, isPascalCase, matchesHocNaming, returnsContextProvider } from "./components"
+import { hocReturn, isPascalCase, matchesHocNaming, returnsContextProvider } from "./components"
 import { REACT_DERIVED_BY_PREFIX, type ReactExtKind } from "./ext-kinds"
 import { bodyCallsAnotherHook, matchesHookNaming } from "./hooks"
-import { importsReact, isReactBinding } from "./imports"
+import { importsComposables, importsReact, isImportBinding, isReactBinding } from "./imports"
 import { hasJsxReturn } from "./jsx"
 import {
-  extractWrapperCall,
   isContextCall,
   isForwardRefCall,
   isMemoCall,
   type WrapperCall,
+  wrapperCallNode,
 } from "./wrappers"
 
 /** `extKind` narrowed to the plugin's own union so a typo fails to compile. */
@@ -45,7 +45,7 @@ function classifyFunctionSymbol(
   const leaf = lastQnameSegment(symbol.name)
 
   if (matchesHookNaming(leaf)) {
-    const callsHook = bodyCallsAnotherHook(symbol.bodyNode)
+    const callsHook = !importsComposables(imports) && bodyCallsAnotherHook(symbol.bodyNode)
     const signals = [`${REACT_DERIVED_BY_PREFIX}:hook:naming`]
     if (callsHook) signals.push(`${REACT_DERIVED_BY_PREFIX}:hook:hook-call`)
     return {
@@ -57,12 +57,13 @@ function classifyFunctionSymbol(
     }
   }
 
-  if (matchesHocNaming(leaf) && hasHocBody(symbol.bodyNode)) {
+  if (matchesHocNaming(leaf)) {
+    const confidence = hocConfidence(symbol, imports)
+    if (confidence === null) return null
     return {
       extKind: "framework:react:hoc",
       derivedBy: `${REACT_DERIVED_BY_PREFIX}:hoc:naming`,
-      // JSX is React's whatever the file imports, as it is for a component.
-      confidence: hasJsxReturn(symbol.bodyNode) ? "high" : namedRoleConfidence(imports),
+      confidence,
     }
   }
 
@@ -88,42 +89,66 @@ function classifyFunctionSymbol(
   return null
 }
 
+// A HOC hands back a component. JSX is React's whatever the file imports, as it is for a
+// component; a function or class handed back is a component by the name alone; and a call handed
+// back gives back one only maybe, so it counts only beside an import of React.
+function hocConfidence(
+  symbol: SymbolCandidate<OpaqueAstNode>,
+  imports: readonly ImportEdge[],
+): Confidence | null {
+  if (hasJsxReturn(symbol.bodyNode)) return "high"
+  const returned = hocReturn(symbol.bodyNode, parameterNames(symbol))
+  if (returned === "component") return namedRoleConfidence(imports)
+  if (returned === "call" && importsReact(imports)) return "medium"
+  return null
+}
+
+function parameterNames(symbol: SymbolCandidate<OpaqueAstNode>): ReadonlySet<string> {
+  const names = new Set<string>()
+  for (const input of symbol.signature?.inputs ?? []) {
+    names.add(input.name)
+    for (const binding of input.bindings ?? []) names.add(binding)
+  }
+  return names
+}
+
 function classifyConstSymbol(
   symbol: SymbolCandidate<OpaqueAstNode>,
   imports: readonly ImportEdge[],
 ): ReactClassification | null {
-  const call = extractWrapperCall(symbol.fullNode, symbol.name)
-  if (call === null) return null
-  const confidence = namedRoleConfidence(imports)
-  if (isContextCall(call)) {
-    if (!isReactContextCallee(call, imports)) return null
-    return {
-      extKind: "framework:react:context",
-      derivedBy: `${REACT_DERIVED_BY_PREFIX}:context:${call.name}`,
-      confidence,
-    }
+  const node = wrapperCallNode(symbol.fullNode, symbol.name)
+  const call = node === null ? null : calleeName(node)
+  if (node === null || call === null) return null
+  const role = wrapperRole(call)
+  if (role === null) return null
+  const confidence = wrapperConfidence(node, call, imports)
+  if (confidence === null) return null
+  return {
+    extKind: role.extKind,
+    derivedBy: `${REACT_DERIVED_BY_PREFIX}:${role.tag}:${call.name}`,
+    confidence,
   }
-  if (isForwardRefCall(call)) {
-    return {
-      extKind: "framework:react:forward-ref",
-      derivedBy: `${REACT_DERIVED_BY_PREFIX}:forward-ref:${call.name}`,
-      confidence,
-    }
-  }
-  if (isMemoCall(call)) {
-    return {
-      extKind: "framework:react:memo",
-      derivedBy: `${REACT_DERIVED_BY_PREFIX}:memo:${call.name}`,
-      confidence,
-    }
-  }
+}
+
+function wrapperRole(call: WrapperCall): { extKind: ReactExtKind; tag: string } | null {
+  if (isContextCall(call)) return { extKind: "framework:react:context", tag: "context" }
+  if (isForwardRefCall(call)) return { extKind: "framework:react:forward-ref", tag: "forward-ref" }
+  if (isMemoCall(call)) return { extKind: "framework:react:memo", tag: "memo" }
   return null
 }
 
-// `vm.createContext` is Node's: called on a receiver, `createContext` is React's only through a
-// name a React import binds.
-function isReactContextCallee(call: WrapperCall, imports: readonly ImportEdge[]): boolean {
-  if (call.name === call.leaf) return true
-  const receiver = call.name.slice(0, call.name.length - call.leaf.length - 1)
-  return isReactBinding(imports, receiver)
+// `vm.createContext` is Node's and `createContext` from `solid-js` is Solid's: a wrapper is React's
+// through a name a React import binds, or a bare name no import binds. A call handed JSX wraps a
+// component whatever names it, as Chakra UI's own `forwardRef` does.
+function wrapperConfidence(
+  node: SyntaxNode,
+  call: WrapperCall,
+  imports: readonly ImportEdge[],
+): Confidence | null {
+  const bare = call.name === call.leaf
+  const head = bare ? call.name : call.name.slice(0, call.name.indexOf("."))
+  if (isReactBinding(imports, head)) return "high"
+  if (hasJsxReturn(node.childForFieldName("arguments"))) return "high"
+  if (bare && !isImportBinding(imports, head)) return namedRoleConfidence(imports)
+  return null
 }

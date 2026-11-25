@@ -199,12 +199,12 @@ describe("scan — a call's derivedBy", () => {
   it.each([
     [
       "a call by the name the call is made through",
-      "loadReact().memo(Inner)",
+      "loadReact().memo(() => <div />)",
       "framework:react:memo framework:react:memo:loadReact.memo",
     ],
     [
       "something that is not a name as computed",
-      "new Registry().memo(Inner)",
+      "new Registry().memo(() => <div />)",
       "framework:react:memo framework:react:memo:<computed>.memo",
     ],
   ])("names a receiver that is %s", async (_label, initializer, expected) => {
@@ -212,8 +212,8 @@ describe("scan — a call's derivedBy", () => {
   })
 })
 
-describe("scan — React's naming conventions in a file that does not import React", () => {
-  it("gives a retry helper and a vm context no role, and grades a use* function medium", async () => {
+describe("scan — React's naming conventions graded by the file's imports", () => {
+  it("gives a retry helper and a vm context no role, and grades a use* function by whether its file imports React", async () => {
     await workspace.writeSource(
       "src/db.ts",
       [
@@ -237,15 +237,30 @@ describe("scan — React's naming conventions in a file that does not import Rea
         "",
       ].join("\n"),
     )
+    await workspace.writeSource(
+      "src/theme.ts",
+      [
+        'import type { ReactNode } from "react"',
+        "",
+        "export function useThemeSlot(slot: ReactNode) {",
+        "  return { slot }",
+        "}",
+        "",
+      ].join("\n"),
+    )
 
     const result = await scanWith(workspace.root, {
       languages: [langTypescriptPlugin],
       frameworks: [reactFrameworkPlugin],
     })
-    const hook = symbolNamed(result, "useDatabase")
+    const graded = (name: string) => {
+      const symbol = symbolNamed(result, name)
+      return [symbol.extKind, symbol.confidence]
+    }
 
     expect(symbolNamed(result, "withRetry").extKind).toBeNull()
     expect(symbolNamed(result, "sandbox").extKind).toBeNull()
-    expect([hook.extKind, hook.confidence]).toEqual(["framework:react:hook", "medium"])
+    expect(graded("useDatabase")).toEqual(["framework:react:hook", "medium"])
+    expect(graded("useThemeSlot")).toEqual(["framework:react:hook", "high"])
   })
 })

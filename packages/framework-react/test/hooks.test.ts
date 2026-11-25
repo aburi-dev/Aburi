@@ -22,9 +22,19 @@ describe("bodyCallsAnotherHook", () => {
   it.each([
     ["a hook called directly", true, "function useThing() { const [x] = useState(0); return x }"],
     [
-      "a hook called through a member, matched on its leaf",
+      "a hook called on a namespace",
       true,
       "function useThing() { React.useEffect(() => {}, []); return null }",
+    ],
+    [
+      "a hook on a client's procedure path",
+      true,
+      "function useThing() { return trpc.viewer.me.useQuery() }",
+    ],
+    [
+      "a method of a lowercase object named like a hook",
+      false,
+      "function useThing() { vi.useFakeTimers(); return null }",
     ],
     ["only other functions", false, "function useThing() { return doWork() }"],
   ])("reads a body calling %s as calling a hook: %s", async (_label, expected, source) => {
