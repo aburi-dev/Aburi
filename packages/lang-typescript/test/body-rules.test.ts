@@ -2,9 +2,12 @@ import type { Rule } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { walkFirstSymbol } from "./fixtures/ctx"
 
-/** Each rule as its type and the one text it carries. */
-function described(rules: Rule[]): [string, string | null][] {
-  return rules.map((r) => [r.type, r.condition ?? r.what ?? r.expr ?? r.loopKind])
+/** Each rule as its type and the one text it carries, and a loop's kind after it. */
+function described(rules: Rule[]): (string | null)[][] {
+  return rules.map((r) => {
+    const text = r.condition ?? r.what ?? r.expr
+    return r.loopKind === null ? [r.type, text] : [r.type, text, r.loopKind]
+  })
 }
 
 async function walked(body: string) {
@@ -25,12 +28,33 @@ describe("the rules a body yields", () => {
     ["a return of a member chain off `this`", "return this.a.b.c", []],
     ["a return of a call", "return foo()", []],
     ["a computed return", "return a + b", [["return", "a + b"]]],
-    ["a `for` loop", "for (let i = 0; i < 3; i++) {}", [["loop", "for"]]],
-    ["a `for…of` loop", "for (const i of x) {}", [["loop", "for"]]],
-    ["a `for…in` loop", "for (const k in x) {}", [["loop", "for"]]],
-    ["a `while` loop", "while (true) {}", [["loop", "while"]]],
-    ["a `do` loop", "do {} while (x)", [["loop", "do"]]],
-    ["a `switch`", "switch (x) { case 1: go() }", [["switch", "x"]]],
+    ["an `if` that does not leave early", "if (x) go()", [["branch", "x"]]],
+    ["an `if` with an `else`", "if (x) go(); else stop()", [["branch", "x"]]],
+    ["a `for` loop", "for (let i = 0; i < 3; i++) {}", [["loop", "let i = 0; i < 3; i++", "for"]]],
+    ["a `for` loop with an empty header", "for (;;) {}", [["loop", ";;", "for"]]],
+    ["a `for…of` loop", "for (const i of x) {}", [["loop", "const i of x", "for"]]],
+    [
+      "a `for await…of` loop",
+      "for await (const i of x) {}",
+      [["loop", "await const i of x", "for"]],
+    ],
+    ["a `for…in` loop", "for (const k in x) {}", [["loop", "const k in x", "for"]]],
+    [
+      "a loop whose body holds a comment",
+      "for (const i of x) { /* each */ go(i) }",
+      [["loop", "const i of x", "for"]],
+    ],
+    ["a `while` loop", "while (true) {}", [["loop", "true", "while"]]],
+    ["a `do` loop", "do {} while (x)", [["loop", "x", "do"]]],
+    [
+      "a `switch`",
+      "switch (x) { case 1: go(); break; default: stop() }",
+      [
+        ["switch", "x"],
+        ["case", "1"],
+        ["case", "default"],
+      ],
+    ],
     ["a `try`", "try { doThing() } catch {}", [["try", null]]],
   ])("reads %s", async (_label, body, expected) => {
     expect(described((await walked(body)).rules)).toEqual(expected)
@@ -38,13 +62,6 @@ describe("the rules a body yields", () => {
 
   it("records the call a call-only return makes, though it yields no rule", async () => {
     expect((await walked("return foo()")).calls.map((c) => c.target)).toEqual(["foo"])
-  })
-
-  it("keeps a loop's rule the same whatever bound it tests", async () => {
-    const strict = await walked("for (let i = 0; i < x.length; i++) {}")
-    const loose = await walked("for (let i = 0; i <= x.length; i++) {}")
-
-    expect(loose.rules).toEqual(strict.rules)
   })
 })
 

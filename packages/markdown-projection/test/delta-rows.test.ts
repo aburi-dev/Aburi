@@ -408,6 +408,18 @@ describe("a modified element's row beside the base element the diff paired it wi
       "- rules modified:\n  - loop (`for` → `while`) (L4)\n",
     ],
     [
+      "a loop's header beside a base loop an earlier version wrote with none",
+      { rules: [loop(3, "while")] },
+      { rules: [rule({ type: "loop", line: 3, loopKind: "while", condition: "q.size > 0" })] },
+      {
+        rules: {
+          ...none(),
+          modified: [rule({ type: "loop", line: 3, loopKind: "while", condition: "q.size > 0" })],
+        },
+      },
+      "- rules modified:\n  - loop: none → `q.size > 0` (`while`) (L3)\n",
+    ],
+    [
       "a guard's old condition before its new one",
       { rules: [guard(4, "!data.name")] },
       { rules: [guard(4, "!data.name || data.name.length > 64")] },

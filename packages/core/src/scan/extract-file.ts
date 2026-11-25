@@ -93,6 +93,9 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
     router,
     loadSource: (file) => loadSourceFile(job.workspaceRoot, file),
     record,
+    ...(plugins.effects.length === 0
+      ? {}
+      : { declarations: { registry: plugins.registry, config: job.config } }),
   })
 
   const outcomeOf = async (file: DiscoveredFile): Promise<FileOutcome> => {

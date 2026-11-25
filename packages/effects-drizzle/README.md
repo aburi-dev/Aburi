@@ -49,6 +49,15 @@ Drizzle are ignored outright. The import gate uses a **prefix match** rather
 than a closed allowlist because Drizzle publishes 20+ driver-specific subpaths
 and adds new drivers per release.
 
+The import may be made by a module of the workspace the file imports from:
+`import { db } from "./db"`, where `db.ts` calls `drizzle(…)`, whatever barrels
+lie between (through `export *`, only the target that exports `db` counts), or
+any other module the file imports from that uses Drizzle (a schema, a
+repository). Such a module may export something else beside the client, so
+there a call is classified only on a receiver the client vocabulary names or a
+Drizzle type declares: `db.insert(users)` is, and `usersRepo.update(id, dto)` on
+a repository instance `./users.repo` exports is not.
+
 ### Receiver identification
 
 The import gate is not a receiver check: it answers "does this file use
@@ -95,7 +104,15 @@ reason: the name in the target is a collapsed expression, not a binding.
 
 Naming your client something this vocabulary does not know is not an error — it
 costs the effect its `high` tier, and the table in `src/receivers.ts` is one
-literal list if a house convention deserves to be in it.
+literal list if a house convention deserves to be in it. A receiver declared
+with a type a `drizzle-orm` module binds (`db: NodePgDatabase`) gets `high`
+whatever it is called; one declared with a type the workspace declares
+(`type Db = typeof db`) is read by its name, as above.
+
+A call of a method your own class declares is never Drizzle's:
+`this.repo.update(id, dto)` beside `constructor(private repo: UsersRepo)` stays
+in `calls[]`, resolved to `UsersRepo.update`, and the write that method makes
+reaches the caller as a propagated effect.
 
 ## Install
 

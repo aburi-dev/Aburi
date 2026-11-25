@@ -93,7 +93,7 @@ describe("e2e diff → Markdown — modified rows beside the base values the dif
     const md = projectDiff(diffIRs(base.ir, head.ir))
 
     expect(md).toContain(
-      "### `drain` *(function)*\n**File**: `src/queue.ts:1`\n\n- rules modified:\n  - loop (`for` → `while`) (L3)\n",
+      "### `drain` *(function)*\n**File**: `src/queue.ts:1`\n\n- rules modified:\n  - loop: `const item of queue` → `queue.length > 0` (`for` → `while`) (L3)\n",
     )
     expect(md).toContain(
       [
@@ -105,7 +105,12 @@ describe("e2e diff → Markdown — modified rows beside the base values the dif
     )
     expect(md).toContain("- rules modified:\n  - guard: `a < 0` → `a <= 0` (L2)\n")
     expect(md).toContain(
-      "- rules removed:\n  - loop (`do`) (L4)\n- rules modified:\n  - loop (`for` → `while`) (L3)\n",
+      [
+        "- rules removed:",
+        "  - loop: `n > 100` (`do`) (L4)",
+        "- rules modified:",
+        "  - loop: `const item of items` → `items.length > 0` (`for` → `while`) (L3)",
+      ].join("\n"),
     )
   })
 })

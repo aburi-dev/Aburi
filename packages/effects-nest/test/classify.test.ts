@@ -1,8 +1,13 @@
 import { classifyInputsAround } from "@aburi/test-harness"
-import { makeCall, makeCtx } from "@aburi/test-support"
+import { importEdge, makeCall, makeCtx } from "@aburi/test-support"
+import type { ImportEdge } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { classifyNestCall } from "../src/index"
-import { makeEventemitter2Import, makeNestEmitterImport } from "./fixtures/context"
+import {
+  makeEventemitter2Import,
+  makeNestCqrsImport,
+  makeNestEmitterImport,
+} from "./fixtures/context"
 
 const ctx = makeCtx({ imports: [makeNestEmitterImport()] })
 
@@ -12,6 +17,8 @@ describe("classifyNestCall — publishing calls", () => {
     ["this.eventBus.emit", "eventBus.emit"],
     ["container.services.eventBus.emit", "eventBus.emit"],
     ["EventEmitter2.emit", "EventEmitter2.emit"],
+    ["this.eventBus.emitAsync", "eventBus.emitAsync"],
+    ["EventEmitter2.emitAsync", "EventEmitter2.emitAsync"],
   ])("classifies %s as event.publish, tagged with the receiver it emits through", (target, tag) => {
     expect(classifyNestCall(makeCall({ target }), ctx)).toEqual({
       effectId: "event.publish",
@@ -78,6 +85,74 @@ describe("classifyNestCall — a receiver declared as the emitter class", () => 
   })
 })
 
+describe("classifyNestCall — publishing through @nestjs/cqrs's EventBus", () => {
+  const cqrs = makeCtx({ imports: [makeNestCqrsImport()] })
+
+  it.each([
+    ["this.eventBus.publish", undefined, "eventBus.publish"],
+    ["this.eventBus.publishAll", undefined, "eventBus.publishAll"],
+    ["this.bus.publish", "EventBus", "EventBus.publish"],
+    ["bus.publishAll", "EventBus", "EventBus.publishAll"],
+  ])("classifies %s as event.publish", (target, receiverType, tag) => {
+    const call = makeCall({ target, ...(receiverType === undefined ? {} : { receiverType }) })
+
+    expect(classifyNestCall(call, cqrs)).toEqual({
+      effectId: "event.publish",
+      confidence: "high",
+      derivedBy: `effects-plugin:nest:${tag}`,
+    })
+  })
+
+  it.each([
+    [
+      "a receiver neither named eventBus nor declared as EventBus",
+      "this.bus.publish",
+      "Server",
+      cqrs,
+    ],
+    ["CommandBus, which dispatches to one handler", "this.commandBus.execute", "CommandBus", cqrs],
+    ["emit in a file that imports `@nestjs/cqrs` alone", "this.eventBus.emit", "EventBus", cqrs],
+    [
+      "an EventBus of another module, beside a `@nestjs/cqrs` import of something else",
+      "this.bus.publish",
+      "EventBus",
+      makeCtx({
+        imports: [
+          importEdge({ source: "@nestjs/cqrs", symbols: ["CommandBus"] }),
+          importEdge({ source: "./bus", symbols: ["EventBus"], line: 2 }),
+        ],
+      }),
+    ],
+  ])("returns null for %s", (_label, target, receiverType, context) => {
+    expect(classifyNestCall(makeCall({ target, receiverType }), context)).toBeNull()
+  })
+})
+
+describe("classifyNestCall — a file that imports both libraries", () => {
+  const both = makeCtx({ imports: [makeNestEmitterImport(), makeNestCqrsImport()] })
+
+  it.each([
+    ["this.bus.emit", "EventBus", null],
+    ["this.emitter.publish", "EventEmitter2", null],
+    ["this.emitter.emit", "EventEmitter2", "EventEmitter2.emit"],
+    ["this.bus.publish", "EventBus", "EventBus.publish"],
+  ])(
+    "answers %s on a receiver declared as %s by whether that class has the method",
+    (target, receiverType, tag) => {
+      const expected =
+        tag === null
+          ? null
+          : {
+              effectId: "event.publish",
+              confidence: "high",
+              derivedBy: `effects-plugin:nest:${tag}`,
+            }
+
+      expect(classifyNestCall(makeCall({ target, receiverType }), both)).toEqual(expected)
+    },
+  )
+})
+
 describe("classifyNestCall — calls that are not a publish", () => {
   it.each([
     ["no import at all", []],
@@ -96,9 +171,10 @@ describe("classifyNestCall — calls that are not a publish", () => {
     ["bus.emit", "a receiver outside the identifier set"],
     ["emitter.emit", "a receiver outside the identifier set"],
     ["this.emitter.emit", "a receiver outside the identifier set"],
-    ["eventBus.emitAsync", "a method other than emit"],
-    ["eventBus.emits", "a method other than emit"],
-    ["eventBus.dispatch", "a method other than emit"],
+    ["eventBus.emitAsyncSerial", "a method other than emit or emitAsync"],
+    ["eventBus.emits", "a method other than emit or emitAsync"],
+    ["eventBus.dispatch", "a method other than emit or emitAsync"],
+    ["eventBus.publish", "CQRS's publish, in a file that imports no @nestjs/cqrs"],
     ["emit", "an emit with no receiver"],
     ["eventBus", "a bare identifier"],
   ])("returns null for %s — %s", (target) => {
@@ -125,15 +201,23 @@ describe("classifyNestCall — upstream contract violations", () => {
     },
   )
 
-  it("throws on an import edge with an empty source rather than skipping it", () => {
-    const brokenEdge = makeCtx({
-      imports: [{ source: "", symbols: ["EventEmitter2"], line: 4, dynamic: false }],
-      path,
-    })
-    expect(() => classifyNestCall(makeCall({ target: "eventBus.emit" }), brokenEdge)).toThrow(
-      `effects-nest (${path}, line 4): ImportEdge.source is empty`,
-    )
-  })
+  const broken = importEdge({ source: "", symbols: ["EventEmitter2"], line: 4 })
+
+  it.each(
+    ["eventBus.emit", "this.eventBus.publish", "this.commandBus.execute", "logger.log"].flatMap(
+      (target): [string, string, ImportEdge[]][] => [
+        [target, "beside `@nestjs/cqrs`", [makeNestCqrsImport(), broken]],
+        [target, "alone", [broken]],
+      ],
+    ),
+  )(
+    "throws for %s on an import edge with an empty source, %s, rather than skipping it",
+    (target, _label, imports) => {
+      expect(() => classifyNestCall(makeCall({ target }), makeCtx({ imports, path }))).toThrow(
+        `effects-nest (${path}, line 4): ImportEdge.source is empty`,
+      )
+    },
+  )
 
   it("leaves the CallCandidate and the ClassifyContext as it found them", () => {
     const { before, after } = classifyInputsAround(
