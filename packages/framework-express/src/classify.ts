@@ -100,7 +100,8 @@ function classifyRegistration(
   const importAnchored = hasExpressImport(ctx)
 
   if (isRouteMethod(callee.leaf) && hasRouteArguments(call)) {
-    // The method the Symbol is named after leads, then every other method its chain registers.
+    // The language plugin names the Symbol after the chain's outermost call, so that method leads,
+    // agreeing with the `call-statement:` entry.
     const methods = new Set([
       callee.name,
       ...registrations.filter(registersRoute).map((route) => route.callee.name),

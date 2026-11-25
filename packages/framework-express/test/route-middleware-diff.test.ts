@@ -169,11 +169,43 @@ describe("diff — the methods of a .route() chain", () => {
       "ts:src/routes.ts#router__put__$users$Zid__d0",
       { added: ["get:"], removed: [] },
     ],
+    [
+      "a method dropped beside one that takes no middleware",
+      chain("get(getUser)", "put(updateUser)"),
+      chain("put(updateUser)"),
+      "ts:src/routes.ts#router__put__$users$Zid__d0",
+      { added: [], removed: ["get:"] },
+    ],
+    [
+      "a method added beside one that takes no middleware",
+      chain("put(updateUser)"),
+      chain("get(getUser)", "put(updateUser)"),
+      "ts:src/routes.ts#router__put__$users$Zid__d0",
+      { added: ["get:"], removed: [] },
+    ],
   ])("is a logic change for %s", async (_edit, before, after, id, middleware) => {
     const { diff } = await diffOfEditWith(workspace, lineup, SOURCE, before, after)
 
     const change = onlyChange(diff)
     expect(change.after.id).toBe(id)
     expect(change.delta).toMatchObject({ logicChanged: true, middleware })
+  })
+
+  const twoMethods = ["get(getUser)", "put(requireAdmin, updateUser)"]
+  const threeMethods = [...twoMethods, "delete(deleteUser)"]
+
+  it.each([
+    ["added after the last", twoMethods, threeMethods],
+    ["dropped from the end", threeMethods, twoMethods],
+  ])("renames the chain's Symbol for a method %s", async (_edit, before, after) => {
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      SOURCE,
+      chain(...before),
+      chain(...after),
+    )
+
+    expect(diff.summary).toMatchObject({ added: 1, removed: 1, changed: 0 })
   })
 })

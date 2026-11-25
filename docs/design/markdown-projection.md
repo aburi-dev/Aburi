@@ -391,7 +391,7 @@ A Symbol whose `confidence` is not `high` carries the badge (§3.5) at the end o
 
 A Symbol that names middleware ([`ir-schema.md`](./ir-schema.md) §5.8), a framework registration or
 a tRPC procedure or base procedure, carries a **Middleware** line after the Signature line, the names
-in the order they run:
+in the order the Symbol lists them:
 ``**Middleware**: `requireAdmin`, `validate(query)` ``.
 
 A target called from more than one line is one **Calls** row that lists each line,
@@ -1158,7 +1158,7 @@ Renders L2 standalone. Printed to `stdout`, or written to the path `--output` na
 
 The title carries the confidence badge when the Symbol's `confidence` is not `high` (§3.5), as every Symbol heading does.
 
-A Symbol that names middleware gets a `## Middleware` section between Signature and Rules, holding the names in the order they run on one line, as the component page's **Middleware** line does (§5.2).
+A Symbol that names middleware gets a `## Middleware` section between Signature and Rules, holding the names in the order the Symbol lists them on one line, as the component page's **Middleware** line does (§5.2).
 
 A Symbol that makes a call an effect plugin declined to classify ([`effect-plugin.md`](./effect-plugin.md) §4.5) gets a `## Declined effects` section between Effects and Calls. It has one line for each `stats.declinedCalls` entry that names the Symbol, ordered by line, then target, then plugin: `` - `t.procedure.query` (L12) [effects-trpc]: `effects-plugin:trpc:procedure-query` ``. The call is also listed under Calls, because a declined call is still a call. The section is the Symbol's view of the IR's record, so `aburi explain --no-rescan` shows it as well.
 

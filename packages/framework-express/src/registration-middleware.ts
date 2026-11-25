@@ -43,19 +43,16 @@ export function registersRoute({ callee }: Registration): boolean {
 
 export function registrationMiddleware(registrations: readonly Registration[]): string[] {
   const routes = registrations.filter(registersRoute)
-  // A statement registering several methods is one Symbol, so each name says which method it
-  // guards and a method that takes none is marked: moving a guard or dropping a method moves
-  // `logic`. A `.route()` chain names its methods so in any case, so the names do not change
-  // as methods are added to it or taken away.
-  const several = routes.length > 1
-  const qualified = several || routes.some((route) => hasRouteCallUpTheChain(route.call))
+  // One Symbol holds every route a statement registers, so a bare name could not say which method
+  // a guard moved to. A `.route()` chain qualifies even one, so its names hold as methods come and go.
+  const qualified = routes.length > 1 || routes.some((route) => hasRouteCallUpTheChain(route.call))
   return registrations.flatMap(({ callee, handlers }, index) => {
     if (callee.leaf === EXPRESS_MIDDLEWARE_METHOD) return middlewareNames(handlers)
     const guardsLaterRoutes =
       callee.leaf === ALL_METHODS && registrations.slice(index + 1).some(registersRoute)
     const names = middlewareNames(guardsLaterRoutes ? handlers : handlers.slice(0, -1))
     if (!qualified) return names
-    if (names.length === 0) return several ? [`${callee.leaf}:`] : []
+    if (names.length === 0) return [`${callee.leaf}:`]
     return names.map((name) => `${callee.leaf}:${name}`)
   })
 }

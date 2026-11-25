@@ -407,6 +407,11 @@ describe("scan — a call's derivedBy", () => {
       `app.route("/users").get(audit).get(listUsers).put(updateUser)`,
       ["app.put", "app.get"],
     ],
+    [
+      "routes at their own paths",
+      `app.get("/a", requireUser, listA).post("/b", createB)`,
+      ["app.post", "app.get"],
+    ],
   ])(
     "names every method a chain of %s registers, the one the Symbol is named after first",
     async (_label, line, methods) => {
@@ -503,6 +508,21 @@ describe("scan — the middleware a registration hands its handler to", () => {
       ["get:", "put:requireAdmin", "delete:"],
     ],
     [
+      "a mark for the only method of a chain, which takes no middleware",
+      `app.route("/users").get(listUsers)`,
+      ["get:"],
+    ],
+    [
+      "a mark for a chain whose all takes its handler alone",
+      `app.route("/users").all(listUsers)`,
+      ["all:"],
+    ],
+    [
+      "each route a statement registers at its own path, with the method it guards",
+      `app.get("/a", requireUser, listA).post("/b", createB)`,
+      ["get:requireUser", "post:"],
+    ],
+    [
       "a route of a chain behind a type assertion",
       `;(app.route("/users") as IRoute).get(requireUser, listUsers)`,
       ["get:requireUser"],
@@ -549,7 +569,6 @@ describe("scan — the middleware a registration hands its handler to", () => {
       `app.get("/users", (req, res, next) => next(), listUsers)`,
     ],
     ["error middleware written inline", `app.use((err, req, res, next) => res.end())`],
-    ["a chain whose all takes its handler alone", `app.route("/users").all(listUsers)`],
   ])("leaves the field out for %s", async (_label, line) => {
     expect(await oneCallIn(inExpressApp(line))).not.toHaveProperty("middleware")
   })
@@ -592,11 +611,6 @@ describe("scan — the middleware a registration hands its handler to", () => {
 describe("scan — the handlers a registration names, as calls", () => {
   it.each([
     [
-      "a route's middleware and handler",
-      `app.get("/users", requireAdmin, listUsers)`,
-      ["app.get", "requireAdmin", "listUsers"],
-    ],
-    [
       "member paths, a bracketed key read as a dotted one",
       `app.get("/users", auth.required, handlers["list"])`,
       ["app.get", "auth.required", "handlers.list"],
@@ -615,6 +629,16 @@ describe("scan — the handlers a registration names, as calls", () => {
       "no factory, which the registration already calls",
       `app.get("/users", requireRole("admin"), listUsers)`,
       ["app.get", "requireRole", "listUsers"],
+    ],
+    [
+      "no handler a factory is handed, only the factory",
+      `app.get("/users", asyncHandler(listUsers))`,
+      ["app.get", "asyncHandler"],
+    ],
+    [
+      "a path a name holds as though it were middleware",
+      `app.use(API_PREFIX, apiRouter)`,
+      ["app.use", "API_PREFIX", "apiRouter"],
     ],
     [
       "nothing a name does not spell",

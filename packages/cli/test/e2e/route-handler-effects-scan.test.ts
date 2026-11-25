@@ -1,18 +1,19 @@
 import { prismaEffectsPlugin } from "@aburi/effects-prisma"
 import { expressFrameworkPlugin } from "@aburi/framework-express"
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
-import { diffIRs, scanWith } from "@aburi/test-harness"
+import { diffOfEditWith, scanWith } from "@aburi/test-harness"
 import { onlyChange, symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { beforeEach, describe, expect, it } from "vitest"
 
 const workspace = useScratchWorkspace("route-handler")
 
-const scanWorkspace = () =>
-  scanWith(workspace.root, {
-    languages: [langTypescriptPlugin],
-    frameworks: [expressFrameworkPlugin],
-    effects: [prismaEffectsPlugin],
-  })
+const lineup = {
+  languages: [langTypescriptPlugin],
+  frameworks: [expressFrameworkPlugin],
+  effects: [prismaEffectsPlugin],
+}
+
+const scanWorkspace = () => scanWith(workspace.root, lineup)
 
 describe("scan — an Express route whose handler writes to a database", () => {
   beforeEach(async () => {
@@ -127,11 +128,15 @@ describe("scan — an Express route that names its handler", () => {
   })
 
   it("reports a handler swapped for one that writes as a logic change bringing the write", async () => {
-    const base = await scanWorkspace()
-    await workspace.writeSource("src/app.ts", app("purgeUsers"))
-    const head = await scanWorkspace()
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      "src/app.ts",
+      app("listUsers"),
+      app("purgeUsers"),
+    )
 
-    const change = onlyChange(diffIRs(base.ir, head.ir))
+    const change = onlyChange(diff)
 
     expect(change.after.id).toBe(ROUTE)
     expect(change.delta).toMatchObject({
