@@ -21,7 +21,7 @@ const perm = (role: string) =>
     "",
   ].join("\n")
 
-const ledger = (credit: string, gate: string, bound: string) =>
+const ledger = (credit: string, gate: string) =>
   [
     "export function applyCredit(balance: number, amount: number): number {",
     `  const next = balance ${credit} amount`,
@@ -33,6 +33,10 @@ const ledger = (credit: string, gate: string, bound: string) =>
     `  audit(isOwner ${gate} isAdmin)`,
     "}",
     "",
+  ].join("\n")
+
+const sumAll = (bound: string) =>
+  [
     "export function sumAll(xs: number[]): number {",
     "  let total = 0",
     `  for (let i = 0; i ${bound} xs.length; i++) {`,
@@ -42,6 +46,22 @@ const ledger = (credit: string, gate: string, bound: string) =>
     "}",
     "",
   ].join("\n")
+
+const route = (label: string) =>
+  [
+    "export function route(role: string): void {",
+    "  switch (role) {",
+    `    case ${label}:`,
+    "      purgeAll()",
+    "      break",
+    "    default:",
+    "      backup()",
+    "  }",
+    "}",
+    "",
+  ].join("\n")
+
+const colors = (...members: string[]) => `export enum Color {\n  ${members.join(",\n  ")},\n}\n`
 
 const parser = (overload: string) =>
   [
@@ -345,13 +365,74 @@ describe("an edit to a returned expression is a logic change", () => {
   })
 })
 
+describe("an edit to a condition, a case label or a declared value is a logic change", () => {
+  it.each([
+    [
+      "the condition of an `if` that does not leave early",
+      "export function grant(user: User): void {\n  if (user.isAdmin) {\n    openVault(user)\n  }\n}\n",
+      "export function grant(user: User): void {\n  if (!user.isAdmin) {\n    openVault(user)\n  }\n}\n",
+      "grant",
+    ],
+    ["a loop's bound", sumAll("<"), sumAll("<="), "sumAll"],
+    [
+      "a `while` loop's condition",
+      "export function drain(q: Set<number>): void {\n  while (q.size > 0) take(q)\n}\n",
+      "export function drain(q: Set<number>): void {\n  while (q.size > 1) take(q)\n}\n",
+      "drain",
+    ],
+    ["a case label", route('"admin"'), route('"guest"'), "route"],
+    [
+      "an exported constant's value",
+      "export const TIMEOUT_MS = 5000\n",
+      "export const TIMEOUT_MS = 5\n",
+      "TIMEOUT_MS",
+    ],
+    [
+      "the value of a constant the module keeps to itself",
+      "const RETRIES = 3\nexport function f(): void {\n  use(RETRIES)\n}\n",
+      "const RETRIES = 5\nexport function f(): void {\n  use(RETRIES)\n}\n",
+      "RETRIES",
+    ],
+    [
+      "an entry of an object a constant holds",
+      'export const config = { retries: 3, name: "api" }\n',
+      'export const config = { retries: 5, name: "api" }\n',
+      "config",
+    ],
+    [
+      "an enum member's value",
+      colors('Red = "red"', 'Blue = "blue"'),
+      colors('Red = "crimson"', 'Blue = "blue"'),
+      "Color",
+    ],
+    ["an enum member's removal", colors("Red", "Blue"), colors("Red"), "Color"],
+  ])("reports %s", async (_label, before, after, name) => {
+    const diff = await diffOfEdit(workspace, FILE, before, after)
+
+    expect(changedSymbols(diff).map((c) => [c.name, c.apiChanged, c.logicChanged])).toEqual([
+      [name, false, true],
+    ])
+  })
+
+  it("leaves the arguments of a call a constant holds to `syntax`", async () => {
+    const diff = await diffOfEdit(
+      workspace,
+      FILE,
+      "export const client = createClient({ retries: 3 })\n",
+      "export const client = createClient({ retries: 5 })\n",
+    )
+
+    expect(changedSymbols(diff)).toMatchObject([{ name: "client", ...SYNTAX_ONLY }])
+  })
+})
+
 describe("an edit outside every rule and signature is a syntax-only change", () => {
   it.each([
     [
-      "an operator in a statement, a call argument and a loop bound",
-      ledger("+", "&&", "<"),
-      ledger("-", "||", "<="),
-      ["applyCredit", "canDelete", "sumAll"],
+      "an operator in a statement and a call argument",
+      ledger("+", "&&"),
+      ledger("-", "||"),
+      ["applyCredit", "canDelete"],
     ],
     [
       "a module-level function's retyped overload",
