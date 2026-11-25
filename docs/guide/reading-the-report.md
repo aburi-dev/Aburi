@@ -58,7 +58,7 @@ ones and folds Moved, Dropped changes, Syntax-only changes and Test files behind
 | 🔗 Dependency changes | A call between two symbols that appeared or went. | Watch for layering violations. |
 | 💧 Dropped changes | Boilerplate that came or went. | Usually nothing. |
 | 🎚 Confidence changes | Aburi is more or less sure of a symbol, and nothing it fingerprints changed. | Check the new badge (see [Confidence](#confidence)). |
-| 🎨 Syntax-only changes | Bodies reformatted, behaviour identical. | Nothing. |
+| 🎨 Syntax-only changes | Edits outside the API, rules, effects and middleware: a reformat or a rename inside a body, but also what Aburi does not weigh, such as an operator outside a rule, which function a call calls, an `await`, or a `break` taken out of a `switch`. | Skim the names. A behaviour change Aburi cannot read lands here. |
 | 🧪 Test files | Every change to a symbol of test code, by name, and the call edges those symbols gained or lost. A change listed here is not listed in the sections above, though a Slice that reaches from test code into the code under test still draws its test members. The Summary line ends with how many changes there are. | Open it when the tests are the point of the change. |
 
 Learn the split between **API changes** and **Logic changes** first. An API
@@ -89,7 +89,7 @@ beside the new one:
 
 ```md
 - rules modified:
-  - loop (`for` → `while`) (L3)
+  - loop: `const item of queue` → `queue.length > 0` (`for` → `while`) (L3)
 - effects modified:
   - db.write: `prisma.user.create` (L5) [effects-prisma] ⚠ medium (was high)
 ```

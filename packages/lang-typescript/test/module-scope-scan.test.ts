@@ -95,7 +95,7 @@ describe("diff — a module's top-level statements", () => {
     )
 
     expect(changedSymbols(diff).map((c) => [c.name, c.syntaxChanged, c.logicChanged])).toEqual([
-      ["<module>", true, false],
+      ["<module>", true, true],
     ])
   })
 })
