@@ -1,8 +1,9 @@
-import { normalizeRuleText } from "@aburi/core"
+import { normalizeRuleText, RULE_TEXT_LIMIT } from "@aburi/core"
 import type { Rule } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { throughParentheses, walkDescendants } from "./ast-helpers"
+import { throughParentheses } from "./ast-helpers"
 import { wrappedExpression } from "./callee"
+import { canonicalText } from "./canonical-text"
 
 export const LOOP_KINDS: ReadonlyMap<string, NonNullable<Rule["loopKind"]>> = new Map([
   ["for_statement", "for"],
@@ -31,20 +32,12 @@ export function ruleText(
   from: number = node.startIndex,
   to: number = node.endIndex,
 ): string {
-  const source = node.text
-  const base = node.startIndex
-  if (!source.includes("/")) return normalizeRuleText(source.slice(from - base, to - base))
-  let out = ""
-  let at = from
-  for (const descendant of walkDescendants(node)) {
-    if (descendant.type !== "comment") continue
-    if (descendant.startIndex < from || descendant.endIndex > to) continue
-    out += `${source.slice(at - base, descendant.startIndex - base)} `
-    at = descendant.endIndex
-  }
-  out += source.slice(at - base, to - base)
-  return normalizeRuleText(out)
+  return normalizeRuleText(canonicalText(node, from, to, RULE_TEXT_READ))
 }
+
+// The text is cut at the limit, so the tokens past it are left unread: a code point spans at most
+// two UTF-16 units, and the last token read may be a separator the next one would drop.
+const RULE_TEXT_READ = 2 * (RULE_TEXT_LIMIT + 2)
 
 export function conditionText(condition: Node): string {
   const open = condition.child(0)

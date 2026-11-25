@@ -369,7 +369,7 @@ Grouped by file; within a file, ascending by source.startLine:
 ### `apps/billing/src/InvoiceService.ts`
 
 #### `InvoiceService.createInvoice` *(method)*
-**Boundary**: `@Post('/invoices')` `@UseGuards(AuthGuard)`
+**Boundary**: `@Post("/invoices")` `@UseGuards(AuthGuard)`
 **Signature**: `(customerId: CustomerId, items: LineItem[]) → Promise<Invoice>` throws `CreditLimitExceeded` ⚡async
 **Rules**:
 - guard: `customer.creditLimit < invoice.total` (L58)
@@ -613,7 +613,7 @@ Entries with `status: "changed"` or `"moved+changed"` and `delta.apiChanged: tru
 - signature.typeParameters: none → `<T extends Invoice>`
 - decorator added: `@UseGuards(AuthGuard)`
 - decorator removed: `@UseGuards(LegacyGuard)`
-- decorator modified: `@nest.Post('/invoices')` → `@tsed.Post('/invoices')`
+- decorator modified: `@nest.Post("/invoices")` → `@tsed.Post("/invoices")`
 - component: `billing` → `payments`
 - visibility: `internal` → `public`
 ```
@@ -678,7 +678,7 @@ Full symbol rendering (same as §5.2), less the fingerprint line (§12.7):
 ```md
 ### `InvoiceService.refundInvoice` *(method)*
 **File**: `apps/billing/src/InvoiceService.ts:101`
-**Boundary**: `@Post('/refund')`
+**Boundary**: `@Post("/refund")`
 **Rules**:
 - guard: `!invoice.canRefund` (L110)
 - throw: `new RefundNotAllowed()` (L111)
@@ -1126,7 +1126,7 @@ Renders L2 standalone. Printed to `stdout`, or written to the path `--output` na
 **Language**: ts
 
 ## Boundary
-`@Post('/invoices')` `@UseGuards(AuthGuard)`
+`@Post("/invoices")` `@UseGuards(AuthGuard)`
 
 ## Decorators
 `@Transactional()`

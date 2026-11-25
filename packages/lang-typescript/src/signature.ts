@@ -1,13 +1,8 @@
 import { compareCodeUnit } from "@aburi/core"
 import type { Signature } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import {
-  findChild,
-  firstNonCommentChild,
-  leadingOperatorOperand,
-  thrownValue,
-  walkDescendants,
-} from "./ast-helpers"
+import { findChild, firstNonCommentChild, thrownValue, walkDescendants } from "./ast-helpers"
+import { canonicalPlacedText } from "./canonical-text"
 import { decoratorNodes } from "./decorators"
 import { collectPatternBindings, isRepairedPattern } from "./pattern-bindings"
 
@@ -112,11 +107,9 @@ function isAccessibilityModifier(text: string): text is ParameterModifier {
   return ACCESSIBILITY_MODIFIERS.has(text)
 }
 
-// A formatter breaks a decorator's arguments over lines and adds a trailing comma, as it does a
-// type's, so a parameter's decorator is recorded as it reads on one line, after its `@`.
 function decoratorText(decorator: Node): string[] {
   const written = firstNonCommentChild(decorator)
-  return written === null ? [] : [oneLine(lineTokens(written, []), EXPRESSION_BRACKETS)]
+  return written === null ? [] : [canonicalPlacedText(written)]
 }
 
 function writtenText(node: Node | null): string | null {
@@ -154,91 +147,8 @@ function readReturnType(node: Node): string[] {
   return text.length > 0 ? [text] : []
 }
 
-const VERBATIM_TYPES: ReadonlySet<string> = new Set([
-  "string",
-  "template_literal_type",
-  "template_string",
-])
-
-interface Brackets {
-  readonly opening: ReadonlySet<string>
-  readonly closing: ReadonlySet<string>
-}
-
-const TYPE_BRACKETS: Brackets = {
-  opening: new Set(["<", "(", "["]),
-  closing: new Set([">", ")", "]"]),
-}
-
-// In an expression `<` and `>` compare, and an object literal's braces are spaced on one line by
-// some formatters and not by others.
-const EXPRESSION_BRACKETS: Brackets = {
-  opening: new Set(["(", "[", "{"]),
-  closing: new Set([")", "]", "}"]),
-}
-
-const SEPARATORS: ReadonlySet<string> = new Set([",", ";"])
-
-interface TypeToken {
-  readonly text: string
-  readonly start: number
-  readonly end: number
-}
-
-// A formatter that breaks a type over lines adds the layout, a trailing separator and a union's
-// leading `|`, and drops them when it joins the type again, so a type is recorded as it reads on
-// one line. On one line it separates an object type's members with `;`, and over lines with none.
 function typeText(type: Node): string {
-  return oneLine(lineTokens(type, []), TYPE_BRACKETS)
-}
-
-function oneLine(tokens: readonly TypeToken[], brackets: Brackets): string {
-  let out = ""
-  let previous: TypeToken | null = null
-  for (const [index, token] of tokens.entries()) {
-    const next = tokens[index + 1]
-    if (SEPARATORS.has(token.text) && next !== undefined && brackets.closing.has(next.text))
-      continue
-    const spaced =
-      previous !== null &&
-      previous.end < token.start &&
-      !brackets.opening.has(previous.text) &&
-      !brackets.closing.has(token.text) &&
-      !SEPARATORS.has(token.text)
-    out += spaced ? ` ${token.text}` : token.text
-    previous = token
-  }
-  return out
-}
-
-function lineTokens(node: Node, out: TypeToken[]): TypeToken[] {
-  if (node.isMissing || node.isExtra) return out
-  if (node.childCount === 0 || VERBATIM_TYPES.has(node.type)) {
-    out.push({ text: node.text, start: node.startIndex, end: node.endIndex })
-    return out
-  }
-  if (node.type === "object_type") return objectTypeTokens(node, out)
-  const operand = leadingOperatorOperand(node)
-  if (operand !== null) return lineTokens(operand, out)
-  for (const child of node.children) lineTokens(child, out)
-  return out
-}
-
-function objectTypeTokens(node: Node, out: TypeToken[]): TypeToken[] {
-  let previousMember: Node | null = null
-  for (const child of node.children) {
-    if (child.isNamed && !child.isExtra && !child.isMissing) {
-      if (previousMember !== null) {
-        const at = previousMember.endIndex
-        out.push({ text: ";", start: at, end: at })
-      }
-      previousMember = child
-    } else if (SEPARATORS.has(child.type)) {
-      continue
-    }
-    lineTokens(child, out)
-  }
-  return out
+  return canonicalPlacedText(type)
 }
 
 function readThrows(node: Node, jsDocText: string | null): string[] {
