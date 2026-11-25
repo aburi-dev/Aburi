@@ -615,6 +615,7 @@ describe("scan — the confidence a file's imports give", () => {
   it.each([
     ["@trpc/server", `import { initTRPC } from "@trpc/server"`, "high"],
     ["a type-only import of it", `import type { AnyRouter } from "@trpc/server"`, "high"],
+    ["a CommonJS require of it", `const { initTRPC } = require("@trpc/server")`, "high"],
     [
       "one of its subpaths",
       `import { fetchRequestHandler } from "@trpc/server/adapters/fetch"`,

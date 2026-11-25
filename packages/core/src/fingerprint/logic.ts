@@ -25,18 +25,35 @@ const SHAPE_ONLY_RULE_FIELDS: ReadonlySet<string> = new Set([
   "loopKind",
 ] satisfies (keyof LogicInput["rules"][number])[])
 
-// Middleware is not read: one guard such as `auth` fronts many routes, so sharing it says no
-// more about which route a body is than sharing a rule's type does.
+const SHARED_TEXT_RULE_TYPES: ReadonlySet<string> = new Set(["value", "loop", "branch"])
+
+// Middleware and the rules in SHARED_TEXT_RULE_TYPES are not read: one guard such as `auth` fronts
+// many routes, and a declared value, a loop's header or a branch's condition (`true`, `const item
+// of items`, `enabled`) recurs across unrelated declarations, so sharing one says no more about
+// which Symbol a body is than sharing a rule's type does.
 export function logicNamesNothing(symbol: IRSymbol): boolean {
   const input = buildLogicInput(symbol)
   return (
     input.effects.length === 0 &&
-    input.rules.every((rule) =>
-      Object.entries(rule).every(
-        ([field, value]) => SHAPE_ONLY_RULE_FIELDS.has(field) || value === null,
-      ),
+    input.rules.every(
+      (rule) =>
+        SHARED_TEXT_RULE_TYPES.has(rule.type) ||
+        Object.entries(rule).every(
+          ([field, value]) => SHAPE_ONLY_RULE_FIELDS.has(field) || value === null,
+        ),
     )
   )
+}
+
+// Where the logic names nothing, its text is no evidence, and how many values a declaration holds
+// is none either: a constant whose value changes, or an enum that gains a member, is the Symbol it
+// was. So the shape keeps each other rule's type and loop kind, and the middleware.
+export function logicShapeFingerprint(symbol: IRSymbol): string {
+  const input = buildLogicInput(symbol)
+  const rules = input.rules
+    .filter((rule) => rule.type !== "value")
+    .map((rule) => ({ ...rule, condition: null, expr: null, what: null }))
+  return hashCanonicalObject({ ...input, rules })
 }
 
 function buildLogicInput(symbol: IRSymbol): LogicInput {

@@ -91,11 +91,21 @@ describe("resolveCallGraph", () => {
 
   it.each<ScopeCase & { to: string }>([
     {
-      scope: "the caller's file over an import",
+      scope: "the caller's file over an import written apart from its declaration",
       target: "helper",
       callees: [makeSymbol("ts:src/a.ts#helper"), makeSymbol("ts:src/util.ts#helper")],
       imports: importsOf("src/a.ts", { source: "./util", symbols: ["helper"] }),
       to: "ts:src/a.ts#helper",
+    },
+    {
+      scope: "an import over the declaration that writes it",
+      target: "helper",
+      callees: [
+        makeSymbol("ts:src/a.ts#helper", { kind: "const", derivedBy: ["destructured-binding"] }),
+        makeSymbol("ts:src/util.ts#helper"),
+      ],
+      imports: importsOf("src/a.ts", { source: "./util", symbols: ["helper"], line: 1 }),
+      to: "ts:src/util.ts#helper",
     },
     {
       scope: "an import over the caller's component",
