@@ -16,7 +16,7 @@ Invariance tests: [`schema/fingerprint.test.mjs`](https://github.com/aburi-dev/A
 | `logic` | The set of rules / effects changes | Local variable renames, method reordering, comments, added decoration calls |
 | `syntax` | AST structure changes | Formatting-only changes, comments |
 
-Separating the three axes lets the Diff report distinguish "API change", "implementation logic change", and "implementation refactor only".
+Separating the three axes lets the Diff report distinguish "API change", "implementation logic change", and "an edit outside what `api` and `logic` read" (§4.6), which is not the same as "no change in behaviour".
 
 ## 2. Common Specification
 
@@ -127,8 +127,8 @@ Examples:
 - Changing local variable names, the function body, or rules/effects does not change `api`. A thrown name is recorded in `throws` only when the name it starts with is bound outside the Symbol, by the module, a namespace, an import, the class around a method or the global scope, so renaming a parameter, a `catch` binding or a local the Symbol throws does not change `api` either ([lang-plugin.md](./lang-plugin.md) LP13b)
 - Reordering the **occurrence order** of a Symbol's decorators, or of a parameter's, does not change `api` (both are sorted, §3.1)
 - **Changing only the class-scope portion of `Symbol.name` (`InvoiceService.createInvoice` → `BillingService.createInvoice`) does not change `api`** (the last segment is the same)
-- Breaking a type over lines, or joining it back onto one line, does not change `api`: `| A | B` ↔ `A | B`, `Array<` … `| A` … `| B` … `>` ↔ `Array<A | B>`, `(` … `a: A,` … `) => void` ↔ `(a: A) => void`, `{` … `a: A` … `b: B` … `}` ↔ `{ a: A; b: B }`. A formatter that breaks a type adds the line breaks, a trailing comma before a closing bracket and a union's leading `|`, drops an object type's `;` between members, and undoes each of these when it joins the type, so the language plugin records each type as it reads on one line ([lang-plugin.md](./lang-plugin.md) LP11e). It is the plugin's to do rather than the fingerprint's: the canonical string sees only text, where telling a union's operator from a `|` inside a string literal type takes the grammar, and the recorded text is also what the diff's delta rows and its rename pairing compare
-- Breaking a parameter decorator's arguments over lines, adding a trailing comma to them or a comment inside them does not change `api`: `@Inject(` … `TOKEN,` … `)` ↔ `@Inject(TOKEN)` ↔ `@Inject(/* legacy */ TOKEN)`. The language plugin records a parameter's decorator as it reads on one line, as it does a type ([lang-plugin.md](./lang-plugin.md) LP11f)
+- Breaking a type over lines, or joining it back onto one line, does not change `api`: `| A | B` ↔ `A | B`, `Array<` … `| A` … `| B` … `>` ↔ `Array<A | B>`, `(` … `a: A,` … `) => void` ↔ `(a: A) => void`, `{` … `a: A` … `b: B` … `}` ↔ `{ a: A; b: B }`. A formatter that breaks a type adds the line breaks, a trailing comma before a closing bracket and a union's leading `|`, drops an object type's `;` between members, and undoes each of these when it joins the type, and it picks the quotes around a string literal type (`'a' | 'b'` ↔ `"a" | "b"`), so the language plugin records each type as it reads on one line, in the spelling a rule's strings take ([lang-plugin.md](./lang-plugin.md) §4.4, LP11e). It is the plugin's to do rather than the fingerprint's: the canonical string sees only text, where telling a union's operator from a `|` inside a string literal type takes the grammar, and the recorded text is also what the diff's delta rows and its rename pairing compare
+- Breaking a decorator's arguments over lines, adding a trailing comma to them or a comment inside them, or swapping the quotes around a string in them that needs no escape either way, does not change `api`, for a Symbol's decorators and a parameter's alike: `@Inject(` … `TOKEN,` … `)` ↔ `@Inject(TOKEN)` ↔ `@Inject(/* legacy */ TOKEN)`, `@Controller('users')` ↔ `@Controller("users")`. The language plugin records a decorator's `raw` and `arguments`, and a parameter's decorators, in the spelling a rule's strings take, as it records a type ([lang-plugin.md](./lang-plugin.md) §4.4, LP11f, LP14)
 - Exporting a declaration under its own name by an export clause instead of the `export` keyword (`export function f` → `function f` with `export { f }`), or reordering the names a clause exports it under, does not change `api` (§3.8)
 
 ### 3.5 Guaranteed change conditions
@@ -213,16 +213,17 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 
 - Reordering the **declaration order** of methods leaves each method's `logic` unchanged (computed per-symbol)
 - Renaming a local variable that does **not appear** in the strings of rules/effects leaves `logic` unchanged
-- Lengthening, shortening or re-wrapping a run of whitespace → unchanged (canonical string normalization collapses each run to one space). Whitespace appearing between two tokens that had none, or vanishing from between them, is a change: `a||b` and `a || b` are two strings
-- Adding or removing a comment with whitespace, or the start or end of the rule string, on at least one side of it → unchanged. The language plugin replaces each comment in a rule string with a space (ir-schema.md §8.2), and the collapse merges that space into the whitespace beside it; a line comment always qualifies, since a newline ends it. A comment that is the only thing between two tokens is not covered: the space it leaves is whitespace appearing between two tokens, the change the bullet above names, so `a/**/||b` gives `a ||b` where `a||b` gives `a||b`. Replacing the comment with nothing would close that case and open a worse one, reading `a-/**/-b`, which is `a - (-b)`, as `a--b`; telling which neighbours would merge takes the language's whole token table, not a character class
+- Lengthening, shortening or re-wrapping a run of whitespace, or writing or leaving out a space between two tokens → unchanged. The language plugin writes a rule's strings from the tokens and regenerates the spacing between them ([ir-schema.md](./ir-schema.md) §8.2), so `a||b` and `a || b` are one string. The collapse reaches inside a literal too, so `"a  b"` and `"a b"` are one string, the one case where two programs share a rule's string
+- Adding or removing a comment → unchanged. The language plugin leaves comments out of a rule's strings, and the spacing it regenerates does not depend on them, so `a/**/||b` reads `a || b`, as `a||b` does, and `a-/**/-b`, which is `a - (-b)`, reads `a - -b`, never `a--b`
+- A spelling a formatter chooses → unchanged: the quotes around a string and the escapes they take, the quotes around a key that needs none, a trailing comma, the `;` that ends a statement, the parentheses around an arrow's lone parameter, `new A` against `new A()`, parentheses the grouping does not need or that spell out mixed operators, a number's letter case and zeros, and JSX's layout, the `{" "}` written where it breaks a line and the parentheses around it. The language plugin writes each one way ([lang-plugin.md](./lang-plugin.md) §4.4, LP19d): a string as its value between `"`, so `'it\'s'` and `"it's"` are one string
 - Adding a call classified as decoration (logger / `console.log` / anything dropped at extraction) → unchanged
 - Adding / changing decorators → unchanged (decorators belong to the api axis)
 
 ### 4.4 Guaranteed change conditions
 
-- Reordering **rules** → changes (control-flow execution order carries meaning)
+- Reordering **rules** → changes (control-flow execution order carries meaning). Declared values are rules too, so reordering an object constant's keys or an enum's members changes `logic` as well, a string enum's included: `{ a: 1, b: 2 }` → `{ b: 2, a: 1 }`
 - Reordering **locally detected effects** → changes (side-effect occurrence order carries meaning). The order of propagated effects is not read (§4.1)
-- Changing the expression of `rules[].condition` / `what` / `expr` itself → changes
+- Changing the expression of `rules[].condition` / `what` / `expr` itself → changes. That covers the condition of every `if`, a guard's and a branch's alike, a loop's header (`i < n` → `i <= n`), a `case` label, and a declared value: a constant's initializer (`TIMEOUT_MS = 5000` → `5`), an entry of an object a constant holds, and an enum member ([`ir-schema.md`](./ir-schema.md) §8.1). Adding or removing an enum member adds or removes a rule, and so changes `logic` too
 - Adding / removing an effect, or changing its `target` → changes, except that a propagated effect on a target another effect of the Symbol already names adds or removes nothing (§4.1)
 - Adding, removing, reordering or renaming a Symbol's **middleware** → changes. A route that loses `requireAdmin` runs a different request path, and before the field it moved only `syntax`, so the report filed it as a reformat
 
@@ -233,7 +234,21 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 - Time-series comparison against past IRs is robust to plugin configuration changes
 - This holds for propagated effects too. The IR orders their segment by `(id, target)` and merges it on that pair ([`effect-propagation.md`](./effect-propagation.md) §5.1, §8), so an id change can reorder its entries, split one target into two entries or merge two into one, and decide whether a locally detected effect on the same target suppresses one. The fingerprint reads the segment by target alone (§4.1): sorted, each target once, and none a locally detected effect already names, so none of this reaches `logic`. Locally detected effects keep their call order and their repeats (§4.7)
 
-### 4.6 Known current limitations (before LSP enrichment)
+### 4.6 What `logic` does not read
+
+`logic` reads the rules, the effects and the middleware, and nothing else of a body. An edit to any of the following moves `syntax` alone, so the diff files it under Syntax-only changes, with `--fail-on logic-changed` not firing:
+
+- an operator, a ternary or a call argument outside every rule: `total += x` → `total -= x`, `audit(a && b)` → `audit(a || b)`, `const next = ok ? a : b` swapped
+- which function a call outside every rule calls: `validate(x)` → `destroy(x)`, where `if (validate(x))` → `if (destroy(x))` changes a rule's condition and moves `logic`. The call graph does read it, so the dependency section reports the edge that went and the one that came, and an effect classified from either call moves `logic` through `effects`
+- an `await` added or removed, and an assignment, outside every rule: `if (await ok())`, `for await` and a loop header's `i++` → `i += 2` are a rule's text
+- a `break` removed so that a `case` falls through to the next one. The labels are rules; where control goes after one is not
+- a trivial return (`return true` → `return false`), which is not a rule ([`ir-schema.md`](./ir-schema.md) §8.2)
+- a rule inside a `catch` clause (ir-schema.md §8.2), a class field's value (`static RETRIES = 3`), and a local constant (`const limit = 10` inside a function)
+- a constant whose value holds a call, a `new` or an `await` anywhere (`createClient({ retries: 3 })`, `readPort() ?? 8080`): what a call is handed is not an input, in a constant as in any body
+
+The report's Syntax-only section therefore says the edit landed outside the API, rules, effects and middleware, not that behaviour is unchanged.
+
+### 4.6.1 Known current limitations (before LSP enrichment)
 
 - `effects[].target` uses the string as-is. `this.storedCats.push` and `this.cats.push` are different fingerprints
   - When a field rename shows up in the targets of effects, `logic` changes
@@ -254,7 +269,11 @@ This applies to locally detected effects, each of which sits at a call site in t
 
 ### 4.8 A value that names nothing
 
-Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class, enum and body that only calls something (the empty input), another for every body that is a single `for` loop over calls, another for every single `try`, another for every route behind `requireAdmin` alone. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class and body that only calls something (the empty input), another for every single `try`, another for every route behind `requireAdmin` alone. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+
+A `value`, a `loop` and a `branch` rule carry text, and change the hash with it, but are not counted as naming something either. A declared value (`true`, `0`, `"admin"`), a loop's header (`const item of items`) and a branch's condition (`enabled`) recur across unrelated declarations, so every `export const ENABLED = true` hashes alike, as does every body that is one `for (const item of items)` loop over calls or one `if (enabled)` around a call; counted, a deleted constant and an unrelated one added elsewhere with the same value would pair as a single move. A Symbol whose only rules are these is read as naming nothing, so the diff pairs it by name alone ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+
+For such a Symbol the diff reads its shape rather than its hash (`logicShapeFingerprint` in `@aburi/core`): the logic input with its declared values left out and every other rule's text removed, which keeps the rules' types and loop kinds in order and the middleware. Since the text says nothing here, neither does a change to it: a constant that moves file and changes its value, an enum that gains a member and a branch whose condition changes are still one shape, and still pair by name.
 
 `middleware[]` changes the hash but is not counted as naming something. A guard such as `auth` fronts many routes, so two registrations that agree on it alone say no more about being one route than two bodies that agree on `rules[].type` do; counted, it let a deleted endpoint and an unrelated one added behind the same guard pair as a single move, and `--fail-on removed` never saw the deletion.
 
@@ -273,8 +292,8 @@ The language plugin generates a **normalized AST string** per Symbol and compute
 1. Contains no comment nodes
 2. Contains no position information (line, column, byte offset)
 3. Contains no whitespace tokens
-4. Is an S-expression representing node kinds and child-node structure, plus every unnamed token except the punctuation a formatter adds, drops or swaps without changing the program: string delimiters, an optional `;`, a trailing `,`, a union's or an intersection's leading `|` or `&` (`| A | B` reads as `A | B`, without the extra level the parser gives the leading form), the parentheses around an arrow function's lone parameter (`x => …` reads as `(x) => …`, with the levels the parser gives the parenthesised form), and brackets the structure already implies. Punctuation that is the only record of something is not a formatter's, and stays in: the commas that make a hole in a JavaScript array (`[, x]` against `[x]`)
-5. Includes identifier and literal values (concrete values, not structure alone)
+4. Is an S-expression representing node kinds and child-node structure, plus every unnamed token except the punctuation a formatter adds, drops or swaps without changing the program: string delimiters, an optional `;`, a trailing `,`, a union's or an intersection's leading `|` or `&` (`| A | B` reads as `A | B`, without the extra level the parser gives the leading form), the parentheses around an arrow function's lone parameter (`x => …` reads as `(x) => …`, with the levels the parser gives the parenthesised form), and brackets the structure already implies. Punctuation that is the only record of something is not a formatter's, and stays in: the commas that make a hole in a JavaScript array (`[, x]` against `[x]`). Parentheses the grouping does not need are left out with their level, so `return (\n  <div />\n)` reads as `return <div />` and `(a && b) || c` as `a && b || c`, by the rule a rule's strings follow ([lang-plugin.md](./lang-plugin.md) §4.4), and `new A` reads as `new A()`, with the empty `arguments` level the parser gives the written list
+5. Includes identifier and literal values (concrete values, not structure alone): a string as its value, one fragment whatever escapes spell it (`'it\'s'` as `"it's"`), a number in the spelling a rule's strings give it (`1.50` as `1.5`, `0XFF` as `0xff`), a quoted property key, member name or enum member that needs no quotes as the name it spells (`{ "a": 1 }` as `{ a: 1 }`), and the text between JSX tags as React renders it: a run of text read whole with its character references, a line break and the indentation around it dropped, a line holding nothing else left out, and a container holding only spaces (`{" "}`) read as those spaces
 6. Contains nothing the parser inserted: a MISSING node, the parser's repair of a broken file, is treated as unwritten
 7. Contains what the parser skipped: an ERROR node, the text of a broken file the parser could not place, is serialized with its tokens, including where the parser marks it an extra as it marks a comment. Comments, `<!--` ones included, are the only extras left out. An ERROR that holds no token is a run of characters the parser could not lex, which it merges into one leaf across whitespace and line breaks, so it is serialized as one `(ERROR "…")` per whitespace-separated piece of its text. An ERROR whose every child is left out (string delimiters, `;`, `,`, parentheses, brackets and braces, comments, MISSING nodes) contributes nothing, so a stray `)` changes nothing. A leading `|` or `&` keeps its level when an ERROR that contributes something sits beside it, since reducing the level to its operand would drop the ERROR. An ERROR is read wherever it sits in the parts this string describes, and anywhere else in a function's or a class's head: in a return type or a function's type parameters, which the api axis rebuilds from tokens that leave an extra out, and between the head's parts (`extends A B`, `f() B {}`). The head of a declaration described by its body alone, such as an interface, is read by neither axis, and an ERROR in it is not either
 
@@ -305,9 +324,10 @@ syntax = lower_hex(SHA-256(UTF-8(syntax_input))[0..6])
 - Whitespace / newline / indentation changes → unchanged
 - Line terminators (LF, CRLF, a lone CR) → unchanged
 - Adding / removing comments → unchanged
-- The quotes around a string that needs no escape either way, a trailing comma, optional semicolons, a union's leading `|` or an intersection's leading `&`, the parentheses around an arrow function's lone parameter → unchanged
+- The quotes around a string and the escapes they take, a trailing comma, optional semicolons, a union's leading `|` or an intersection's leading `&`, the parentheses around an arrow function's lone parameter → unchanged
+- The quotes around a key that needs none, a number's letter case and zeros, parentheses the grouping does not need, `new A` against `new A()`, and JSX children laid out over lines, with the `{" "}` a formatter writes where it breaks them → unchanged
 
-These are the punctuation item 4 leaves out, not formatter output in general. A formatter that quotes an object key (`{ a: 1 }` → `{ "a": 1 }`), picks the quote that needs fewer escapes (`'it\'s'` → `"it's"`), wraps a multi-line expression in parentheses, or rewrites JSX (`<Foo></Foo>` → `<Foo />`) changes the structure, and `syntax` changes with it.
+These are what items 4 and 5 leave out or settle, not formatter output in general. A formatter that rewrites JSX (`<Foo></Foo>` → `<Foo />`) changes the structure, and `syntax` changes with it.
 
 Line terminators are held by the core, not by `normalizeAst`, which is why S2d in §7.6 is the core's row rather than a plugin's: the scan reads every source file with CRLF and a lone CR converted to LF before a plugin sees it. The step is needed because the syntax axis does not pass through the canonical-string collapse (§2.2), and item 3 drops whitespace tokens but not a literal's content, so a line break inside a template literal, or inside a string that continues across lines, would otherwise reach `syntax_input` as `\r\n` on one checkout and `\n` on another. `api` and `logic` never needed it, since §2.2 collapses that line break with the rest of the whitespace.
 
@@ -325,7 +345,7 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 The main use is the **three-tier display** in the Diff report:
 
 - `api unchanged, logic unchanged, syntax unchanged` → completely unchanged, not shown in the Diff
-- `api unchanged, logic unchanged, syntax changed` → implementation refactor only, low-priority
+- `api unchanged, logic unchanged, syntax changed` → an edit outside what `api` and `logic` read (§4.6): a reformat or a rename inside the body, or an edit neither axis weighs, low-priority
 - `api unchanged, logic changed` → semantic change, needs review
 - `api changed` → public contract change, needs approval
 
@@ -390,9 +410,9 @@ The reference implementation and every language plugin must pass the following t
 | A13 | Change `language` (never happens in practice; defensive) | api unchanged (`language` is not part of the input) |
 | A22 | Change `signature.inputs[].name` from `ids` to `...ids` | api unchanged (A1's case: rest-ness is `rest`, and a marker spelled into `name` reaches no axis) |
 | A23 | Change only the value of a parameter's default (`limit = 10` → `limit = 20`) | `signature.inputs` and api unchanged (the IR records that a default exists, as `optional`, and not its value); syntax changes (S5b) |
-| A24 | Join a parameter type broken over lines onto one line: `\| ClassProvider \| FactoryProvider` → `ClassProvider \| FactoryProvider`, `Array<` … `\| A` … `\| B` … `>` → `Array<A \| B>`, `(` … `request: Request,` … `) => void` → `(request: Request) => void` | api unchanged (LP11e records each spelling as the one-line text) |
+| A24 | Join a parameter type broken over lines onto one line: `\| ClassProvider \| FactoryProvider` → `ClassProvider \| FactoryProvider`, `Array<` … `\| A` … `\| B` … `>` → `Array<A \| B>`, `(` … `request: Request,` … `) => void` → `(request: Request) => void`; or swap the quotes of a string literal type, `'fast' \| 'slow'` → `"fast" \| "slow"` | api unchanged (LP11e records each spelling as the one-line text) |
 | A25 | Export a declaration under its own name by a clause instead of the keyword, or reorder the names a clause exports it under | api unchanged (§3.8) |
-| A28 | Break a parameter decorator's arguments over lines, or write a comment inside them: `@Inject(` … `TOKEN,` … `)` → `@Inject(TOKEN)`, `@Inject(/* legacy */ TOKEN)` → `@Inject(TOKEN)` | api unchanged (LP11f records each spelling as the one-line text) |
+| A28 | Break a decorator's arguments over lines, write a comment inside them or swap their quotes, on a parameter, a method or a class: `@Inject(` … `TOKEN,` … `)` → `@Inject(TOKEN)`, `@Inject(/* legacy */ TOKEN)` → `@Inject(TOKEN)`, `@Controller('users')` → `@Controller("users")` | api unchanged (LP11f and LP14 record each spelling as the one-line text) |
 | A29 | Rename a parameter, a `catch` binding or a local the Symbol throws (`catch (e) { throw e }` → `catch (error) { throw error }`) | api unchanged (LP13b records no name the Symbol binds) |
 
 ### 7.3 api change conditions
@@ -418,8 +438,9 @@ The reference implementation and every language plugin must pass the following t
 | ID | Mutation | Expected |
 |---|---|---|
 | L1 | Rename a local variable that does not appear in rules/effects strings | logic unchanged |
-| L2 | Add a comment with whitespace on at least one side of it (§4.3) | logic unchanged |
-| L3 | Lengthen, shorten or re-wrap a run of whitespace (§4.3) | logic unchanged |
+| L2 | Add a comment (§4.3) | logic unchanged |
+| L3 | Lengthen, shorten or re-wrap a run of whitespace, or write or leave out a space between two tokens (§4.3) | logic unchanged |
+| L3a | Run a formatter over a rule's expression: swap the quotes of a string and the escapes they take (`'it\'s'` → `"it's"`), unquote a key, add a trailing comma, parenthesize an arrow's lone parameter, drop the semicolons ending statements, in a block or not, write `new E` as `new E()`, wrap JSX laid out over lines in parentheses and break it with `{" "}`, parenthesize mixed `&&` and `\|\|`, rewrite `1.50` as `1.5` (§4.3) | logic unchanged |
 | L4 | Add a decoration (`console.log`, etc.) | logic unchanged |
 | L5 | Change a decorator | logic unchanged |
 | L11 | Change only the effect's `id` (same target) — plugin configuration robustness | logic unchanged |
@@ -436,6 +457,7 @@ The reference implementation and every language plugin must pass the following t
 | L6 | Reorder rules | logic changes |
 | L7 | Reorder locally detected effects, including two written one after another on one line | logic changes |
 | L8 | Change a rule's condition | logic changes |
+| L8a | Change the condition of an `if` that does not leave early, a loop's header, a `case` label, a constant's initializer, an entry of an object a constant holds, or an enum member's value; add or remove an enum member | logic changes |
 | L9 | Change an effect's target | logic changes |
 | L10 | Add / remove an effect, locally detected or propagated (a propagated one on a target no other effect of the Symbol names) | logic changes |
 | L10a | Add, remove, reorder or rename an entry of `middleware` | logic changes |
@@ -452,6 +474,7 @@ The reference implementation and every language plugin must pass the following t
 | S2d | Save the file with CRLF or a lone CR | syntax unchanged — guaranteed by the core's scan, not by `normalizeAst` (§5.3) |
 | S2e | Join a union broken over lines onto one line, dropping its leading `\|` (`\| A` … `\| B` → `A \| B`), or an intersection, dropping its leading `&`, in a type alias, a parameter, a method's parameter or an overload | syntax unchanged |
 | S2f | Put an arrow function's lone parameter in parentheses (`x => …` → `(x) => …`), wherever the arrow is written: a const, a class field, an object entry, a call's argument, a body | syntax unchanged |
+| S2g | Lay JSX children out over lines, breaking them with `{" "}`, and wrap the element in parentheses, unquote a key that needs no quotes, swap a string's quotes and the escapes they take, drop parentheses the grouping does not need, write `new A` as `new A()`, or rewrite a number's case and zeros (`0XFF` → `0xff`) | syntax unchanged |
 
 ### 7.7 syntax change conditions
 

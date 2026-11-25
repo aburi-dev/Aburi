@@ -1,4 +1,4 @@
-import type { Decorator, ImportBinding } from "@aburi/types"
+import type { Decorator, ImportBinding, ImportEdge } from "@aburi/types"
 
 export type { ImportBinding }
 
@@ -14,6 +14,13 @@ export function splitAliasedImportName(raw: string): ImportBinding {
   const imported = raw.slice(0, idx).trim()
   const local = raw.slice(idx + marker.length).trim()
   return { imported, local }
+}
+
+/** Whether a static edge binds `local`: as a named or default import's name, or a whole module's. */
+export function importBindsLocal(edge: ImportEdge, local: string): boolean {
+  if (edge.dynamic) return false
+  if (edge.symbols === "*") return edge.namespaceBinding === local
+  return edge.symbols.some((raw) => splitAliasedImportName(raw).local === local)
 }
 
 export interface DecoratorReference {

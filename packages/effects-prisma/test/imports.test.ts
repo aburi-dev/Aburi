@@ -1,7 +1,7 @@
 import { importEdge } from "@aburi/test-support"
 import type { ImportEdge } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { hasPrismaImport } from "../src/index"
+import { hasPrismaImport, prismaClientModuleMatcher } from "../src/index"
 
 const PATH = "src/service.ts"
 
@@ -36,5 +36,36 @@ describe("hasPrismaImport", () => {
     expect(() => hasPrismaImport([edge("@prisma/client", 1), edge("", 2)], PATH)).toThrow(
       /ImportEdge\.source is empty/,
     )
+  })
+})
+
+describe("prismaClientModuleMatcher", () => {
+  const matches = prismaClientModuleMatcher(["db/client", "@acme/orm"])
+
+  it.each([
+    ["a subpath of @prisma/client", "@prisma/client/runtime/library"],
+    ["a driver adapter", "@prisma/adapter-pg"],
+    ["a client extension", "@prisma/extension-accelerate"],
+    ["the generated client's directory", "../generated/prisma"],
+    ["the generated client's entry", "../../generated/prisma/client"],
+    ["the generated client's edge entry, with its extension", "./generated/prisma/edge.js"],
+    ["the generated client's browser entry", "@/generated/prisma/browser"],
+    ["the generated client's index file", "../generated/prisma/index.ts"],
+    ["a module the options name, by its last segments", "../../db/client"],
+    ["a module the options name, as an alias spells it", "@/db/client.ts"],
+    ["a package the options name", "@acme/orm"],
+  ])("takes %s", (_label, source) => {
+    expect(matches(source)).toBe(true)
+  })
+
+  it.each([
+    ["a bare adapter prefix", "@prisma/adapter-"],
+    ["another @prisma package", "@prisma/config"],
+    ["a directory under the generated client", "../generated/prisma/models/User"],
+    ["a generated directory of another generator", "../generated/zod"],
+    ["a module whose last segments differ from an option's", "../db/client/extra"],
+    ["a module ending in only part of an option", "../client"],
+  ])("refuses %s", (_label, source) => {
+    expect(matches(source)).toBe(false)
   })
 })

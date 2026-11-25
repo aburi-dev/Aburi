@@ -224,16 +224,22 @@ export function ruleRow(rule: Rule): string[] {
   const { type, line } = rule
   switch (type) {
     case "guard":
+    case "branch":
     case "switch":
+    case "case":
     case "match":
       return payloadRow(type, requireNonNull(rule, "condition"), line)
     case "throw":
       return payloadRow(type, requireNonNull(rule, "what"), line)
     case "return":
+    case "value":
       return payloadRow(type, requireNonNull(rule, "expr"), line)
     case "loop": {
       const loopKind = inlineCode(requireNonNull(rule, "loopKind"))
-      return [`- ${ruleRowText({ type, payload: null, loopKind, line })}`]
+      if (rule.condition === null) {
+        return [`- ${ruleRowText({ type, payload: null, loopKind, line })}`]
+      }
+      return payloadRow(type, rule.condition, line, loopKind)
     }
     case "try":
       return [`- ${ruleRowText({ type, payload: null, loopKind: null, line })}`]
@@ -256,11 +262,17 @@ export function ruleRowText(parts: RuleRowParts): string {
   return `${parts.type}${payload}${loopKind} (L${parts.line})`
 }
 
-function payloadRow(type: string, value: string, line: number): string[] {
+function payloadRow(
+  type: string,
+  value: string,
+  line: number,
+  loopKind: string | null = null,
+): string[] {
   if (fitsInline(value)) {
-    return [`- ${ruleRowText({ type, payload: inlineCode(value), loopKind: null, line })}`]
+    return [`- ${ruleRowText({ type, payload: inlineCode(value), loopKind, line })}`]
   }
-  return [`- ${type} (L${line}):`, ...fencedBlock(value, LIST_ITEM_INDENT).split("\n")]
+  const kind = loopKind === null ? "" : ` (${loopKind})`
+  return [`- ${type}${kind} (L${line}):`, ...fencedBlock(value, LIST_ITEM_INDENT).split("\n")]
 }
 
 export class ProjectionInvariantError extends Error {
