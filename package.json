@@ -29,7 +29,7 @@
     "@aburi/changelog": "workspace:*",
     "@aburi/cli": "workspace:*",
     "@aburi/lang-typescript": "workspace:*",
-    "@biomejs/biome": "^2.6.3",
+    "@biomejs/biome": "^2.6.8",
     "@changesets/cli": "catalog:",
     "oxc-parser": "^0.158.0",
     "turbo": "^2.11.11",
