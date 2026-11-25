@@ -119,11 +119,22 @@ type OwnerDecorator = Pick<Decorator, 'name' | 'qualifier' | 'boundary'>
 
 interface FileSummary {
   path: string
-  imports: ImportEdge[]                      // all imports extracted by the language plugin
+  imports: ImportEdge[]                      // the file's imports, with `upstream` where the scan followed them
 }
 ```
 
 Providing `imports` lets the effect plugin distinguish whether "the identifier `prisma` comes from `@prisma/client` or is a local homegrown variable".
+
+A client is usually built in one module and used from others: `import { prisma } from "./lib/db"`, or `constructor(private prisma: PrismaService)` beside the service that extends `PrismaClient`. The file using it imports nothing from the library, so the edges an effect plugin is handed carry `ImportEdge.upstream` (lang-plugin.md §4.2, followed as §5.1 says) on every edge whose module is in the workspace: for each name the edge binds, the specifiers of the imports the module declaring it makes, followed through re-exports and the `export *` targets that export the name, and the name's `origins` entry where the chain ends at a package. `importGate` in `@aburi/plugin-registry/plugin-input` reads them for a call's leading name. The import that binds that name decides first wherever the scan followed it, and only a leading name no import binds (`this`, a parameter, a local), or one bound by an import the scan could not follow (of another package, or of a module it could not read), falls back to the file's imports as a whole:
+
+| the import binding the leading name | the file's imports, where no followed import binds it | gate |
+|---|---|---|
+| imports the name from the library, or its `origins` entry ends there | import the library | `direct` |
+| imports it from a workspace module whose `upstream` for the name includes the library | — | `bound` |
+| — | only lead to the library through a name they bind (`PrismaService` beside `this.prisma`) | `reached` |
+| its `origins` entry ends at another package, or its `upstream` holds no library module | none of the above | `null` |
+
+`bound` and `reached` say less than `direct`: a module the name, or some name the file imports, comes from uses the library, not that the call's receiver is its client. `export const usersRepo = new UsersRepo()` in a module that imports `drizzle-orm` is `bound` for `usersRepo.update(id, dto)`, and is no client. The official plugins classify there only a receiver their client vocabulary names or a type from the library declares (§5.4 item 3), and `effects-trpc`, whose client has no vocabulary of its own, a `direct` or `bound` call only, since a tRPC client is a name imported from where it is built. Because the binding decides first, a type the file imports from the library beside a bound name changes nothing: a client imported from `./lib/db` is classified the same with or without an `import type { User } from "@prisma/client"` beside it, and so are an import of it under a name no vocabulary places and a name a module without the library declares (`import { cache } from "./cache"`). For a leading name no followed import binds, such a type import does make the file `direct`, so `this.store.entries.delete({ key })` is `medium` `db.write` in a file that imports a Prisma type and stays in `calls[]` in one that does not. Framework plugins, the Document and call resolution read the file's own edges: `upstream` is set on the copy effect plugins are handed.
 
 `decorators[].qualifier` is `Decorator.qualifier` (ir-schema.md) passed through: the receiver that `@tsed.Post()` was written through (`tsed`), absent for a bare `@Post()`. Resolving it against `imports` answers the same question for a decorator, by the rule lang-plugin.md §5.2.2 gives: only the first dot-separated segment can name a local binding, so `@a.b.C()` resolves through `a`, and comparing the whole `a.b` with `ImportEdge.namespaceBinding` finds nothing. The other `Decorator` fields (`raw`, `arguments`, `line`) are not passed; a field added to `Decorator` reaches effect plugins only once `OwnerDecorator` names it, and a type test in `@aburi/types` fails `pnpm typecheck` until that is decided (`pnpm test` alone cannot fail it, because `expectTypeOf` erases at runtime).
 
@@ -251,7 +262,9 @@ The last two set the **tier**, they do not gate the classification:
 
 A plugin whose vocabulary is its own — a `@Controller` decorator resolved back to the framework's package — has nothing to disambiguate and stays at `high` on shape alone. A `$`-prefixed name the library owns outright is close to that, but not the same thing: the receiver still decides whose `$transaction` it is.
 
-**Receiver type.** Where the language plugin reads the type a receiver is declared with (`CallCandidate.receiverType`, lang-plugin.md §4.4), a match identifies the receiver as a recognised name does: `this.events.emit(…)` beside `constructor(private events: EventEmitter2)` is `EventEmitter2`'s `emit` whatever the field is called, and so is `bus.emit(…)` beside a parameter `bus: EventEmitter2`. A plugin that compares it does so against what the file's imports bind — the class's own name, the local an aliased import gives it, `<namespace>.<class>`, or the local of a default import where the module exports the class as its default — never against a spelling it expects, so a homegrown class of the same name, or one from another module, is not taken for the library's. A match is `high` on its own. The name check still comes first, so a type that binds something else does not veto a recognised name, and a receiver both checks place keeps the name's tag; the field's absence is no evidence either way.
+**Receiver type.** Where the language plugin reads the type a receiver is declared with (`CallCandidate.receiverType`, lang-plugin.md §4.4), a match identifies the receiver as a recognised name does: `this.events.emit(…)` beside `constructor(private events: EventEmitter2)` is `EventEmitter2`'s `emit` whatever the field is called, and so is `bus.emit(…)` beside a parameter `bus: EventEmitter2`. A plugin that compares it does so against what the file's imports bind — the class's own name, the local an aliased import gives it, `<namespace>.<class>`, or the local of a default import where the module exports the class as its default — never against a spelling it expects, so a homegrown class of the same name, or one from another module, is not taken for the library's. A match is `high` on its own, and `receiverTypeFromMatchingModule` reads the binding through `ImportEdge.origins`, so a type a workspace barrel re-exports from the library matches as well. The name check still comes first, so a type that binds something else does not veto a recognised name, and a receiver both checks place keeps the name's tag; the field's absence is no evidence either way. The type is the receiver's, the object the method is called on, and for a Prisma delegate call that is the delegate: `this.store.user.findMany()` names `this.store.user`, which no declaration types, so `store: PrismaClient` places `this.store.$transaction(…)` and the raw queries by its type, while the delegate call is graded by the name `store`, `medium` where the file imports Prisma. A delegate call is placed by type only on a receiver declared as the delegate, `this.users.findMany()` beside `users: Prisma.UserDelegate`.
+
+**The workspace's own method.** A call whose receiver is declared with a class the workspace declares, where that class or a workspace class it extends declares the member called, never reaches an effect plugin: it is the class's method, which call resolution takes, and what the method does reaches the caller by propagation. `this.usersService.create(dto)` beside `constructor(private usersService: UsersService)` resolves to `UsersService.create` though the controller imports a Prisma type, and `this.repo.update(id, dto)` to the repository's `update` though it imports `drizzle-orm`. The core reads the class from the file's candidates or, through the import that binds the type, from the module that declares it, re-exports and `export *` followed. A member the class inherits from a package is the library's, so `this.prisma.$transaction(…)` on a `PrismaService` that extends `PrismaClient` is still classified, and so is a call on a receiver declared with a type alias (`type Db = typeof db`), which declares no member of its own.
 
 ## 6. Cooperation with Language Plugins
 
@@ -309,9 +322,13 @@ Implementation details of each plugin live in their respective READMEs. Today `e
 import {
   assertNonEmptySegments,
   hasLiteralFirstArgument,
-  hasMatchingImport,
   identifierMentions,
+  importGate,
+  receiverTypeFromMatchingModule,
+  typedReceiverConfidence,
 } from '@aburi/plugin-registry/plugin-input'
+// `prismaClientModuleMatcher` over `pluginOptions["effects-prisma"].clientModules`, built once a config.
+import { clientModuleMatcherFor } from './options'
 
 const READ_METHODS = /^(findUnique|findFirst|findMany|count|aggregate|groupBy)$/
 const WRITE_METHODS = /^(create|createMany|update|updateMany|upsert|delete|deleteMany)$/
@@ -339,10 +356,22 @@ export const plugin: EffectPlugin = {
     // runs before the import gate so an upstream bug is not narrowed to Prisma files.
     const { segments: parts, last: method } = assertNonEmptySegments(call.target, origin)
 
-    // Does this file use Prisma at all? Necessary, never sufficient (§5.4).
-    if (!hasMatchingImport(ctx.file.imports, origin, (source) => source === '@prisma/client')) {
-      return null
-    }
+    // `@prisma/client` and its subpaths, a driver adapter or client extension, a client
+    // generated to `generated/prisma`, and the modules `clientModules` names.
+    const isPrismaClientModule = clientModuleMatcherFor(ctx.config)
+
+    // Does this file use Prisma at all, itself or through a module it imports from (§4.3)?
+    // Necessary, never sufficient (§5.4).
+    const gate = importGate(ctx.file.imports, parts[0], origin, isPrismaClientModule)
+    if (gate === null) return null
+    // A receiver declared with Prisma's own type is its client whatever it is called (§5.4).
+    const typed = receiverTypeFromMatchingModule(
+      ctx.file.imports, call.receiverType, origin, isPrismaClientModule,
+    )
+    // Short of an import of Prisma that is the file's own or binds the leading name, the client
+    // must be one its type or its name places.
+    const placed = (client) =>
+      gate === 'direct' || typed || identifierMentions(client ?? '', PRISMA_CLIENT_WORDS)
 
     // `<client>.$transaction(...)` is 2 segments, and its callback form takes a second
     // options argument — so it is dispatched before the 3-segment delegate shape and
@@ -350,9 +379,10 @@ export const plugin: EffectPlugin = {
     if (method === TX_METHOD) {
       if (parts.length < 2) return null
       if (hasLiteralFirstArgument(call)) return null
+      if (!placed(parts[parts.length - 2])) return null
       return {
         effectId: 'db.transaction',
-        confidence: tier(parts[parts.length - 2], call, 2),
+        confidence: typed ? typedReceiverConfidence(call, 2) : tier(parts[parts.length - 2], call, 2),
         derivedBy: 'effects-plugin:prisma:tx',
       }
     }
@@ -361,6 +391,7 @@ export const plugin: EffectPlugin = {
     // spell: the call is Prisma's, and the plugin declines to name its effect (§4.5).
     // Ahead of the literal check, since `$executeRawUnsafe("…")` takes its SQL as one.
     if (RAW_QUERY_METHODS.test(method) && parts.length >= 2) {
+      if (!placed(parts[parts.length - 2])) return null
       return { declined: 'effects-plugin:prisma:raw-query' }
     }
 
@@ -378,8 +409,10 @@ export const plugin: EffectPlugin = {
     if (CLIENT_BINDING_WORDS.has(model) && !identifierMentions(client, PRISMA_CLIENT_WORDS)) {
       return null
     }
+    if (!placed(client)) return null
 
-    const confidence = tier(client, call, 1)
+    // The receiver here is the model's delegate, so only one declared as such carries a type.
+    const confidence = typed ? typedReceiverConfidence(call, 1) : tier(client, call, 1)
 
     if (READ_METHODS.test(method)) {
       return { effectId: 'db.read', confidence, derivedBy: 'effects-plugin:prisma:read' }
@@ -471,6 +504,10 @@ export const plugin: EffectPlugin = {
 | EP10 | classify returns `confidence: 'low'` | Symbol.effects[].confidence = "low" goes into the IR as-is |
 | EP11 | a call matching a plugin's shared-vocabulary shape on a receiver the plugin cannot identify (§5.4) | the effect is still recorded, at `confidence: "medium"` — not `high`, and not dropped |
 | EP12 | a call whose shape no signature in the plugin's vocabulary takes: a literal first argument, or no argument to a method that requires one (§5.4 item 1) | `null` (EP5), whatever the receiver: the call stays in `Symbol.calls[]` and the file keeps its Symbols. Not EP3a — the candidate is well formed, so this is a classification decision, not an input-contract violation |
+| EP11a | `prisma.user.findMany()` after `import { prisma } from "./lib/db"`, where `lib/db` imports `@prisma/client`; `this.prisma.post.delete(…)` beside `constructor(private prisma: PrismaService)`, where `PrismaService` extends `PrismaClient` (§4.3) | `db.read` and `db.write`, each `high`, with no Prisma import in the file. `this.store.entries.delete({ key })` in the second file stays in `calls[]`: only a module it imports from uses Prisma, and no client name places `store` |
+| EP11b | `this.usersService.create(dto)` beside `constructor(private usersService: UsersService)`, `UsersService` a workspace class that declares `create` and the module exports by its name, as its default or under the name an export clause gives it, in a file that also imports a Prisma type (§5.4) | no plugin is asked about the call: it stays in `calls[]`, resolved to `UsersService.create`, and the write the method makes reaches the caller as a propagated effect |
+| EP11c | `usersRepo.update(id, dto)` after `import { usersRepo } from "./users.repo"`, where that module imports `drizzle-orm` and exports `new UsersRepo()`; `cache.entries.delete({ key })` after `import { cache } from "./lib"`, where `lib` is `export * from "./db"` and `export * from "./cache"` and only `db` imports `@prisma/client` (§4.3) | both stay in `calls[]`: the first name is `bound` and no client name places it, and the second leads to no module that imports Prisma, since `./cache` is the target that exports it |
+| EP11d | a client imported from `./db` as `prisma` and as `store`, and `cache` imported from a `./cache` that imports nothing from Prisma, each with and without `import type { User } from "@prisma/client"` beside it (§4.3) | the type import changes nothing: `prisma.user.create(…)` is `db.write`, `high`, both ways, and `store.user.create(…)` and `cache.user.create(…)` stay in `calls[]` both ways |
 | EP12a | `this.db.delete(auditLog)` in a file that imports both `@prisma/client` and `drizzle-orm`, with `effects-prisma` listed first (§5.4 item 2) | `effects-prisma` answers `null`, so `effects-drizzle` records `db.write` at `high`, as it does for `this.conn.delete(auditLog)`. `prisma.txLog.create(…)`, and `prisma.tx.create(…)` on a `Tx` model, are still Prisma's |
 | EP13 | classify returns after running past `classifyTimeoutMs` (§5.1.1) | its answer is used as if it had been fast — EP6 for a classification, EP5 for `null`, EP14 for a decline, and EP4 still decides the order — and the overrun is one `stats.effectClassifyTimeouts` entry. `effects[]`, `calls[]` and the fingerprints do not depend on whether this classification overran its budget |
 | EP14 | classify returns `{ declined: reason }` (§4.5) and no later plugin classifies the call | the call stays in `Symbol.calls[]` (EP5), and `stats.declinedCalls[]` gains one entry: `plugin`, `symbolId`, `target`, `line`, and the reason. Neither `effects[]`, `calls[]` nor any fingerprint differs from a `null` |

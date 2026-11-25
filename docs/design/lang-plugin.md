@@ -144,7 +144,7 @@ interface SourceFile {
 interface ParseResult {
   tree: ParsedTree | null                      // plugin-internal type (opaque); null → parse produced nothing
   errors: ParseError[]
-  imports: Omit<ImportEdge, "origins">[]       // an `origins` written here is dropped (§5.2.4)
+  imports: WrittenImportEdge[]                 // an `origins` or `upstream` written here is dropped (§5.1, §5.2.4)
 }
 
 interface ParseError {
@@ -162,8 +162,11 @@ interface ImportEdge {
   namespaceBinding?: string                    // the local name bound to the whole module, when there is one
   reexports?: Reexport[]                       // what the module exports through this edge
   reexportsAll?: true                          // `export * from` alone
-  origins?: ReadonlyMap<string, string>        // set by the scan alone (§5.2.4)
+  origins?: ReadonlyMap<string, string>        // set by the scan alone (§5.1, §5.2.4)
+  upstream?: ReadonlyMap<string, readonly string[]> // set by the scan alone, for effect plugins (§5.1)
 }
+
+type WrittenImportEdge = Omit<ImportEdge, "origins" | "upstream">
 
 interface Reexport {
   imported: string                             // the name taken from `source`, or "*" for the whole module
@@ -589,6 +592,16 @@ The IR records a line and no column, so neither the integrity check nor the core
 
 - A call for which every effect plugin returned null → stays in `Symbol.calls[]` (target/line/resolved=null)
 - A call classified by some effect plugin → goes into `Symbol.effects[]` and not into `Symbol.calls[]` (ir-schema §9.3)
+- A call whose `receiverType` is a class the workspace declares the called member on, itself or through a workspace class it extends → no effect plugin is asked, and it stays in `Symbol.calls[]` for call resolution ([`effect-plugin.md`](./effect-plugin.md) §5.4). The class is read from the file's own candidates or from the module the import binding the type leads to, followed as `upstream` is below, under the name the module exports it by: its own, `default` for a candidate whose `derivedBy` carries the default-export token, or the name an export clause gives it (§4.3). `superclass` and `instanceMembers` (§4.3) and the candidates named `<Class>.<member>` are its members.
+
+A client is usually built in one module and called from others, so the edges an effect plugin is handed carry `ImportEdge.upstream`, which the scan sets on that copy alone; framework plugins, the Document and call resolution read the edges the language plugin returned. For every edge whose module is a workspace file — a relative specifier, a bare one the `ImportResolver` maps into the workspace (§4.8), or a workspace package's name, through the entry points its manifest names — `upstream` is keyed by each name the edge binds as the module exports it (`*` for a namespace import, `default` for a default one), and holds the specifiers of the imports the module declaring the name makes, as that module writes them, sorted by code unit:
+
+- **Re-exports** are followed as §5.2.4 follows a decorator's name, to the module that declares the name. Where the chain leaves the workspace, the specifiers are those of the last workspace module on it, and a package the chain ends at becomes the name's `origins` entry, as a decorator's would.
+- **`export *`** is followed too, here, but only into the targets that export the name, as call resolution answers an export: a target whose candidates export it (§4.3) or that re-exports it, followed on from there. Where several do, their specifiers are joined; where none does, the name is taken to be the barrel's own, and so it is where a target is a package, whose exports are not read. A target that leads back to a module already on the chain passes on nothing.
+- **A namespace import** (`*`) holds the module's own specifiers only: neither its re-exports nor its `export *` targets are followed for it, so `lib.prisma.user.findMany()` over `import * as lib from "./lib"` reaches no further than `lib`'s own imports.
+- **No key** for a name whose module, or the one `export *` target that might export it, could not be read (it threw, or no language routes it), a specifier no workspace file answers, a module the resolver failed on, or a re-export chain that loops. An edge whose module is outside the workspace gets no `upstream`: its own `source` says where it leads.
+
+Each module a chain reaches is parsed once per extraction thread, unless its own turn came first, and the tree released at once; the parse does not count against the importing file's `parseTimeoutMs`. Its declarations, which `export *` and the class check read, are extracted in that parse only for a barrel, an `export *` target or the module a receiver's class is read from, and the class check runs before the file's `upstream` is followed, so the module is read for both at once; one asked for its declarations only after a read of its edges alone is parsed again. A file whose bodies make no call follows nothing, and a scan with no effect plugin follows nothing.
 
 See [`effect-plugin.md`](./effect-plugin.md) for the detailed interface.
 
@@ -665,7 +678,7 @@ The name is `<receiver>.<method>`. The method is the callee's property. The rece
 
 Before framework classification, the core traces each name a decorator in the file binds through the workspace's re-exports, and records the result on `ImportEdge.origins`: keyed by the name the edge's module exports, the specifier of the module outside the workspace that the chain ends at. A key says the chain ended outside the workspace, and a missing one that it ended inside or could not be followed, so an origin is recorded even when it is the edge's own specifier: `import { Controller } from "routing-controllers"` maps `Controller` to `routing-controllers`.
 
-- **Which names.** A decorator's leaf, through the named-import edge that binds it, and a qualified decorator's receiver head, through the named-import edge that binds it (keyed by its imported name) or the namespace edge that binds it (keyed by the member the receiver reads, as in §5.2.2). No other name is followed: an origin for every import would parse most of the workspace twice, and a decorator is the only name a framework plugin matches by its imported name. A plugin that grades on which modules a file imports reads `ImportEdge.source` and gets no origin. A scan with no framework plugin follows nothing.
+- **Which names.** A decorator's leaf, through the named-import edge that binds it, and a qualified decorator's receiver head, through the named-import edge that binds it (keyed by its imported name) or the namespace edge that binds it (keyed by the member the receiver reads, as in §5.2.2). No other name is followed for a framework plugin, since a decorator is the only name one matches by its imported name: a plugin that grades on which modules a file imports reads `ImportEdge.source` and gets no origin. A scan with no framework plugin follows nothing here; the names effect plugins are handed are followed as §5.1 says.
 - **One hop.** The specifier resolves against the importing file: a relative one as call resolution resolves it ([call-resolution.md](./call-resolution.md) §4.4.1), a bare one through the language plugin's `ImportResolver` (§4.8). In the module it resolves to, the next hop is the edge whose `reexports` exports the name (§4.2), and the chain carries on from that edge's source with the name the entry takes from it. Nothing else on an edge is read, so an import the module only uses, and a re-export of the name under another one, lead nowhere, whichever order the edges are in.
 - **Where it ends.** A bare specifier that resolves to no workspace file and names no workspace package ends the chain outside the workspace, and that specifier is the origin. The workspace packages are the scan's `workspacePackages`, every `package.json#name` at a `workspace.managers[].roots` entry or a Component root ([ir-schema.md](./ir-schema.md) §11.3), and a specifier names one by its package name, as a Component edge reads it, so `@acme/shared/decorators` names `@acme/shared`. A specifier that can name no package — a subpath import (`#decorators`), private to the package that imports it, or a bundler's alias spelled with an empty scope or a tilde (`@/common`, `~/common`) — ends the chain inside the workspace with no origin. A workspace package the package manager links in, which no `paths` key maps, ends the chain inside the workspace with no origin: the chain does not follow the entry points its manifest names, which only call resolution reads ([call-resolution.md](./call-resolution.md) §4.4.1), so it cannot say what the package re-exports. The workspace files are the ones discovery found, so a path alias whose every path names a file the scan leaves out — ignored, or over the size limit — reads as outside the workspace, as it does to call resolution, and so does an alias the resolver has no mapping for: one in a tsconfig that cannot be read, or in a file no tsconfig covers. A whole module exported under the name (`export * as ns from`) ends the chain there: outside the workspace its specifier is the origin, and inside it there is none, because which member the decorator reads is not carried past it. A module with no edge exporting the name, because it declares the name itself or reaches it through `export *`, ends the chain inside the workspace, and so do a relative specifier that names no file, a module the chain already visited for the name, and a specifier the resolver failed on (§4.8). Those leave no origin.
 - **Cost.** A module the chain reaches is parsed once for its edges, unless its own turn in the scan came first, and that tree is released at once (§8.1). The chain does not count against the importing file's `parseTimeoutMs` (§7.1.2): which file reaches a barrel first depends on discovery order, and a file's outcome should not.
@@ -1095,7 +1108,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP54 | One effects plugin object listed twice | its `init` and its `cleanup` called once each |
 | LP55 | A plugin whose `init` is `true`, or whose `cleanup` is `null` | the scan fails with `scan-plugin-misconfigured` naming the plugin, and no plugin is initialized |
 
-### 9.11 Import resolution and origins (§4.8, §5.2.4)
+### 9.11 Import resolution, origins and upstream (§4.8, §5.1, §5.2.4)
 
 | ID | Input | Expected |
 |---|---|---|
@@ -1131,7 +1144,12 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP45 | two barrels re-exporting the name from each other | the chain ends, with no origin |
 | LP46 | one barrel imported by several files | parsed once beyond its own turn if discovery reaches an importer first, not at all beyond it otherwise, and every tree it was parsed into released |
 | LP46a | a barrel whose parse takes longer than `parseTimeoutMs` | the barrel is skipped in its own turn, and the file whose chain reached it is not |
-| LP47 | no framework plugin loaded | no resolver created and no barrel parsed |
+| LP47 | no framework plugin loaded | no resolver created and no barrel parsed for a decorator |
+| LP47a | an effect plugin loaded, and a file that imports `client` from `./db.ts`, which imports `@vendor/orm` | the edge the effect plugin is handed carries `upstream` `{ client: ["@vendor/orm"] }`, followed alike through a path alias, a workspace package's name, a barrel's re-export and the one of a barrel's `export *` targets that exports `client`; a barrel none of whose targets shows the name gives its own specifiers, and a namespace import of it `{ "*": <the barrel's own specifiers> }`; a framework plugin's edge carries none |
+| LP47b | the same name re-exported from a package outside the workspace | `upstream` holds the barrel's specifiers, and `origins` maps the name to the package |
+| LP47c | an import of a package, of a relative module the workspace does not hold or that cannot be parsed, of a name two barrels re-export from each other, or of a name that may come from a barrel's `export *` target that cannot be parsed | no `upstream` key for it |
+| LP47d | a call whose `receiverType` is a class the file imports or declares, which declares the called member itself or through a workspace class it extends, imported under another name or as the module's default, exported under an export clause's name, re-exports and `export *` followed | no effect plugin is asked about it; one whose member comes from a package class it extends, or whose type is no class, is asked |
+| LP47e | an effect plugin loaded, a module a receiver's class is read from, and an `export *` target the chain asks for a name | each is parsed once for the chain, its edges and declarations read from the one tree, and once more in its own turn |
 
 ## 10. Design Decisions
 

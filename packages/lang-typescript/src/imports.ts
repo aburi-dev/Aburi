@@ -6,8 +6,8 @@ import {
 } from "@aburi/core"
 import type { ImportEdge, ParseError, Reexport } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
-import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
-import { maskedImportSpecifier } from "./import-type-reparse"
+import { findChild, firstNonCommentChild } from "./ast-helpers"
+import { maskedImportSpecifier, masksImportTypes } from "./import-type-reparse"
 
 export interface ImportExtraction {
   edges: ImportEdge[]
@@ -37,7 +37,7 @@ export function extractImports(tree: Tree, _source: string): ImportExtraction {
   for (const edge of imports) edges.push(withRepublished(edge, exportedLocals))
 
   // Dynamic imports can appear anywhere in the tree, so scan the whole thing separately.
-  walkForDynamicImports(root, edges, errors)
+  walkForDynamicImports(tree, edges, errors)
 
   edges.sort((a, b) => a.line - b.line || compareCodeUnit(a.source, b.source))
   errors.sort((a, b) => a.line - b.line || a.column - b.column)
@@ -224,8 +224,13 @@ function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
   return reexports.length === 0 ? edge : { ...edge, reexports }
 }
 
-function walkForDynamicImports(root: Node, edges: ImportEdge[], errors: ParseError[]): void {
-  for (const node of walkDescendants(root)) {
+// The grammar finds the nodes itself: a walk would build a node object for every node in the file.
+function walkForDynamicImports(tree: Tree, edges: ImportEdge[], errors: ParseError[]): void {
+  // Identifiers are most of a file's nodes, and only a tree whose import() types were masked has
+  // one to read.
+  const types = masksImportTypes(tree) ? ["call_expression", "identifier"] : ["call_expression"]
+  for (const node of tree.rootNode.descendantsOfType(types)) {
+    if (node === null) continue
     const masked = node.type === "identifier" ? maskedImportSpecifier(node) : undefined
     if (masked !== undefined) {
       edges.push({ source: masked, symbols: "*", line: node.startPosition.row + 1, dynamic: true })
