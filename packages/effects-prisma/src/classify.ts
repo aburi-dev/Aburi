@@ -1,7 +1,10 @@
 import {
   assertNonEmptySegments,
   hasLiteralFirstArgument,
+  importGate,
   type PluginInputOrigin,
+  receiverTypeFromMatchingModule,
+  typedReceiverConfidence,
 } from "@aburi/plugin-registry/plugin-input"
 import {
   type CallCandidate,
@@ -11,13 +14,13 @@ import {
   type EffectDecline,
 } from "@aburi/types"
 import { EFFECTS_PRISMA_DERIVED_BY_PREFIX, EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
-import { hasPrismaImport } from "./imports"
 import {
   isPrismaRawQueryMethod,
   isPrismaReadMethod,
   isPrismaTransactionMethod,
   isPrismaWriteMethod,
 } from "./methods"
+import { clientModuleMatcherFor } from "./options"
 import {
   classificationConfidence,
   isClientBindingWord,
@@ -34,21 +37,33 @@ export function classifyPrismaCall(
 
   const { segments, last: method } = assertNonEmptySegments(call.target, origin)
 
-  if (!hasPrismaImport(ctx.file.imports, ctx.file.path)) return null
+  const matches = clientModuleMatcherFor(ctx.config)
+  const gate = importGate(ctx.file.imports, segments[0], origin, matches)
+  if (gate === null) return null
+  // A receiver declared with the library's own type is its client whatever it is called.
+  const typed = receiverTypeFromMatchingModule(ctx.file.imports, call.receiverType, origin, matches)
+  // A module the file imports from using Prisma is a weaker sign than the file's own import, so
+  // there the client must be one its type or its name places.
+  const placed = (clientSegment: string | undefined): boolean =>
+    gate === "direct" || typed || (clientSegment !== undefined && namesPrismaClient(clientSegment))
 
   if (isPrismaTransactionMethod(method)) {
     // A bare `$transaction()` is not a Prisma call; the API is a method on the client.
     if (segments.length < 2) return null
     if (hasLiteralFirstArgument(call)) return null
+    if (!placed(segments.at(-2))) return null
     return {
       effectId: "db.transaction",
-      confidence: classificationConfidence(segments.at(-2), call, PRISMA_TRANSACTION_MAX_ARGUMENTS),
+      confidence: typed
+        ? typedReceiverConfidence(call, PRISMA_TRANSACTION_MAX_ARGUMENTS)
+        : classificationConfidence(segments.at(-2), call, PRISMA_TRANSACTION_MAX_ARGUMENTS),
       derivedBy: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:tx`,
     }
   }
 
   // Whether a raw query reads or writes is in the query, which no call site spells.
   if (isPrismaRawQueryMethod(method) && segments.length >= 2) {
+    if (!placed(segments.at(-2))) return null
     return { declined: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:raw-query` }
   }
 
@@ -77,7 +92,12 @@ export function classifyPrismaCall(
     if (!namesPrismaClient(clientSegment)) return null
   }
 
-  const confidence = classificationConfidence(clientSegment, call, PRISMA_DELEGATE_MAX_ARGUMENTS)
+  if (!placed(clientSegment)) return null
+
+  // The receiver here is the model's delegate, so only one declared as such carries a type.
+  const confidence = typed
+    ? typedReceiverConfidence(call, PRISMA_DELEGATE_MAX_ARGUMENTS)
+    : classificationConfidence(clientSegment, call, PRISMA_DELEGATE_MAX_ARGUMENTS)
 
   if (isPrismaReadMethod(method)) {
     return {

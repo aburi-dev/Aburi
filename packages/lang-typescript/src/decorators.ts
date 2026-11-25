@@ -1,6 +1,7 @@
 import { type Decorator, UNNAMED_DECORATOR } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, throughParentheses } from "./ast-helpers"
+import { canonicalText } from "./canonical-text"
 
 export function readDecorators(declaration: Node): Decorator[] {
   return decoratorNodes(declaration)
@@ -35,7 +36,7 @@ function readDecorator(node: Node): Decorator | null {
   if (written === null) return null
   const inner = throughParentheses(written)
   const line = node.startPosition.row + 1
-  const raw = written.text
+  const raw = canonicalText(written)
 
   if (inner.type === "call_expression") {
     const callee = inner.childForFieldName("function")
@@ -85,7 +86,7 @@ function readCallArguments(argsNode: Node): string[] {
   for (const child of argsNode.namedChildren) {
     if (child === null) continue
     if (child.type === "comment") continue
-    out.push(child.text)
+    out.push(canonicalText(child))
   }
   return out
 }

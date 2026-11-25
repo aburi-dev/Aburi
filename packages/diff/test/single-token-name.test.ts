@@ -123,16 +123,16 @@ describe("a name that says more than one thing is paired", () => {
       ],
       outputs: ["User"],
     })
-    const widened = (name: string) => [fn("src/b.ts", name, "bbb", { signature })]
+    const original = (name: string) => [fn("src/a.ts", name, "aaa", { rules: guardedBody("!a") })]
+    const widened = (name: string) => [
+      fn("src/b.ts", name, "bbb", { signature, rules: guardedBody("!b") }),
+    ]
     expect(
-      pairedNames(
-        [fn("src/a.ts", "ユーザー情報を取得する", "aaa")],
-        widened("ユーザー情報を取得する"),
-      ),
+      pairedNames(original("ユーザー情報を取得する"), widened("ユーザー情報を取得する")),
     ).toEqual([])
-    expect(
-      pairedNames([fn("src/a.ts", "getUserInformation", "aaa")], widened("getUserInformation")),
-    ).toEqual(["getUserInformation -> getUserInformation"])
+    expect(pairedNames(original("getUserInformation"), widened("getUserInformation"))).toEqual([
+      "getUserInformation -> getUserInformation",
+    ])
   })
 })
 

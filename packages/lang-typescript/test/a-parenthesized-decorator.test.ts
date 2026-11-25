@@ -29,19 +29,19 @@ describe("a decorator written in parentheses", () => {
     ])
   })
 
-  it("keeps a line break inside the parentheses out of the name", async () => {
+  it("keeps a line break inside the parentheses out of the name and the raw form", async () => {
     const [decorator] = await decoratorsOf("@(nest\n  .Controller)")
     expect(decorator?.name).toBe("Controller")
     expect(decorator?.qualifier).toBe("nest")
-    expect(decorator?.raw).toBe("(nest\n  .Controller)")
+    expect(decorator?.raw).toBe("(nest.Controller)")
   })
 
   it("reads a call through them, arguments included", async () => {
     expect(await errorsOf("@(Controller('/x'))")).toBe(0)
     const [decorator] = await decoratorsOf("@(Controller('/x'))")
     expect(decorator?.name).toBe("Controller")
-    expect(decorator?.arguments).toEqual(["'/x'"])
-    expect(decorator?.raw).toBe("(Controller('/x'))")
+    expect(decorator?.arguments).toEqual(['"/x"'])
+    expect(decorator?.raw).toBe('(Controller("/x"))')
   })
 
   it("keeps the name when only an argument is broken, as the unparenthesized form does", async () => {

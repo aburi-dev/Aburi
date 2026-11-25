@@ -122,7 +122,7 @@ export function projectDiff(diff: DiffResult, options: ProjectDiffOptions = {}):
     foldedSection(
       "## 🎨 Syntax-only changes",
       renderSyntaxOnly(buckets.syntaxOnly),
-      `${counted(buckets.syntaxOnly.length, "symbol", "symbols")} (implementation refactor only, no semantic change)`,
+      `${counted(buckets.syntaxOnly.length, "symbol", "symbols")} (edited outside the API, rules, effects and middleware)`,
     ),
     foldedSection(
       "## 🧪 Test files",
