@@ -1,4 +1,5 @@
 import {
+  ABSTRACT_DECLARATION_DERIVED_BY,
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type ExtractionContext,
   FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
@@ -99,7 +100,7 @@ export function classMemberCandidates(
     .filter((candidate): candidate is SymbolCandidate<Node> => candidate !== null)
 }
 
-const ABSTRACT_DECLARATION = "abstract-declaration"
+const ABSTRACT_DECLARATION = ABSTRACT_DECLARATION_DERIVED_BY
 
 function makeMethodCandidate(
   node: Node,

@@ -1,4 +1,9 @@
-import type { OpaqueAstNode, SymbolCandidate } from "@aburi/types"
+import {
+  ABSTRACT_DECLARATION_DERIVED_BY,
+  AMBIENT_DECLARATION_DERIVED_BY,
+  type OpaqueAstNode,
+  type SymbolCandidate,
+} from "@aburi/types"
 
 export function decideSymbolDrop(symbol: SymbolCandidate<OpaqueAstNode>): string | null {
   if (symbol.decorators.some((d) => d.boundary)) return null
@@ -21,13 +26,13 @@ function hasAnyBody(symbol: SymbolCandidate<OpaqueAstNode>): boolean {
   return merged.some((declaration) => declaration.bodyNode !== null)
 }
 
-// An abstract member or a `declare` has no body by definition: the signature is what it declares,
-// and what a subclass or a caller is checked against.
+// Dropped, an abstract or `declare`d signature hashes to the fixed fingerprint, and an edit to
+// the signature that is all it declares goes unreported.
 function declaresWithoutBody(symbol: SymbolCandidate<OpaqueAstNode>): boolean {
   return symbol.derivedBy.some((token) => BODILESS_DECLARATIONS.has(token))
 }
 
 const BODILESS_DECLARATIONS: ReadonlySet<string> = new Set([
-  "abstract-declaration",
-  "ambient-declaration",
+  ABSTRACT_DECLARATION_DERIVED_BY,
+  AMBIENT_DECLARATION_DERIVED_BY,
 ])
