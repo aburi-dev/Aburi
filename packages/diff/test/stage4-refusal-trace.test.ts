@@ -1,4 +1,4 @@
-import { recordingLogger, sig } from "@aburi/test-support"
+import { guardedBody, recordingLogger, sig } from "@aburi/test-support"
 import type { Symbol as IRSymbol, Summary } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { bare, diffSymbols, dropped, fn, method, type Revision, UNSETTLED_OWNERS } from "./helpers"
@@ -32,8 +32,16 @@ describe("stage 4 says why it left a Symbol out", () => {
     ],
     [
       "no signature",
-      fn("src/a.ts", "buildConfig", "a", { kind: "const", signature: null }),
-      fn("src/b.ts", "buildConfig", "b", { kind: "const", signature: null }),
+      fn("src/a.ts", "buildConfig", "a", {
+        kind: "const",
+        signature: null,
+        rules: guardedBody("!a"),
+      }),
+      fn("src/b.ts", "buildConfig", "b", {
+        kind: "const",
+        signature: null,
+        rules: guardedBody("!b"),
+      }),
       [
         notCompared("src/a.ts#buildConfig", NO_SIGNATURE),
         notCompared("src/b.ts#buildConfig", NO_SIGNATURE),

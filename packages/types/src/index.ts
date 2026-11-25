@@ -127,6 +127,7 @@ export type {
   ThisBinding,
   VocabRegistry,
   WalkContext,
+  WrittenImportEdge,
   WrittenSourceRange,
 } from "./plugins"
 export { lastSegment } from "./qualified-name"

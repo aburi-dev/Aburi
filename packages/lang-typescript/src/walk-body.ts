@@ -17,6 +17,7 @@ import {
 import { containsEarlyExit, type ExitCalls, NO_EXIT_CALLS } from "./early-exit"
 import { objectEntryOf } from "./object-members"
 import { conditionText, isTrivialExpr, LOOP_KINDS, makeRule, ruleText } from "./rules"
+import { declaredValueRules, objectEntryValueRule } from "./value-rules"
 
 export function walkBody(symbol: SymbolCandidate<Node>, ctx: WalkContext<Node>): BodyExtraction {
   const walk: Walk = { rules: [], calls: [], exitCalls: ctx.registry }
@@ -25,6 +26,7 @@ export function walkBody(symbol: SymbolCandidate<Node>, ctx: WalkContext<Node>):
     else visitHolding(root, holdingOf(root, held), walk)
   }
   const { rules, calls } = walk
+  rules.push(...declaredValueRules(symbol))
   rules.sort((a, b) => a.line - b.line)
   calls.sort((a, b) => a.line - b.line)
   return { rules, calls }
@@ -152,6 +154,8 @@ function visitOwnObjectBody(object: Node, walk: Walk): void {
     if (entry === null) continue
     const read = objectEntryOf(entry)
     if (read === null) {
+      const value = objectEntryValueRule(entry)
+      if (value !== null) walk.rules.push(value)
       visitNode(entry, walk)
       continue
     }
@@ -209,7 +213,7 @@ function memberBodiesSkippedHere(classNode: Node, member: Node): Node[] {
 function visitNode(node: Node, walk: Walk): void {
   const loopKind = LOOP_KINDS.get(node.type)
   if (loopKind !== undefined) {
-    walk.rules.push(makeRule("loop", node, { loopKind }))
+    walk.rules.push(makeRule("loop", node, { loopKind, condition: loopHeader(node) }))
     visitChildren(node, walk)
     return
   }
@@ -236,6 +240,13 @@ function visitNode(node: Node, walk: Walk): void {
       walk.rules.push(makeRule("switch", node, { condition: switchCondition(node) }))
       visitChildren(node, walk)
       return
+    case "switch_case":
+    case "switch_default": {
+      const label = caseLabel(node)
+      if (label !== null) walk.rules.push(makeRule("case", node, { condition: label }))
+      visitChildren(node, walk)
+      return
+    }
     case "call_expression":
     case "new_expression":
       recordCall(node, walk.calls)
@@ -269,12 +280,11 @@ function visitCallsInside(node: Node, calls: CallCandidate[]): void {
 
 function visitIfStatement(node: Node, walk: Walk): void {
   const consequence = node.childForFieldName("consequence")
-  if (consequence !== null && containsEarlyExit(consequence, walk.exitCalls)) {
-    const condition = node.childForFieldName("condition")
+  const condition = node.childForFieldName("condition")
+  if (condition !== null) {
+    const exits = consequence !== null && containsEarlyExit(consequence, walk.exitCalls)
     walk.rules.push(
-      makeRule("guard", node, {
-        condition: condition !== null ? conditionText(condition) : null,
-      }),
+      makeRule(exits ? "guard" : "branch", node, { condition: conditionText(condition) }),
     )
   }
   visitChildren(node, walk)
@@ -318,6 +328,34 @@ function visitTryStatement(node: Node, walk: Walk): void {
   if (handler !== null) visitNode(handler, withheld)
   const finalizer = node.childForFieldName("finalizer")
   if (finalizer !== null) visitNode(finalizer, walk)
+}
+
+// What a `for` header holds past its condition, an initializer and an update, decides as much of
+// what the loop runs as the condition does, and so does what a `for…of` reads from.
+function loopHeader(node: Node): string | null {
+  const condition = node.childForFieldName("condition")
+  if (node.type === "while_statement" || node.type === "do_statement") {
+    return condition === null ? null : conditionText(condition)
+  }
+  let open: Node | null = null
+  let close: Node | null = null
+  let awaited = false
+  for (const child of node.children) {
+    if (child === null) continue
+    if (child.type === "await" && open === null) awaited = true
+    else if (child.type === "(" && open === null) open = child
+    else if (child.type === ")") close = child
+  }
+  if (open === null || close === null || close.startIndex < open.endIndex) return null
+  const header = ruleText(node, open.endIndex, close.startIndex)
+  if (header.length === 0) return null
+  return awaited ? `await ${header}` : header
+}
+
+function caseLabel(clause: Node): string | null {
+  if (clause.type === "switch_default") return "default"
+  const value = clause.childForFieldName("value")
+  return value === null ? null : ruleText(value)
 }
 
 function switchCondition(node: Node): string | null {

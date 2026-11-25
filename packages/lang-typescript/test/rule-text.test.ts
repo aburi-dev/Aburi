@@ -62,9 +62,10 @@ describe("rule text drops comments", () => {
     ["a comment in a throw", "throw make(/* code */ 'bad')", [["throw", "make( 'bad')"]]],
     [
       "a comment in a switch",
-      "switch (a /* kind */) { case 1: return b + c }",
+      "switch (a /* kind */) { case 1 /* one */: return b + c }",
       [
         ["switch", "a"],
+        ["case", "1"],
         ["return", "b + c"],
       ],
     ],

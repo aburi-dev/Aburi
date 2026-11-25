@@ -1,5 +1,6 @@
 import { cp, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
+import { CLASSIFY_TIMEOUT_MAX_MS } from "@aburi/core"
 import { gitTestEnv, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, describe, expect, it } from "vitest"
 import {
@@ -310,6 +311,9 @@ describe("aburi scan --concurrency, with the language, framework and effects plu
         languages: ["lang-typescript"],
         frameworks: ["framework-nestjs"],
         effects: ["effects-nest"],
+        // The IR logs a classification that overruns its budget, which a loaded runner can make
+        // one of the two runs do.
+        classifyTimeoutMs: CLASSIFY_TIMEOUT_MAX_MS,
       },
     ],
     ["effects-coverage", null],

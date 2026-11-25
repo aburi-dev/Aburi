@@ -12,6 +12,8 @@ export interface ScratchWorkspace {
   readonly root: string
   /** Write `content` at `rel` under `root`, creating parent directories as needed. */
   writeSource(rel: string, content: string): Promise<void>
+  /** Write each file's lines at its path under `root`, each line ended with a line break. */
+  writeSources(sources: Readonly<Record<string, readonly string[]>>): Promise<void>
 }
 
 /**
@@ -40,14 +42,21 @@ export function useScratchWorkspace(prefix: string): ScratchWorkspace {
     return root
   }
 
+  const writeSource = async (rel: string, content: string): Promise<void> => {
+    const abs = join(current(), rel)
+    await mkdir(dirname(abs), { recursive: true })
+    await writeFile(abs, content, "utf8")
+  }
+
   return {
     get root() {
       return current()
     },
-    async writeSource(rel, content) {
-      const abs = join(current(), rel)
-      await mkdir(dirname(abs), { recursive: true })
-      await writeFile(abs, content, "utf8")
+    writeSource,
+    async writeSources(sources) {
+      for (const [rel, lines] of Object.entries(sources)) {
+        await writeSource(rel, lines.map((line) => `${line}\n`).join(""))
+      }
     },
   }
 }

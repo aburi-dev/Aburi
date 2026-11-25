@@ -16,7 +16,7 @@ Invariance tests: [`schema/fingerprint.test.mjs`](https://github.com/aburi-dev/A
 | `logic` | The set of rules / effects changes | Local variable renames, method reordering, comments, added decoration calls |
 | `syntax` | AST structure changes | Formatting-only changes, comments |
 
-Separating the three axes lets the Diff report distinguish "API change", "implementation logic change", and "implementation refactor only".
+Separating the three axes lets the Diff report distinguish "API change", "implementation logic change", and "an edit outside what `api` and `logic` read" (§4.6), which is not the same as "no change in behaviour".
 
 ## 2. Common Specification
 
@@ -220,9 +220,9 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 
 ### 4.4 Guaranteed change conditions
 
-- Reordering **rules** → changes (control-flow execution order carries meaning)
+- Reordering **rules** → changes (control-flow execution order carries meaning). Declared values are rules too, so reordering an object constant's keys or an enum's members changes `logic` as well, a string enum's included: `{ a: 1, b: 2 }` → `{ b: 2, a: 1 }`
 - Reordering **locally detected effects** → changes (side-effect occurrence order carries meaning). The order of propagated effects is not read (§4.1)
-- Changing the expression of `rules[].condition` / `what` / `expr` itself → changes
+- Changing the expression of `rules[].condition` / `what` / `expr` itself → changes. That covers the condition of every `if`, a guard's and a branch's alike, a loop's header (`i < n` → `i <= n`), a `case` label, and a declared value: a constant's initializer (`TIMEOUT_MS = 5000` → `5`), an entry of an object a constant holds, and an enum member ([`ir-schema.md`](./ir-schema.md) §8.1). Adding or removing an enum member adds or removes a rule, and so changes `logic` too
 - Adding / removing an effect, or changing its `target` → changes, except that a propagated effect on a target another effect of the Symbol already names adds or removes nothing (§4.1)
 - Adding, removing, reordering or renaming a Symbol's **middleware** → changes. A route that loses `requireAdmin` runs a different request path, and before the field it moved only `syntax`, so the report filed it as a reformat
 
@@ -234,7 +234,21 @@ logic = lower_hex(SHA-256(UTF-8(logic_input))[0..6])
 - This holds for propagated effects too. The IR orders their segment by `(id, target)` and merges it on that pair ([`effect-propagation.md`](./effect-propagation.md) §5.1, §8), so an id change can reorder its entries, split one target into two entries or merge two into one, and decide whether a locally detected effect on the same target suppresses one. The fingerprint reads the segment by target alone (§4.1): sorted, each target once, and none a locally detected effect already names, so none of this reaches `logic`. Locally detected effects keep their call order and their repeats (§4.7)
 - The guarantee is the effect plugins'. A framework plugin's answers are inputs of `logic`: the middleware it reports (§4.1), and the calls its manifest declares never return, which make an `if` around one a guard ([ir-schema.md](./ir-schema.md) §8). Adding or removing `@aburi/framework-next` moves `logic` for a Symbol with `if (!session) redirect("/login")` in it, since the `if` is a guard only when the plugin is loaded
 
-### 4.6 Known current limitations (before LSP enrichment)
+### 4.6 What `logic` does not read
+
+`logic` reads the rules, the effects and the middleware, and nothing else of a body. An edit to any of the following moves `syntax` alone, so the diff files it under Syntax-only changes, with `--fail-on logic-changed` not firing:
+
+- an operator, a ternary or a call argument outside every rule: `total += x` → `total -= x`, `audit(a && b)` → `audit(a || b)`, `const next = ok ? a : b` swapped
+- which function a call outside every rule calls: `validate(x)` → `destroy(x)`, where `if (validate(x))` → `if (destroy(x))` changes a rule's condition and moves `logic`. The call graph does read it, so the dependency section reports the edge that went and the one that came, and an effect classified from either call moves `logic` through `effects`
+- an `await` added or removed, and an assignment, outside every rule: `if (await ok())`, `for await` and a loop header's `i++` → `i += 2` are a rule's text
+- a `break` removed so that a `case` falls through to the next one. The labels are rules; where control goes after one is not
+- a trivial return (`return true` → `return false`), which is not a rule ([`ir-schema.md`](./ir-schema.md) §8.2)
+- a rule inside a `catch` clause (ir-schema.md §8.2), a class field's value (`static RETRIES = 3`), and a local constant (`const limit = 10` inside a function)
+- a constant whose value holds a call, a `new` or an `await` anywhere (`createClient({ retries: 3 })`, `readPort() ?? 8080`): what a call is handed is not an input, in a constant as in any body
+
+The report's Syntax-only section therefore says the edit landed outside the API, rules, effects and middleware, not that behaviour is unchanged.
+
+### 4.6.1 Known current limitations (before LSP enrichment)
 
 - `effects[].target` uses the string as-is. `this.storedCats.push` and `this.cats.push` are different fingerprints
   - When a field rename shows up in the targets of effects, `logic` changes
@@ -255,7 +269,11 @@ This applies to locally detected effects, each of which sits at a call site in t
 
 ### 4.8 A value that names nothing
 
-Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class, enum and body that only calls something (the empty input), another for every body that is a single `for` loop over calls, another for every single `try`, another for every route behind `requireAdmin` alone. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+Of the input fields, `rules[].type` and `rules[].loopKind` classify a construct without saying anything about it; every other field — `condition`, `what`, `expr`, `effects[].target`, `middleware[]` — carries text from the body. A Symbol with no effect and no rule carrying any of those hashes to a value it shares with every body of the same shape: one value for every class and body that only calls something (the empty input), another for every single `try`, another for every route behind `requireAdmin` alone. Such a value is not evidence of one meaning, and the diff does not read it as such ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+
+A `value`, a `loop` and a `branch` rule carry text, and change the hash with it, but are not counted as naming something either. A declared value (`true`, `0`, `"admin"`), a loop's header (`const item of items`) and a branch's condition (`enabled`) recur across unrelated declarations, so every `export const ENABLED = true` hashes alike, as does every body that is one `for (const item of items)` loop over calls or one `if (enabled)` around a call; counted, a deleted constant and an unrelated one added elsewhere with the same value would pair as a single move. A Symbol whose only rules are these is read as naming nothing, so the diff pairs it by name alone ([`diff-algorithm.md`](./diff-algorithm.md) §3.3).
+
+For such a Symbol the diff reads its shape rather than its hash (`logicShapeFingerprint` in `@aburi/core`): the logic input with its declared values left out and every other rule's text removed, which keeps the rules' types and loop kinds in order and the middleware. Since the text says nothing here, neither does a change to it: a constant that moves file and changes its value, an enum that gains a member and a branch whose condition changes are still one shape, and still pair by name.
 
 `middleware[]` changes the hash but is not counted as naming something. A guard such as `auth` fronts many routes, so two registrations that agree on it alone say no more about being one route than two bodies that agree on `rules[].type` do; counted, it let a deleted endpoint and an unrelated one added behind the same guard pair as a single move, and `--fail-on removed` never saw the deletion.
 
@@ -326,7 +344,7 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 The main use is the **three-tier display** in the Diff report:
 
 - `api unchanged, logic unchanged, syntax unchanged` → completely unchanged, not shown in the Diff
-- `api unchanged, logic unchanged, syntax changed` → implementation refactor only, low-priority
+- `api unchanged, logic unchanged, syntax changed` → an edit outside what `api` and `logic` read (§4.6): a reformat or a rename inside the body, or an edit neither axis weighs, low-priority
 - `api unchanged, logic changed` → semantic change, needs review
 - `api changed` → public contract change, needs approval
 
@@ -436,6 +454,7 @@ The reference implementation and every language plugin must pass the following t
 | L6 | Reorder rules | logic changes |
 | L7 | Reorder locally detected effects, including two written one after another on one line | logic changes |
 | L8 | Change a rule's condition | logic changes |
+| L8a | Change the condition of an `if` that does not leave early, a loop's header, a `case` label, a constant's initializer, an entry of an object a constant holds, or an enum member's value; add or remove an enum member | logic changes |
 | L9 | Change an effect's target | logic changes |
 | L10 | Add / remove an effect, locally detected or propagated (a propagated one on a target no other effect of the Symbol names) | logic changes |
 | L10a | Add, remove, reorder or rename an entry of `middleware` | logic changes |

@@ -133,11 +133,11 @@ These are machine-validated by [`aburi.plugin.v1.json`](https://github.com/aburi
 ]
 ```
 
-`module` is the specifier an import names, and `exports` the names the module exports them under (`default` for its default export). The body walk reads a call through the import that binds its callee, and when `registry.isExitCall(module, exported)` answers true, an `if` whose consequence makes the call is a guard, as a `throw` makes it ([`ir-schema.md`](./ir-schema.md) §8, [`lang-plugin.md`](./lang-plugin.md) LP16a). So the fact lives with the plugin that knows the library, and the language plugin knows only that such calls exist.
+`module` is the specifier an import names, and `exports` the names the module exports them under (`default` for its default export). The body walk reads a call through the import that binds its callee, and when `registry.isExitCall(module, exported)` answers true, an `if` whose consequence makes the call is a guard, as a `throw` makes it ([`ir-schema.md`](./ir-schema.md) §8, [`lang-plugin.md`](./lang-plugin.md) LP16d). So the fact lives with the plugin that knows the library, and the language plugin knows only that such calls exist.
 
 A declaration owns nothing. Two plugins may name the same module, or the same export of it, and the registry answers for the union. A plugin of any type may declare one, since a library's control flow is not the vocabulary of a type. The registry reads `exitCalls` only as a key of `provides` itself, as the shape check reads it, so an `exitCalls` that `provides` inherits from `Object.prototype` declares nothing.
 
-`isExitCall` is the one registry method `@aburi/lang-typescript` calls, so a host whose registry predates it cannot run that plugin: the plugin's `init` refuses such a registry, and the scan ends with `plugin-init-failed` naming the host to update ([`lang-plugin.md`](./lang-plugin.md) LP16b), rather than failing the walk of every file that calls an import.
+`isExitCall` is the one registry method `@aburi/lang-typescript` calls, so a host whose registry predates it cannot run that plugin: the plugin's `init` refuses such a registry, and the scan ends with `plugin-init-failed` naming the host to update ([`lang-plugin.md`](./lang-plugin.md) LP16e), rather than failing the walk of every file that calls an import.
 
 ## 4. Registration lifecycle
 

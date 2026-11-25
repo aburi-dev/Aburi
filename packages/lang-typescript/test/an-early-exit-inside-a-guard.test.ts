@@ -54,85 +54,85 @@ describe("an `if` whose consequence leaves early is a guard", () => {
       "a return inside a callback",
       "export function f(x: any) { if (x.list) { x.list.forEach((i: any) => { if (!i) return; use(i) }) } }",
       ["!i"],
-      ["guard"],
+      ["branch", "guard"],
     ],
     [
       "a return inside a function expression",
       "export function f(x: any) { if (x) { run(function () { return x.n + 1 }) } }",
       [],
-      ["return"],
+      ["branch", "return"],
     ],
     [
       "a return inside a nested function declaration",
       "export function f(x: any) { if (x) { function inner() { return x.n + 1 } run(inner) } }",
       [],
-      ["return"],
+      ["branch", "return"],
     ],
     [
       "a return inside a generator",
       "export function f(x: any) { if (x) { run(function* () { return x.n + 1 }) } }",
       [],
-      ["return"],
+      ["branch", "return"],
     ],
     [
       "a return inside a nested generator declaration",
       "export function f(x: any) { if (x) { function* gen() { return x.n + 1 } run(gen) } }",
       [],
-      ["return"],
+      ["branch", "return"],
     ],
     [
       "a return inside a class method",
       "export function f(x: any) { if (x) { register(class { m() { return x.n + 1 } }) } }",
       [],
-      ["return"],
+      ["branch", "return"],
     ],
     [
       "a labeled break inside a callback, which JavaScript refuses but the grammar parses",
       "export function f(rows: any) { outer: for (const r of rows) { if (r) { run(() => { break outer }) } } }",
       [],
-      ["loop"],
+      ["loop", "branch"],
     ],
     [
       "a return inside a class static block, which JavaScript refuses but the grammar parses",
       "export function f(x: any) { if (x) { use(class { static { if (y()) return } }) } }",
       ["y()"],
-      ["guard"],
+      ["branch", "guard"],
     ],
     [
       "a break of a nested switch",
       "export function f(x: any, y: number) { if (x.mode) { switch (y) { case 1: a(); break } } }",
       [],
-      ["switch"],
+      ["branch", "switch", "case"],
     ],
     [
       "a break of an inner loop",
       "export function f(x: any) { for (const k of x.rows) { if (k) { for (const j of k) { if (j) break } } } }",
       ["j"],
-      ["loop", "loop", "guard"],
+      ["loop", "branch", "loop", "guard"],
     ],
     [
       "a break of an inner C-style loop",
       "export function f(x: any) { if (x) { for (let i = 0; i < x.n; i++) { if (i > 3) break } } }",
       ["i > 3"],
-      ["loop", "guard"],
+      ["branch", "loop", "guard"],
     ],
     [
       "a continue of an inner loop",
       "export function f(x: any) { if (x) { while (next()) { continue } } }",
       [],
-      ["loop"],
+      ["branch", "loop"],
     ],
     [
       "a continue of an inner do loop",
       "export function f(x: any) { if (x) { do { if (next()) continue } while (more()) } }",
       ["next()"],
-      ["loop", "guard"],
+      ["branch", "loop", "guard"],
     ],
     [
       "a labeled break of a label inside the consequence",
       "export function f(x: any) { if (x) { inner: { if (y()) break inner } } }",
       ["y()"],
-      ["guard"],
+      ["branch", "guard"],
     ],
   ])("does not count %s", async (_label, source, guards, types) => {
     // By id, so a nested declaration that became a Symbol of its own could not stand in for `f`.
@@ -166,9 +166,11 @@ describe("a call a plugin declares never returns", () => {
     ...noopRegistry,
     isExitCall: (module, exported) => EXITS.get(module)?.includes(exported) === true,
   }
-  const guardsOf = async (source: string, registry: VocabRegistry = declaring) => {
+  const ifRulesOf = async (source: string, registry: VocabRegistry = declaring) => {
     const { rules } = await walkOf(source, "ts:src/a.ts#f", undefined, registry)
-    return rules.filter((r) => r.type === "guard").map((r) => r.condition)
+    return rules
+      .filter((r) => r.type === "guard" || r.type === "branch")
+      .map((r) => [r.type, r.condition])
   }
 
   it.each([
@@ -206,7 +208,7 @@ describe("a call a plugin declares never returns", () => {
       'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) { run(() => redirect("/")) } }',
     ],
   ])("makes the `if` a guard through %s", async (_label, source) => {
-    expect(await guardsOf(source)).toEqual(["!x"])
+    expect(await ifRulesOf(source)).toEqual([["guard", "!x"]])
   })
 
   it.each<[string, string, VocabRegistry?]>([
@@ -244,7 +246,7 @@ describe("a call a plugin declares never returns", () => {
       'import { redirect } from "next/navigation"\nexport function f(x: any) { if (!x) redirect("/") }',
       noopRegistry,
     ],
-  ])("leaves the `if` alone for %s", async (_label, source, registry) => {
-    expect(await guardsOf(source, registry)).toEqual([])
+  ])("leaves the `if` a branch for %s", async (_label, source, registry) => {
+    expect(await ifRulesOf(source, registry)).toEqual([["branch", "!x"]])
   })
 })

@@ -38,6 +38,7 @@ export function ruleText(
   let at = from
   for (const descendant of walkDescendants(node)) {
     if (descendant.type !== "comment") continue
+    if (descendant.startIndex < from || descendant.endIndex > to) continue
     out += `${source.slice(at - base, descendant.startIndex - base)} `
     at = descendant.endIndex
   }
