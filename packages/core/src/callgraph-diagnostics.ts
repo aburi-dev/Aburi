@@ -10,7 +10,7 @@ import {
 import { type ResolutionTrace, splitTargetSegments } from "./callgraph-scopes"
 import { isRelativeSpecifier } from "./callgraph-specifier"
 import { exportNames } from "./export-names"
-import { splitAliasedImportName } from "./import-edge"
+import { importBindsLocal } from "./import-edge"
 import { compareCodeUnit } from "./order"
 
 interface ClassifyUnresolvedInput {
@@ -130,12 +130,9 @@ function bindsToExternalImport(
   if (head === undefined) return false
   return imports.some(
     (edge) =>
-      !edge.dynamic &&
+      importBindsLocal(edge, head) &&
       !isRelativeSpecifier(edge.source) &&
-      !reachesWorkspace(edge.source) &&
-      (edge.symbols === "*"
-        ? edge.namespaceBinding === head
-        : edge.symbols.some((raw) => splitAliasedImportName(raw).local === head)),
+      !reachesWorkspace(edge.source),
   )
 }
 

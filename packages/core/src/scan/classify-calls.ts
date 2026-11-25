@@ -47,6 +47,8 @@ export interface ClassifyCallsInput {
   file: SourceFile
   language: LanguageId
   imports: readonly ImportEdge[]
+  /** Calls of a method the workspace declares on the receiver's class: no plugin is asked. */
+  memberCalls?: ReadonlySet<CallCandidate>
   dropCFilter: DropCFilter
   timeoutEvents: ClassifyTimeoutEvent[]
   vocab: VocabCheck
@@ -108,7 +110,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
 
     let classified = false
     const declines: DeclinedCall[] = []
-    for (const effect of input.effects) {
+    const asked = input.memberCalls?.has(produced) === true ? [] : input.effects
+    for (const effect of asked) {
       const timeoutOptions: ClassifyWithTimeoutOptions = {
         onTimeout: (event) => {
           input.timeoutEvents.push(event)

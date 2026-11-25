@@ -18,6 +18,14 @@ You need one language plugin per language in the repository.
 Parsing runs on tree-sitter WASM, so you get no native build step and no
 compiler in the loop.
 
+A CommonJS `require("…")` counts as an import, so a `.js` or `.cjs` file gets
+the framework and effect classification an ESM file gets. At the top of a
+file, `const x = require("m")`, `const { a } = require("m")` and
+`const a = require("m").a`, with or without `export`, also bind their names for
+call resolution, as the matching `import` would. A `require()` anywhere else
+records only that the file loads the module, and one a function receives as a
+parameter is that function's own and is not read.
+
 Python, Go, and a functional language are planned. See the [roadmap](../roadmap.md).
 
 ## Frameworks
@@ -54,6 +62,13 @@ to it.
 Aburi detects an effect at the call site, then carries it up the calls it
 resolved: a method that calls a repository method that writes to the database
 gets `db.write` too, marked `[propagated from …]` with the symbol it came from.
+
+The client does not need to be built in the file that calls it. A Prisma or
+Drizzle client exported from `lib/db.ts`, a NestJS `PrismaService`, and a tRPC
+client wrapped in `utils/trpc.ts` are recognised from the files that import
+them. A Prisma client generated to `generated/prisma` is recognised as
+`@prisma/client` is; one generated elsewhere is named in
+[`pluginOptions`](./configuration.md#choose-plugins).
 
 ## Example setups
 

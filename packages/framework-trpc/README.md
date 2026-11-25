@@ -148,9 +148,6 @@ Not classified today:
   (`const makeRouter = t.router`, then `makeRouter({ … })`), for the same reason.
 - `experimental_standaloneMiddleware`, `createCallerFactory(appRouter)` and
   `appRouter.createCaller(ctx)`.
-- A file that reaches `@trpc/server` only through CommonJS
-  (`const { initTRPC } = require("@trpc/server")`): the import list carries no
-  edge for a `require` call, so its shapes are `medium`.
 
 Classified though not tRPC's: the receiver's name is all a declaration shows,
 so another library's shapes under tRPC's names are read as tRPC's, at `medium`

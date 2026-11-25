@@ -187,6 +187,81 @@ describe("scan — calls through a default import", () => {
   })
 })
 
+describe("scan — a call through a CommonJS require()", () => {
+  const USERS = {
+    "src/users.js":
+      "function createUser(email) {\n  return email\n}\nmodule.exports = { createUser }\n",
+  }
+
+  it.each([
+    ["a destructuring", 'const { createUser } = require("./users")', "createUser"],
+    ["a destructuring that renames", 'const { createUser: make } = require("./users")', "make"],
+    ["the module object", 'const users = require("./users")', "users.createUser"],
+    ["a property read off it", 'const createUser = require("./users").createUser', "createUser"],
+    [
+      "a destructuring written over lines",
+      'const {\n  createUser,\n} = require("./users")',
+      "createUser",
+    ],
+    ["an exported destructuring", 'export const { createUser } = require("./users")', "createUser"],
+  ])("reaches the function the module declares, through %s", async (_label, head, target) => {
+    expect(await callsFromMain(USERS, [head], [`${target}("a@b.c")`], "src/use.js")).toEqual({
+      resolved: [[target, "ts:src/users.js#createUser"]],
+      unresolved: [],
+    })
+  })
+
+  it.each<[string, Record<string, string>, string, string, [string, string | null][]]>([
+    [
+      "a member of the object the module exports, which it declares on no top-level name",
+      { "src/svc.js": "const svc = {\n  find() {\n    return 1\n  },\n}\nmodule.exports = svc\n" },
+      'const svc = require("./svc")',
+      "svc.find()",
+      [["svc.find", "ts:src/svc.js#svc.find"]],
+    ],
+    [
+      "a method of a class it takes from the module",
+      {
+        "src/repo.js":
+          "class Repo {\n  find() {\n    return 1\n  }\n}\nmodule.exports = { Repo }\n",
+      },
+      'const { Repo } = require("./repo")',
+      "new Repo().find()",
+      [
+        ["<computed>.find", "ts:src/repo.js#Repo.find"],
+        ["Repo", "ts:src/repo.js#Repo"],
+      ],
+    ],
+    [
+      "the declaration itself, for a package outside the workspace",
+      {},
+      'const { PrismaClient } = require("@prisma/client")',
+      "new PrismaClient()",
+      [["PrismaClient", "ts:src/use.js#PrismaClient"]],
+    ],
+  ])("resolves %s", async (_label, modules, head, call, resolved) => {
+    expect(await callsFromMain(modules, [head], [call], "src/use.js")).toEqual({
+      resolved,
+      unresolved: [],
+    })
+  })
+
+  it.each([
+    ["an `import type`", 'import type { Format } from "./fmt"'],
+    ["a `type` specifier", 'import { type Format } from "./fmt"'],
+  ])(
+    "leaves a call of a `const` to the `const`, beside %s of the same name",
+    async (_label, typeImport) => {
+      const modules = { "src/fmt.ts": "export type Format = (value: string) => string\n" }
+      const head = [typeImport, "const Format = (value: string) => value.trim()"]
+      expect(await callsFromMain(modules, head, ['Format(" a ")'])).toEqual({
+        resolved: [["Format", "ts:src/use.ts#Format"]],
+        unresolved: [],
+      })
+    },
+  )
+})
+
 describe("scan — a call through the name of a class a namespace merged into", () => {
   it("reaches the namespace's export, the member TypeScript calls", async () => {
     await workspace.writeSource(

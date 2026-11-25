@@ -12,7 +12,7 @@ import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { packageName } from "./component-manifest"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
-import { DEFAULT_EXPORT_NAME, splitAliasedImportName } from "./import-edge"
+import { DEFAULT_EXPORT_NAME, importBindsLocal, splitAliasedImportName } from "./import-edge"
 
 export interface ResolutionTrace {
   ambiguousCandidates: Set<SymbolId>
@@ -105,8 +105,7 @@ export function resolveTarget(
 
   // Component and workspace scope match the whole target by spelling, so past the declaration a
   // head is bound to they could only find a namesake.
-  const bound =
-    resolveInFileScope(ctx, head, tail, trace) ?? resolveInImportScope(ctx, head, tail, trace)
+  const bound = resolveBoundHead(ctx, head, tail, trace)
   if (bound !== null) return bound.hit
   if (tail.length === 0) return null
   return resolveInComponentScope(ctx, trace) ?? resolveInWorkspaceScope(ctx, trace)
@@ -250,10 +249,7 @@ export function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | 
   const [head, ...tail] = splitTargetSegments(type)
   if (head === undefined) return null
   const typeCtx = { ...ctx, target: type, reachable: ctx.run.table.allById }
-  const trace = newTrace()
-  const bound =
-    resolveInFileScope(typeCtx, head, tail, trace) ??
-    resolveInImportScope(typeCtx, head, tail, trace)
+  const bound = resolveBoundHead(typeCtx, head, tail, newTrace())
   const owner = bound?.hit == null ? undefined : ctx.run.table.allById.get(bound.hit.id)
   return owner?.kind === "class" ? owner : null
 }
@@ -286,6 +282,37 @@ interface BoundHead {
 }
 
 const NO_MEMBER: BoundHead = { hit: null }
+
+// `const { x } = require("./m")` declares `x` only as the import's alias, so the import answers
+// first. An import on another line, like `import type { X }` beside `const X`, binds the type
+// alone, so file scope stays first.
+function resolveBoundHead(
+  ctx: ResolveTargetContext,
+  head: string,
+  tail: readonly string[],
+  trace: ResolutionTrace,
+): BoundHead | null {
+  if (!declaredByItsImport(ctx, head)) {
+    return (
+      resolveInFileScope(ctx, head, tail, trace) ?? resolveInImportScope(ctx, head, tail, trace)
+    )
+  }
+  const imported = resolveInImportScope(ctx, head, tail, trace)
+  if (imported?.hit != null) return imported
+  // What `require()` gives back is `module.exports`, whose members its module need not declare at
+  // its top level, so a member the import does not find is left to the later scopes.
+  return resolveInFileScope(ctx, head, tail, trace)
+}
+
+function declaredByItsImport(ctx: ResolveTargetContext, head: string): boolean {
+  const declared = ctx.run.table.topLevelByFile.get(ctx.caller.source.file)?.get(head)
+  if (declared === undefined) return false
+  return ctx.imports.some(
+    (edge) =>
+      importBindsLocal(edge, head) &&
+      declared.some(({ source }) => source.startLine <= edge.line && edge.line <= source.endLine),
+  )
+}
 
 function resolveInFileScope(
   ctx: ResolveTargetContext,
