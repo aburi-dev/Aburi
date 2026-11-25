@@ -175,6 +175,44 @@ describe("scan — Prisma calls in a service file", () => {
   })
 })
 
+describe("scan — a Prisma client loaded through CommonJS", () => {
+  it.each([
+    [
+      "a destructuring `require()` at the top of the file",
+      "src/users.cjs",
+      [
+        'const { PrismaClient } = require("@prisma/client")',
+        "const prisma = new PrismaClient()",
+        "",
+        "async function createUser(email) {",
+        "  return prisma.user.create({ data: { email } })",
+        "}",
+        "",
+        "module.exports = { createUser }",
+      ],
+    ],
+    [
+      "a `require()` inside the function",
+      "src/lazy.js",
+      [
+        "async function createUser(email) {",
+        '  const { PrismaClient } = require("@prisma/client")',
+        "  const prisma = new PrismaClient()",
+        "  return prisma.user.create({ data: { email } })",
+        "}",
+        "",
+        "module.exports = { createUser }",
+      ],
+    ],
+  ])("classifies the call through %s as an ESM import would", async (_label, path, lines) => {
+    await workspace.writeSource(path, [...lines, ""].join("\n"))
+
+    expect(symbolNamed(await scanWorkspace(), "createUser").effects).toMatchObject([
+      { id: "db.write", target: "prisma.user.create", confidence: "high" },
+    ])
+  })
+})
+
 describe("scan — a receiver declared with Prisma's own type, whatever it is called", () => {
   it.each([
     ["a client's transaction", "store: PrismaClient", "this.store.$transaction([])", "high"],
