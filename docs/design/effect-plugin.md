@@ -300,7 +300,7 @@ Writing a drop-only plugin is also possible (`provides.effects: []` but declarin
 
 | plugin | example recognized callees | main effect ids |
 |---|---|---|
-| `@aburi/effects-nest` | `EventEmitter2` / `eventBus` `.emit(...)`, and `.emit(...)` on a field declared as `EventEmitter2` | `event.publish` |
+| `@aburi/effects-nest` | `EventEmitter2` / `eventBus` `.emit(...)` and `.emitAsync(...)`, the same on a field declared as `EventEmitter2`, and `@nestjs/cqrs`'s `EventBus` `.publish(...)` / `.publishAll(...)` | `event.publish` |
 | `@aburi/effects-prisma` | `prisma.*.{find*,create,update,upsert,delete}` | `db.read` / `db.write` |
 | `@aburi/effects-drizzle` | `db.select().from(...)` / `db.insert(...)` | `db.read` / `db.write` |
 | `@aburi/effects-trpc` | `trpc.*.{query,mutation}` and the React Query hooks | `network.rpc` |
@@ -549,7 +549,7 @@ Prisma is used from TS and from Python alike (`prisma-client-py`). Because effec
 
 ### 11.5 Why using owner.extKind is allowed
 
-It enables context-dependent determinations such as "treat `this.eventBus.publish(...)` as `event.publish` only inside `framework:nestjs:provider`". owner.extKind has already been determined by the framework plugin (extraction order per lang-plugin §5.3).
+It enables context-dependent determinations such as "treat `this.bus.send(...)` as `event.publish` only inside `framework:nestjs:provider`". owner.extKind has already been determined by the framework plugin (extraction order per lang-plugin §5.3).
 
 ### 11.6 Why literal analysis of SQL strings is included from the start
 
