@@ -16,7 +16,7 @@ Instead of a line-based code diff, it reports what was added / removed / moved /
 
 The reviewer's workflow becomes:
 - Scrolling through huge line diffs → eliminated
-- Symbols that are "move only" or "implementation refactor only" are collapsed → out of sight
+- Symbols that are "move only" or edited only outside what `api` and `logic` read are collapsed → out of sight
 - Focus only on places where the "public contract / business logic / side effects" changed
 
 ## 2. Inputs and outputs
@@ -170,7 +170,7 @@ for each group:
 
 Matching logic fingerprint = same meaning. This catches a good share of "file move without rename" and "file move with a minor refactor".
 
-**Except where the logic names nothing.** A rule's `type` and `loopKind` say what shape a body has, not what it does ([`fingerprint.md`](./fingerprint.md) §4.8), so a Symbol with no effect and no rule carrying more — a class, an enum, a constructor, a body that only calls something or returns a literal, a body that is one `for` loop over calls, one `try`, a route whose handler is named and whose only logic is the middleware in front of it — shares its logic value with every unrelated body of that shape. That two Symbols share the hash is still true, and the group is keyed on it, but agreement on an axis that says nothing is no evidence that they are one Symbol, as sharing the dropped sentinel is none. Such a group therefore has no lone-candidate branch: every pair in it must reach the 0.85 name bar, and both names must say more than one word. That is the name half of what §3.4.3 skips in stage 4, for the same reason — the name is all there is to go on. The other half, `h.signature === null`, is not taken: every class carries a null signature, so it would refuse every class this group exists to pair. Without this, a deleted function paired with whatever head of its group was closest by name — an unrelated function, or, before the kind joined the key, an unrelated class added anywhere in the workspace — and `--fail-on removed` never saw the deletion.
+**Except where the logic names nothing.** A rule's `type` and `loopKind` say what shape a body has, not what it does, and a declared value, a loop's header or a branch's condition recurs across unrelated declarations ([`fingerprint.md`](./fingerprint.md) §4.8), so a Symbol with no effect and no rule carrying more — a class, an enum or a constant whose only rules are its declared values, a constructor, a body that only calls something or returns a literal, a body that is one `for` loop over calls whatever its header, one `if` around a call whatever its condition, one `try`, a route whose handler is named and whose only logic is the middleware in front of it — shares its logic value with every unrelated body of that shape. Its group is keyed on its shape instead of its hash (fingerprint.md §4.8), so a constant whose value changed or an enum that gained a member as it moved still shares a group with what it was, and agreement on an axis that says nothing is no evidence that they are one Symbol, as sharing the dropped sentinel is none. Such a group therefore has no lone-candidate branch: every pair in it must reach the 0.85 name bar, and both names must say more than one word. That is the name half of what §3.4.3 skips in stage 4, for the same reason — the name is all there is to go on. The other half, `h.signature === null`, is not taken: every class carries a null signature, so it would refuse every class this group exists to pair. Without this, a deleted function paired with whatever head of its group was closest by name — an unrelated function, or, before the kind joined the key, an unrelated class added anywhere in the workspace — and `--fail-on removed` never saw the deletion.
 
 A pair below the bar is now refused whether or not its base was the last one left in the group, where the lone branch used to take it. Which of several bases above the bar takes a shared head is still §3.8's call, so group membership still decides that much.
 
@@ -862,10 +862,10 @@ However, fingerprints themselves contain no line information (D4 §4), so line f
 
 ##### 5.2.2 Handling of arguments and receivers in Decorator deltas
 
-Decorators are identified by `(name)`, but differences in `arguments` and `qualifier` are shown in the delta, each side as written ([`markdown-projection.md`](./markdown-projection.md) §6.2):
+Decorators are identified by `(name)`, but differences in `arguments` and `qualifier` are shown in the delta, each side as recorded ([`markdown-projection.md`](./markdown-projection.md) §6.2):
 
 ```
-- decorator modified: `@Post('/invoices')` → `@Post('/invoices/v2')`
+- decorator modified: `@Post("/invoices")` → `@Post("/invoices/v2")`
 - decorator modified: `@UseGuards(AuthGuard)` → `@UseGuards(AuthGuard, RoleGuard)`
 ```
 

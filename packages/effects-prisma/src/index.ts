@@ -1,6 +1,10 @@
 export { classifyPrismaCall } from "./classify"
 export { EFFECTS_PRISMA_DERIVED_BY_PREFIX, EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
-export { hasPrismaImport } from "./imports"
+export {
+  hasPrismaImport,
+  type PrismaClientModuleMatcher,
+  prismaClientModuleMatcher,
+} from "./imports"
 export { effectsPrismaManifest } from "./manifest"
 export {
   isPrismaReadMethod,
@@ -13,6 +17,11 @@ export {
   type PrismaTransactionMethod,
   type PrismaWriteMethod,
 } from "./methods"
+export {
+  PrismaOptionsError,
+  type PrismaPluginOptions,
+  readPrismaOptions,
+} from "./options"
 export { PrismaEffectsPlugin, prismaEffectsPlugin } from "./plugin"
 export {
   classificationConfidence,

@@ -125,6 +125,180 @@ export function hasMatchingImport(
   return imports.some((edge) => matches(edge.source))
 }
 
+/** An import binding a local name: the edge that binds it and the name its module exports. */
+export interface BoundImport {
+  readonly edge: ImportEdge
+  /** The name the edge's module exports, `*` for a namespace import. */
+  readonly imported: string
+}
+
+/**
+ * The import that binds `local` in the module, or `null` where none does: a named or default
+ * import whose local it is, or a namespace import under that name. The last edge wins, as the last
+ * declaration of a name would; a module that compiles binds each name once.
+ */
+export function importBindingOf(
+  imports: readonly ImportEdge[],
+  local: string,
+  origin: PluginInputOrigin,
+): BoundImport | null {
+  let bound: BoundImport | null = null
+  for (const edge of imports) {
+    assertImportEdgeSource(edge, origin)
+    bound = edgeBinding(edge, local, origin) ?? bound
+  }
+  return bound
+}
+
+function edgeBinding(
+  edge: ImportEdge,
+  local: string,
+  origin: PluginInputOrigin,
+): BoundImport | null {
+  if (edge.dynamic) return null
+  if (edge.symbols === "*") {
+    if (edge.namespaceBinding === undefined) return null
+    assertNamespaceBinding(edge.namespaceBinding, edge, origin)
+    return edge.namespaceBinding === local ? { edge, imported: "*" } : null
+  }
+  let bound: BoundImport | null = null
+  for (const binding of bindingsOf(edge, origin)) {
+    if (binding.local === local) bound = { edge, imported: binding.imported }
+  }
+  return bound
+}
+
+// Every call of a file looks its leading name up again in the same edges.
+const edgeBindings = new WeakMap<ImportEdge, readonly ImportBindingHalves[]>()
+
+function bindingsOf(edge: ImportEdge, origin: PluginInputOrigin): readonly ImportBindingHalves[] {
+  let bindings = edgeBindings.get(edge)
+  if (bindings === undefined) {
+    const written = edge.symbols === "*" ? [] : edge.symbols
+    bindings = written.map((raw) => {
+      const binding = importBindingHalves(raw)
+      assertImportBinding(binding, raw, edge, origin)
+      return binding
+    })
+    edgeBindings.set(edge, bindings)
+  }
+  return bindings
+}
+
+// As `@aburi/core` splits an entry, which this package cannot import.
+function importBindingHalves(raw: string): ImportBindingHalves {
+  const marker = raw.indexOf(" as ")
+  if (marker < 0) return { imported: raw.trim(), local: raw.trim() }
+  return { imported: raw.slice(0, marker).trim(), local: raw.slice(marker + 4).trim() }
+}
+
+/**
+ * How far the file's imports place a call's client. The import that binds the call's leading name
+ * answers first, wherever the scan followed it: a name whose re-exports end at another package, or
+ * that a workspace module declares without importing a matching one, is `null` whatever else the
+ * file imports. A name no import binds, or one bound by an import the scan could not follow, is
+ * answered by the file as a whole.
+ * - `direct`: that import is of a matching module, or its re-exports end at one
+ *   (`ImportEdge.origins`); answered by the file as a whole, the file imports a matching module.
+ * - `bound`: that import leads to a workspace module that imports a matching one
+ *   (`ImportEdge.upstream`), as `import { prisma } from "./db"` does: the name is declared beside
+ *   the library, which does not make it the library's client.
+ * - `reached`: only a workspace module the file imports another name from does, as
+ *   `./prisma.service` does for `PrismaService` beside `this.prisma`.
+ * - `null`: nothing does.
+ */
+export type ImportGate = "direct" | "bound" | "reached" | null
+
+export function importGate(
+  imports: readonly ImportEdge[],
+  head: string,
+  origin: PluginInputOrigin,
+  matches: (source: string) => boolean,
+): ImportGate {
+  const facts = edgeFactsFor(matches)
+  let direct = false
+  let reached = false
+  let bound: BoundImport | null = null
+  for (const edge of imports) {
+    assertImportEdgeSource(edge, origin)
+    const fact = facts(edge)
+    direct ||= fact.direct
+    reached ||= fact.reaches
+    bound = edgeBinding(edge, head, origin) ?? bound
+  }
+  // What the name is bound to says more than what else the file imports, so a type imported from
+  // the library beside it leaves the answer as it was.
+  const binding = bound === null ? "unfollowed" : bindingGate(bound, matches)
+  if (binding !== "unfollowed") return binding
+  if (direct) return "direct"
+  return reached ? "reached" : null
+}
+
+function bindingGate(
+  bound: BoundImport,
+  matches: (source: string) => boolean,
+): ImportGate | "unfollowed" {
+  const { edge, imported } = bound
+  const reexported = edge.origins?.get(imported)
+  if (matches(edge.source) || (reexported !== undefined && matches(reexported))) return "direct"
+  if (reexported !== undefined) return null
+  const upstream = edge.upstream?.get(imported)
+  if (upstream === undefined) return "unfollowed"
+  return upstream.some(matches) ? "bound" : null
+}
+
+interface EdgeFacts {
+  /** The edge's own specifier matches. */
+  readonly direct: boolean
+  /** A specifier in the edge's `upstream` matches. */
+  readonly reaches: boolean
+}
+
+// Every call of a file asks again of the same edges, and an edge's `upstream` can be long.
+const edgeFactsByMatcher = new WeakMap<
+  (source: string) => boolean,
+  (edge: ImportEdge) => EdgeFacts
+>()
+
+function edgeFactsFor(matches: (source: string) => boolean): (edge: ImportEdge) => EdgeFacts {
+  let facts = edgeFactsByMatcher.get(matches)
+  if (facts === undefined) {
+    const known = new WeakMap<ImportEdge, EdgeFacts>()
+    facts = (edge) => {
+      let fact = known.get(edge)
+      if (fact === undefined) {
+        const upstream = edge.upstream === undefined ? [] : [...edge.upstream.values()]
+        fact = {
+          direct: matches(edge.source),
+          reaches: upstream.some((sources) => sources.some(matches)),
+        }
+        known.set(edge, fact)
+      }
+      return fact
+    }
+    edgeFactsByMatcher.set(matches, facts)
+  }
+  return facts
+}
+
+/**
+ * Whether the type a receiver is declared with is a matching module's, read through the import
+ * that binds its first segment: the edge's own module, or the one its re-exports end at
+ * (`ImportEdge.origins`). `false` where no import binds it or the call carries no type.
+ */
+export function receiverTypeFromMatchingModule(
+  imports: readonly ImportEdge[],
+  receiverType: string | undefined,
+  origin: PluginInputOrigin,
+  matches: (source: string) => boolean,
+): boolean {
+  if (receiverType === undefined || receiverType.length === 0) return false
+  const [head = receiverType] = receiverType.split(".")
+  const bound = importBindingOf(imports, head, origin)
+  if (bound === null) return false
+  return matches(bound.edge.origins?.get(bound.imported) ?? bound.edge.source)
+}
+
 export function identifierWords(name: string): string[] {
   const words: string[] = []
   for (const chunk of name.split(/[^A-Za-z0-9]+/)) {
@@ -157,6 +331,15 @@ export function receiverConfidence(
   if (call.argumentCount > maxArguments) return "medium"
   if (clientSegment !== undefined && namesClient(clientSegment)) return "high"
   return "medium"
+}
+
+/** The tier of a receiver whose declared type is the library's own: a recognised name's. */
+export function typedReceiverConfidence(
+  call: Pick<CallCandidate, "dynamicReceiver" | "argumentCount">,
+  maxArguments: number,
+): Confidence {
+  if (call.dynamicReceiver === true) return "medium"
+  return call.argumentCount > maxArguments ? "medium" : "high"
 }
 
 export interface EffectsPluginManifest<Name extends string, DerivedByPrefix extends string> {

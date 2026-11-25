@@ -1,4 +1,8 @@
-import { assertNonEmptySegments, type PluginInputOrigin } from "@aburi/plugin-registry/plugin-input"
+import {
+  assertNonEmptySegments,
+  importGate,
+  type PluginInputOrigin,
+} from "@aburi/plugin-registry/plugin-input"
 import type {
   CallCandidate,
   ClassifyContext,
@@ -6,7 +10,7 @@ import type {
   EffectDecline,
 } from "@aburi/types"
 import { EFFECTS_TRPC_DERIVED_BY_PREFIX, EFFECTS_TRPC_PLUGIN_NAME } from "./constants"
-import { hasTrpcClientImport } from "./imports"
+import { isTrpcClientModule } from "./imports"
 import {
   isTrpcMutationTerminal,
   isTrpcQueryTerminal,
@@ -29,7 +33,11 @@ export function classifyTrpcCall(
 
   const { segments, last: terminal } = assertNonEmptySegments(call.target, origin)
 
-  if (!hasTrpcClientImport(ctx.file.imports, ctx.file.path)) return null
+  // A tRPC client has no name of its own to place it by, so what only a module the file imports
+  // another name from reaches is not enough: the client must be the file's import, or bound by one
+  // that leads to the client's module, as `import { api } from "~/trpc/react"` does.
+  const gate = importGate(ctx.file.imports, segments[0], origin, isTrpcClientModule)
+  if (gate !== "direct" && gate !== "bound") return null
 
   const clientPath = segments[0] === "this" ? segments.slice(1) : segments
   if (clientPath.length < MIN_CLIENT_SEGMENTS) return null

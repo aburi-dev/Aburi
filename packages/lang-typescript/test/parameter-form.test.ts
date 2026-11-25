@@ -87,12 +87,12 @@ const FORMS: Array<[string, string, Input]> = [
   [
     "a decorator whose object argument is broken over lines",
     "@Use({\n    a: 1,\n  }) s: S",
-    { name: "s", type: "S", decorators: ["Use({a: 1})"] },
+    { name: "s", type: "S", decorators: ["Use({ a: 1 })"] },
   ],
   [
     "a decorator whose strings hold spacing and commas",
     `@Use('a ,  b', \`c,\n  \${ d }\`) s: S`,
-    { name: "s", type: "S", decorators: [`Use('a ,  b', \`c,\n  \${ d }\`)`] },
+    { name: "s", type: "S", decorators: [`Use("a ,  b", \`c,\n  \${d}\`)`] },
   ],
   [
     "a parameter property",

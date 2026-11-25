@@ -67,7 +67,7 @@ describe("a concise arrow body is read as the block spelling's `return`", () => 
     )
   })
 
-  it("leaves out the parentheses a formatter wraps JSX in, and keeps their line", async () => {
+  it("leaves out the parentheses a formatter wraps JSX in, and the layout around its children", async () => {
     const source = [
       "export const C = ({ label }: any) => (",
       '  <div className="a">',
@@ -77,7 +77,7 @@ describe("a concise arrow body is read as the block spelling's `return`", () => 
     ].join("\n")
 
     expect((await rulesOf(source, "src/a.tsx")).map((r) => [r.line, r.expr])).toEqual([
-      [1, '<div className="a"> {label} </div>'],
+      [1, '<div className="a">{label}</div>'],
     ])
   })
 
