@@ -732,10 +732,14 @@
       },
       "allOf": [
         {
-          "description": "guard/switch/match require non-null condition, others null.",
-          "if": { "properties": { "type": { "enum": ["guard", "switch", "match"] } } },
+          "description": "guard/branch/switch/case/match require non-null condition, loop allows its header or null, others null.",
+          "if": { "properties": { "type": { "enum": ["guard", "branch", "switch", "case", "match"] } } },
           "then": { "properties": { "condition": { "type": "string" } } },
-          "else": { "properties": { "condition": { "type": "null" } } }
+          "else": {
+            "if": { "properties": { "type": { "const": "loop" } } },
+            "then": { "properties": { "condition": { "type": ["string", "null"] } } },
+            "else": { "properties": { "condition": { "type": "null" } } }
+          }
         },
         {
           "description": "throw requires non-null what, others null.",
@@ -744,8 +748,8 @@
           "else": { "properties": { "what": { "type": "null" } } }
         },
         {
-          "description": "return requires non-null expr, others null.",
-          "if": { "properties": { "type": { "const": "return" } } },
+          "description": "return/value require non-null expr, others null.",
+          "if": { "properties": { "type": { "enum": ["return", "value"] } } },
           "then": { "properties": { "expr": { "type": "string" } } },
           "else": { "properties": { "expr": { "type": "null" } } }
         },
@@ -921,7 +925,7 @@
     },
 
     "RuleType": {
-      "enum": ["guard", "throw", "return", "loop", "try", "switch", "match"]
+      "enum": ["guard", "branch", "throw", "return", "value", "loop", "try", "switch", "case", "match"]
     },
 
     "Confidence": {

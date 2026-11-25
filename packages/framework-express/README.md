@@ -110,11 +110,12 @@ otherwise — the classification survives so the workspace projection still
 surfaces the shape, but consumers can treat medium-confidence rows as
 candidates for review. The import is read from the file's parsed import list,
 so the line breaks it is written with do not matter and a commented-out import
-does not count. When that list names no `express`, the source is read as
-tokens, with comments skipped and literals read whole, for a `require` call
-and for an import the list missed (one the parser lost to a syntax error, or
-one inside a `declare module` block). JSX text with a quote or backtick in it
-can mislead that reading on the lines it spans.
+does not count. The list holds a CommonJS `require("express")` too. When it
+names no `express`, the source is read as tokens, with comments skipped and
+literals read whole, for an import or a `require` call the list missed (one the
+parser lost to a syntax error, or an import inside a `declare module` block).
+JSX text with a quote or backtick in it can mislead that reading on the lines it
+spans.
 
 Every handler a registration names is also a call it makes, since Express runs
 it: `app.get("/users", requireAdmin, listUsers)` calls `requireAdmin` and

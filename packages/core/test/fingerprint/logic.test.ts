@@ -1,7 +1,7 @@
 import { decorator, effect, rule, sig } from "@aburi/test-support"
 import type { Effect, Symbol as IRSymbol, Rule } from "@aburi/types"
 import { describe, expect, it } from "vitest"
-import { logicFingerprint, logicNamesNothing } from "../../src/index"
+import { logicFingerprint, logicNamesNothing, logicShapeFingerprint } from "../../src/index"
 import { makeSymbol, type SymbolOverrides } from "../fixtures/ir"
 
 function localEffect(id: string, target: string, line: number): Effect {
@@ -197,6 +197,21 @@ describe("logicNamesNothing", () => {
   it.each<[string, IRSymbol]>([
     ["a body with no rules and no effects", withRules()],
     ["a loop", withRules(rule({ type: "loop", loopKind: "for" }))],
+    [
+      "a loop with its header",
+      withRules(rule({ type: "loop", loopKind: "for", condition: "const item of items" })),
+    ],
+    [
+      "declared values alone",
+      withRules(
+        rule({ type: "value", expr: "5000" }),
+        rule({ type: "value", expr: 'Red = "red"' }),
+      ),
+    ],
+    [
+      "a branch beside a declared value",
+      withRules(rule({ type: "value", expr: "0" }), rule({ type: "branch", condition: "debug" })),
+    ],
     ["a try", withRules(rule({ type: "try" }))],
     [
       "a guard and a throw it could not read",
@@ -214,9 +229,63 @@ describe("logicNamesNothing", () => {
     ["a rule carrying a condition", withRules(loop, rule({ type: "guard", condition: "!id" }))],
     ["a rule carrying a thrown value", withRules(loop, rule({ type: "throw", what: "Error" }))],
     ["a rule carrying an expression", withRules(loop, rule({ type: "return", expr: "a + b" }))],
+    [
+      "a branch beside a guard",
+      withRules(
+        rule({ type: "branch", condition: "debug" }),
+        rule({ type: "guard", condition: "!id" }),
+      ),
+    ],
     ["a local effect", caller(WRITE)],
     ["a propagated effect alone", caller(propagatedEffect("db.write", "prisma.invoice.create"))],
   ])("fails on %s", (_what, symbol) => {
     expect(logicNamesNothing(symbol)).toBe(false)
+  })
+})
+
+describe("logicShapeFingerprint", () => {
+  const withRules = (...rules: Rule[]) => makeSymbol("ts:src/a.ts#foo", { rules })
+  const value = (expr: string) => rule({ type: "value", expr })
+
+  it.each<[string, IRSymbol, IRSymbol]>([
+    ["a declared value that changed", withRules(value("5000")), withRules(value("10000"))],
+    [
+      "an enum that gained a member",
+      withRules(value("Admin"), value("Guest")),
+      withRules(value("Admin"), value("Guest"), value("Owner")),
+    ],
+    [
+      "a branch whose condition changed",
+      withRules(rule({ type: "branch", condition: "enabled" })),
+      withRules(rule({ type: "branch", condition: "!enabled" })),
+    ],
+    [
+      "a loop whose header changed",
+      withRules(rule({ type: "loop", loopKind: "for", condition: "const x of xs" })),
+      withRules(rule({ type: "loop", loopKind: "for", condition: "const y of ys" })),
+    ],
+  ])("is one shape across %s", (_what, before, after) => {
+    expect(logicFingerprint(before)).not.toBe(logicFingerprint(after))
+    expect(logicShapeFingerprint(before)).toBe(logicShapeFingerprint(after))
+  })
+
+  it.each<[string, IRSymbol, IRSymbol]>([
+    [
+      "a loop of another kind",
+      withRules(rule({ type: "loop", loopKind: "for" })),
+      withRules(rule({ type: "loop", loopKind: "while" })),
+    ],
+    [
+      "rules in another order",
+      withRules(rule({ type: "try" }), rule({ type: "loop", loopKind: "for" })),
+      withRules(rule({ type: "loop", loopKind: "for" }), rule({ type: "try" })),
+    ],
+    [
+      "another middleware",
+      makeSymbol("ts:src/a.ts#foo", { middleware: ["requireUser"] }),
+      makeSymbol("ts:src/a.ts#foo", { middleware: ["requireAdmin"] }),
+    ],
+  ])("tells apart %s", (_what, before, after) => {
+    expect(logicShapeFingerprint(before)).not.toBe(logicShapeFingerprint(after))
   })
 })

@@ -15,11 +15,15 @@ export function makeCall(
   }
 }
 
+// Past the lines `makeSymbol` gives a Symbol, so a test that has a declaration write its import
+// says so with a line of its own.
+const IMPORT_LINE = 100
+
 /** A static import from `source`, binding nothing unless `overrides` say so. */
 export function importEdge(
   overrides: Partial<ImportEdge> & Pick<ImportEdge, "source">,
 ): ImportEdge {
-  return { symbols: [], line: 1, dynamic: false, ...overrides }
+  return { symbols: [], line: IMPORT_LINE, dynamic: false, ...overrides }
 }
 
 /** `export { … } from source`, each name written `imported` or `imported as exported`. */

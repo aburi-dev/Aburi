@@ -201,7 +201,7 @@ describe("projectDiff — folded sections", () => {
       "## 🎨 Syntax-only changes",
       "",
       "<details>",
-      "<summary>2 symbols (implementation refactor only, no semantic change)</summary>",
+      "<summary>2 symbols (edited outside the API, rules, effects and middleware)</summary>",
       "",
       "- `SyntaxA` (`src/a.ts:1`)",
       "- `SyntaxB` (`src/a.ts:1`)",
@@ -214,7 +214,7 @@ describe("projectDiff — folded sections", () => {
     [
       "## 🎨 Syntax-only changes",
       changed(makeSymbol({ id: "ts:src/a.ts#SyntaxA", name: "SyntaxA" }), { syntaxChanged: true }),
-      "1 symbol (implementation refactor only, no semantic change)",
+      "1 symbol (edited outside the API, rules, effects and middleware)",
     ],
   ])("counts a single entry of %s in the singular", (heading, change, summary) => {
     expect(sectionOf(projectChanges([change]), heading)).toContain(`<summary>${summary}</summary>`)

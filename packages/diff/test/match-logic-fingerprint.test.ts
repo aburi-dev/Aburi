@@ -140,12 +140,52 @@ describe("matchStageLogicFingerprint over a logic fingerprint that names nothing
 
   it.each([
     ["one `for` loop", rule({ type: "loop", loopKind: "for" })],
+    [
+      "one `for` loop with a header",
+      rule({ type: "loop", loopKind: "for", condition: "const item of items" }),
+    ],
+    ["one branch", rule({ type: "branch", condition: "enabled" })],
     ["one `try`", rule({ type: "try" })],
   ])("treats a body of only %s as naming nothing", (_, shape) => {
     const base = bare("src/mail.ts", "sendAllEmails", "function", [shape])
     const head = bare("src/invoice.ts", "renderInvoiceRows", "function", [shape])
     expect(base.fingerprint.logic).toBe(head.fingerprint.logic)
     expect(stage3([base], [head]).pairs).toEqual([])
+  })
+
+  it.each([
+    [
+      "a constant whose value changed",
+      "const",
+      "REQUEST_TIMEOUT_MS",
+      [rule({ type: "value", expr: "5000" })],
+      [rule({ type: "value", expr: "10000" })],
+    ],
+    [
+      "an enum that gained a member",
+      "enum",
+      "UserRole",
+      [rule({ type: "value", expr: "Admin" }), rule({ type: "value", expr: "Guest" })],
+      [
+        rule({ type: "value", expr: "Admin" }),
+        rule({ type: "value", expr: "Guest" }),
+        rule({ type: "value", expr: "Owner" }),
+      ],
+    ],
+    [
+      "a body whose branch changed its condition",
+      "function",
+      "notifyIfEnabled",
+      [rule({ type: "branch", condition: "enabled" })],
+      [rule({ type: "branch", condition: "!enabled" })],
+    ],
+  ] as const)("pairs %s by its name when it moves file", (_, kind, name, before, after) => {
+    const base = bare("src/a.ts", name, kind, [...before])
+    const head = bare("src/b.ts", name, kind, [...after])
+    expect(base.fingerprint.logic).not.toBe(head.fingerprint.logic)
+    expect(stage3([base], [head]).pairs).toEqual([
+      [base.id, head.id, "logic-fingerprint+name-disambiguation"],
+    ])
   })
 
   it("leaves two unrelated top-level `main`s apart", () => {

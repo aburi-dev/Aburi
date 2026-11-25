@@ -5,6 +5,7 @@ import type {
   Reexport,
   RelativePath,
   SymbolCandidate,
+  WrittenImportEdge,
 } from "@aburi/types"
 import { toNfc } from "../codepoints"
 import { documentPathOrViolation, type GrammarViolation } from "../id"
@@ -129,7 +130,7 @@ function normalizeSignatureStrings<T extends SymbolCandidate<OpaqueAstNode>["sig
   return inputs === signature.inputs ? signature : ({ ...signature, inputs } as T)
 }
 
-export function normalizeImportEdge(written: Omit<ImportEdge, "origins">): ImportEdge {
+export function normalizeImportEdge(written: WrittenImportEdge): ImportEdge {
   const source = toNfc(written.source)
   const binding = written.namespaceBinding
   const namespaceBinding = typeof binding === "string" ? toNfc(binding) : binding
@@ -141,6 +142,7 @@ export function normalizeImportEdge(written: Omit<ImportEdge, "origins">): Impor
       : mapPreservingIdentity(written.reexports, normalizeReexport)
   if (
     !("origins" in written) &&
+    !("upstream" in written) &&
     source === written.source &&
     namespaceBinding === binding &&
     symbols === written.symbols &&
