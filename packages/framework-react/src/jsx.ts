@@ -14,7 +14,7 @@ const JSX_ELEMENT_TYPES: ReadonlySet<string> = new Set([
 ])
 
 /** Node types that open a new function scope: a nested arrow's return is not the enclosing body's. */
-const FUNCTION_SCOPE_TYPES: ReadonlySet<string> = new Set([
+export const FUNCTION_SCOPE_TYPES: ReadonlySet<string> = new Set([
   "function_declaration",
   "function_expression",
   "arrow_function",
@@ -31,15 +31,20 @@ export function hasJsxReturn(body: unknown): boolean {
   return findFirstJsxDescendant(node) !== null
 }
 
-export function findReturnedJsxElementNames(body: unknown): string[] {
+/** The values the function's own `return`s hand back. */
+export function findReturnedValues(body: unknown): SyntaxNode[] {
   const node = asSyntaxNode(body)
   if (node === null) return []
-  const values: SyntaxNode[] = []
   // A concise arrow's body is the value it returns.
-  if (node.type === "statement_block") collectReturnedValues(node, values)
-  else values.push(node)
+  if (node.type !== "statement_block") return [node]
+  const values: SyntaxNode[] = []
+  collectReturnedValues(node, values)
+  return values
+}
+
+export function findReturnedJsxElementNames(body: unknown): string[] {
   const elements: SyntaxNode[] = []
-  for (const value of values) collectReturnedElements(value, elements)
+  for (const value of findReturnedValues(body)) collectReturnedElements(value, elements)
   return elements.map(jsxElementName).filter((name) => name !== null)
 }
 

@@ -4,6 +4,7 @@ import {
   calleeName,
   declaratorValue,
   lastQnameSegment,
+  type SyntaxNode,
 } from "@aburi/core"
 
 /** Bare identifiers only: `React.<name>` callees are matched by leaf. */
@@ -14,12 +15,17 @@ export const REACT_MEMO_FACTORIES: ReadonlySet<string> = new Set(["memo"])
 export type WrapperCall = CalleeName
 
 export function extractWrapperCall(fullNode: unknown, name: string): WrapperCall | null {
+  const call = wrapperCallNode(fullNode, name)
+  return call === null ? null : calleeName(call)
+}
+
+/** The call a const's own initializer is, which `extractWrapperCall` names. */
+export function wrapperCallNode(fullNode: unknown, name: string): SyntaxNode | null {
   const node = asSyntaxNode(fullNode)
   if (node === null) return null
   // `lastQnameSegment` throws on a broken qname; that is a language-plugin bug not to swallow.
   const call = declaratorValue(node, lastQnameSegment(name))
-  if (call === null || call.type !== "call_expression") return null
-  return calleeName(call)
+  return call === null || call.type !== "call_expression" ? null : call
 }
 
 export function isContextCall(call: WrapperCall | null): boolean {
