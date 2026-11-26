@@ -81,6 +81,61 @@ describe("VocabRegistry lookups", () => {
   })
 })
 
+describe("VocabRegistry exit calls", () => {
+  const navigation = frameworkManifest({
+    name: "framework-nav",
+    provides: { exitCalls: [{ module: "next/navigation", exports: ["redirect", "notFound"] }] },
+  })
+  const alsoNavigation = frameworkManifest({
+    name: "framework-nav-too",
+    provides: { exitCalls: [{ module: "next/navigation", exports: ["forbidden"] }] },
+  })
+  const both = () => {
+    const reg = new VocabRegistry()
+    reg.register(navigation)
+    reg.register(alsoNavigation)
+    return reg
+  }
+
+  it.each([
+    ["an export one plugin declares", "next/navigation", "redirect", true],
+    ["another export the same plugin declares", "next/navigation", "notFound", true],
+    ["an export the other declares of the same module", "next/navigation", "forbidden", true],
+    ["an export of the module nobody declares", "next/navigation", "useRouter", false],
+    ["a declared name exported by another module", "./navigation", "redirect", false],
+  ])("answers %s", (_label, module, exported, exits) => {
+    expect(both().isExitCall(module, exported)).toBe(exits)
+  })
+
+  it("answers false for every call where no manifest declares one", () => {
+    expect(registry().isExitCall("next/navigation", "redirect")).toBe(false)
+  })
+
+  it.each([
+    ["lang", langManifest],
+    ["effects", effectsManifest],
+    ["framework", frameworkManifest],
+  ] as const)("takes a declaration from a %s manifest", (_type, manifest) => {
+    const reg = new VocabRegistry()
+    reg.register(manifest({ provides: { exitCalls: [{ module: "./fail", exports: ["fail"] }] } }))
+    expect(reg.isExitCall("./fail", "fail")).toBe(true)
+  })
+
+  // A provides with any other prototype is refused as a non-plain object, so Object.prototype is
+  // the one place a manifest can inherit an exitCalls from.
+  it("declares nothing through an exitCalls a manifest inherits", () => {
+    const exitCalls = [{ module: "next/navigation", exports: ["redirect"] }]
+    Object.defineProperty(Object.prototype, "exitCalls", { value: exitCalls, configurable: true })
+    try {
+      const reg = new VocabRegistry()
+      reg.register(frameworkManifest({ name: "framework-demo" }))
+      expect(reg.isExitCall("next/navigation", "redirect")).toBe(false)
+    } finally {
+      Reflect.deleteProperty(Object.prototype, "exitCalls")
+    }
+  })
+})
+
 describe("isUnderPrefix", () => {
   it.each([
     ["x-acme", "x-acme", true],

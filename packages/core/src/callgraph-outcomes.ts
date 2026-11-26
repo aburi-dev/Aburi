@@ -46,6 +46,7 @@ export interface CallResolverInput {
   readonly receiverHints: ReadonlyMap<string, ReceiverHint>
   readonly declaredReceiverTypes: DeclaredReceiverTypes
   readonly importedReceivers: ReadonlySet<string>
+  readonly localHeads: ReadonlySet<string>
   readonly receiverCalls: ReceiverCalls
   readonly returnSources: ReturnSources
 }
@@ -113,13 +114,14 @@ export class CallResolver {
   }
 
   #contextOf(symbol: IRSymbol, call: Call): ResolveTargetContext {
-    const { run } = this.#input
+    const { run, localHeads } = this.#input
     return {
       run,
       caller: symbol,
       target: call.target,
       imports: run.importsByFile.get(symbol.source.file) ?? [],
       parameterNames: this.#parametersOf(symbol),
+      localHead: localHeads.has(makeSymbolCallKey(symbol.id, call.line, call.target)),
     }
   }
 

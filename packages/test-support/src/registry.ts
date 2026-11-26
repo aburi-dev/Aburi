@@ -12,6 +12,7 @@ export const noopRegistry: VocabRegistry = {
   listExtKinds: () => [],
   listFrameworks: () => [],
   listPlugins: () => [],
+  isExitCall: () => false,
   assertEffectDeclared: () => {},
   assertExtKindDeclared: () => {},
 }

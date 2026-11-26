@@ -6,6 +6,7 @@ import {
   decodeStringLiteral,
   lastQnameSegment,
   middlewareNames,
+  referenceCalls,
   type SyntaxNode,
   unwrapValue,
   writtenChildren,
@@ -21,7 +22,6 @@ import {
 import { type Chain, readChain } from "./chain"
 import { TRPC_DERIVED_BY_PREFIX, type TrpcExtKind } from "./ext-kinds"
 import { hasTrpcServerImport } from "./imports"
-import { referenceCalls } from "./references"
 
 type TrpcRole = TrpcExtKind extends `${typeof TRPC_DERIVED_BY_PREFIX}:${infer Role}` ? Role : never
 

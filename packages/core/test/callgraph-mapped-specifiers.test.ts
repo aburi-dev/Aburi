@@ -11,11 +11,13 @@ function resolveThrough(
   target: string,
   symbols: readonly IRSymbol[],
   paths: readonly string[] = ["libs/billing/src/index.ts"],
+  workspacePackageNames: ReadonlySet<string> = new Set(),
 ) {
   return resolveCallGraph({
     symbols: [withCalls(CALLER, [{ target, line: 2 }]), ...symbols],
     importsByFile: importsOf("apps/api/main.ts", edge),
     specifierPaths: new Map([["apps/api/main.ts", new Map([[edge.source, paths]])]]),
+    workspacePackageNames,
   })
 }
 
@@ -71,24 +73,39 @@ describe("import scope — a bare specifier the language maps to workspace paths
     expect(result.diagnostics.map((d) => d.bucket)).toEqual(["no-match"])
   })
 
-  it("leaves a specifier mapped to no file with Symbols a bare one: `external`, then steps 4–5", () => {
+  describe("a specifier mapped to no file with Symbols", () => {
     const elsewhere = makeSymbol("ts:packages/pkg/src/util.ts#Logger.log")
     const unmapped = ["packages/pkg/src/missing"]
-    const named = resolveThrough(
-      { source: "@app/pkg", symbols: ["Logger"] },
-      "Logger.log",
-      [elsewhere],
-      unmapped,
-    )
-    expect(named.edges.map((e) => e.to)).toEqual(["ts:packages/pkg/src/util.ts#Logger.log"])
 
-    const aliased = resolveThrough(
-      { source: "@app/pkg", symbols: ["Logger as L"] },
-      "L.log",
-      [elsewhere],
-      unmapped,
-    )
-    expect(aliased.diagnostics.map((d) => d.bucket)).toEqual(["external"])
+    it("reaches steps 4–5 through a named import of a workspace package", () => {
+      const result = resolveThrough(
+        { source: "@app/pkg", symbols: ["Logger"] },
+        "Logger.log",
+        [elsewhere],
+        unmapped,
+        new Set(["@app/pkg"]),
+      )
+      expect(result.edges.map((e) => e.to)).toEqual(["ts:packages/pkg/src/util.ts#Logger.log"])
+    })
+
+    it.each<[string, ImportClause, string, ReadonlySet<string>]>([
+      [
+        "an alias of a workspace package",
+        { source: "@app/pkg", symbols: ["Logger as L"] },
+        "L.log",
+        new Set(["@app/pkg"]),
+      ],
+      [
+        "a named import of any other package",
+        { source: "@app/pkg", symbols: ["Logger"] },
+        "Logger.log",
+        new Set(),
+      ],
+    ])("ends the search at %s, bucketed `external`", (_case, edge, target, packages) => {
+      const result = resolveThrough(edge, target, [elsewhere], unmapped, packages)
+      expect(result.edges).toEqual([])
+      expect(result.diagnostics.map((d) => d.bucket)).toEqual(["external"])
+    })
   })
 
   it("reads the paths of the caller's own file only", () => {

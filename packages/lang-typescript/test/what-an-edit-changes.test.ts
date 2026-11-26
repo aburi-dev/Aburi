@@ -174,6 +174,49 @@ describe("an edit to what a caller passes or gets is an api change", () => {
   )
 })
 
+describe("an edit to a declaration that has no body is an api change", () => {
+  it.each([
+    [
+      "an abstract method's signature",
+      "export abstract class Repo {\n  abstract find(id: string): Promise<User>\n}\n",
+      "export abstract class Repo {\n  abstract find(id: number, opts?: Opts): Promise<User | null>\n}\n",
+      "Repo.find",
+      "Repo",
+    ],
+    [
+      "a declared function's signature",
+      "export declare function load(id: string): Promise<User>\n",
+      "export declare function load(id: number): Promise<User | null>\n",
+      "load",
+      null,
+    ],
+    [
+      "a declared class's method signature",
+      "export declare class Client {\n  get(id: string): User\n}\n",
+      "export declare class Client {\n  get(id: string, fresh: boolean): User\n}\n",
+      "Client.get",
+      "Client",
+    ],
+  ])(
+    "reports %s on the Symbol it declares, kept on both sides",
+    async (_label, before, after, name, owner) => {
+      const diff = await diffOfEdit(workspace, FILE, before, after)
+      const owners = owner === null ? [] : [{ name: owner, ...SYNTAX_ONLY }]
+
+      expect(diff.summary).toMatchObject({
+        added: 0,
+        removed: 0,
+        droppedToggled: 0,
+        changed: owners.length + 1,
+      })
+      expect(changedSymbols(diff)).toMatchObject([
+        ...owners,
+        { name, apiChanged: true, logicChanged: false, syntaxChanged: true },
+      ])
+    },
+  )
+})
+
 describe("an edit to a parameter's modifier or decorator is an api change on its member", () => {
   const service = (parameter: string) =>
     `export class C {\n  constructor(${parameter}) {}\n\n  run() {\n    use()\n  }\n}\n`

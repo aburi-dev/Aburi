@@ -70,6 +70,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
   importedReceivers: string[]
   receiverCalls: ReceiverCallEntry[]
   unboundHeads: string[]
+  localHeads: string[]
 } {
   const classifiedEffects: Effect[] = []
   const survivingCalls: Call[] = []
@@ -82,6 +83,8 @@ export function classifyCalls(input: ClassifyCallsInput): {
   const imported = new Map<string, boolean>()
   // `false` once one of a key's calls is not marked `unboundHead`.
   const unbound = new Map<string, boolean>()
+  // `false` once one of a key's calls is not marked `localHead`.
+  const local = new Map<string, boolean>()
   // `null` once a key's calls stop naming one call, a call with none included.
   const receiverCallSites = new Map<string, string | null>()
   const owner: OwnerSummary = {
@@ -166,6 +169,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
       declaredTypes.set(symbolKey, seen === undefined || seen === type ? type : null)
       imported.set(symbolKey, imported.get(symbolKey) !== false && call.importedReceiver === true)
       unbound.set(symbolKey, unbound.get(symbolKey) !== false && call.unboundHead === true)
+      local.set(symbolKey, local.get(symbolKey) !== false && call.localHead === true)
       const written = call.receiverCall
       const site = isCallSiteRef(written)
         ? makeCallSiteKey(input.file.path, written.line, written.target)
@@ -179,6 +183,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     if (type !== null) declaredReceiverTypes.push([key, type])
   const importedReceivers = [...imported].flatMap(([key, through]) => (through ? [key] : []))
   const unboundHeads = [...unbound].flatMap(([key, none]) => (none ? [key] : []))
+  const localHeads = [...local].flatMap(([key, inner]) => (inner ? [key] : []))
   const receiverCalls = [...receiverCallSites].flatMap(([key, site]): ReceiverCallEntry[] =>
     site === null ? [] : [[key, site]],
   )
@@ -194,6 +199,7 @@ export function classifyCalls(input: ClassifyCallsInput): {
     importedReceivers,
     receiverCalls,
     unboundHeads,
+    localHeads,
     declinedCalls,
   }
 }

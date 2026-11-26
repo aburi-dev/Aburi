@@ -69,6 +69,10 @@ Key rules:
   values a component's `frameworks` in `aburi.json` holds. Two plugins claiming
   one id are refused at load time. `aburi init` does not read it: it detects
   the first-party frameworks alone.
+- `exitCalls` (optional) names functions a library exports that never return to
+  their caller, such as `{ module: "next/navigation", exports: ["redirect"] }`.
+  An `if` whose consequence calls one, through its import, is recorded as a
+  guard, as a `throw` would make it. Two plugins may name the same function.
 
 Two plugins declaring the same `extKind` id make the registry throw at register
 time. We chose a loud failure over a silent takeover. `aburi scan` then exits `3`
@@ -167,6 +171,13 @@ Contracts to know:
   claimed by your manifest). The pipeline throws otherwise.
 - `walkBody`'s `Rule` output is line-sorted by the pipeline before entering the
   IR, so you do not sort it yourself. Same for `calls`.
+- **Mark a call whose leading name a local declares.** Set `localHead: true` on
+  a call whose head a scope inside the module binds — a local, a nested
+  function, a callback's parameter, a `catch` binding. The call resolver reads
+  only the Symbol's own parameters by itself, so without the mark `save()` beside
+  `const save = …` links to a `save` the module declares or imports, and the
+  caller takes that function's effects. The
+  [`localHead` contract](../design/lang-plugin.md#localhead) has the details.
 - **Take comments out of rule strings yourself, and use the shared helper for the
   rest.** A rule's `condition`, `what` and `expr` hold no comments, one space for
   each run of whitespace, and at most 120 code points plus `...`. Only your plugin
@@ -391,8 +402,9 @@ Contracts:
   node the chain starts from; `chainCalls(call)` returns the calls the chain
   passes, the call itself first.
 - A plugin for a framework that registers handlers by call can return
-  `middleware`: what the Symbol runs before its handler, in order, named
-  from the syntax tree by the same rule as `derivedBy`. The pipeline writes it to
+  `middleware`: what the Symbol runs before its handler, in the order the
+  declaration writes it, named from the syntax tree by the same rule as
+  `derivedBy`. The pipeline writes it to
   `Symbol.middleware`, which the logic fingerprint reads, so a removed
   authorization step is a logic change the report names. Hand the arguments
   that are middleware to `middlewareNames(nodes)` from `@aburi/core`, which
@@ -405,7 +417,10 @@ Contracts:
   `auth.required`), and `line` 1-based, `node.startPosition.row + 1` for the
   node the reference is written as. The pipeline appends them to `Symbol.calls`,
   after the body's calls on a line both share, and resolves them as it resolves
-  the body's, so the callee's effects propagate to the Symbol.
+  the body's, so the callee's effects propagate to the Symbol. Hand the
+  arguments the framework runs to `referenceCalls(nodes)` from `@aburi/core`,
+  which spells each reference as `framework-express` and `framework-trpc` do
+  and leaves out what is not a name: an inline function, a call, a spread.
 - `asSyntaxNode` returns `null` for a node without a numeric `startPosition.row`,
   so a language plugin must hand over nodes that carry one, or every framework
   plugin that reads its nodes classifies nothing.
@@ -451,7 +466,9 @@ Decorator-free classification (name / shape / body signals) is also supported:
 see [`packages/framework-react`](https://github.com/aburi-dev/Aburi/tree/main/packages/framework-react)
 for a reference plugin that keys off PascalCase naming, `use[A-Z]` naming, JSX
 return detection, and `createContext(...)` / `forwardRef(...)` / `memo(...)`
-call-shape recognition, with no decorators involved.
+call-shape recognition, with no decorators involved. A role read off a name
+alone is graded `medium` unless the file imports React (`ctx.imports`), so the
+report badges a composable named `useCounter` in a file that imports Vue.
 
 ## Effects plugin
 

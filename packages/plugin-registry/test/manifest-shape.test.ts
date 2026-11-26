@@ -51,6 +51,17 @@ describe("a manifest whose shape register cannot read", () => {
     expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["lang-demo"] })
   })
 
+  it("refuses a provides that inherits exitCalls from an object of its own", async () => {
+    const m = frameworkManifest({ name: "framework-demo" })
+    const inherited = { exitCalls: [{ module: 1, exports: "ab" }] }
+    const err = await refusal({
+      ...m,
+      provides: Object.assign(Object.create(inherited), m.provides),
+    })
+    expect(err.code).toBe("manifest-invalid")
+    expect(err.message).toContain("non-plain object (Object) at $.provides;")
+  })
+
   it.each([
     ["effects", "null", null],
     ["effects", "array", []],
@@ -104,6 +115,31 @@ describe("a manifest whose shape register cannot read", () => {
       expect(err.message).toBe(`Plugin "lang-demo" provides.${key}[0] must be a string (got null).`)
     },
   )
+
+  it.each([
+    ["exitCalls", "null", null, "an array"],
+    ["exitCalls[0]", "string", ["next/navigation"], "an object"],
+    ["exitCalls[0].module", "undefined", [{ exports: ["redirect"] }], "a string"],
+    [
+      "exitCalls[0].exports",
+      "string",
+      [{ module: "next/navigation", exports: "redirect" }],
+      "an array",
+    ],
+    [
+      "exitCalls[0].exports[1]",
+      "number",
+      [{ module: "next/navigation", exports: ["a", 1] }],
+      "a string",
+    ],
+  ] as const)("refuses provides.%s that is a %s", async (at, got, exitCalls, expected) => {
+    const m = frameworkManifest({ name: "framework-demo" })
+    const err = await refusal({ ...m, provides: { ...m.provides, exitCalls } })
+    expect(err).toMatchObject({ code: "manifest-invalid", plugins: ["framework-demo"] })
+    expect(err.message).toBe(
+      `Plugin "framework-demo" provides.${at} must be ${expected} (got ${got}).`,
+    )
+  })
 
   it.each(["toString", "constructor", "__proto__"])(
     "refuses type %s rather than reading Object.prototype",

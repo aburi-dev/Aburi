@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { middlewareNames } from "../src/middleware-names"
+import { referenceCalls } from "../src/reference-calls"
 import {
   anyCallCalleeMatches,
   asSyntaxNode,
@@ -421,21 +422,21 @@ describe("anyCallCalleeMatches", () => {
   })
 })
 
-describe("middlewareNames", () => {
-  const callOf = (callee: SyntaxNode, ...args: SyntaxNode[]) =>
-    withFields("call_expression", { function: callee, arguments: wrapped("arguments", ...args) })
-  const subscript = (object: SyntaxNode, index: SyntaxNode) =>
-    withFields("subscript_expression", { object, index })
-  const string = (...parts: SyntaxNode[]) => wrapped("string", ...parts)
-  const template = (...parts: SyntaxNode[]) => wrapped("template_string", ...parts)
-  const fragment = (text: string) => node({ type: "string_fragment", text })
-  const escaped = (text: string) => node({ type: "escape_sequence", text })
-  const substitution = wrapped("template_substitution", identifier("role"))
-  const literal = (type: string, text = type) => node({ type, text })
-  const requireRole = (...args: SyntaxNode[]) => callOf(identifier("requireRole"), ...args)
-  const handlers = (index: SyntaxNode) => subscript(identifier("handlers"), index)
-  const inline = node({ type: "arrow_function" })
+const callOf = (callee: SyntaxNode, ...args: SyntaxNode[]) =>
+  withFields("call_expression", { function: callee, arguments: wrapped("arguments", ...args) })
+const subscript = (object: SyntaxNode, index: SyntaxNode) =>
+  withFields("subscript_expression", { object, index })
+const string = (...parts: SyntaxNode[]) => wrapped("string", ...parts)
+const template = (...parts: SyntaxNode[]) => wrapped("template_string", ...parts)
+const fragment = (text: string) => node({ type: "string_fragment", text })
+const escaped = (text: string) => node({ type: "escape_sequence", text })
+const substitution = wrapped("template_substitution", identifier("role"))
+const literal = (type: string, text = type) => node({ type, text })
+const requireRole = (...args: SyntaxNode[]) => callOf(identifier("requireRole"), ...args)
+const handlers = (index: SyntaxNode) => subscript(identifier("handlers"), index)
+const inline = node({ type: "arrow_function" })
 
+describe("middlewareNames", () => {
   it.each([
     ["a name", identifier("requireAdmin"), "requireAdmin"],
     ["`this`", literal("this"), "this"],
@@ -544,6 +545,58 @@ describe("middlewareNames", () => {
     expect(middlewareNames([identifier("timing"), inline, identifier("isAuthed")])).toEqual([
       "timing",
       "isAuthed",
+    ])
+  })
+})
+
+describe("referenceCalls", () => {
+  it.each([
+    ["a name", identifier("requireAdmin"), "requireAdmin"],
+    [
+      "a member path",
+      member(member(identifier("auth"), "guards"), "required"),
+      "auth.guards.required",
+    ],
+    ["a key in quotes", handlers(string(fragment("auth"))), "handlers.auth"],
+    ["a key in a backtick", handlers(template(fragment("auth"))), "handlers.auth"],
+    [
+      "a name behind `as` and parentheses",
+      wrapped("as_expression", wrapped("parenthesized_expression", identifier("isAuthed"))),
+      "isAuthed",
+    ],
+    [
+      "a member behind parentheses",
+      wrapped("parenthesized_expression", member(identifier("auth"), "required")),
+      "auth.required",
+    ],
+  ])("adds a call through %s", (_label, reference, target) => {
+    expect(referenceCalls([reference])).toEqual([{ target, line: 1 }])
+  })
+
+  it.each([
+    ["a key a name cannot spell", handlers(string(fragment("not a name")))],
+    ["a key with a substitution", handlers(template(fragment("a"), substitution))],
+    ["a key read off a name", handlers(identifier("kind"))],
+    ["a numeric key", handlers(literal("number", "0"))],
+    ["`this`", literal("this")],
+    ["a member of `this`", member(literal("this"), "listUsers")],
+    ["a call", requireRole(string(fragment("admin")))],
+    ["an inline function", inline],
+    ["a spread", wrapped("spread_element", identifier("guards"))],
+  ])("adds no call through %s", (_label, reference) => {
+    expect(referenceCalls([reference])).toEqual([])
+  })
+
+  it("records each call on the one-based line its reference starts on, in the order handed", () => {
+    const first = node({ type: "identifier", text: "timing", startPosition: { row: 4 } })
+    const second = wrapped("parenthesized_expression", {
+      ...identifier("isAuthed"),
+      startPosition: { row: 6 },
+    })
+
+    expect(referenceCalls([first, inline, second])).toEqual([
+      { target: "timing", line: 5 },
+      { target: "isAuthed", line: 7 },
     ])
   })
 })

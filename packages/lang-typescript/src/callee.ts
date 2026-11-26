@@ -2,7 +2,7 @@ import { decodeStringLiteral, isQnameSegment, readStaticString, receiverHead } f
 import { type CallCandidate, type CallSiteRef, COMPUTED_TARGET_SEGMENT } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, hasErrorChild, throughParentheses } from "./ast-helpers"
-import { bindingOf } from "./name-binding"
+import { bindingOf, isModuleDeclaration } from "./name-binding"
 import {
   initializingCall,
   isImportedReceiver,
@@ -37,6 +37,7 @@ export function readCall(node: Node): CallCandidate | null {
     ...(isImportedReceiver(callee) ? { importedReceiver: true } : {}),
     ...(receiverCall === null ? {} : { receiverCall }),
     ...(isUnboundHead(callee) ? { unboundHead: true } : {}),
+    ...(isLocalHead(callee) ? { localHead: true } : {}),
     ...(thisBinding === null ? {} : { thisBinding }),
   }
 }
@@ -60,6 +61,13 @@ function isUnboundHead(callee: Node): boolean {
   if (head === null || bindingOf(head, head.text) !== null) return false
   if (MODULE_WRAPPER_NAMES.has(head.text)) return false
   return head.text !== "require" || head.id === callee.id
+}
+
+function isLocalHead(callee: Node): boolean {
+  const head = leadingName(callee)
+  if (head === null) return false
+  const binding = bindingOf(head, head.text)
+  return binding !== null && !isModuleDeclaration(binding, head.text)
 }
 
 // The name the target spells first, read down the chain as `describeCallee` reads it.
