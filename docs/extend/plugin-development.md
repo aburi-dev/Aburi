@@ -69,6 +69,10 @@ Key rules:
   values a component's `frameworks` in `aburi.json` holds. Two plugins claiming
   one id are refused at load time. `aburi init` does not read it: it detects
   the first-party frameworks alone.
+- `exitCalls` (optional) names functions a library exports that never return to
+  their caller, such as `{ module: "next/navigation", exports: ["redirect"] }`.
+  An `if` whose consequence calls one, through its import, is recorded as a
+  guard, as a `throw` would make it. Two plugins may name the same function.
 
 Two plugins declaring the same `extKind` id make the registry throw at register
 time. We chose a loud failure over a silent takeover. `aburi scan` then exits `3`

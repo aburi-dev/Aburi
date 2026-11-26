@@ -194,6 +194,36 @@
             "pattern": "^[a-z][a-z0-9-]*$"
           },
           "uniqueItems": true
+        },
+        "exitCalls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExitCall"
+          },
+          "description": "Functions a module exports that never return to their caller: each throws, or ends the process, on every call. A call to one, read through the import that binds it, leaves the flow as a throw does, so an if whose consequence makes one is a guard. Optional; absent declares none."
+        }
+      }
+    },
+
+    "ExitCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exports", "module"],
+      "properties": {
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The module specifier an import names, e.g. next/navigation."
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The exported names of the functions that never return; default names the default export."
         }
       }
     },
