@@ -1,4 +1,6 @@
 import {
+  ABSTRACT_DECLARATION_DERIVED_BY,
+  AMBIENT_DECLARATION_DERIVED_BY,
   FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type LangManifest,
   PLUGIN_SCHEMA_URL,
@@ -48,8 +50,8 @@ export const langTypescriptManifest: LangManifest = {
       "constructor-declaration",
       "destructured-binding",
       "accessor-declaration",
-      "abstract-declaration",
-      "ambient-declaration",
+      ABSTRACT_DECLARATION_DERIVED_BY,
+      AMBIENT_DECLARATION_DERIVED_BY,
       "declaration-merged",
     ],
     frameworks: [],
