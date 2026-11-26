@@ -1,4 +1,4 @@
-import { makeExtractionCtx, relativePath } from "@aburi/test-support"
+import { makeExtractionCtx, noopRegistry, relativePath } from "@aburi/test-support"
 import type {
   BodyExtraction,
   DropHint,
@@ -6,6 +6,7 @@ import type {
   ParseError,
   ParseResult,
   SymbolCandidate,
+  VocabRegistry,
 } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import {
@@ -109,9 +110,10 @@ export function normalizedOf(
 export async function walksOf(
   source: string,
   path: string = DEFAULT_PATH,
+  registry: VocabRegistry = noopRegistry,
 ): Promise<Map<string, BodyExtraction>> {
   const result = await parseSource(source, path)
-  const ctx = makeExtractionCtx(path, source)
+  const ctx = { ...makeExtractionCtx(path, source), registry }
   const symbols = extractSymbols(requireTree(result.tree), ctx)
   return new Map(symbols.map((symbol) => [symbol.id, walkBody(symbol, { ...ctx, symbol })]))
 }
@@ -120,8 +122,9 @@ export async function walkOf(
   source: string,
   id: string,
   path: string = DEFAULT_PATH,
+  registry: VocabRegistry = noopRegistry,
 ): Promise<BodyExtraction> {
-  const walk = (await walksOf(source, path)).get(id)
+  const walk = (await walksOf(source, path, registry)).get(id)
   if (walk === undefined) throw new Error(`no Symbol ${id} in fixture`)
   return walk
 }

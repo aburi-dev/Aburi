@@ -36,7 +36,7 @@ Install as many as apply. They do not conflict.
 | Package | Recognises |
 |---|---|
 | `@aburi/framework-nestjs` | `@Module`, `@Controller`, `@Injectable`, HTTP and WebSocket method decorators, guards, interceptors, pipes, filters |
-| `@aburi/framework-next` | App Router files (`page`, `layout`, `route`, `template`, `loading`, `error`, `not-found`), noting a `"use client"` / `"use server"` directive at the top of one |
+| `@aburi/framework-next` | App Router files (`page`, `layout`, `route`, `template`, `loading`, `error`, `not-found`), noting a `"use client"` / `"use server"` directive at the top of one; an `if` whose consequence calls `redirect()`, `notFound()` or another function of `next/navigation` that never returns is a guard |
 | `@aburi/framework-express` | Router instances, route handlers, middleware, error handlers, mount points |
 | `@aburi/framework-react` | Function components, custom hooks, contexts and providers, `forwardRef`, `memo`, higher-order components |
 | `@aburi/framework-trpc` | The tRPC server: the `initTRPC` instance, routers, `query` / `mutation` / `subscription` procedures, base procedures, middleware |

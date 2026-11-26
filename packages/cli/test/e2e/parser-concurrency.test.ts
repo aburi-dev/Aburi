@@ -354,6 +354,43 @@ describe("aburi scan --concurrency, with the language, framework and effects plu
     expect(run.outcome).toEqual(alone.outcome)
     expect(run.extractedOn).toEqual([onWorkers(PLUGINS_WORKERS, "--concurrency 3")])
   })
+
+  it("makes a guard of each call the framework plugin declares never returns, in the files each worker extracts", async () => {
+    await writeConfig(workspace.root, {
+      languages: ["lang-typescript"],
+      frameworks: ["framework-next"],
+    })
+    for (const [file, check] of [
+      ["app/admin/page.tsx", 'if (!session) redirect("/login")'],
+      ["app/billing/page.tsx", "if (!session.user) nav.unauthorized()"],
+      ["app/reports/page.tsx", "if (!session.report) notFound()"],
+      ["app/settings/page.tsx", "if (!session.ready) render(session)"],
+    ] as const) {
+      await writeFileAt(
+        workspace.root,
+        file,
+        `import * as nav from "next/navigation"\nimport { notFound, redirect } from "next/navigation"\n\nexport default async function Page() {\n  const session = await auth()\n  ${check}\n  return <main>{session.name}</main>\n}\n`,
+      )
+    }
+    const alone = await scanned(["scan", "--concurrency", "1"], [IR_JSON_FILENAME])
+    const run = await scanned(["scan", "--concurrency", "3"], [IR_JSON_FILENAME])
+    const ir = JSON.parse(alone.outcome.written[IR_JSON_FILENAME] ?? "") as {
+      symbols: { id: string; rules: { type: string; condition?: string | null }[] }[]
+    }
+
+    expect(alone.outcome.code).toBe(EXIT.SUCCESS)
+    expect(
+      ir.symbols.flatMap(({ id, rules }) =>
+        rules.filter((rule) => rule.type === "guard").map((rule) => `${id} ${rule.condition}`),
+      ),
+    ).toEqual([
+      "ts:app/admin/page.tsx#Page !session",
+      "ts:app/billing/page.tsx#Page !session.user",
+      "ts:app/reports/page.tsx#Page !session.report",
+    ])
+    expect(run.outcome).toEqual(alone.outcome)
+    expect(run.extractedOn).toEqual([onWorkers(PLUGINS_WORKERS, "--concurrency 3")])
+  })
 })
 
 describe("aburi diff --concurrency", () => {

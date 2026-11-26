@@ -1,5 +1,6 @@
 import { join } from "node:path"
 import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import type { ExitCall, PluginManifest } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { loadPluginManifest, parsePluginManifest, RegistryError } from "../src/index"
 import { effectsManifest, frameworkManifest, langManifest } from "./fixtures/manifests"
@@ -23,6 +24,12 @@ const VALID_MANIFEST = `{
     "frameworks": [],
   }
 }`
+
+/** A framework manifest holding `entry` as its one exitCalls entry, whatever its shape. */
+function withExitCall(entry: object): PluginManifest {
+  const m = frameworkManifest()
+  return { ...m, provides: { ...m.provides, exitCalls: [entry as ExitCall] } }
+}
 
 function refusalOf(text: string): Promise<RegistryError> {
   return errorFrom(RegistryError, () => parsePluginManifest(text, "inline"))
@@ -49,6 +56,16 @@ describe("parsePluginManifest", () => {
       )
     },
   )
+
+  it.each([
+    ["lang", langManifest],
+    ["effects", effectsManifest],
+    ["framework", frameworkManifest],
+  ] as const)("accepts a %s manifest declaring exitCalls", (_type, manifest) => {
+    const exitCalls = [{ module: "next/navigation", exports: ["redirect", "default"] }]
+    const written = JSON.stringify(manifest({ provides: { exitCalls } }))
+    expect(parsePluginManifest(written, "inline").provides.exitCalls).toEqual(exitCalls)
+  })
 
   it("accepts a manifest naming the host the schema was served from before aburi.dev", () => {
     const earlier = "https://aburi.kage1020.com/schema/aburi.plugin.v1.json"
@@ -86,6 +103,17 @@ describe("parsePluginManifest", () => {
     [
       "a framework plugin declaring a grammarRevision",
       { ...frameworkManifest(), grammarRevision: "tree-sitter-sql@1.0.0" },
+    ],
+    ["an exitCalls entry with an empty module", withExitCall({ module: "", exports: ["a"] })],
+    ["an exitCalls entry exporting nothing", withExitCall({ module: "m", exports: [] })],
+    ["an exitCalls entry with an empty export", withExitCall({ module: "m", exports: [""] })],
+    [
+      "an exitCalls entry naming an export twice",
+      withExitCall({ module: "m", exports: ["a", "a"] }),
+    ],
+    [
+      "an exitCalls entry with a key the schema does not name",
+      withExitCall({ module: "m", exports: ["a"], returns: false }),
     ],
   ])("refuses %s against the schema, naming the plugin and carrying ajv's errors", async (_, m) => {
     const caught = await refusalOf(JSON.stringify(m))
