@@ -402,8 +402,9 @@ Contracts:
   node the chain starts from; `chainCalls(call)` returns the calls the chain
   passes, the call itself first.
 - A plugin for a framework that registers handlers by call can return
-  `middleware`: what the Symbol runs before its handler, in order, named
-  from the syntax tree by the same rule as `derivedBy`. The pipeline writes it to
+  `middleware`: what the Symbol runs before its handler, in the order the
+  declaration writes it, named from the syntax tree by the same rule as
+  `derivedBy`. The pipeline writes it to
   `Symbol.middleware`, which the logic fingerprint reads, so a removed
   authorization step is a logic change the report names. Hand the arguments
   that are middleware to `middlewareNames(nodes)` from `@aburi/core`, which
@@ -416,7 +417,10 @@ Contracts:
   `auth.required`), and `line` 1-based, `node.startPosition.row + 1` for the
   node the reference is written as. The pipeline appends them to `Symbol.calls`,
   after the body's calls on a line both share, and resolves them as it resolves
-  the body's, so the callee's effects propagate to the Symbol.
+  the body's, so the callee's effects propagate to the Symbol. Hand the
+  arguments the framework runs to `referenceCalls(nodes)` from `@aburi/core`,
+  which spells each reference as `framework-express` and `framework-trpc` do
+  and leaves out what is not a name: an inline function, a call, a spread.
 - `asSyntaxNode` returns `null` for a node without a numeric `startPosition.row`,
   so a language plugin must hand over nodes that carry one, or every framework
   plugin that reads its nodes classifies nothing.
