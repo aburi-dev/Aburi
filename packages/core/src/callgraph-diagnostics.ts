@@ -43,7 +43,7 @@ export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCa
     target: input.target,
     line: input.line,
   }
-  if (input.trace.parameterShadow) {
+  if (input.trace.localShadow) {
     return { ...base, bucket: "local-scope", candidates: [] }
   }
   // Neither a receiver the resolver could name nor a choice between candidates would reach a callee

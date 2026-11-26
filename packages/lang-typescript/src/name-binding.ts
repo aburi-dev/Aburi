@@ -35,6 +35,56 @@ export function isModuleBinding(binding: NameBinding): boolean {
   return binding.scope.type === "program"
 }
 
+/**
+ * Whether the binding is one of the module's declarations: what the module or a namespace in it
+ * declares, or a class's or function expression's own name inside it where the declaration around
+ * it binds the same name to it.
+ */
+export function isModuleDeclaration(binding: NameBinding, name: string): boolean {
+  if (isModuleBinding(binding) || isNamespaceBody(binding.scope)) return true
+  const declaration = declarationNaming(binding, name)
+  if (declaration === null) return false
+  const outer = bindingOf(declaration, name)
+  return (
+    outer?.declarations.some((d) => d.id === declaration.id) === true &&
+    isModuleDeclaration(outer, name)
+  )
+}
+
+// A namespace is declared only in a module or another namespace, so what it declares is the
+// module's. Its `var` is bound by the namespace, the rest by its body.
+function isNamespaceBody(scope: Node): boolean {
+  if (NAMESPACE_SCOPES.has(scope.type)) return true
+  return scope.type === "statement_block" && NAMESPACE_SCOPES.has(scope.parent?.type ?? "")
+}
+
+const CLASS_DECLARATION_SCOPES: ReadonlySet<string> = new Set([
+  "class_declaration",
+  "abstract_class_declaration",
+])
+
+const NAMED_EXPRESSION_SCOPES: ReadonlySet<string> = new Set([
+  "class",
+  "function_expression",
+  "generator_function",
+])
+
+// What binds a scope's own name around it: the class declaration itself, or the declarator a
+// class or function expression is the value of under the same name.
+function declarationNaming(binding: NameBinding, name: string): Node | null {
+  const { scope, declarations } = binding
+  if (declarations.length !== 1 || declarations[0]?.id !== scope.id) return null
+  if (scope.childForFieldName("name")?.text !== name) return null
+  if (CLASS_DECLARATION_SCOPES.has(scope.type)) return scope
+  if (!NAMED_EXPRESSION_SCOPES.has(scope.type)) return null
+  const declarator = scope.parent
+  return declarator?.type === "variable_declarator" &&
+    declarator.childForFieldName("value")?.id === scope.id &&
+    declarator.childForFieldName("name")?.text === name
+    ? declarator
+    : null
+}
+
 /** What an import binds a name to: the module it names and what that module exports it as. */
 export interface ImportedValue {
   readonly module: string

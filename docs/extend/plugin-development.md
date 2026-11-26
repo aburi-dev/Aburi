@@ -171,6 +171,13 @@ Contracts to know:
   claimed by your manifest). The pipeline throws otherwise.
 - `walkBody`'s `Rule` output is line-sorted by the pipeline before entering the
   IR, so you do not sort it yourself. Same for `calls`.
+- **Mark a call whose leading name a local declares.** Set `localHead: true` on
+  a call whose head a scope inside the module binds — a local, a nested
+  function, a callback's parameter, a `catch` binding. The call resolver reads
+  only the Symbol's own parameters by itself, so without the mark `save()` beside
+  `const save = …` links to a `save` the module declares or imports, and the
+  caller takes that function's effects. The
+  [`localHead` contract](../design/lang-plugin.md#localhead) has the details.
 - **Take comments out of rule strings yourself, and use the shared helper for the
   rest.** A rule's `condition`, `what` and `expr` hold no comments, one space for
   each run of whitespace, and at most 120 code points plus `...`. Only your plugin

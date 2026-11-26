@@ -1,53 +1,88 @@
 import { sig } from "@aburi/test-support"
 import type { ImportEdge, Symbol as IRSymbol, Signature } from "@aburi/types"
 import { describe, expect, it } from "vitest"
+import { makeSymbolCallKey } from "../src/call-site"
 import { resolveCallGraph } from "../src/callgraph"
 import { importsOf, params } from "./fixtures/callgraph"
 import { makeSymbol } from "./fixtures/ir"
 
 const NO_IMPORTS: ReadonlyMap<string, readonly ImportEdge[]> = new Map()
 
-describe("a caller's parameter shadows the Symbols its name would reach", () => {
-  it.each<[string, string, IRSymbol[], ReadonlyMap<string, readonly ImportEdge[]>]>([
-    ["in the caller's file", "helper", [makeSymbol("ts:src/a.ts#helper")], NO_IMPORTS],
+describe("a local binding shadows the Symbols its name would reach", () => {
+  const CALLER_ID = "ts:src/a.ts#caller"
+  const SHADOWS: [string, Partial<IRSymbol>, (target: string) => ReadonlySet<string>][] = [
+    ["a caller's parameter", { signature: params("helper") }, () => new Set()],
     [
-      "as a member in the caller's file",
-      "helper.method",
+      "a name the language marks a scope inside the module as binding",
+      {},
+      (target) => new Set([makeSymbolCallKey(CALLER_ID, 5, target)]),
+    ],
+  ]
+
+  describe.each(SHADOWS)("%s", (_shadow, declared, localHeads) => {
+    it.each<[string, string, IRSymbol[], ReadonlyMap<string, readonly ImportEdge[]>]>([
+      ["in the caller's file", "helper", [makeSymbol("ts:src/a.ts#helper")], NO_IMPORTS],
       [
-        makeSymbol("ts:src/a.ts#helper", { kind: "class" }),
-        makeSymbol("ts:src/a.ts#helper.method", { kind: "method" }),
+        "as a member in the caller's file",
+        "helper.method",
+        [
+          makeSymbol("ts:src/a.ts#helper", { kind: "class" }),
+          makeSymbol("ts:src/a.ts#helper.method", { kind: "method" }),
+        ],
+        NO_IMPORTS,
       ],
-      NO_IMPORTS,
-    ],
-    [
-      "through an import",
-      "helper",
-      [makeSymbol("ts:src/util.ts#helper")],
-      importsOf("src/a.ts", { source: "./util", symbols: ["helper"] }),
-    ],
-    [
-      "in the caller's component and the workspace",
-      "helper.method",
       [
-        makeSymbol("ts:src/x.ts#helper.method", { kind: "method", component: "billing" }),
-        makeSymbol("ts:src/y.ts#helper.method", { kind: "method", component: "reporting" }),
+        "through an import",
+        "helper",
+        [makeSymbol("ts:src/util.ts#helper")],
+        importsOf("src/a.ts", { source: "./util", symbols: ["helper"] }),
       ],
-      NO_IMPORTS,
-    ],
-  ])(
-    "leaves the call unresolved, bucketed `local-scope`, over a Symbol %s",
-    (_where, target, callees, importsByFile) => {
-      const caller = makeSymbol("ts:src/a.ts#caller", {
-        component: "billing",
-        signature: params("helper"),
-        calls: [{ target, line: 5, resolved: null }],
+      [
+        "in the caller's component and the workspace",
+        "helper.method",
+        [
+          makeSymbol("ts:src/x.ts#helper.method", { kind: "method", component: "billing" }),
+          makeSymbol("ts:src/y.ts#helper.method", { kind: "method", component: "reporting" }),
+        ],
+        NO_IMPORTS,
+      ],
+    ])(
+      "leaves the call unresolved, bucketed `local-scope`, over a Symbol %s",
+      (_where, target, callees, importsByFile) => {
+        const caller = makeSymbol(CALLER_ID, {
+          ...declared,
+          component: "billing",
+          calls: [{ target, line: 5, resolved: null }],
+        })
+        const result = resolveCallGraph({
+          symbols: [caller, ...callees],
+          importsByFile,
+          localHeads: localHeads(target),
+        })
+        expect(result.edges).toEqual([])
+        expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
+        expect(result.diagnostics.map((d) => d.bucket)).toEqual(["local-scope"])
+      },
+    )
+
+    it("still resolves the call through the type the local is declared with", () => {
+      const caller = makeSymbol(CALLER_ID, {
+        ...declared,
+        calls: [{ target: "helper.find", line: 5, resolved: null }],
       })
-      const result = resolveCallGraph({ symbols: [caller, ...callees], importsByFile })
-      expect(result.edges).toEqual([])
-      expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
-      expect(result.diagnostics.map((d) => d.bucket)).toEqual(["local-scope"])
-    },
-  )
+      const repository = makeSymbol("ts:src/a.ts#Repository", { kind: "class" })
+      const find = makeSymbol("ts:src/a.ts#Repository.find", { kind: "method" })
+      const result = resolveCallGraph({
+        symbols: [caller, repository, find],
+        importsByFile: NO_IMPORTS,
+        localHeads: localHeads("helper.find"),
+        declaredReceiverTypes: new Map([
+          [makeSymbolCallKey(CALLER_ID, 5, "helper.find"), "Repository"],
+        ]),
+      })
+      expect(result.edges.map((edge) => edge.to)).toEqual([find.id])
+    })
+  })
 
   describe("a destructuring parameter shadows the names it binds", () => {
     function resolvedTargets(inputs: Signature["inputs"], targets: readonly string[]) {

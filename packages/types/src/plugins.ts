@@ -199,6 +199,12 @@ export interface CallCandidate {
    * name: a global the runtime or the test runner provides, or a name nothing declares.
    */
   unboundHead?: boolean
+  /**
+   * `true` when a scope nearer the call than the module declares the callee's leading name: a
+   * parameter, a callback's parameter, a local, a nested function or a `catch` binding. No
+   * declaration of the module or of its imports is then what the name holds.
+   */
+  localHead?: boolean
   /** For a call through `this` or `super`, what `this` is where the call is written. */
   thisBinding?: ThisBinding
 }

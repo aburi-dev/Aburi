@@ -188,19 +188,30 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     declaredReceiverTypes: extracted.declaredReceiverTypes,
     importedReceivers: extracted.importedReceivers,
     unboundHeads: extracted.unboundHeads,
+    localHeads: extracted.localHeads,
     classHeritages: extracted.classHeritages,
     valueTypes: extracted.valueTypes,
     returnSources: extracted.returnSources,
     receiverCalls: extracted.receiverCalls,
     specifierPaths: extracted.specifierPaths,
+    workspacePackageNames: new Set((input.workspacePackages ?? []).map((pkg) => pkg.name)),
     moduleFiles: moduleFilesOf(extracted.importsByFile.keys(), router),
   })
+  // Neither the census, which leaves `external` out of its rate, nor the diff says a call stopped
+  // here, and a path alias the language cannot read looks like a package.
+  for (const [specifier, calls] of callGraph.foreignNamesakes) {
+    logger.warn(
+      `${specifier} maps to no file the scan read and names no workspace package, so ${calls === 1 ? "1 call through it ends" : `${calls} calls through it end`} unresolved, though a workspace Symbol shares the name. If it is a path alias, map it in a tsconfig the scan reads.`,
+    )
+  }
   const symbolEdges = projectSymbolEdges(callGraph.edges)
   const componentEdges = componentImportEdges({
     importsByFile: extracted.importsByFile,
     withdrawn: new Set(extracted.skipped.map((file) => file.path)),
     components: input.components ?? [],
     packages: input.workspacePackages ?? [],
+    specifierPaths: extracted.specifierPaths,
+    files: new Set(discovered.files.map((file) => file.path)),
   })
   for (const { name, components } of componentEdges.contested) {
     logger.warn(

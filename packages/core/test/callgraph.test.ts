@@ -14,11 +14,21 @@ interface ScopeCase {
   target: string
   callees: IRSymbol[]
   imports?: ReadonlyMap<string, readonly ImportEdge[]>
+  workspacePackageNames?: ReadonlySet<string>
 }
 
-function resolveFromBilling({ target, callees, imports = NO_IMPORTS }: ScopeCase) {
+function resolveFromBilling({
+  target,
+  callees,
+  imports = NO_IMPORTS,
+  workspacePackageNames = new Set(),
+}: ScopeCase) {
   const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 5 }], { component: "billing" })
-  return resolveCallGraph({ symbols: [caller, ...callees], importsByFile: imports })
+  return resolveCallGraph({
+    symbols: [caller, ...callees],
+    importsByFile: imports,
+    workspacePackageNames,
+  })
 }
 
 describe("resolveCallGraph", () => {
@@ -335,10 +345,24 @@ describe("resolveCallGraph", () => {
         ],
       },
       {
-        scope: "a named import from a bare specifier",
+        scope: "a named import of a workspace package's name",
         target: "Logger.log",
         callees: [],
         imports: importsOf("src/a.ts", { source: "@acme/logging", symbols: ["Logger"] }),
+        workspacePackageNames: new Set(["@acme/logging"]),
+      },
+      {
+        scope: "a named import of a subpath of a workspace package",
+        target: "Logger.log",
+        callees: [],
+        imports: importsOf("src/a.ts", { source: "@acme/logging/server", symbols: ["Logger"] }),
+        workspacePackageNames: new Set(["@acme/logging"]),
+      },
+      {
+        scope: "a named import through a path alias that names no package",
+        target: "Logger.log",
+        callees: [],
+        imports: importsOf("src/a.ts", { source: "@/logging", symbols: ["Logger"] }),
       },
       {
         scope: "a named import of a name its module only re-exports",
@@ -371,6 +395,29 @@ describe("resolveCallGraph", () => {
         [inComponent.id, "medium"],
       ])
     })
+
+    it.each([
+      ["a scoped package", "@nestjs/common", new Set<string>()],
+      ["an unscoped package", "winston", new Set<string>()],
+      [
+        "a package that shares a scope with a workspace package",
+        "@acme/vendor",
+        new Set(["@acme/logging"]),
+      ],
+    ])(
+      "ends the search at a named import of %s outside the workspace, bucketed `external`",
+      (_package, source, workspacePackageNames) => {
+        const result = resolveFromBilling({
+          scope: source,
+          target: "Logger.log",
+          callees: namesakes("Logger.log", "billing").slice(0, 1),
+          imports: importsOf("src/a.ts", { source, symbols: ["Logger"] }),
+          workspacePackageNames,
+        })
+        expect(result.edges).toEqual([])
+        expect(result.diagnostics.map((d) => [d.bucket, d.candidates])).toEqual([["external", []]])
+      },
+    )
   })
 
   it.each<ScopeCase>([
