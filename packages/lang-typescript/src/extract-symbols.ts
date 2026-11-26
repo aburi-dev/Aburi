@@ -1,5 +1,9 @@
 import { unwrapValue } from "@aburi/core"
-import type { ExtractionContext, SymbolCandidate } from "@aburi/types"
+import {
+  AMBIENT_DECLARATION_DERIVED_BY,
+  type ExtractionContext,
+  type SymbolCandidate,
+} from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
 import {
   AMBIENT_DECLARATION_TYPE,
@@ -186,7 +190,7 @@ function ambientDeclaration(node: Node): Node | null {
   return inner
 }
 
-const AMBIENT_DECLARATION = "ambient-declaration"
+const AMBIENT_DECLARATION = AMBIENT_DECLARATION_DERIVED_BY
 
 function ambientSink(out: CandidateSink): CandidateSink {
   return {

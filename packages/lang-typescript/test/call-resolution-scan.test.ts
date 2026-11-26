@@ -546,6 +546,72 @@ describe("scan — a call of a member of `this`", () => {
   })
 })
 
+describe("scan — a call of a function or method declared with no body", () => {
+  it("reaches an abstract member, through `this` and through a value of its class", async () => {
+    await workspace.writeSource(
+      "src/repo.ts",
+      [
+        "export abstract class Repo {",
+        "  abstract find(id: string): string",
+        "  load(id: string) { return this.find(id) }",
+        "}",
+        'export function use(repo: Repo) { return repo.find("1") }',
+        "",
+      ].join("\n"),
+    )
+
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (id: string) =>
+      ir.symbols.find((s) => s.id === id)?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("ts:src/repo.ts#Repo.load")).toEqual([["this.find", "ts:src/repo.ts#Repo.find"]])
+    expect(callsOf("ts:src/repo.ts#use")).toEqual([["repo.find", "ts:src/repo.ts#Repo.find"]])
+    expect(unresolvedCalls).toEqual([])
+  })
+
+  it("passes over one written under `declare`, to the implementation or to no Symbol", async () => {
+    await workspace.writeSource(
+      "src/a.ts",
+      [
+        "declare namespace Analytics { function track(e: string): void }",
+        "declare class Logger { log(m: string): void }",
+        'export function here(l: Logger) { Analytics.track("x"); l.log("m") }',
+        "",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/b.ts",
+      "export const Analytics = { track(e: string) { return e } }\n",
+    )
+    await workspace.writeSource("src/c.ts", 'export function there() { Analytics.track("x") }\n')
+    await workspace.writeSource("src/g.ts", "export declare function load(id: string): string\n")
+    await workspace.writeSource(
+      "src/use.ts",
+      'import { load } from "./g"\nexport function loads() { return load("1") }\n',
+    )
+
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (id: string) =>
+      ir.symbols.find((s) => s.id === id)?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("ts:src/a.ts#here")).toEqual([
+      ["Analytics.track", "ts:src/b.ts#Analytics.track"],
+      ["l.log", null],
+    ])
+    expect(callsOf("ts:src/c.ts#there")).toEqual([
+      ["Analytics.track", "ts:src/b.ts#Analytics.track"],
+    ])
+    expect(callsOf("ts:src/use.ts#loads")).toEqual([["load", null]])
+    expect(unresolvedCalls.map((d) => [d.symbolId, d.target, d.bucket])).toEqual([
+      ["ts:src/a.ts#here", "l.log", "local-scope"],
+      ["ts:src/use.ts#loads", "load", "no-match"],
+    ])
+    expect(
+      ["ts:src/a.ts#Analytics.track", "ts:src/a.ts#Logger.log", "ts:src/g.ts#load"].map(
+        (id) => ir.symbols.find((s) => s.id === id)?.dropped,
+      ),
+    ).toEqual([false, false, false])
+  })
+})
+
 describe("scan — a call of a member a class inherits", () => {
   it("reaches the nearest class up the chain that declares it, each bound where its class is", async () => {
     const result = await callsFromMain(
