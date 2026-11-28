@@ -83,3 +83,31 @@ jobs:
           else
             echo "::notice::No comment was posted, and none was handed to the 'Aburi report' workflow: this run produced no report to hand over."
           fi
+
+  dlx:
+    name: action under cli dlx
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      # `cli: dlx` cannot load a plugin named by package, so the published one is named by its file.
+      - name: Install the published TypeScript plugin
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund --prefix aburi-plugins @aburi/lang-typescript@latest
+          plugin="$RUNNER_TEMP/aburi-plugins/node_modules/@aburi/lang-typescript/dist/index.mjs"
+          printf '{ "languages": ["%s"] }\n' "$plugin" > aburi.json
+
+      # This repository pins pnpm in `packageManager`, which the action's own toolchain has to honour.
+      - name: Aburi diff
+        uses: $/packages/github-action
+        with:
+          cli: dlx
+          comment: false
+          config: ${{ runner.temp }}/aburi.json
+          output-dir: ${{ runner.temp }}/aburi-dlx

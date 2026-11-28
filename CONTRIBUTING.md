@@ -57,7 +57,9 @@ sample projects) and lists their changes in the report's folded `🧪 Test files
 instead. Every other file the scan reads counts, the docs site, `examples/src` and the
 repository's scripts included. That section comes last, so it is the first one the comment's size
 cap drops on a large pull request; `diff.full.md` in the run's `aburi-diff` artifact holds the
-whole report.
+whole report. A second job in the same workflow runs the action your branch contains the way a
+consumer's `cli: dlx` workflow does, with the published CLI and TypeScript plugin, and posts
+nothing: it is red when the action's own toolchain steps fail.
 
 From a fork, that run's token is read-only and cannot post, so a third workflow does it:
 [`aburi-comment.yml`](.github/workflows/aburi-comment.yml) picks the report up from the

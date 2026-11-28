@@ -34,14 +34,16 @@ prefixing a marker, and never decides what is worth failing on — `--fail-on` i
 | `comment` | `true` | Whether to upsert the report as a comment. |
 | `max-bytes` | *(empty)* | Forwarded to `--max-bytes`. Empty means 65507; `0` means no cap. §5.2. |
 | `token` | `github.token` | Token for the comment API. |
-| `node-version` / `pnpm-version` | `24` / `10` | Toolchain for `cli: dlx` only. |
+| `node-version` / `pnpm-version` | `24` / *(empty)* | Toolchain for `cli: dlx` only. An empty `pnpm-version` installs the pnpm the repository pins, or 10 (§3.1). |
 
-Five input values are validated up front rather than at the point of use: `format`, `cli` and
+Six input values are validated up front rather than at the point of use: `format`, `cli` and
 `comment`, because each of them has a wrong value that otherwise runs green and does nothing
 (`comment: yes` is the sharp one: every non-`true` value reads as false, silently), and
-`max-bytes` (a non-negative integer, or empty) and `output-dir` (not empty, and holding no line
-break, since the action names its reports in `$GITHUB_OUTPUT` lines). A rejected input is exit 2
-from the first step, which is what "your invocation is wrong" means in `cli-spec.md` §9.
+`max-bytes` (a non-negative integer, or empty), `output-dir` (not empty, and holding no line
+break, since the action names its reports in `$GITHUB_OUTPUT` lines) and `pnpm-version` under
+`cli: dlx`, the only mode that reads it (no line break either, since its resolved value is a
+`$GITHUB_OUTPUT` line too). A rejected input is exit 2 from the first step, which is what "your
+invocation is wrong" means in `cli-spec.md` §9.
 
 **No description may hold a GitHub expression.** The runner parses a manifest's descriptions and
 defaults as templates, with a context set that does not include `github`, so an expression written
@@ -138,6 +140,23 @@ install step, and a plugin the config names has to be loadable.
 
 `pnpm dlx @aburi/cli@<version>`. Nothing to install, and the version is pinned by the caller
 rather than by this action's tag.
+
+The pnpm it runs on is installed by `pnpm/action-setup`, which reads the root `package.json`'s
+`devEngines.packageManager` and `packageManager` (the former first) and refuses a `version` input
+that differs from a `packageManager` pin, down to the patch: a major such as `10` never equals
+`10.12.1`. So the action passes `pnpm-version` only when the caller set it, or as `10` when the
+repository pins no pnpm (`devEngines.packageManager` naming `pnpm` with a version, or
+`packageManager` naming `pnpm@` with one; that action reads an empty version as no pin), and
+otherwise passes nothing and lets that action install the pin. The repository's pin is what pnpm
+would switch to anyway when it runs there, so honouring it costs the caller nothing. A
+`pnpm-version` the caller set is passed as it is. Beside a `packageManager` pin it has to equal
+the pin, since overriding that is not something `pnpm/action-setup` allows; beside a
+`devEngines.packageManager` pin it replaces the pin, which that action does without a word.
+
+This repository pins pnpm in `packageManager`, so `aburi.yml` runs the action under `cli: dlx` as
+well, beside its `cli: workspace` gate: a toolchain step that refuses the pin fails that job.
+Under `dlx` the plugin has to be named by path (below), so the job installs the published
+`lang-typescript` and names its file in a config of its own.
 
 Its limit is plugin resolution. `packages/cli/src/plugin-loader.ts` imports a plugin ref with a
 bare `import(specifier)`, so Node resolves it from **the CLI's own location**. Under `pnpm dlx`
