@@ -186,7 +186,7 @@
         "frameworks": {
           "type": "array",
           "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-          "description": "Framework ids ('nestjs'), as plugins provide them, not plugin names ('framework-nestjs')."
+          "description": "Framework ids ('nestjs'), as plugins provide them, not plugin names ('framework-nestjs'). When non-empty, a framework plugin providing only frameworks component detection records, none of them listed here, does not classify this component's files."
         },
         "description": { "type": ["string", "null"] }
       }

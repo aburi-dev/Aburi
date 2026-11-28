@@ -1,7 +1,10 @@
-import { makeCandidate } from "@aburi/test-support"
-import type { SymbolCandidate, SymbolKind } from "@aburi/types"
+import { makeCandidate, makeFrameworkCtx } from "@aburi/test-support"
+import type { FrameworkClassifyContext, SymbolCandidate, SymbolKind } from "@aburi/types"
 
-export { makeExtractionCtx as makeCtx } from "@aburi/test-support"
+/** A context over `path`, of no Component, whose file imports nothing. */
+export function makeCtx(path: string, content = ""): FrameworkClassifyContext {
+  return makeFrameworkCtx({ path, content })
+}
 
 export interface SymbolShape {
   kind?: SymbolKind

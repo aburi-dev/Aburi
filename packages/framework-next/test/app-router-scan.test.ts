@@ -1,6 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { scanWith } from "@aburi/test-harness"
-import { symbolById, useScratchWorkspace } from "@aburi/test-support"
+import { component, symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { nextFrameworkPlugin } from "../src/index"
 
@@ -224,5 +224,135 @@ describe("scan — App Router special files", () => {
     expect(symbolById(result, "ts:app/interactive/page.tsx#Interactive").derivedBy).toEqual(
       expect.arrayContaining(["framework:next:page", "framework:next:client-component"]),
     )
+  })
+})
+
+describe("scan — the App Router of each Next.js project", () => {
+  it("routes the app/ at the Component's root only, outside private folders", async () => {
+    const files: Record<string, string> = {
+      "apps/app/app/page.tsx": "export default function Home() { return <main /> }\n",
+      "apps/app/app/_components/error.tsx":
+        "export default function ErrorBanner({ message }: { message: string }) { return <p>{message}</p> }\n",
+      "apps/app/components/loading.tsx":
+        'export default function Spinner() { return <div className="spinner" /> }\n',
+      "apps/app/src/app/page.tsx": "export default function Shadowed() { return null }\n",
+    }
+    for (const [path, source] of Object.entries(files)) await workspace.writeSource(path, source)
+
+    const { ir } = await scanWith(
+      workspace.root,
+      { languages: [langTypescriptPlugin], frameworks: [nextFrameworkPlugin] },
+      {},
+      { components: [component({ id: "app", name: "app", frameworks: ["nextjs", "react"] })] },
+    )
+
+    expect(Object.fromEntries(ir.symbols.map((symbol) => [symbol.name, symbol.extKind]))).toEqual({
+      Home: "framework:next:page",
+      ErrorBanner: null,
+      Spinner: null,
+      Shadowed: "framework:next:page",
+    })
+  })
+})
+
+describe("scan — server actions", () => {
+  it.each([
+    ["an action module beside a route", "app/posts/actions.ts"],
+    ["an action module outside app/", "src/actions/posts.ts"],
+    ["an action module in lib/", "lib/actions.ts"],
+  ])("classifies every exported async function of %s", async (_label, file) => {
+    await workspace.writeSource(
+      file,
+      [
+        '"use server"',
+        'import { revalidatePath } from "next/cache"',
+        "import { actionClient } from './safe-action'",
+        "export async function deletePost(id: string) { revalidatePath(id) }",
+        "export const archivePost = async (id: string) => { revalidatePath(id) }",
+        "export const publishPost = actionClient.action(async ({ id }) => { revalidatePath(id) })",
+        "async function renamePost(id: string) { revalidatePath(id) }",
+        "export { renamePost as rename }",
+        "async function audit(id: string) { console.log(id) }",
+        "export default async function createPost() {}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+    const extKind = (name: string) => symbolById(result, `ts:${file}#${name}`).extKind
+
+    for (const name of ["deletePost", "archivePost", "publishPost", "renamePost", "createPost"]) {
+      expect(extKind(name)).toBe("framework:next:server-action")
+    }
+    expect(extKind("audit")).toBeNull()
+  })
+
+  it.each([
+    ["no directive", ["export async function deletePost() {}"]],
+    [
+      "a directive after another statement",
+      ['import "server-only"', '"use server"', "export async function deletePost() {}"],
+    ],
+    ["a 'use client' module", ['"use client"', "export async function deletePost() {}"]],
+  ])("leaves the exported async functions of a module with %s alone", async (_label, lines) => {
+    await workspace.writeSource("lib/actions.ts", [...lines, ""].join("\n"))
+
+    const result = await scanWorkspace()
+
+    expect(symbolById(result, "ts:lib/actions.ts#deletePost").extKind).toBeNull()
+  })
+})
+
+describe("scan — middleware", () => {
+  it.each([
+    [
+      "middleware.ts",
+      "export function middleware(request: Request) { return Response.redirect(request.url) }",
+      "middleware",
+    ],
+    ["src/middleware.ts", "export const middleware = auth((request) => undefined)", "middleware"],
+    [
+      "middleware.ts",
+      "export default function gate(request: Request) { return undefined }",
+      "gate",
+    ],
+    ["proxy.ts", "export function proxy(request: Request) { return undefined }", "proxy"],
+  ])("classifies what %s hands Next.js: %s", async (file, source, name) => {
+    await workspace.writeSource(
+      file,
+      [source, 'export const config = { matcher: ["/dashboard/:path*"] }', ""].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    expect(symbolById(result, `ts:${file}#${name}`).extKind).toBe("framework:next:middleware")
+    expect(symbolById(result, `ts:${file}#config`).extKind).toBeNull()
+  })
+
+  it.each([
+    [
+      "a middleware export of proxy.ts",
+      "proxy.ts",
+      "export function middleware() {}",
+      "middleware",
+    ],
+    [
+      "a middleware.ts below the project directory",
+      "lib/middleware.ts",
+      "export function middleware() {}",
+      "middleware",
+    ],
+    [
+      "a function middleware.ts does not export",
+      "middleware.ts",
+      "function middleware() {}\nexport const config = {}",
+      "middleware",
+    ],
+  ])("leaves %s alone", async (_label, file, source, name) => {
+    await workspace.writeSource(file, `${source}\n`)
+
+    const result = await scanWorkspace()
+
+    expect(symbolById(result, `ts:${file}#${name}`).extKind).toBeNull()
   })
 })

@@ -1,5 +1,5 @@
 import { parsePluginManifest, VocabRegistry } from "@aburi/plugin-registry"
-import { decorator, errorFrom, makeCandidate, makeExtractionCtx } from "@aburi/test-support"
+import { decorator, errorFrom, makeCandidate, makeFrameworkCtx } from "@aburi/test-support"
 import {
   type FrameworkClassifyContext,
   type FrameworkHint,
@@ -108,7 +108,7 @@ describe("the manifest a frameworkHints entry synthesizes", () => {
   })
 })
 
-const ctx: FrameworkClassifyContext = { ...makeExtractionCtx(), imports: [] }
+const ctx: FrameworkClassifyContext = makeFrameworkCtx()
 
 describe("frameworkHintPlugins", () => {
   it("carries the same manifest normalizeFrameworkHints returns", () => {

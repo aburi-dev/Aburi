@@ -258,6 +258,11 @@ else is checked. A value in neither set, such as a typo or an id no loaded plugi
 passes silently into the IR, because the detector itself records ids no plugin provides
 (`vue`, `fastify`), so silence is not confirmation.
 
+A Component that declares `frameworks` is classified only by the plugins it names: a framework
+plugin whose frameworks the detector could have recorded, and that provides none the list holds,
+is not asked about its files (lang-plugin.md §5.2.1). A value naming the plugin itself counts as
+its framework. Leaving `frameworks` out, or empty, leaves every configured plugin on.
+
 ### 6.1 Merge Rules
 
 Components explicitly declared in the config **replace** the autodetect results as a whole (no merging):

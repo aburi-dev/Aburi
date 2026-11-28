@@ -1,5 +1,11 @@
-import { makeCall } from "@aburi/test-support"
-import type { Confidence, FrameworkPlugin, ImportEdge, SymbolCandidate } from "@aburi/types"
+import { componentId, makeCall, relativePath } from "@aburi/test-support"
+import type {
+  Confidence,
+  FileComponent,
+  FrameworkPlugin,
+  ImportEdge,
+  SymbolCandidate,
+} from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
   extractOneSymbol,
@@ -214,6 +220,79 @@ describe("runFilePipeline — framework classification", () => {
   ])("gives the Symbol %s", async (_label, frameworks, confidence) => {
     const { symbols } = await extractOneSymbol({ frameworks })
     expect(symbols[0]?.confidence).toBe(confidence)
+  })
+})
+
+function providing(name: string, frameworks: readonly string[]): FrameworkPlugin {
+  const plugin = stubFrameworkPlugin(name, {
+    classifySymbol: () => ({ extKind: `framework:${name}:role`, derivedBy: `${name}:hit` }),
+    symbolDropHint: () => ({ reason: name, category: "B" }),
+  })
+  const { provides } = plugin.manifest
+  return {
+    ...plugin,
+    manifest: { ...plugin.manifest, provides: { ...provides, frameworks: [...frameworks] } },
+  }
+}
+
+function inComponent(frameworks: readonly string[]): FileComponent {
+  return { id: componentId("api"), root: relativePath("apps/api"), frameworks }
+}
+
+describe("runFilePipeline — the frameworks of the file's Component", () => {
+  it.each<[string, readonly string[], FileComponent | null, boolean]>([
+    ["a file no Component holds", ["react"], null, true],
+    ["a Component recording no framework", ["react"], inComponent([]), true],
+    [
+      "a Component recording the plugin's framework",
+      ["react"],
+      inComponent(["express", "react"]),
+      true,
+    ],
+    [
+      "a Component naming the plugin itself",
+      ["react"],
+      inComponent(["express", "react-plugin"]),
+      true,
+    ],
+    ["a Component recording only another framework", ["react"], inComponent(["express"]), false],
+    ["a plugin providing no framework", [], inComponent(["express"]), true],
+    [
+      "a plugin providing a framework detection never records",
+      ["acme"],
+      inComponent(["express"]),
+      true,
+    ],
+    [
+      "a plugin providing one framework detection records and one it never does",
+      ["react", "acme"],
+      inComponent(["express"]),
+      true,
+    ],
+  ])("for %s, the plugin classifies and drops: %s", async (_case, frameworks, component, runs) => {
+    const { symbols } = await extractOneSymbol({
+      frameworks: [providing("react-plugin", frameworks)],
+      component,
+    })
+    expect(symbols[0]?.extKind ?? null).toBe(runs ? "framework:react-plugin:role" : null)
+    expect(symbols[0]?.dropped).toBe(runs)
+  })
+
+  it("passes a ruled-out plugin by for the next one, and hands each the file's Component", async () => {
+    const seen: (FileComponent | null)[] = []
+    const express = stubFrameworkPlugin("express-plugin", {
+      classifySymbol: (_symbol, ctx) => {
+        seen.push(ctx.component)
+        return { extKind: "framework:express:role", derivedBy: "express-plugin:hit" }
+      },
+    })
+    const component = inComponent(["express"])
+    const { symbols } = await extractOneSymbol({
+      frameworks: [providing("react-plugin", ["react"]), express],
+      component,
+    })
+    expect(symbols[0]?.extKind).toBe("framework:express:role")
+    expect(seen).toEqual([component])
   })
 })
 

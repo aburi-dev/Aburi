@@ -16,8 +16,8 @@ describe("frameworkNextManifest", () => {
     })
   })
 
-  it("declares a function extKind for each App Router role", () => {
-    const roles = [...NEXT_APP_ROUTER_ROLES.values()]
+  it("declares a function extKind for each App Router role, the middleware and a server action", () => {
+    const roles = [...NEXT_APP_ROUTER_ROLES.values(), "middleware", "server-action"]
     expect(frameworkNextManifest.provides.extKinds.map((e) => [e.id, e.baseKind])).toEqual(
       roles.map((role) => [`framework:next:${role}`, "function"]),
     )

@@ -1,5 +1,5 @@
 import { component, makeCall, useScratchWorkspace } from "@aburi/test-support"
-import type { Component, ComponentId } from "@aburi/types"
+import type { Component, ComponentId, FileComponent } from "@aburi/types"
 import { beforeEach, describe, expect, it } from "vitest"
 import { buildComponentAttribution, serializeCanonical } from "../../src"
 import {
@@ -7,6 +7,7 @@ import {
   scanStubs,
   stubCandidate,
   stubEffectsPlugin,
+  stubFrameworkPlugin,
   stubLanguagePlugin,
 } from "../fixtures/plugins"
 
@@ -187,6 +188,35 @@ describe("scan — attribution", () => {
     const seen: (ComponentId | null)[] = []
     await scanWorkspace(seen)
     expect(seen).toEqual(["api", "web", null])
+  })
+
+  it("hands a framework plugin the file's Component, under the root the file lies in", async () => {
+    const seen = new Map<string, FileComponent | null>()
+    await scanStubs(workspace.root, {
+      languages: [twoPerFile],
+      frameworks: [
+        stubFrameworkPlugin("framework-stub", {
+          classifySymbol: (_symbol, ctx) => {
+            seen.set(ctx.file.path, ctx.component)
+            return null
+          },
+        }),
+      ],
+      components: [
+        component({
+          id: "api",
+          name: "api",
+          roots: ["services/api", "packages/api"],
+          frameworks: ["express"],
+        }),
+        rooted("root", "."),
+      ],
+    })
+    expect(Object.fromEntries(seen)).toEqual({
+      "packages/api/src/orders.stub": { id: "api", root: "packages/api", frameworks: ["express"] },
+      "packages/web/page.stub": { id: "root", root: ".", frameworks: [] },
+      "scripts/release.stub": { id: "root", root: ".", frameworks: [] },
+    })
   })
 
   it("resolves a qualified name to the callee in the caller's own component", async () => {

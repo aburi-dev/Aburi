@@ -591,6 +591,13 @@ interface WalkContext extends ExtractionContext {
 
 interface FrameworkClassifyContext extends ExtractionContext {
   imports: readonly ImportEdge[]               // the same edges parseFile produced for the file
+  component: FileComponent | null              // null for a file no Component holds
+}
+
+interface FileComponent {
+  id: ComponentId
+  root: RelativePath                           // the Component's root the file lies under; `.` for the workspace root
+  frameworks: readonly string[]                // Component.frameworks, empty where it records none
 }
 ```
 
@@ -699,7 +706,9 @@ This avoids ambiguous states such as "the same class is recognized as both a Nes
 A framework plugin receives the following inputs:
 - the `SymbolCandidate` (including decorators)
 - the file's `ImportEdge[]`, on `FrameworkClassifyContext` (§4.5)
-- the framework declaration of the owning component
+- the file's Component, on `FrameworkClassifyContext.component`: its id, the root of it the file lies under (a file under two of a Component's roots, one inside the other, lies under the deeper), and its `frameworks`
+
+The Component's `frameworks` also decide which plugins are asked at all, before any of them is. A plugin is skipped for a file, for both `classifySymbol` and `symbolDropHint`, when the file's Component records frameworks, none of them is one the plugin provides (`provides.frameworks[]`) or the plugin's own name, and every framework the plugin provides is one the component detector records from a `package.json` ([`component-detect.md`](./component-detect.md) §4.5). Absence from the record is evidence only for a framework the detector would have recorded: a monorepo's Express API does not have its `useDatabase` classified as a React hook because the workspace also holds a React app, while a `frameworkHints` plugin, a plugin providing no framework, and one providing a framework only config can name still run everywhere. A file no Component holds, and a Component that records no framework, is asked of every plugin. The import edges handed to effect plugins are traced the same way whichever framework plugins a file's Component leaves out.
 
 A `const`'s `fullNode` is its whole declaration statement, shared by every name it declares; a plugin reads one name's initializer from the declarator that binds it. The `<default>` const a default export written as a call gives (LP7c1) has no declarator: its `fullNode` is the `export_statement`, and `declaratorValue` asked for `<default>` returns that statement's value. A plugin reads a value through `@aburi/core`'s `unwrapValue` (a const's initializer through `declaratorValue`), the reader the language plugin names Symbols with (LP7a), so a role cannot depend on a wrapper the Symbol's name reads through. So framework-react reads `export default memo(function Row() { … })` as it reads `const Row = memo(…)`, and framework-next takes a default-exported `const` carrying `call-argument-function` as the component an App Router file's default export is.
 
@@ -1242,6 +1251,16 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP47c | an import of a package, of a relative module the workspace does not hold or that cannot be parsed, of a name two barrels re-export from each other, or of a name that may come from a barrel's `export *` target that cannot be parsed | no `upstream` key for it |
 | LP47d | a call whose `receiverType` is a class the file imports or declares, which declares the called member itself or through a workspace class it extends, imported under another name or as the module's default, exported under an export clause's name, re-exports and `export *` followed | no effect plugin is asked about it; one whose member comes from a package class it extends, or whose type is no class, is asked |
 | LP47e | an effect plugin loaded, a module a receiver's class is read from, and an `export *` target the chain asks for a name | each is parsed once for the chain, its edges and declarations read from the one tree, and once more in its own turn |
+
+### 9.12 Framework plugins and the file's Component (§5.2.1)
+
+| ID | Input | Expected output |
+|---|---|---|
+| LP56 | a file of a Component recording `["express"]`, and a plugin providing `react` | the plugin is asked neither to classify nor to drop the file's Symbols, and the next plugin in config order is asked |
+| LP56a | the same Component recording `react` beside `express`, or the plugin's own name (`framework-react`) | the plugin is asked |
+| LP56b | the same plugin, and a file no Component holds or of a Component recording no framework | the plugin is asked |
+| LP56c | a plugin providing no framework, or one framework the detector never records (a `frameworkHints` entry's), with or without one it does | the plugin is asked |
+| LP57 | a file under a Component's root `packages/api`, and one under a Component rooted at `.` | `ctx.component` is `{ id, root: "packages/api", frameworks }` and `{ id, root: ".", frameworks }` |
 
 ## 10. Design Decisions
 

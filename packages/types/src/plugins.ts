@@ -274,8 +274,19 @@ export interface WalkContext<TNode = OpaqueAstNode> extends ExtractionContext {
   symbol: SymbolCandidate<TNode>
 }
 
+/** The Component a file is attributed to, as the framework plugins classifying the file see it. */
+export interface FileComponent {
+  id: ComponentId
+  /** The Component's root the file lies under, as the IR spells it: `.` for the workspace root. */
+  root: RelativePath
+  /** `Component.frameworks`, empty where the Component records none. */
+  frameworks: readonly string[]
+}
+
 export interface FrameworkClassifyContext extends ExtractionContext {
   imports: readonly ImportEdge[]
+  /** Null for a file no Component holds. */
+  component: FileComponent | null
 }
 
 export type OwnerDecorator = Pick<Decorator, "name" | "qualifier" | "boundary">

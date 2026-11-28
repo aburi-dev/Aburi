@@ -11,7 +11,7 @@ import { hocReturn, isPascalCase, matchesHocNaming, returnsContextProvider } fro
 import { REACT_DERIVED_BY_PREFIX, type ReactExtKind } from "./ext-kinds"
 import { bodyCallsAnotherHook, matchesHookNaming } from "./hooks"
 import { importsComposables, importsReact, isImportBinding, isReactBinding } from "./imports"
-import { hasJsxReturn } from "./jsx"
+import { containsJsx, hasJsxReturn } from "./jsx"
 import {
   isContextCall,
   isForwardRefCall,
@@ -96,7 +96,8 @@ function hocConfidence(
   symbol: SymbolCandidate<OpaqueAstNode>,
   imports: readonly ImportEdge[],
 ): Confidence | null {
-  if (hasJsxReturn(symbol.bodyNode)) return "high"
+  // The JSX a HOC renders is usually its wrapper's, a function it hands back.
+  if (containsJsx(symbol.bodyNode)) return "high"
   const returned = hocReturn(symbol.bodyNode, parameterNames(symbol))
   if (returned === "component") return namedRoleConfidence(imports)
   if (returned === "call" && importsReact(imports)) return "medium"
@@ -148,7 +149,7 @@ function wrapperConfidence(
   const bare = call.name === call.leaf
   const head = bare ? call.name : call.name.slice(0, call.name.indexOf("."))
   if (isReactBinding(imports, head)) return "high"
-  if (hasJsxReturn(node.childForFieldName("arguments"))) return "high"
+  if (containsJsx(node.childForFieldName("arguments"))) return "high"
   if (bare && !isImportBinding(imports, head)) return namedRoleConfidence(imports)
   return null
 }

@@ -1,12 +1,12 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { extractFile } from "@aburi/test-harness"
 import type { CandidateOverrides } from "@aburi/test-support"
-import { makeExtractionCtx, makeCandidate as makeSharedCandidate } from "@aburi/test-support"
+import { makeFrameworkCtx, makeCandidate as makeSharedCandidate } from "@aburi/test-support"
 import type { FrameworkClassifyContext, SymbolCandidate } from "@aburi/types"
 
 /** A context over a file that imports nothing. */
 export function makeCtx(path = "src/a.tsx", content = ""): FrameworkClassifyContext {
-  return { ...makeExtractionCtx(path, content), imports: [] }
+  return makeFrameworkCtx({ path, content })
 }
 
 export function makeCandidate(overrides: CandidateOverrides): SymbolCandidate<unknown> {

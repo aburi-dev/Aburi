@@ -1,6 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { extractFile } from "@aburi/test-harness"
-import { makeExtractionCtx } from "@aburi/test-support"
+import { makeFrameworkCtx } from "@aburi/test-support"
 import type { FrameworkClassifyContext, ImportEdge } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { hasExpressImport, importListMentionsExpress, readExpressFromText } from "../src/imports"
@@ -89,11 +89,12 @@ describe("hasExpressImport", () => {
 
   it("answers each file from its own text when two contexts share one import list", () => {
     const imports: ImportEdge[] = []
-    const app = {
-      ...makeExtractionCtx("src/app.js", `const express = require("express")\n`),
+    const app = makeFrameworkCtx({
+      path: "src/app.js",
+      content: `const express = require("express")\n`,
       imports,
-    }
-    const other = { ...makeExtractionCtx("src/other.js", `const x = 1\n`), imports }
+    })
+    const other = makeFrameworkCtx({ path: "src/other.js", content: `const x = 1\n`, imports })
     expect(hasExpressImport(app)).toBe(true)
     expect(hasExpressImport(other)).toBe(false)
   })

@@ -5,7 +5,12 @@ files by path convention and classifies them into `framework:next:*` extKinds
 so downstream tooling can group them (e.g. surface every `page` as a boundary
 in the workspace projection).
 
-Recognised files under `app/**/`:
+Recognised files under the App Router directory: `app/` or `src/app/` directly in the
+project, which is the root of the file's Component (the workspace root for a file no Component
+holds). A Component rooted inside an App Router directory (`apps/shop/src/app/checkout`) is
+routed from that directory. An `app` anywhere else (`lib/app/`, or a package itself named `app`
+in `apps/app/`) is no App Router. A private folder (`_components`) opts itself and every folder
+under it out of routing, as Next.js does, while `%5F` stands for a routed `_`.
 
 | File | `extKind` |
 |---|---|
@@ -61,9 +66,14 @@ written as `app/api/og/route.tsx`. List `framework-next` ahead of `framework-rea
 init` does: the first framework plugin to classify a symbol wins, and framework-react files a
 capitalised function that renders JSX, such as that `GET`, as a component.
 
+The middleware Next.js runs ahead of matched requests is `framework:next:middleware`: the
+`middleware` export, or the default export, of `middleware.{ts,tsx,js,jsx}`, and the `proxy`
+export, or the default export, of `proxy.{ts,tsx,js,jsx}` (the name from Next.js 16 on), each
+directly in the project or in its `src/`. Its `config` export is not classified.
+
 Not classified today (documented for completeness): `default`, `global-error`,
-`middleware`, `instrumentation`, and the metadata files (`sitemap`, `icon`,
-`opengraph-image`, …). Adding them is a table extension inside `app-router.ts`.
+`instrumentation`, and the metadata files (`sitemap`, `icon`, `opengraph-image`, …). Adding
+them is a table extension inside `app-router.ts`.
 
 The calls that never return are guards. `redirect`, `permanentRedirect`, `notFound`, `forbidden`
 and `unauthorized` from `next/navigation` throw on every call (`forbidden` and `unauthorized`
@@ -89,8 +99,19 @@ function named `redirect` is not one.
 
 Client / server discrimination folds into `derivedBy`: a `"use client"` or `"use server"` directive
 at the top of an App Router file adds `framework:next:client-component` or
-`framework:next:server-action` to the Symbols classified above. A server action in a file no
-App Router convention names (`app/orders/actions.ts`) is not classified.
+`framework:next:server-action` to the Symbols classified above.
+
+A server action is `framework:next:server-action`: what a module whose first statement is
+`"use server"` exports, at any path (`app/orders/actions.ts`, `src/actions/posts.ts`,
+`lib/actions.ts`), since the client can call each export. That is an exported async function
+(`export async function`, `export const f = async () => …`, a clause or default export), or a
+`const` initialised by a call handed a function, as `actionClient.action(async () => …)` is.
+An action declared inside a component with a function-level `"use server"` stays part of that
+component.
+
+The plugin classifies only the files of a Component whose `frameworks` include `nextjs`, or
+that records none, so a `"use server"` module in a package with no Next.js dependency is left
+alone.
 
 ## Install
 

@@ -1,4 +1,4 @@
-import { decorator, importEdge, makeCandidate, makeExtractionCtx } from "@aburi/test-support"
+import { decorator, importEdge, makeCandidate, makeFrameworkCtx } from "@aburi/test-support"
 import type {
   Decorator,
   FrameworkClassifyContext,
@@ -33,7 +33,7 @@ export function makeCtx({
   path?: string
   imports?: readonly ImportEdge[]
 } = {}): FrameworkClassifyContext {
-  return { ...makeExtractionCtx(path, ""), imports }
+  return makeFrameworkCtx({ path, imports })
 }
 
 /** A bare name stands for that decorator written unqualified, in list order. */

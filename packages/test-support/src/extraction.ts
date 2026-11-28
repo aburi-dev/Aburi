@@ -1,5 +1,8 @@
 import type {
   ExtractionContext,
+  FileComponent,
+  FrameworkClassifyContext,
+  ImportEdge,
   LanguageCapabilities,
   SymbolCandidate,
   SymbolKind,
@@ -27,6 +30,21 @@ export const NO_LANGUAGE_CAPABILITIES: Readonly<LanguageCapabilities> = Object.f
 /** An `ExtractionContext` over one in-memory file, backed by `noopRegistry`. */
 export function makeExtractionCtx(path = "src/a.ts", content = ""): ExtractionContext {
   return { file: { path: relativePath(path), content }, registry: noopRegistry, config: {} }
+}
+
+/** A framework plugin's context over one in-memory file, by default of no Component and importing nothing. */
+export function makeFrameworkCtx({
+  path = "src/a.ts",
+  content = "",
+  imports = [],
+  component = null,
+}: {
+  path?: string
+  content?: string
+  imports?: readonly ImportEdge[]
+  component?: FileComponent | null
+} = {}): FrameworkClassifyContext {
+  return { ...makeExtractionCtx(path, content), imports, component }
 }
 
 /** `id` and `source.file` are widened back to `string` so cases keep writing literals; the branding happens in `makeCandidate`, once. */

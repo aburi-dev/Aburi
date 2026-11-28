@@ -25,10 +25,21 @@ export const FUNCTION_SCOPE_TYPES: ReadonlySet<string> = new Set([
 
 const FALLBACK_OPERATORS: ReadonlySet<string> = new Set(["||", "??"])
 
+/**
+ * Whether the function hands back what React renders: an element or a fragment, an array of them,
+ * `children`, an element factory's call, or a `.map` / `useMemo` whose callback hands one back,
+ * read through conditionals, `&&` / `||` / `??`, and the names the body binds.
+ */
 export function hasJsxReturn(body: unknown): boolean {
   const node = asSyntaxNode(body)
   if (node === null) return false
-  return findFirstJsxDescendant(node) !== null
+  return findReturnedValues(node).some((value) => rendersElement(value, node, new Set()))
+}
+
+/** Whether JSX is written anywhere under `node`, a nested function's included. */
+export function containsJsx(node: unknown): boolean {
+  const syntax = asSyntaxNode(node)
+  return syntax !== null && findFirstJsxDescendant(syntax) !== null
 }
 
 /** The values the function's own `return`s hand back. */
@@ -57,6 +68,83 @@ export function isProviderElementName(name: string | null): boolean {
   const dot = name.lastIndexOf(".")
   if (dot < 0) return false
   return name.slice(dot + 1) === "Provider"
+}
+
+const ELEMENT_FACTORIES: ReadonlySet<string> = new Set([
+  "createElement",
+  "cloneElement",
+  "createPortal",
+])
+
+/** Calls whose result is what a function argument of theirs hands back, element for element. */
+const CALLBACK_RESULT_CALLS: ReadonlySet<string> = new Set(["map", "flatMap", "useMemo"])
+
+const FUNCTION_VALUE_TYPES: ReadonlySet<string> = new Set(["arrow_function", "function_expression"])
+
+function rendersElement(expression: SyntaxNode, scope: SyntaxNode, seen: Set<string>): boolean {
+  const value = unwrapValue(expression)
+  if (JSX_ELEMENT_TYPES.has(value.type)) return true
+  switch (value.type) {
+    case "array":
+      return value.namedChildren.some(
+        (element) => element !== null && rendersElement(element, scope, seen),
+      )
+    case "spread_element": {
+      const spread = value.namedChildren[0]
+      return spread !== null && spread !== undefined && rendersElement(spread, scope, seen)
+    }
+    case "identifier":
+      return rendersBinding(value.text, scope, seen)
+    case "member_expression":
+      return value.childForFieldName("property")?.text === "children"
+    case "call_expression":
+      return rendersCall(value)
+    default:
+      return branchesOf(value).some(
+        (branch) => branch !== null && rendersElement(branch, scope, seen),
+      )
+  }
+}
+
+// `children` a parameter or a prop binds is whatever the caller rendered.
+function rendersBinding(name: string, scope: SyntaxNode, seen: Set<string>): boolean {
+  if (seen.has(name)) return false
+  seen.add(name)
+  const values = boundValues(name, scope)
+  if (values.length === 0) return name === "children"
+  return values.some((value) => rendersElement(value, scope, seen))
+}
+
+/** What the body's own declarators and assignments give `name`, a nested function's aside. */
+function boundValues(name: string, node: SyntaxNode, into: SyntaxNode[] = []): SyntaxNode[] {
+  for (const child of node.namedChildren) {
+    if (child === null || FUNCTION_SCOPE_TYPES.has(child.type)) continue
+    if (child.type === "variable_declarator" || child.type === "assignment_expression") {
+      const target = child.childForFieldName(child.type === "variable_declarator" ? "name" : "left")
+      const value = child.childForFieldName(
+        child.type === "variable_declarator" ? "value" : "right",
+      )
+      if (target?.type === "identifier" && target.text === name && value !== null) into.push(value)
+    }
+    boundValues(name, child, into)
+  }
+  return into
+}
+
+function rendersCall(call: SyntaxNode): boolean {
+  const callee = call.childForFieldName("function")
+  const leaf =
+    callee?.type === "member_expression" ? callee.childForFieldName("property")?.text : callee?.text
+  if (leaf === undefined) return false
+  if (ELEMENT_FACTORIES.has(leaf)) return true
+  if (!CALLBACK_RESULT_CALLS.has(leaf)) return false
+  const args = call.childForFieldName("arguments")?.namedChildren ?? []
+  return args.some(
+    (arg) =>
+      arg !== null &&
+      FUNCTION_VALUE_TYPES.has(unwrapValue(arg).type) &&
+      hasJsxReturn(unwrapValue(arg).childForFieldName("body")),
+  )
 }
 
 function findFirstJsxDescendant(node: SyntaxNode): SyntaxNode | null {
