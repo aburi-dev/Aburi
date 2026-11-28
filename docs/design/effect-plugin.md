@@ -303,7 +303,7 @@ Writing a drop-only plugin is also possible (`provides.effects: []` but declarin
 | `@aburi/effects-nest` | `EventEmitter2` / `eventBus` `.emit(...)` and `.emitAsync(...)`, the same on a field declared as `EventEmitter2`, and `@nestjs/cqrs`'s `EventBus` `.publish(...)` / `.publishAll(...)` | `event.publish` |
 | `@aburi/effects-prisma` | `prisma.*.{find*,create,update,upsert,delete}` | `db.read` / `db.write` |
 | `@aburi/effects-drizzle` | `db.select().from(...)` / `db.insert(...)` | `db.read` / `db.write` |
-| `@aburi/effects-trpc` | `trpc.*.{query,mutation}`, the React Query hooks, and the TanStack integration's `queryOptions` / `mutationOptions` | `network.rpc` |
+| `@aburi/effects-trpc` | `trpc.*.{query,mutate,subscribe}`, the React Query hooks, and the TanStack integration's `queryOptions` / `infiniteQueryOptions` / `mutationOptions` / `subscriptionOptions` | `network.rpc` |
 | `@aburi/effects-axios` | `axios.{get,post,put,patch,delete}` | `network.http` |
 | `@aburi/effects-fetch` | `fetch(...)` (global) | `network.http` |
 | `@aburi/effects-bullmq` | `queue.add(...)` / worker | `queue.publish` / `queue.consume` |
