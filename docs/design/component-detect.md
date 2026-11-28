@@ -248,7 +248,7 @@ Detect known frameworks from dependency manifests:
 
 The list is owned by the Aburi core, but a mechanism is planned whereby a framework plugin, once it declares its name in `manifest.provides.frameworks[]`, can extend the "detection pattern → name" mapping on the plugin side (see the [roadmap](../roadmap.md)). Today the fixed core list is used.
 
-Detected frameworks are **only recorded in `Component.frameworks[]`**; the corresponding plugin is not auto-enabled ([`config.md`](./config.md) §15.1).
+Detected frameworks are **only recorded in `Component.frameworks[]`**; the corresponding plugin is not auto-enabled ([`config.md`](./config.md) §15.1). What is recorded limits the plugins that are enabled: a file of a Component that records frameworks is not handed to a framework plugin that provides only frameworks this table maps to and none the Component records, so a monorepo's API package is not classified by the React plugin its front end needs ([`lang-plugin.md`](./lang-plugin.md) §5.2.1). The ids from `go.mod` and `pyproject.toml` are not read today (frameworks come from the `package.json` alone, §7), so a plugin providing one of them is never left out by this rule.
 
 ### 4.6 `publicApi`
 

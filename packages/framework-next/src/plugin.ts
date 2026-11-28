@@ -1,5 +1,5 @@
 import type {
-  ExtractionContext,
+  FrameworkClassifyContext,
   FrameworkPlugin,
   OpaqueAstNode,
   PluginContext,
@@ -16,7 +16,7 @@ class NextFrameworkPlugin implements FrameworkPlugin<OpaqueAstNode> {
 
   classifySymbol(
     symbol: SymbolCandidate<OpaqueAstNode>,
-    ctx: ExtractionContext,
+    ctx: FrameworkClassifyContext,
   ): SymbolClassification | null {
     return classifyNextSymbol(symbol, ctx)
   }

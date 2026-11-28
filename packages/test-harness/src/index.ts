@@ -111,7 +111,7 @@ export async function extractFile<TTree, TNode>(
   if (tree === null) throw new Error(`${language.manifest.name} could not parse ${path}`)
   const registry = new VocabRegistry()
   registry.register(language.manifest)
-  const ctx: FrameworkClassifyContext = { file, registry, config: {}, imports }
+  const ctx: FrameworkClassifyContext = { file, registry, config: {}, imports, component: null }
   return { ctx, candidates: language.extractSymbols(tree, ctx) }
 }
 

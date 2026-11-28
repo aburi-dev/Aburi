@@ -97,6 +97,7 @@ export type {
   EffectVocab,
   ExtKindVocab,
   ExtractionContext,
+  FileComponent,
   FileSummary,
   FrameworkCall,
   FrameworkClassifyContext,

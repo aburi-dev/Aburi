@@ -1,14 +1,20 @@
-import { exportNames } from "@aburi/core"
+import { DEFAULT_EXPORT_NAME, exportNames } from "@aburi/core"
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   EXPORT_DEFAULT_DERIVED_BY,
   type ExtractionContext,
+  type FrameworkClassifyContext,
   type OpaqueAstNode,
   type SymbolCandidate,
   type SymbolClassification,
   type SymbolKind,
 } from "@aburi/types"
-import { type AppRouterFile, recognizeAppRouterFile } from "./app-router"
+import {
+  type AppRouterFile,
+  type MiddlewareFile,
+  recognizeAppRouterFile,
+  recognizeMiddlewareFile,
+} from "./app-router"
 import { detectModuleDirective, type ModuleDirective } from "./directives"
 import { NEXT_DERIVED_BY_PREFIX } from "./manifest"
 
@@ -29,13 +35,17 @@ export function isNextHttpVerb(name: string): name is NextHttpVerb {
 }
 export function classifyNextSymbol(
   symbol: SymbolCandidate<OpaqueAstNode>,
-  ctx: ExtractionContext,
+  ctx: FrameworkClassifyContext,
 ): SymbolClassification | null {
-  const file = recognizeAppRouterFile(symbol.source.file)
-  if (file === null) return null
-
-  if (file.role === "route") return classifyRouteSymbol(symbol, ctx)
-  return classifyComponentSymbol(symbol, file, ctx)
+  const root = ctx.component?.root ?? "."
+  const file = recognizeAppRouterFile(symbol.source.file, root)
+  if (file !== null) {
+    if (file.role === "route") return classifyRouteSymbol(symbol, ctx)
+    return classifyComponentSymbol(symbol, file, ctx)
+  }
+  const middleware = recognizeMiddlewareFile(symbol.source.file, root)
+  if (middleware !== null) return classifyMiddlewareSymbol(symbol, middleware)
+  return classifyServerAction(symbol, ctx)
 }
 
 /** A handler the language plugin cannot see to be a function (a destructuring, a call's result) is a `const`; Next calls it all the same. */
@@ -71,6 +81,38 @@ function classifyComponentSymbol(
     },
     ctx,
   )
+}
+
+function classifyMiddlewareSymbol(
+  symbol: SymbolCandidate<OpaqueAstNode>,
+  file: MiddlewareFile,
+): SymbolClassification | null {
+  if (!ROUTE_HANDLER_KINDS.has(symbol.kind)) return null
+  const names = exportNames(symbol)
+  if (!names.includes(file.export) && !names.includes(DEFAULT_EXPORT_NAME)) return null
+  return {
+    extKind: "framework:next:middleware",
+    derivedBy: `${NEXT_DERIVED_BY_PREFIX}:${file.export}`,
+  }
+}
+
+/** Every export of a `"use server"` module is callable from the client, wherever the module is. */
+function classifyServerAction(
+  symbol: SymbolCandidate<OpaqueAstNode>,
+  ctx: ExtractionContext,
+): SymbolClassification | null {
+  if (!isServerFunction(symbol) || exportNames(symbol).length === 0) return null
+  if (detectModuleDirective(ctx.file.content) !== "server") return null
+  return {
+    extKind: "framework:next:server-action",
+    derivedBy: `${NEXT_DERIVED_BY_PREFIX}:server-action`,
+  }
+}
+
+/** Next.js refuses a `"use server"` module's export that is not an async function at build time. */
+function isServerFunction(symbol: SymbolCandidate<OpaqueAstNode>): boolean {
+  if (symbol.kind === "function") return symbol.signature?.async === true
+  return symbol.kind === "const" && symbol.derivedBy.includes(CALL_ARGUMENT_FUNCTION_DERIVED_BY)
 }
 
 /** `withAuth(function Page() {…})` is a `const` the language plugin cannot see to be a function; the function it is handed is the evidence. */

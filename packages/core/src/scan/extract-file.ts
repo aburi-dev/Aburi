@@ -11,7 +11,7 @@ import type {
 } from "@aburi/types"
 import type { WorkspacePackage } from "../component-manifest"
 import { CoreError, REPORT_BUG } from "../errors"
-import { buildComponentAttribution } from "./attribute"
+import { buildComponentPlacement } from "./attribute"
 import type { DiscoveredFile } from "./discover"
 import { buildDropCFilter } from "./drop-c"
 import { type ExtractionEvent, eventLogger } from "./extraction-events"
@@ -70,7 +70,7 @@ export interface FileExtractor {
 // parsed once for all of them.
 export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugins): FileExtractor {
   const router = buildLanguageRouter(plugins.languages)
-  const attribute = buildComponentAttribution(job.components)
+  const place = buildComponentPlacement(job.components)
   const dropCFilter = buildDropCFilter({
     pluginDropCallees: plugins.effects.flatMap((effect) => effect.dropCallees ?? []),
     ...(job.config.suppress === undefined ? {} : { suppress: job.config.suppress }),
@@ -121,7 +121,7 @@ export function createFileExtractor(job: ExtractionJob, plugins: ExtractionPlugi
         registry: plugins.registry,
         config: job.config,
         dropCFilter,
-        component: attribute(sourceFile.path),
+        component: place(sourceFile.path),
         log,
         treeReleaseFailures: released,
         vocab,

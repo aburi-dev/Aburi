@@ -14,6 +14,7 @@ import {
   type Config,
   type EffectPlugin,
   type ExtractionContext,
+  type FileComponent,
   type FrameworkPlugin,
   type ImportEdge,
   type LangManifest,
@@ -266,6 +267,7 @@ export interface OneSymbolFile {
   effects?: readonly EffectPlugin[]
   language?: Partial<LanguagePlugin>
   config?: Config
+  component?: FileComponent | null
 }
 
 /** The pipeline over a file declaring one candidate (`stubCandidate("Fn")` by default). */
@@ -282,6 +284,7 @@ export async function extractOneSymbol(file: OneSymbolFile = {}): Promise<Extrac
     frameworks: file.frameworks ?? [],
     effects: file.effects ?? [],
     config: file.config ?? {},
+    component: file.component ?? null,
   })
   return expectExtracted(result)
 }

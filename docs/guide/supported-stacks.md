@@ -31,12 +31,15 @@ Python, Go, and a functional language are planned. See the [roadmap](../roadmap.
 ## Frameworks
 
 A framework plugin is what turns a class into "an HTTP endpoint" in the report.
-Install as many as apply. They do not conflict.
+Install as many as apply. They do not conflict. In a monorepo, a package that depends on a
+framework Aburi detects is classified only by the plugins of the frameworks it
+depends on, so the React plugin your front end needs leaves the API package's
+`useDatabase` alone.
 
 | Package | Recognises |
 |---|---|
 | `@aburi/framework-nestjs` | `@Module`, `@Controller`, `@Injectable`, HTTP and WebSocket method decorators, guards, interceptors, pipes, filters |
-| `@aburi/framework-next` | App Router files (`page`, `layout`, `route`, `template`, `loading`, `error`, `not-found`), noting a `"use client"` / `"use server"` directive at the top of one; an `if` whose consequence calls `redirect()`, `notFound()` or another function of `next/navigation` that never returns is a guard |
+| `@aburi/framework-next` | App Router files (`page`, `layout`, `route`, `template`, `loading`, `error`, `not-found`), noting a `"use client"` / `"use server"` directive at the top of one; server actions, the exports of any `"use server"` module; `middleware.ts` / `proxy.ts`; an `if` whose consequence calls `redirect()`, `notFound()` or another function of `next/navigation` that never returns is a guard |
 | `@aburi/framework-express` | Router instances, route handlers, middleware, error handlers, mount points |
 | `@aburi/framework-react` | Function components, custom hooks, contexts and providers, `forwardRef`, `memo`, higher-order components |
 | `@aburi/framework-trpc` | The tRPC server: the `initTRPC` instance, routers, `query` / `mutation` / `subscription` procedures, base procedures, middleware |

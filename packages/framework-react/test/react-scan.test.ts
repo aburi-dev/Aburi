@@ -1,6 +1,6 @@
 import { langTypescriptPlugin } from "@aburi/lang-typescript"
 import { scanWith } from "@aburi/test-harness"
-import { frameworkEntries, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
+import { component, frameworkEntries, symbolNamed, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { reactFrameworkPlugin } from "../src/index"
 
@@ -135,6 +135,46 @@ describe("scan — React source shapes across .tsx and .jsx files", () => {
       Conditional: "framework:react:provider",
       Gate: "framework:react:component",
       Badge: "framework:react:component",
+    })
+  })
+})
+
+describe("scan — the frameworks of a file's Component", () => {
+  it("leaves the code of a Component that records frameworks, React not among them, alone", async () => {
+    await workspace.writeSource(
+      "apps/api/src/db.ts",
+      [
+        "export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> { return fn() }",
+        "export function useDatabase(url: string) { return { url } }",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "apps/web/src/Button.tsx",
+      "export function Button() { return <button /> }\nexport function useToggle() { return true }\n",
+    )
+    await workspace.writeSource(
+      "scripts/useEnv.ts",
+      "export function useEnv() { return process.env }\n",
+    )
+
+    const { ir } = await scanWith(
+      workspace.root,
+      { languages: [langTypescriptPlugin], frameworks: [reactFrameworkPlugin] },
+      {},
+      {
+        components: [
+          component({ id: "api", name: "api", frameworks: ["express"] }),
+          component({ id: "web", name: "web", frameworks: ["react"] }),
+        ],
+      },
+    )
+
+    expect(Object.fromEntries(ir.symbols.map((symbol) => [symbol.name, symbol.extKind]))).toEqual({
+      withTransaction: null,
+      useDatabase: null,
+      Button: "framework:react:component",
+      useToggle: "framework:react:hook",
+      useEnv: "framework:react:hook",
     })
   })
 })

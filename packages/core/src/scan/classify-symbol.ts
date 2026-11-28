@@ -4,8 +4,10 @@ import type {
   Decorator,
   DropHint,
   ExtKind,
+  FileComponent,
   FrameworkCall,
   FrameworkClassifyContext,
+  FrameworkManifest,
   FrameworkPlugin,
   LanguagePlugin,
   OpaqueAstNode,
@@ -13,6 +15,7 @@ import type {
   SymbolClassification,
 } from "@aburi/types"
 import { toNfc } from "../codepoints"
+import { DETECTED_FRAMEWORKS } from "../component-manifest"
 import { normalizeFingerprintString } from "../fingerprint/string"
 import { decideSymbolDrop } from "./drop-b"
 
@@ -22,6 +25,28 @@ export interface FrameworkMergeResult {
   extKindBy: string | null
   middleware: string[]
   calls: Call[]
+}
+
+/**
+ * The plugins that classify a file of `component`, in config order. A Component recording
+ * frameworks rules out a plugin only where its silence is evidence: for a framework detection looks
+ * for. A plugin providing none, a frameworkHints entry and a framework only config names still run.
+ */
+export function frameworksFor(
+  frameworks: readonly FrameworkPlugin[],
+  component: FileComponent | null,
+): readonly FrameworkPlugin[] {
+  if (component === null || component.frameworks.length === 0) return frameworks
+  return frameworks.filter(({ manifest }) => declaredFor(manifest, component.frameworks))
+}
+
+function declaredFor(manifest: FrameworkManifest, declared: readonly string[]): boolean {
+  const provided = manifest.provides.frameworks
+  // The IR keeps a value that names the plugin itself as written, and it still means the plugin.
+  if (provided.length === 0 || declared.includes(manifest.name)) return true
+  return provided.some(
+    (framework) => declared.includes(framework) || !DETECTED_FRAMEWORKS.has(framework),
+  )
 }
 
 function decoratorBoundaryKey(decorator: Decorator): string {

@@ -24,6 +24,11 @@ const NPM_DEP_TO_FRAMEWORK: ReadonlyArray<readonly [string, string]> = [
   ["@trpc/server", "trpc"],
 ]
 
+/** Every framework id a detected Component can record. */
+export const DETECTED_FRAMEWORKS: ReadonlySet<string> = new Set(
+  NPM_DEP_TO_FRAMEWORK.map(([, framework]) => framework),
+)
+
 export const NPM_MANIFEST = "package.json"
 
 const MANIFEST_PRIORITY: readonly string[] = [

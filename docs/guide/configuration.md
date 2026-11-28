@@ -212,6 +212,13 @@ symbols are counted in `workspace.md`'s own kept/dropped totals and appear in th
 diff, but in neither the Components table, nor the effect surface's `components`
 column, nor any `components/*.md`.
 
+`frameworks` names the frameworks a component uses (`nextjs`, `react`, `express`,
+…), as detection records them. Where it lists any, a plugin for a framework
+detection knows and the list leaves out does not classify the component's files:
+a component listing only `express` is not read by `framework-react`. Leave
+`frameworks` out to have every configured plugin read the component. A
+`frameworkHints` entry applies everywhere either way.
+
 ## Quiet down noisy helpers
 
 Logging and metrics calls show up in almost every symbol without telling you

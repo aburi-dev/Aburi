@@ -1,11 +1,11 @@
 import type {
   BodyExtraction,
   CallCandidate,
-  ComponentId,
   Config,
   DeclinedCall,
   EffectPlugin,
   ExtractionContext,
+  FileComponent,
   FrameworkClassifyContext,
   FrameworkPlugin,
   ImportEdge,
@@ -33,7 +33,7 @@ import {
 } from "../call-site"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
-import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
+import { decideDropReason, frameworksFor, mergeFrameworkClassification } from "./classify-symbol"
 import type { DropCFilter } from "./drop-c"
 import { describeJsonType, describeThrown } from "./faults"
 import {
@@ -108,7 +108,7 @@ export interface FilePipelineInput {
   registry: VocabRegistry
   config: Config
   dropCFilter: DropCFilter
-  component: ComponentId | null
+  component: FileComponent | null
   log: Logger
   treeReleaseFailures: TreeReleaseFailure[]
   vocab: VocabCheck
@@ -130,10 +130,11 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     registry,
     config,
     dropCFilter,
-    component,
+    component: placement,
     log,
     vocab,
   } = input
+  const component = placement?.id ?? null
 
   const deadline = startParseDeadline(config.parseTimeoutMs)
   const abandonedFile = (): ParseTimeoutFile => ({
@@ -213,7 +214,8 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const unboundHeads: string[] = []
     const localHeads: string[] = []
 
-    const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
+    const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports, component: placement }
+    const classifying = frameworksFor(frameworks, placement)
     // What a client imported from another file is reaches the effect plugins only, and only
     // through the edges they are handed: the Document and call resolution read the file's own.
     // Following an edge parses the module it leads to, so a file whose bodies make no call
@@ -230,7 +232,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
 
       const { candidate, confidence, extKindBy, middleware, calls } = mergeFrameworkClassification(
         written,
-        frameworks,
+        classifying,
         frameworkCtx,
         language.manifest.name,
       )
@@ -244,7 +246,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         })
       }
       assertIdLanguage(candidate.id, language.manifest)
-      const dropReason = decideDropReason(candidate, language, frameworks, frameworkCtx)
+      const dropReason = decideDropReason(candidate, language, classifying, frameworkCtx)
 
       if (dropReason !== null) {
         symbols.push(

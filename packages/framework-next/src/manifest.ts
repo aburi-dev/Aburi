@@ -54,6 +54,18 @@ export const frameworkNextManifest: FrameworkManifest = {
         description:
           "Next.js App Router route handler — what app/**/route.{ts,tsx,js,jsx} exports under an HTTP verb name (GET / POST / PUT / DELETE / PATCH / OPTIONS / HEAD). Its kind is const where the language plugin cannot see the value is a function (export const { GET, POST } = handlers).",
       },
+      {
+        id: "framework:next:middleware",
+        baseKind: "function",
+        description:
+          "Next.js middleware — the middleware export, or the default export, of middleware.{ts,tsx,js,jsx} beside app/; the proxy export of proxy.{ts,tsx,js,jsx} from Next.js 16.",
+      },
+      {
+        id: "framework:next:server-action",
+        baseKind: "function",
+        description:
+          'Next.js server action — an exported async function, or a const a call handed a function initialises, of a module whose first statement is "use server", at any path.',
+      },
     ],
     extKindPrefixes: ["framework:next"],
     derivedByPrefixes: [NEXT_DERIVED_BY_PREFIX],
