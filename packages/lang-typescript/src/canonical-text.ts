@@ -11,6 +11,7 @@ import {
   JsxTextRun,
   unquotedKey,
 } from "./spelling"
+import { inSplitTypeArguments } from "./typed-tag"
 
 /**
  * The text a rule, a type or a decorator records: rebuilt from its tokens on one line, with the
@@ -90,10 +91,14 @@ function collect(node: Node, range: Range, out: Token[], place: Place): void {
     }
   }
   if (node.childCount === 0) {
-    if (whole && !isStatementTerminator(node)) emit(tokenOf(node, node.text, place), range, out)
+    if (whole && !isStatementTerminator(node)) emit(leafToken(node, place), range, out)
     return
   }
-  const operand = leadingOperatorOperand(node) ?? redundantlyParenthesized(node)
+  const operand =
+    leadingOperatorOperand(node) ??
+    (node.parent !== null && isSplitByTypeArguments(node.parent)
+      ? null
+      : redundantlyParenthesized(node))
   if (operand !== null) {
     collect(operand, range, out, place)
     return
@@ -122,6 +127,27 @@ function tokenOf(node: Node, text: string, place: Place): Token {
 }
 
 const ERROR_TYPE = "ERROR"
+
+// A typed tag the grammar read as operators is spelled as the list of type arguments it is.
+function leafToken(node: Node, place: Place): Token {
+  const token = tokenOf(node, node.text, place)
+  if (!ANGLE_OPERATORS.has(node.type) || place.parent !== "binary_expression") return token
+  if (!inSplitTypeArguments(node)) return token
+  return { ...token, type: node.type === "<" ? "<" : ">", parent: "type_arguments" }
+}
+
+const ANGLE_OPERATORS: ReadonlySet<string> = new Set(["<", ">", ">>", ">>>"])
+
+// The grouping the grammar gives a typed tag it read as operators is not the program's, so it
+// neither needs parentheses nor makes the written ones redundant.
+function isSplitByTypeArguments(node: Node): boolean {
+  if (node.type !== "binary_expression" && node.type !== "sequence_expression") return false
+  const operator =
+    node.type === "binary_expression"
+      ? node.childForFieldName("operator")
+      : (node.children.find((child) => child.type === ",") ?? null)
+  return operator !== null && inSplitTypeArguments(operator)
+}
 
 function collectChildren(node: Node, range: Range, out: Token[], repaired: boolean): void {
   const children = node.children.filter(
@@ -154,7 +180,10 @@ function collectChildren(node: Node, range: Range, out: Token[], repaired: boole
       parenthesize(child, "formal_parameters", range, out, place)
       continue
     }
-    const clarified = within(child, range) ? clarifiedOperand(node, child) : null
+    const clarified =
+      within(child, range) && !isSplitByTypeArguments(node) && !isSplitByTypeArguments(child)
+        ? clarifiedOperand(node, child)
+        : null
     if (clarified !== null) {
       parenthesize(clarified, "parenthesized_expression", range, out, place)
       continue

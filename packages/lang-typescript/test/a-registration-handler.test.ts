@@ -118,6 +118,13 @@ describe("a registration call's inline handler is its body", () => {
       ["call-statement:prisma.delete"],
       ["prisma.user.delete"],
     ],
+    [
+      "a comment after its `await`",
+      "await /* reset */ prisma.user.delete({ where: { id: 1 } })",
+      "ts:src/a.ts#prisma__delete__d0",
+      ["call-statement:prisma.delete"],
+      ["prisma.user.delete"],
+    ],
   ])(
     "walks the call itself for a registration with %s, which defers nothing",
     async (_label, source, id, derivedBy, calls) => {

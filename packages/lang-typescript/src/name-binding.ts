@@ -2,6 +2,7 @@ import { DEFAULT_EXPORT_NAME, readStaticString } from "@aburi/core"
 import type { Node, Tree } from "web-tree-sitter"
 import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
 import { collectPatternBindings } from "./pattern-bindings"
+import { arrowAround } from "./typed-tag"
 
 /** The scope nearest to a use that declares a value name, and the declarations it gives it. */
 export interface NameBinding {
@@ -17,6 +18,9 @@ export function bindingOf(use: Node, name: string): NameBinding | null {
     if (node.type === "decorator" && PARAMETER_TYPES.has(node.parent?.type ?? "")) {
       inParameterDecorator = true
     }
+    const arrow = arrowAround(node, child)
+    const ofArrow = arrow === null ? undefined : scopeBindings(arrow).get(name)
+    if (arrow !== null && ofArrow !== undefined) return { scope: arrow, declarations: ofArrow }
     if (!seesScopeOf(node, child)) continue
     // A parameter's decorator is evaluated around the function its parameter list belongs to.
     if (inParameterDecorator && FUNCTION_SCOPES.has(node.type)) {

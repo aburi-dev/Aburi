@@ -2,6 +2,7 @@ import { decodeStringLiteral, isQnameSegment, unwrapValue } from "@aburi/core"
 import type { Node } from "web-tree-sitter"
 import {
   asFunctionValue,
+  functionBodyOf,
   hasChildOfType,
   hasErrorChild,
   nameFieldText,
@@ -89,7 +90,7 @@ export function fieldHoldsAFunction(field: Node): boolean {
 
 export function heldFunctionBodies(held: HeldFunction): Node[] {
   if (held.kind === "handed-to-a-call") return [...held.bodies]
-  const body = held.fn.childForFieldName("body")
+  const body = functionBodyOf(held.fn)
   return body === null ? [] : [body]
 }
 

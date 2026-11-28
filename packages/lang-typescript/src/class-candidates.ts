@@ -7,7 +7,7 @@ import {
   type SymbolKind,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { hasChildOfType, makeSourceRange } from "./ast-helpers"
+import { functionBodyOf, hasChildOfType, makeSourceRange } from "./ast-helpers"
 import { layOutBodies } from "./call-symbols"
 import {
   functionValuedField,
@@ -164,7 +164,7 @@ function makeFieldFunctionCandidate(
     return {
       ...member,
       signature: buildSignature(held.fn, readLeadingJsDoc(field)),
-      bodyNode: held.fn.childForFieldName("body"),
+      bodyNode: functionBodyOf(held.fn),
       fullNode: held.fn,
     }
   }

@@ -3,6 +3,7 @@ import type { Rule, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { findChild, walkDescendants } from "./ast-helpers"
 import { makeRule, ruleText } from "./rules"
+import { typedTagOf } from "./typed-tag"
 
 export function declaredValueRules(symbol: SymbolCandidate<Node>): Rule[] {
   // An enum merges with a namespace written before or after it, so the declarations are told apart
@@ -72,7 +73,9 @@ const NOT_A_VALUE_TYPES: ReadonlySet<string> = new Set([
 ])
 
 function holdsValue(value: Node): boolean {
-  for (const node of walkDescendants(value)) if (NOT_A_VALUE_TYPES.has(node.type)) return false
+  for (const node of walkDescendants(value)) {
+    if (NOT_A_VALUE_TYPES.has(node.type) || typedTagOf(node) !== null) return false
+  }
   return true
 }
 

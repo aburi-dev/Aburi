@@ -6,8 +6,14 @@ import type {
   WalkContext,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { bodyNodesOf, firstNonCommentChild, throughParentheses, thrownValue } from "./ast-helpers"
-import { readCall } from "./callee"
+import {
+  bodyNodesOf,
+  firstNonCommentChild,
+  functionBodyOf,
+  throughParentheses,
+  thrownValue,
+} from "./ast-helpers"
+import { isCallSite, isFunctionCallSite, readCall } from "./callee"
 import {
   functionValuedField,
   heldFunctionBodies,
@@ -17,6 +23,7 @@ import {
 import { containsEarlyExit, type ExitCalls, NO_EXIT_CALLS } from "./early-exit"
 import { objectEntryOf } from "./object-members"
 import { conditionText, isTrivialExpr, LOOP_KINDS, makeRule, ruleText } from "./rules"
+import { arrowReadingOf, callOf } from "./typed-tag"
 import { declaredValueRules, objectEntryValueRule } from "./value-rules"
 
 export function walkBody(symbol: SymbolCandidate<Node>, ctx: WalkContext<Node>): BodyExtraction {
@@ -92,6 +99,11 @@ function visitRoot(body: Node, walk: Walk): void {
     visitOwnObjectBody(body, walk)
     return
   }
+  const arrow = arrowReadingOf(body)
+  if (arrow !== null) {
+    visitArrowReading(body, arrow, walk)
+    return
+  }
   const parameters = parametersOf(body)
   if (parameters !== null) visitParameterDefaults(parameters, walk)
   if (isConciseBody(body)) visitConciseBody(body, walk)
@@ -101,7 +113,7 @@ function visitRoot(body: Node, walk: Walk): void {
 // A body held by another is read as a function of its own where it is written, so the calls on a
 // line keep the order they are written in.
 function visitHolding(node: Node, holding: Holding, walk: Walk): void {
-  if (isCall(node)) recordCall(node, walk.calls)
+  if (isCallSite(node)) recordCall(node, walk.calls)
   for (const part of node.namedChildren) {
     if (part === null || holding.parameterLists.has(part.id)) continue
     const body = holding.bodies.get(part.id)
@@ -164,10 +176,9 @@ function visitOwnObjectBody(object: Node, walk: Walk): void {
       visitOwnObjectBody(read.object, walk)
       continue
     }
-    const skipped = [
-      read.fn.childForFieldName("body"),
-      read.fn.childForFieldName("parameters"),
-    ].filter((node): node is Node => node !== null)
+    const skipped = [functionBodyOf(read.fn), read.fn.childForFieldName("parameters")].filter(
+      (node): node is Node => node !== null,
+    )
     visitExcluding(entry, skipped, walk)
   }
 }
@@ -180,7 +191,7 @@ function visitExcluding(node: Node, skipped: readonly Node[], walk: Walk): void 
       continue
     }
     // Calls a skipped body sits under run on the owner; only the body waits for the member's call.
-    if (part.type === "call_expression") recordCall(part, walk.calls)
+    if (isFunctionCallSite(part)) recordCall(part, walk.calls)
     visitExcluding(part, skipped, walk)
   }
 }
@@ -247,12 +258,8 @@ function visitNode(node: Node, walk: Walk): void {
       visitChildren(node, walk)
       return
     }
-    case "call_expression":
-    case "new_expression":
-      recordCall(node, walk.calls)
-      visitChildren(node, walk)
-      return
     default:
+      if (isCallSite(node)) recordCall(node, walk.calls)
       visitChildren(node, walk)
       return
   }
@@ -273,7 +280,7 @@ function recordCall(node: Node, calls: CallCandidate[]): void {
 function visitCallsInside(node: Node, calls: CallCandidate[]): void {
   for (const child of node.namedChildren) {
     if (child === null) continue
-    if (isCall(child)) recordCall(child, calls)
+    if (isCallSite(child)) recordCall(child, calls)
     visitCallsInside(child, calls)
   }
 }
@@ -295,8 +302,7 @@ function visitReturnStatement(node: Node, walk: Walk): void {
   if (written === null) return
   const value = throughParentheses(written)
   if (isCall(value)) {
-    recordCall(value, walk.calls)
-    visitChildren(value, walk)
+    visitNode(value, walk)
     return
   }
   if (isTrivialExpr(value)) return
@@ -312,12 +318,24 @@ function visitConciseBody(body: Node, walk: Walk): void {
   visitNode(body, walk)
 }
 
-function isConciseBody(body: Node): boolean {
-  return body.parent?.type === "arrow_function" && body.type !== "statement_block"
+// The grammar ends the body before a typed tag's template and calls the arrow with it, so the body
+// is the arrow and what follows it, from the arrow's own body on.
+function visitArrowReading(top: Node, arrow: Node, walk: Walk): void {
+  const body = arrow.childForFieldName("body") ?? top
+  if (top.type !== "call_expression") {
+    walk.rules.push(
+      makeRule("return", body, { expr: ruleText(top, body.startIndex, top.endIndex) }),
+    )
+  }
+  visitNode(top, walk)
 }
 
-function isCall(node: Node): boolean {
-  return node.type === "call_expression" || node.type === "new_expression"
+function isCall(value: Node): boolean {
+  return value.type === "new_expression" || callOf(value) !== null
+}
+
+function isConciseBody(body: Node): boolean {
+  return body.parent?.type === "arrow_function" && body.type !== "statement_block"
 }
 
 function visitTryStatement(node: Node, walk: Walk): void {

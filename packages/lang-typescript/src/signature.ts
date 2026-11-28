@@ -4,6 +4,7 @@ import type { Node } from "web-tree-sitter"
 import {
   findChild,
   firstNonCommentChild,
+  functionBodyOf,
   type ThrownValue,
   thrownValue,
   walkDescendants,
@@ -160,7 +161,7 @@ function typeText(type: Node): string {
 
 function readThrows(node: Node, jsDocText: string | null): string[] {
   const seen = new Set<string>()
-  const body = node.childForFieldName("body")
+  const body = functionBodyOf(node)
   if (body !== null) {
     for (const descendant of walkDescendants(body)) {
       if (descendant.type !== "throw_statement") continue

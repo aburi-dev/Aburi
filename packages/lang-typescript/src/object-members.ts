@@ -1,6 +1,6 @@
 import { unwrapValue } from "@aburi/core"
 import type { Node } from "web-tree-sitter"
-import { asFunctionValue } from "./ast-helpers"
+import { asFunctionValue, functionBodyOf } from "./ast-helpers"
 import { writtenNameSegment } from "./class-members"
 
 export type ObjectEntry =
@@ -18,7 +18,7 @@ export function objectEntryOf(entry: Node): ObjectEntry | null {
   if (value === null) return null
   const fn = asFunctionValue(value)
   if (fn !== null) {
-    const body = fn.childForFieldName("body")
+    const body = functionBodyOf(fn)
     return body === null || body.text.length === 0 ? null : { segment, fn, object: null }
   }
   const object = objectLiteralOf(value)

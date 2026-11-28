@@ -1,6 +1,6 @@
 import type { ReturnedValue, SymbolCandidate } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { hasChildOfType, throughParentheses } from "./ast-helpers"
+import { functionBodyOf, hasChildOfType, throughParentheses } from "./ast-helpers"
 import { callSiteOf } from "./callee"
 import {
   constructedClass,
@@ -9,6 +9,7 @@ import {
   nameTypeOf,
   returnAnnotationOf,
 } from "./receiver-type"
+import { arrowReadingOf, callOf } from "./typed-tag"
 
 const FUNCTIONS: ReadonlySet<string> = new Set([
   "function_declaration",
@@ -61,8 +62,10 @@ function returnedByFunction(fn: Node): ReturnedValue | null {
   if (["get", "set"].some((keyword) => hasChildOfType(fn, keyword))) return null
   if (fn.childForFieldName("name")?.text === "constructor") return null
   if (fn.childForFieldName("return_type") !== null) return returnAnnotationOf(fn)
-  const body = fn.childForFieldName("body")
+  const body = functionBodyOf(fn)
   if (body === null) return null
+  if (arrowReadingOf(body) !== null)
+    return returnedByCall(body.type === "call_expression" ? body : null)
   return body.type === "statement_block" ? returnedByBlock(body) : returnedByValue(body)
 }
 
@@ -75,13 +78,13 @@ function returnedByBlock(body: Node): ReturnedValue | null {
 
 function returnedByValue(written: Node): ReturnedValue | null {
   const value = throughParentheses(written)
-  const held = value.type === "identifier" ? initializingCall(value) : null
-  const call = value.type === "call_expression" ? value : held
-  if (call !== null) {
-    const site = callSiteOf(call)
-    return site === null ? null : { call: site }
-  }
-  return returnedInstance(value)
+  const call = callOf(value) ?? (value.type === "identifier" ? initializingCall(value) : null)
+  return call === null ? returnedInstance(value) : returnedByCall(call)
+}
+
+function returnedByCall(call: Node | null): ReturnedValue | null {
+  const site = call === null ? null : callSiteOf(call)
+  return site === null ? null : { call: site }
 }
 
 // `this` in an instance member is the receiver, a value of the class or of a subclass.
