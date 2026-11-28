@@ -73,7 +73,8 @@ step's `env:` instead.
 GitHub refuses a comment body over 65536 bytes, which is about 310 added symbols' worth of
 report. The action renders to fit rather than being refused: sections of whole symbols are cut
 to names and locations, and sections are dropped from the least important end — Test files
-first, then Syntax-only, API changes last — only when that still does not fit. A note at the top
+first, then Syntax-only, API changes last — only when that still does not fit. A list with more
+names than fit keeps as many as the room left holds and counts the rest. A note at the top
 names them, and `diff.full.md`, written beside `diff.md`, holds the full report: upload the output
 directory as an artifact to keep it (the fork setup below shows the step). `diff.json` keeps everything. Pass
 `max-bytes: 0` to turn the cap off.

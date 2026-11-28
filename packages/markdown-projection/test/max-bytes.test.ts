@@ -68,18 +68,19 @@ describe("projectDiff — maxBytes", () => {
     },
   )
 
-  it("keeps what fits below a section too large to fit even as names", () => {
+  it("keeps what fits below a section too large to fit even as names, and cuts that one short", () => {
     const md = projectDiff(crowdedDiff(600), { maxBytes: 2000 })
     expect(headings(md)).toEqual([
       "## ⚠ API changes",
       "## 🔧 Logic changes",
+      "## ➕ Added",
       "## 🔀 Moved",
       "## 💧 Dropped changes",
       "## 🎚 Confidence changes",
       "## 🎨 Syntax-only changes",
     ])
     expect(noteOf(md)).toBe(
-      "> ⚠ **1 section was omitted** to keep this report within 2000 bytes: ➕ Added. The full report is the same diff rendered without a size cap.",
+      "> ⚠ **1 section was cut short** to keep this report within 2000 bytes: ➕ Added. The full report is the same diff rendered without a size cap.",
     )
   })
 

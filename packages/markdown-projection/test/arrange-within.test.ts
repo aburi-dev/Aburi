@@ -1,6 +1,12 @@
 import { seeded } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
-import { type Arrangement, arrangeWithin, type Section, type Shown } from "../src/diff/size-cap"
+import {
+  type Arrangement,
+  arrangeWithin,
+  cutIntoRoom,
+  type Section,
+  type Shown,
+} from "../src/diff/size-cap"
 
 type Measure = (arrangement: Arrangement) => number
 
@@ -212,5 +218,71 @@ describe("arrangeWithin — with a note that names sections", () => {
         }
       }
     }
+  })
+})
+
+describe("cutIntoRoom — each omitted list, from the top, takes the room left", () => {
+  const listed = (title: string, count: number): Section => ({
+    ...section(title, count + 4, count + 4),
+    names: {
+      heading: `## ${title}`,
+      rows: Array.from({ length: count }, (_, i) => `- ${title} ${i}`),
+    },
+  })
+  const shownLines: Measure = (arrangement) =>
+    arrangement.reduce((sum, { section, shown }) => {
+      if (shown.kind === "full") return sum + section.lines.length
+      return shown.kind === "omitted" ? sum : sum + shown.lines.length
+    }, 0)
+  // Heading, blank, the line saying it was cut, blank, then the count of the rest and a blank.
+  const CUT_FRAME = 6
+  const SHOWN = 5
+  const arrangement: Arrangement = [
+    { section: section("kept", 3, null), shown: { kind: "full" } },
+    { section: section("unnamed", 50, null), shown: OMITTED },
+    { section: listed("first", 10), shown: OMITTED },
+    { section: listed("second", 10), shown: OMITTED },
+    { section: section("below", 2, null), shown: { kind: "full" } },
+  ]
+  const namesShown = (cut: Arrangement) =>
+    cut.map(({ shown }) =>
+      shown.kind === "cut"
+        ? shown.lines.filter((line) => /^- \w+ \d+$/.test(line)).length
+        : shown.kind,
+    )
+
+  it.each([
+    ["leaves it omitted where not one name fits", SHOWN + CUT_FRAME, "omitted"],
+    ["names one where one fits", SHOWN + CUT_FRAME + 1, 1],
+    ["names as many as fit", SHOWN + CUT_FRAME + 7, 7],
+  ])("%s, and leaves every other section as it was placed", (_, budget, first) => {
+    const cut = cutIntoRoom(arrangement, shownLines, budget)
+    expect(namesShown(cut)).toEqual(["full", "omitted", first, "omitted", "full"])
+    expect(shownLines(cut)).toBeLessThanOrEqual(budget)
+  })
+
+  it("names in the next list what room the one above it leaves", () => {
+    const budget = SHOWN + CUT_FRAME + 9 + CUT_FRAME + 2
+    const cut = cutIntoRoom(arrangement, shownLines, budget)
+    expect(namesShown(cut)).toEqual(["full", "omitted", 9, 2, "full"])
+    expect(shownLines(cut)).toBe(budget)
+  })
+
+  it("counts the names it leaves out after the ones it shows", () => {
+    const [, , first] = cutIntoRoom(arrangement, shownLines, SHOWN + CUT_FRAME + 3)
+    expect(first?.shown).toEqual({
+      kind: "cut",
+      lines: [
+        "## first",
+        "",
+        "_Names and locations of the first 3 of 10 entries: the rest did not fit within the size cap._",
+        "",
+        "- first 0",
+        "- first 1",
+        "- first 2",
+        "- … and 7 more",
+        "",
+      ],
+    })
   })
 })

@@ -362,11 +362,16 @@ describe("projectDiff — maxBytes over a 302-removal diff", () => {
   it("keeps each list whose names still fit beside the more important ones", () => {
     const md = projectDiff(diff, { maxBytes: 12000 })
     expect(bytes(md)).toBeLessThanOrEqual(12000)
-    expect(headings(md)).toEqual(["## ⚠ API changes", "## 🔀 Moved + Changed"])
+    expect(headings(md)).toEqual([
+      "## ⚠ API changes",
+      "## 🔧 Logic changes",
+      "## 🔀 Moved + Changed",
+    ])
     expect(noteOf(md)).toBe(
-      "> ⚠ **2 sections list names only** and **5 sections were omitted** to keep this report within 12000 bytes. " +
+      "> ⚠ **2 sections list names only**, **1 section was cut short** and **4 sections were omitted** to keep this report within 12000 bytes. " +
         "Names only: ⚠ API changes, 🔀 Moved + Changed. " +
-        "Omitted: 🔧 Logic changes, ➕ Added, ➖ Removed, 🔀 Moved, 🎨 Syntax-only changes. " +
+        "Cut short: 🔧 Logic changes. " +
+        "Omitted: ➕ Added, ➖ Removed, 🔀 Moved, 🎨 Syntax-only changes. " +
         "The full report is the same diff rendered without a size cap.",
     )
   })

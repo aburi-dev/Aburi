@@ -55,6 +55,30 @@ describe("a removed duplicate of a head Symbol", () => {
     expect(diff.summary).toMatchObject({ removed, removedDuplicates: removed })
   })
 
+  it.each<[string, Partial<IRSymbol>, Partial<IRSymbol>]>([
+    ["a test helper kept in authored code", { inTestFile: true }, {}],
+    ["a test helper kept in another test file", { inTestFile: true }, { inTestFile: true }],
+    ["generated code kept in authored code", { inGeneratedFile: true }, {}],
+    [
+      "generated code kept in another generated file",
+      { inGeneratedFile: true },
+      { inGeneratedFile: true },
+    ],
+  ])("names the survivor for %s", (_, removed, survivor) => {
+    const twin = helper("src/b.ts", "emptyIR", survivor)
+    const { entry } = removal([helper("src/a.ts", "emptyIR", removed), twin], [twin])
+    expect(entry.duplicateOf).toBe("ts:src/b.ts#emptyIR")
+  })
+
+  it("names an authored survivor for authored code over a closer name in a test file", () => {
+    const twins = [
+      helper("test/money.test.ts", "roundCents", { inTestFile: true }),
+      helper("src/math.ts", "roundToCents"),
+    ]
+    const { entry } = removal([helper("src/money.ts", "roundCents"), ...twins], twins)
+    expect(entry.duplicateOf).toBe("ts:src/math.ts#roundToCents")
+  })
+
   it("names the head Symbol whose name is closest when several hold the body", () => {
     const twins = [helper("src/a.ts", "zeroDocument"), helper("src/z.ts", "emptyIR")]
     const { entry } = removal([...twins, helper("src/b.ts", "makeEmptyIR")], twins)
@@ -95,6 +119,21 @@ describe("a removed Symbol that duplicates nothing on the head side", () => {
       [route("app/v1/route.ts"), route("app/v2/route.ts")],
       [route("app/v2/route.ts")],
     )
+    expect(entry.duplicateOf).toBeNull()
+  })
+
+  it.each<[string, Partial<IRSymbol>, Partial<IRSymbol>]>([
+    ["authored code kept only in a test file", {}, { inTestFile: true }],
+    ["authored code kept only in a generated file", {}, { inGeneratedFile: true }],
+    [
+      "a test helper kept only in a generated file",
+      { inTestFile: true },
+      { inGeneratedFile: true },
+    ],
+    ["generated code kept only in a test file", { inGeneratedFile: true }, { inTestFile: true }],
+  ])("is bare for %s, which no longer ships it", (_, removed, survivor) => {
+    const twin = helper("test/money.test.ts", "roundCents", survivor)
+    const { entry } = removal([helper("src/money.ts", "roundCents", removed), twin], [twin])
     expect(entry.duplicateOf).toBeNull()
   })
 

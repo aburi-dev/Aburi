@@ -53,12 +53,26 @@ export function survivorsOf(
     const group = heads.get(logicKey(symbol, false))
     if (group === undefined) continue
     const sameBody = group.symbols.filter(
-      (head) => head.fingerprint.syntax === symbol.fingerprint.syntax,
+      (head) => head.fingerprint.syntax === symbol.fingerprint.syntax && standsInFor(head, symbol),
     )
     const survivor = closestNameTo(symbol, sameBody, scorer)
     if (survivor !== undefined) survivors.set(symbol.id, survivor.id)
   }
   return survivors
+}
+
+// A body kept only in a test or a generated file no longer ships, so it stands in for a removal
+// from a file of the same origin alone; one kept in authored code stands in for any.
+function standsInFor(survivor: IRSymbol, removed: IRSymbol): boolean {
+  if (isAuthored(survivor)) return true
+  return (
+    (survivor.inTestFile === true) === (removed.inTestFile === true) &&
+    (survivor.inGeneratedFile === true) === (removed.inGeneratedFile === true)
+  )
+}
+
+function isAuthored(symbol: IRSymbol): boolean {
+  return symbol.inTestFile !== true && symbol.inGeneratedFile !== true
 }
 
 function carriesLogic(symbol: IRSymbol): boolean {

@@ -278,8 +278,9 @@ produces a report GitHub refuses outright — the review that needed it most get
 Sections are kept most important first, each at its smallest — a section of whole symbols as one
 name-and-location line per symbol — and a section is dropped only when it cannot fit even beside
 every more important one cut that far. The name lists then get their full entries back, from the
-top, as far as the budget allows. The report says at the top which sections are short and which
-went:
+top, as far as the budget allows, and a list too long to fit even as names lists as many of them
+as the room left holds, then counts the rest (`- … and 16 more`). The report says at the top which
+sections are short, which were cut short and which went:
 
 ```
 > ⚠ **2 sections were omitted** to keep this report within 65507 bytes: 💧 Dropped changes, 🎨 Syntax-only changes. The full report, the same diff without a size cap, is `diff.full.md` beside `diff.md`.

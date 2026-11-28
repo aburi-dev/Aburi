@@ -23,44 +23,81 @@ import {
 } from "../format"
 import type { ChangedEntry } from "./partition"
 
+type FingerprintAxis = "api" | "logic" | "syntax"
+
+const AXIS_NAMES: Readonly<Record<FingerprintAxis, string>> = {
+  api: "API",
+  logic: "logic",
+  syntax: "syntax",
+}
+
 export function renderDeltaBody(change: ChangedEntry): string[] {
   const { delta, before, after } = change
   const rows: string[] = []
+  const explained = new Set<FingerprintAxis>()
+  // Each group of rows explains the fingerprints that read the fields it reports.
+  const explaining = (axes: readonly FingerprintAxis[], append: () => void): void => {
+    const count = rows.length
+    append()
+    if (rows.length > count) for (const axis of axes) explained.add(axis)
+  }
+
   if (before.name !== after.name) {
     rows.push(`- name: ${inlineCode(before.name)} → ${inlineCode(after.name)}`)
+    // Only the last segment reaches the fingerprints, so the name row explains them only when that
+    // segment changed.
+    if (lastSegment(before.name) !== lastSegment(after.name)) {
+      explained.add("api")
+      explained.add("syntax")
+    }
   }
-  // Only the last segment reaches the API fingerprint, so the name row counts as an explanation
-  // only when that segment changed.
-  const shortNameChanged = lastSegment(before.name) !== lastSegment(after.name)
-  const nameRows = rows.length
-  appendSignatureDelta(rows, delta.signature ?? null, [before.signature, after.signature])
-  appendDecoratorDelta(rows, delta.decorators, [before.decorators, after.decorators])
-  if (!onlyOwnNameRenamed(delta.exportedAs, before.name, after.name)) {
-    appendInlineRow(rows, "export name added", delta.exportedAs?.added ?? [])
-    appendInlineRow(rows, "export name removed", delta.exportedAs?.removed ?? [])
-  }
-  appendMiddlewareDelta(rows, delta.middleware, [before.middleware ?? [], after.middleware ?? []])
-  appendArrayGroup(rows, "rules", delta.rules, RULES, [before.rules, after.rules])
-  appendArrayGroup(rows, "effects", delta.effects, EFFECTS, [before.effects, after.effects])
-  if (delta.effectsReordered === true) {
-    rows.push(
-      `- effects reordered: ${localEffectOrder(before.effects)} → ${localEffectOrder(after.effects)}`,
-    )
-  }
-  appendArrayGroup(rows, "calls", delta.calls, CALLS, [before.calls, after.calls])
-  const explained = rows.length > nameRows || shortNameChanged || delta.visibilityChanged
+  explaining(["api", "syntax"], () => {
+    if (before.kind !== after.kind) {
+      rows.push(`- kind: ${inlineCode(before.kind)} → ${inlineCode(after.kind)}`)
+    }
+  })
+  explaining(["api"], () => {
+    if (before.extKind !== after.extKind) {
+      rows.push(`- extKind: ${extKindText(before.extKind)} → ${extKindText(after.extKind)}`)
+    }
+  })
+  explaining(["api", "syntax"], () => {
+    appendSignatureDelta(rows, delta.signature ?? null, [before.signature, after.signature])
+    appendDecoratorDelta(rows, delta.decorators, [before.decorators, after.decorators])
+  })
+  explaining(["api"], () => {
+    if (!onlyOwnNameRenamed(delta.exportedAs, before.name, after.name)) {
+      appendInlineRow(rows, "export name added", delta.exportedAs?.added ?? [])
+      appendInlineRow(rows, "export name removed", delta.exportedAs?.removed ?? [])
+    }
+  })
+  explaining(["logic", "syntax"], () => {
+    appendMiddlewareDelta(rows, delta.middleware, [before.middleware ?? [], after.middleware ?? []])
+    appendArrayGroup(rows, "rules", delta.rules, RULES, [before.rules, after.rules])
+    appendArrayGroup(rows, "effects", delta.effects, EFFECTS, [before.effects, after.effects])
+    if (delta.effectsReordered === true) {
+      rows.push(
+        `- effects reordered: ${localEffectOrder(before.effects)} → ${localEffectOrder(after.effects)}`,
+      )
+    }
+  })
+  explaining(["syntax"], () => {
+    appendArrayGroup(rows, "calls", delta.calls, CALLS, [before.calls, after.calls])
+  })
   if (delta.componentChanged) {
     rows.push(`- component: ${componentText(before.component)} → ${componentText(after.component)}`)
   }
-  if (delta.visibilityChanged) {
-    rows.push(`- visibility: ${inlineCode(before.visibility)} → ${inlineCode(after.visibility)}`)
-  }
+  explaining(["api", "syntax"], () => {
+    if (delta.visibilityChanged) {
+      rows.push(`- visibility: ${inlineCode(before.visibility)} → ${inlineCode(after.visibility)}`)
+    }
+  })
   if (delta.confidenceChanged === true) {
     rows.push(
       `- confidence: ${inlineCode(change.before.confidence)} → ${inlineCode(change.after.confidence)}`,
     )
   }
-  if (!explained) appendUnexplainedChangeNote(delta, rows)
+  appendUnexplainedChangeNote(delta, explained, rows)
   return rows
 }
 
@@ -75,16 +112,24 @@ function onlyOwnNameRenamed(
   return added.length === 1 && added[0] === after && removed.length === 1 && removed[0] === before
 }
 
-function appendUnexplainedChangeNote(delta: SymbolDelta, rows: string[]): void {
-  const which = delta.apiChanged
-    ? "API"
-    : delta.logicChanged
-      ? "logic"
-      : delta.syntaxChanged
-        ? "syntax"
-        : null
-  if (which === null) return
-  rows.push(`- ${which} fingerprint changed; no field-level detail was recorded`)
+function appendUnexplainedChangeNote(
+  delta: SymbolDelta,
+  explained: ReadonlySet<FingerprintAxis>,
+  rows: string[],
+): void {
+  const flagged: Readonly<Record<FingerprintAxis, boolean>> = {
+    api: delta.apiChanged,
+    logic: delta.logicChanged,
+    syntax: delta.syntaxChanged,
+  }
+  for (const axis of ["api", "logic", "syntax"] as const) {
+    if (!flagged[axis] || explained.has(axis)) continue
+    rows.push(`- ${AXIS_NAMES[axis]} fingerprint changed; no field-level detail was recorded`)
+  }
+}
+
+function extKindText(extKind: string | null): string {
+  return extKind === null ? "none" : inlineCode(extKind)
 }
 
 // An absent key reads as null, as a Symbol outside every declared Component.

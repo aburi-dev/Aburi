@@ -624,7 +624,9 @@ Every decorator row prints the decorator's `raw`, arguments and receiver include
 
 The names the module exports the declaration under ([`diff-algorithm.md`](./diff-algorithm.md) §5.5) follow the decorator rows, as ``- export name added: `DELETE` `` and ``- export name removed: `GET` ``, each listing the names its bucket holds. They explain the API flag, since the names are an `api` input ([`fingerprint.md`](./fingerprint.md) §3.8). A renamed pair exported under its own name alone loses the base's name and gains the head's, which the name row already says, so a pair whose `removed` is exactly the base's name and whose `added` is exactly the head's writes neither row, and the name row alone decides whether the API flag is explained. `export function isAdminUser` moved and renamed `canAdministerSite` reads ``- name: `isAdminUser` → `canAdministerSite` `` and nothing more, and a namespace member whose owner alone was renamed keeps its note.
 
-A change whose `delta.confidenceChanged` is also true adds a row such as ``- confidence: `high` → `medium` ``, base side first, in whichever section the entry lands. This holds for every section that renders a delta body, Moved + Changed included. A fingerprint flag with no field-level row to explain it gets `- <axis> fingerprint changed; no field-level detail was recorded`; the component and confidence rows do not count as that explanation, since no fingerprint reads either, so a syntax change moved into Confidence changes still says it happened. The name row of a pair whose name changed (see Moved + Changed below) explains the API flag only when the last segment of the name changed, since that segment is all of the name the API fingerprint reads ([`fingerprint.md`](./fingerprint.md) §3.3): `Repo.save` → `UserRepo.save` still gets the note.
+A Symbol whose `kind` or `extKind` differs between its sides gets a row for each, after the name row and before the signature rows, base value first: ``- kind: `function` → `class` `` and ``- extKind: `framework:react:component` → none``, a side with no `extKind` reading `none`. The diff records neither as a delta field, since both sides carry them, and both are `api` inputs ([`fingerprint.md`](./fingerprint.md) §3.1), so without the rows a function that stopped being a React component beside a body edit would read as the body edit alone.
+
+A change whose `delta.confidenceChanged` is also true adds a row such as ``- confidence: `high` → `medium` ``, base side first, in whichever section the entry lands. This holds for every section that renders a delta body, Moved + Changed included. Each fingerprint flag is explained by the rows of the fields that fingerprint reads, and a flag none of them explains gets `- <axis> fingerprint changed; no field-level detail was recorded`, one row per such flag in the order API, logic, syntax, at the end of the body. The API flag is explained by the kind, extKind, signature, decorator, export name and visibility rows; the logic flag by the middleware, rule and effect rows, the effects reordered row included; the syntax flag by every row the declaration's text holds, which is all of these but the extKind and export name rows, and the call rows. A row for one axis does not explain another, so a logic row beside an API flag nothing else explains leaves the API note, and a decorator's `boundary` flipping beside a body edit, which no row records, says the API fingerprint moved. The component and confidence rows explain nothing, since no fingerprint reads either, so a syntax change moved into Confidence changes still says it happened. The name row of a pair whose name changed (see Moved + Changed below) explains the API and syntax flags only when the last segment of the name changed, since that segment is all of the name either reads ([`fingerprint.md`](./fingerprint.md) §3.3): `Repo.save` → `UserRepo.save` still gets the note.
 
 #### 🔧 Logic changes
 
@@ -968,7 +970,7 @@ lands inside a `<details>` block or a code fence as often as not, and what GitHu
 an open fence swallowing the rest of the report. Sections give way in ascending order of
 importance, which is the §6.1 order read from the bottom: Generated files first, then Test files, then Syntax-only, API changes last.
 
-A section can give way in two steps. The sections whose entries are whole Symbols — API changes,
+A section can give way in three steps. The sections whose entries are whole Symbols — API changes,
 Logic changes, Added, Removed, Unknown, Moved + Changed, Confidence changes — have a **names-only form**: the same
 heading, a line saying the entries are short, and one row per Symbol,
 
@@ -987,11 +989,23 @@ section can take forty. The other sections are already lists, or are views (Slic
 and Dependency changes) with nothing shorter to say, and have only their full form. A section is
 offered its names-only form only where that form, with its line saying what it is, is smaller
 than the section: one or two thin entries can be longer as a list, and shortening them would grow
-the document.
+the document. The third step, for a section with names that the passes below leave out, is to be
+**cut short**: the first of its rows that fit, in the section's order, under a line saying how many
+of how many it lists, and a last row counting the rest,
+
+```md
+## ➖ Removed
+
+_Names and locations of the first 1187 of 1200 entries: the rest did not fit within the size cap._
+
+- `handler0000` *(function)* — `src/handlers.ts:1`
+…
+- … and 13 more
+```
 
 A document that fits whole is emitted as it is. Otherwise the form of each section is decided in
-three passes, each walking the §6.1 order from the top and measuring the whole document, note
-included. The note matters: it names every short and every omitted section, so a names-only form
+three passes and a cut, each walking the §6.1 order from the top and measuring the whole document, note
+included. The note matters: it names every section it shortens or omits, so a names-only form
 is not always the smaller document — one thin entry saves a couple of bytes in its lines and
 spends more than that on its name in the note — and omitting a one-entry section can grow the
 document.
@@ -1007,12 +1021,17 @@ document.
    leave a list below it full although names-only would make that list smaller, that list is made
    names-only too, rather than cost the more important section its place. Then the second pass
    runs again, until nothing changes.
+4. **What is left of the room.** Each section the passes still omit that has a names-only form,
+   from the top, is cut short to as many of its rows as the room left holds, and stays omitted
+   where not one does. The passes have settled every other section by then, so a cut takes only
+   room nothing more important could use, and each leaves what it does not fill to the ones below.
 
 So a section goes only when it cannot fit, in either form, beside every more important section
 that stayed, and a reviewer never loses an API change for an implementation refactor to stay. No
 section the document omits would fit back into it, not even with the lists below it that would
 then be smaller as names-only made names-only. A section too large to fit even as names no longer
-takes the smaller ones below it with it: they stay, and the note names it as omitted. Among the
+takes the smaller ones below it with it: they stay, and it lists as many of its names as fit in the
+room they leave (MP13d). Among the
 sections with a names-only form, every one above the first short one is full; below it each is
 short, omitted, or full where names-only would be no smaller — a thin section below a long
 names-only one stays whole (MP13c). The headings that survive are always in §6.1 order. Each pass
@@ -1023,10 +1042,12 @@ dropped, so a budget smaller than those is not achievable and the document comes
 This matters most for the largest diffs. Dropping whole sections alone left a diff of 302 removed
 Symbols with API changes as its only section, and named none of the 302, although `➖ Removed` is
 what `--fail-on removed` gates on: the red check and the section that explains it went together.
-Under the passes, every one of them is named (MP13a).
+Under the passes, every one of them is named (MP13a). A section with more names than the budget
+holds — 1,200 removed functions, at 50–60 bytes a row — went whole even so, and the comment named
+none of them; cut short, it names as many as fit, and the note says how many it left out.
 
-A capped document says so, directly under the Summary, telling the short sections apart from the
-ones that went:
+A capped document says so, directly under the Summary, telling the short sections, the ones cut
+short and the ones that went apart:
 
 ```md
 > ⚠ **3 sections were omitted** to keep this report within 65507 bytes: 🔗 Dependency changes, 💧 Dropped changes, 🎨 Syntax-only changes. The full report is the same diff rendered without a size cap.
@@ -1034,6 +1055,10 @@ ones that went:
 
 ```md
 > ⚠ **5 sections list names only** and **3 sections were omitted** to keep this report within 65507 bytes. Names only: ⚠ API changes, 🔧 Logic changes, ➕ Added, ➖ Removed, 🔀 Moved + Changed. Omitted: 🧵 Slice View, 🔗 Dependency changes, 🎨 Syntax-only changes. The full report is the same diff rendered without a size cap.
+```
+
+```md
+> ⚠ **2 sections list names only**, **1 section was cut short** and **4 sections were omitted** to keep this report within 12000 bytes. Names only: ⚠ API changes, 🔀 Moved + Changed. Cut short: 🔧 Logic changes. Omitted: ➕ Added, ➖ Removed, 🔀 Moved, 🎨 Syntax-only changes. The full report is the same diff rendered without a size cap.
 ```
 
 The last sentence is the pointer to what the cap removed. `projectDiff` cannot know where that
@@ -1243,12 +1268,14 @@ All Markdown projection output is **English, with fixed wording**.
 | MP11 | diff containing a moved+changed symbol | Moved + Changed section (not folded) |
 | MP11a | diff containing a moved or moved+changed Symbol whose base and head files are the same | Every place the move is written (the Moved + Changed entry and its names-only row, the folded Moved list, a Slice member's row) names the file once with the base and head names and lines, never the path twice. A move between files still writes both paths |
 | MP11b | diff containing a moved or moved+changed Symbol whose name changed, within one file or between files | Every place the move is written carries the base name: a move between files writes each path with its name, every delta body of the pair opens with ``- name: `<base>` → `<head>` ``, and every names-only row of the pair carries the Moved + Changed row's ``(from …)``, in API changes, Logic changes and Confidence changes as in Moved + Changed, so a size cap that omits Moved + Changed still names the base. A change of the last segment explains the API flag, so no "no field-level detail" row follows; a new owner alone (`Repo.save` → `UserRepo.save`) does not explain it |
+| MP11b1 | diff entry flagged on API and logic with only rule rows; on logic and syntax with only call rows; on every axis with no row; and one whose `extKind` went from `framework:react:component` to none, or whose `kind` went from `function` to `class`, beside a rule row | The first gets the API note, the second the logic note, the third one note per axis in the order API, logic, syntax; the last two write ``- extKind: `framework:react:component` → none`` / ``- kind: `function` → `class` `` after the name row and no note |
 | MP11c | diff with several Symbols moved between the same two files under their own names, beside a rename and a move to a third file | The folded Moved list writes the first group on one row, `` `A`, `B`: `<old>` → `<new>` ``, and the other two on a row each; its summary reads `4 moved (no semantic change)`, and one entry `1 moved (no semantic change)` |
 | MP12 | 0 components (empty IR) | workspace.md is emitted, but the Components table is empty |
-| MP13 | diff projected with `maxBytes` | Result is at most that many UTF-8 bytes, except where the title, the Summary line and the note alone exceed the budget — which is not achievable, and says so in the note instead. A section is omitted only when it cannot fit, in either form, beside every more important section that stayed, and no omitted section would fit back into the result, not even with the lists below it made names-only where names-only would then be smaller; among the sections with a names-only form, the full ones come first and every one after the first short one is short, omitted, or full where names-only would be no smaller. A note names the short ones and the omitted ones apart |
+| MP13 | diff projected with `maxBytes` | Result is at most that many UTF-8 bytes, except where the title, the Summary line and the note alone exceed the budget — which is not achievable, and says so in the note instead. A section is omitted only when it cannot fit, in either form, beside every more important section that stayed, and no omitted section would fit back into the result, not even with the lists below it made names-only where names-only would then be smaller; among the sections with a names-only form, the full ones come first and every one after the first short one is short, cut short, omitted, or full where names-only would be no smaller. A note names the short ones, the ones cut short and the omitted ones apart |
 | MP13a | diff of a large refactor (+142 · −302 · ~326 · 25 moved · 44 moved+changed) projected with `maxBytes: 65507` | Fits, and every removed Symbol is named with its `file:line` |
 | MP13b | diff with one thin removed Symbol and eight syntax-only changes, a component added, projected with a budget that holds Removed whole but not as names | `➖ Removed` is kept whole rather than omitted, since its names-only form costs more in the note than it saves; with a budget that also holds Component changes, both are kept |
 | MP13c | diff with twelve API changes and one thin removed Symbol, projected with a budget that holds API changes only as names | `➖ Removed` is kept whole below the names-only API changes wherever that fits: not named only in a larger document, and not omitted |
+| MP13d | diff of 1,200 removed functions projected with `maxBytes: 65507`; a diff of 600 added Symbols beside six thin sections, projected with 2000 | `➖ Removed` is cut short: the first of its rows in its order, as many as fit, under ``_Names and locations of the first <k> of 1200 entries: the rest did not fit within the size cap._``, then ``- … and <1200 − k> more``, and the note names it under `Cut short`. `➕ Added` is cut short in the room the six leave, each of which keeps its form. A list of which not one row fits stays omitted, and a list below a cut one is cut in the room that one leaves |
 | MP14 | Symbol block with Rules, Effects, Calls and a fingerprint, the last rule inline or fenced, alone, on a component page and as an Added entry in `diff.md` | Rendered, the Rules list holds the rule as its one item and `**Effects**:` is the paragraph after it, not part of the item, after an inline or a fenced last rule, in each of the three; a blank line before `**Calls**:` and the `<sub>` line; no blank line before a list or after the last section, and never two in a row |
 | MP15 | A signature with an optional input and a rest input; a diff entry whose `signature.inputs.added` holds a rest input | `(a?: string, ...ids: string[])` in the signature line, and `` `...ids: string[]` `` in the diff row (§5.5). An input with an empty `type` prints as its name alone |
 | MP16 | A value holding `_x_`, `*x*`, `<T>`, a backtick, `~~s~~` and a newline followed by `## `, as a thrown type, as a propagated effect's direct source (Symbol block, Boundary effect surface, delta row), as a Component `name`, as a component-level Dependency endpoint (component page, `workspace.md` list), as the generator's `name` or `version` or the `generatedAt` of the `workspace.md` header, as either ref of the `diff.md` title, and as a `dropReason` (component page, Dropped changes, `explain`) | Rendered as CommonMark, each shows the value as written, its newline as a space: no emphasis, no HTML and no block of its own (§3.4.2) |
