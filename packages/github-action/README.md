@@ -179,8 +179,9 @@ The action renders the report to fit instead: it passes `--max-bytes 65507` (the
 up — Test files first, then Syntax-only, then Confidence and Dropped changes, API changes last. A section whose entries are whole
 symbols (API and Logic changes, Added, Removed, Unknown, Moved + Changed, Confidence changes) is
 first cut down to one line per symbol, name and location, and any section is dropped only if it cannot fit even beside
-every more important one cut that far. The report says at
-the top which sections are short and which went:
+every more important one cut that far; one with more symbols than even those lines fit lists as
+many as the room left holds and counts the rest. The report says at
+the top which sections are short, which were cut short and which went:
 
 > ⚠ **2 sections were omitted** to keep this report within 65507 bytes: 💧 Dropped changes, 🎨 Syntax-only changes. The full report, the same diff without a size cap, is `diff.full.md` beside `diff.md`.
 
