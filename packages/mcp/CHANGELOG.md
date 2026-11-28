@@ -1,5 +1,12 @@
 # @aburi/mcp
 
+## 0.1.1
+
+### Patch Changes
+
+- 06326d4: Say which tree `aburi diff` reads as the head: the working tree when the head names the commit checked out, and the commit itself otherwise. The `diff` tool's description and both READMEs said it was always the working tree.
+- Updated dependencies: `@aburi/cli@0.10.0`
+
 ## 0.1.0
 
 ### Minor Changes

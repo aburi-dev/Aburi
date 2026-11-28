@@ -1,6 +1,6 @@
 {
   "name": "@aburi/effects-nest",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Aburi NestJS effects plugin: classifies EventEmitter2 `emit`/`emitAsync` and `@nestjs/cqrs` EventBus `publish`/`publishAll` calls into the core event.publish effect",
   "license": "Apache-2.0",
   "author": "kage1020",
