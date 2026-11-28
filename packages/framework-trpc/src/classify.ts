@@ -58,7 +58,7 @@ export function classifyTrpcSymbol(
   const { middleware, calls } = BUILDS_A_PROCEDURE.has(role)
     ? builtOn(chain)
     : role === "router"
-      ? routerProcedures(chain, importsTrpc, "")
+      ? servedBy(chain, importsTrpc)
       : { middleware: [], calls: [] }
   return {
     extKind: `${TRPC_DERIVED_BY_PREFIX}:${role}` satisfies TrpcExtKind,
@@ -95,40 +95,95 @@ function builtOn(chain: Chain): BuiltOn {
   }
 }
 
-// A procedure written in a router's object is no Symbol of its own, so the router names what each
-// is built on under the key that serves it: two procedures on one base stay apart, and moving one
-// to another base moves the router's `logic` as it moves a `const` procedure's.
-function routerProcedures(router: Chain, importsTrpc: boolean, prefix: string): BuiltOn {
-  const [procedures] = router.call === null ? [] : argumentsOf(router.call)
-  const object = procedures === undefined ? null : unwrapValue(procedures)
-  if (object?.type !== "object") return { middleware: [], calls: [] }
-  const built = writtenChildren(object).flatMap((entry) => {
-    const value = entry.type === "pair" ? entry.childForFieldName("value") : null
-    const chain = value === null ? null : readChain(unwrapValue(value))
-    if (chain === null) return []
-    const key = `${prefix}${propertyKey(entry)}`
-    const role = roleOf(chain, importsTrpc)
-    if (role === "router") return [routerProcedures(chain, importsTrpc, `${key}.`)]
-    if (role !== "procedure") return []
-    const { middleware, calls } = builtOn(chain)
-    return [{ middleware: middleware.map((name) => `${key}:${name}`), calls }]
-  })
+/** A procedure a router's object writes in place, and the path a client calls it by. */
+interface Served {
+  readonly path: string
+  readonly built: BuiltOn
+}
+
+// Such a procedure is no Symbol, so the router names what each is built on under its path, two on
+// one base staying apart. tRPC looks a procedure up by its path, so key order is not named.
+function servedBy(router: Chain, importsTrpc: boolean): BuiltOn {
+  const served = routerProcedures(router, importsTrpc, "").toSorted((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  )
   return {
-    middleware: built.flatMap((procedure) => procedure.middleware),
-    calls: built.flatMap((procedure) => procedure.calls),
+    middleware: served.flatMap(({ path, built }) =>
+      built.middleware.map((name) => `${path}:${name}`),
+    ),
+    calls: served.flatMap(({ built }) => built.calls),
   }
 }
 
-// The key a client calls the procedure by: a quoted key is its value, and one computed at run
-// time is `<computed>`, as a call target names what it cannot read.
+function routerProcedures(router: Chain, importsTrpc: boolean, prefix: string): Served[] {
+  const args = router.call === null ? [] : argumentsOf(router.call)
+  if (router.leaf !== "mergeRouters") {
+    const [procedures] = args
+    return procedures === undefined
+      ? []
+      : objectProcedures(unwrapValue(procedures), importsTrpc, prefix)
+  }
+  // A merged router's procedures are served at the paths it gives them.
+  return args.flatMap((merged) => {
+    const chain = readChain(unwrapValue(merged))
+    return chain !== null && roleOf(chain, importsTrpc) === "router"
+      ? routerProcedures(chain, importsTrpc, prefix)
+      : []
+  })
+}
+
+function objectProcedures(object: SyntaxNode, importsTrpc: boolean, prefix: string): Served[] {
+  if (object.type !== "object") return []
+  return writtenChildren(object).flatMap((entry) => {
+    const value = entry.type === "pair" ? entry.childForFieldName("value") : null
+    if (value === null) return []
+    const path = `${prefix}${propertyKey(entry)}`
+    const written = unwrapValue(value)
+    // tRPC reads a plain object as a router written in place.
+    if (written.type === "object") return objectProcedures(written, importsTrpc, `${path}.`)
+    const chain = readChain(written)
+    const role = chain === null ? null : roleOf(chain, importsTrpc)
+    if (chain === null || role === null) return []
+    if (role === "router") return routerProcedures(chain, importsTrpc, `${path}.`)
+    return role === "procedure" ? [{ path, built: builtOn(chain) }] : []
+  })
+}
+
+// A call target names what it cannot read `<computed>`, and so does a key.
 function propertyKey(pair: SyntaxNode): string {
   const key = pair.childForFieldName("key")
-  if (key === null) return COMPUTED_TARGET_SEGMENT
-  if (key.type === "property_identifier" || key.type === "number") return key.text
-  if (key.type !== "string") return COMPUTED_TARGET_SEGMENT
-  const { value, whole } = decodeStringLiteral(key)
-  return whole ? value : COMPUTED_TARGET_SEGMENT
+  return (key === null ? null : keyName(key)) ?? COMPUTED_TARGET_SEGMENT
 }
+
+function keyName(key: SyntaxNode): string | null {
+  switch (key.type) {
+    case "property_identifier":
+      return key.text
+    case "number":
+      return numberKeyName(key.text)
+    case "string":
+    case "template_string": {
+      const { value, whole } = decodeStringLiteral(key)
+      return whole ? value : null
+    }
+    case "computed_property_name": {
+      const [expression] = writtenChildren(key)
+      return expression === undefined ? null : keyName(unwrapValue(expression))
+    }
+    default:
+      return null
+  }
+}
+
+// A number key names its property by its value, so `0x10`, `1_6` and `16` are one key.
+function numberKeyName(text: string): string {
+  const digits = text.replaceAll("_", "")
+  return BIGINT_LITERAL.test(digits)
+    ? BigInt(digits.slice(0, -1)).toString()
+    : String(Number(digits))
+}
+
+const BIGINT_LITERAL = /^(?:0[box][\da-f]+|\d+)n$/i
 
 function roleOf(chain: Chain, importsTrpc: boolean): TrpcRole | null {
   const { call, leaf } = chain

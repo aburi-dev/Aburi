@@ -3,7 +3,9 @@
 ---
 
 A router names what each procedure written inside its object literal is built on, prefixed by the
-key it is served under (`delete:protectedProcedure`, `post.delete:protectedProcedure` for a nested
-router), and calls those base procedures and middleware. Switching an inline procedure from
-`protectedProcedure` to `publicProcedure` is a logic change to the router that names both, where it
-was reported as syntax-only.
+path a client calls the procedure by (`delete:protectedProcedure`, and
+`post.delete:protectedProcedure` through a router written inside it as `t.router({ … })`, a plain
+object or a `mergeRouters` call), and calls each base procedure and middleware it names. Switching
+an inline procedure from `protectedProcedure` to `publicProcedure` is now a logic change to the
+router, reported as one `middleware` entry removed and one added, where it was syntax-only. The
+entries are ordered by path, so swapping two keys is no logic change.

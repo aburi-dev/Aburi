@@ -164,9 +164,9 @@ describe("scan — a procedure written inside a router", () => {
 
   it.each([
     [
-      "each procedure's base procedure, under its key",
+      "each procedure's base procedure under its key, in the order of the keys",
       ["  list: publicProcedure.query(() => []),", "  delete: protectedProcedure.mutation(fn),"],
-      ["list:publicProcedure", "delete:protectedProcedure"],
+      ["delete:protectedProcedure", "list:publicProcedure"],
     ],
     [
       "what a procedure's chain uses, after its base",
@@ -174,14 +174,43 @@ describe("scan — a procedure written inside a router", () => {
       ["delete:protectedProcedure", "delete:isAdmin"],
     ],
     [
-      "a nested router's procedures, under the path of keys",
-      ["  post: t.router({", "    delete: protectedProcedure.mutation(fn),", "  }),"],
+      "what a procedure on the instance's own procedure uses, with no base",
+      ["  list: t.procedure.use(isAdmin).query(fn),"],
+      ["list:isAdmin"],
+    ],
+    [
+      "nested routers' procedures, under the path of keys",
+      ["  a: t.router({", "    b: t.router({ c: protectedProcedure.mutation(fn) }),", "  }),"],
+      ["a.b.c:protectedProcedure"],
+    ],
+    [
+      "a router written as a plain object, under its key",
+      ["  post: { delete: protectedProcedure.mutation(fn) },"],
       ["post.delete:protectedProcedure"],
     ],
     [
+      "the procedures of a merge's routers, under the merge's key",
+      ["  post: t.mergeRouters(t.router({ list: publicProcedure.query(fn) }), otherRouter),"],
+      ["post.list:publicProcedure"],
+    ],
+    [
       "a quoted key as its value, and a computed one as computed",
-      ['  "by-id": publicProcedure.query(fn),', "  [name]: protectedProcedure.query(fn),"],
-      ["by-id:publicProcedure", "<computed>:protectedProcedure"],
+      ['  "by\\u002did": publicProcedure.query(fn),', "  [name]: protectedProcedure.query(fn),"],
+      ["<computed>:protectedProcedure", "by-id:publicProcedure"],
+    ],
+    [
+      "a computed key a literal spells as that literal",
+      ['  ["by-id"]: publicProcedure.query(fn),', "  [`by-name`]: protectedProcedure.query(fn),"],
+      ["by-id:publicProcedure", "by-name:protectedProcedure"],
+    ],
+    [
+      "a number key as the number it is",
+      [
+        "  0x10: publicProcedure.query(fn),",
+        "  1_000: publicProcedure.query(fn),",
+        "  1.50: publicProcedure.query(fn),",
+      ],
+      ["1.5:publicProcedure", "1000:publicProcedure", "16:publicProcedure"],
     ],
   ])("names %s", async (_label, procedures, middleware) => {
     expect(await routerMiddleware(procedures)).toEqual(middleware)
@@ -195,12 +224,30 @@ describe("scan — a procedure written inside a router", () => {
     expect(await routerMiddleware(procedures)).toBeUndefined()
   })
 
-  it("calls the base procedure an inline procedure is built on", async () => {
+  it("names the procedures of a router a merge builds in place", async () => {
+    await workspace.writeSource(
+      "src/server.ts",
+      [
+        SERVER_IMPORT,
+        "export const appRouter = t.mergeRouters(",
+        "  t.router({ list: publicProcedure.query(fn) }),",
+        "  otherRouter,",
+        ")",
+      ].join("\n"),
+    )
+
+    expect(symbolNamed({ ir: await scanWorkspace() }, "appRouter").middleware).toEqual([
+      "list:publicProcedure",
+    ])
+  })
+
+  it("calls what each inline procedure is built on, in a nested router too", async () => {
     await workspace.writeSource(
       "src/trpc.ts",
       [
         SERVER_IMPORT,
         "const t = initTRPC.create()",
+        "export const isAdmin = t.middleware(({ next }) => next())",
         "export const protectedProcedure = t.procedure.use(isAuthed)",
       ].join("\n"),
     )
@@ -208,18 +255,25 @@ describe("scan — a procedure written inside a router", () => {
       "src/server.ts",
       [
         SERVER_IMPORT,
-        'import { protectedProcedure } from "./trpc"',
+        'import { isAdmin, protectedProcedure } from "./trpc"',
         "export const appRouter = t.router({",
-        "  delete: protectedProcedure.mutation(fn),",
+        "  delete: protectedProcedure.use(isAdmin).mutation(fn),",
+        "  post: t.router({ remove: protectedProcedure.mutation(fn) }),",
         "})",
       ].join("\n"),
     )
 
     const appRouter = symbolNamed({ ir: await scanWorkspace() }, "appRouter")
 
-    expect(appRouter.calls.find((call) => call.target === "protectedProcedure")?.resolved).toBe(
-      "ts:src/trpc.ts#protectedProcedure",
-    )
+    expect(
+      appRouter.calls
+        .filter((call) => call.target === "protectedProcedure" || call.target === "isAdmin")
+        .map((call) => [call.target, call.line, call.resolved]),
+    ).toEqual([
+      ["protectedProcedure", 4, "ts:src/trpc.ts#protectedProcedure"],
+      ["isAdmin", 4, "ts:src/trpc.ts#isAdmin"],
+      ["protectedProcedure", 5, "ts:src/trpc.ts#protectedProcedure"],
+    ])
   })
 })
 

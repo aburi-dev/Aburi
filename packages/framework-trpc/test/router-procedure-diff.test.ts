@@ -71,4 +71,32 @@ describe("diff — the base procedure of a procedure written inside a router", (
       },
     })
   })
+
+  it("reads swapping two keys as no change to the router's logic, as tRPC serves each by its key", async () => {
+    const LIST = "  list: publicProcedure.query(() => []),"
+    const REMOVE = "  remove: protectedProcedure.mutation(() => 1),"
+    const keyed = (...procedures: string[]) =>
+      [
+        'import { createTRPCRouter, protectedProcedure, publicProcedure } from "./trpc"',
+        "export const postRouter = createTRPCRouter({",
+        ...procedures,
+        "})",
+        "",
+      ].join("\n")
+
+    const { diff } = await diffOfEditWith(
+      workspace,
+      lineup,
+      "src/post.ts",
+      keyed(LIST, REMOVE),
+      keyed(REMOVE, LIST),
+    )
+
+    const change = soleChange(diff.symbols, "changed")
+    expect(change.after.id).toBe("ts:src/post.ts#postRouter")
+    expect(change.delta).toMatchObject({
+      logicChanged: false,
+      middleware: { added: [], removed: [], reordered: false },
+    })
+  })
 })
