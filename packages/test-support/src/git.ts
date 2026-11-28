@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
-import { mkdir } from "node:fs/promises"
-import { resolve } from "node:path"
+import { mkdir, writeFile } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
 
 const HOOK_AND_REPOSITORY_ENV: readonly string[] = [
   "GIT_DIR",
@@ -57,4 +57,24 @@ export async function initRepository(directory: string): Promise<void> {
 export async function commitAll(directory: string, message = "commit"): Promise<void> {
   await git(["add", "-A"], directory)
   await git(["commit", "-q", "-m", message], directory)
+}
+
+/**
+ * Make `path` the least git reads as a git directory, without running git: a `HEAD` naming a
+ * branch, `objects/` and `refs/`.
+ */
+export async function makeGitDirectory(path: string): Promise<void> {
+  await mkdir(join(path, "objects"), { recursive: true })
+  await mkdir(join(path, "refs"), { recursive: true })
+  await writeFile(join(path, "HEAD"), "ref: refs/heads/main\n", "utf8")
+}
+
+/**
+ * Make `path` the `.git` file a linked worktree or a submodule has, `gitdir: <gitDir>`, and the git
+ * directory it names. A relative `gitDir` is read from the file's directory, as git reads it.
+ */
+export async function makeGitPointer(path: string, gitDir: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, `gitdir: ${gitDir}\n`, "utf8")
+  await makeGitDirectory(resolve(dirname(path), gitDir))
 }

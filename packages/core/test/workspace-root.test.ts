@@ -1,11 +1,13 @@
 import { chmod, symlink } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
-import { errorFrom, linkDirectory } from "@aburi/test-support"
+import { errorFrom, linkDirectory, makeGitDirectory, makeGitPointer } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { CoreError, detectWorkspaceRoot, type GitWorkTree } from "../src/index"
 import { useWorkspaceTree } from "./fixtures/workspace"
 
 const tree = useWorkspaceTree("core-workspace-root")
+
+const gitDirectory = (rel: string): Promise<void> => makeGitDirectory(join(tree.root, rel))
 
 async function rootFrom(...segments: string[]): Promise<string> {
   return detectWorkspaceRoot({ cwd: join(tree.root, ...segments) })
@@ -66,15 +68,15 @@ describe("the walk upward", () => {
   })
 
   it("prefers the outermost marker over an inner package.json#workspaces", async () => {
-    await tree.mkdir(".git")
+    await gitDirectory(".git")
     await tree.writePackage("apps/billing", { name: "billing", workspaces: ["lib/*"] })
 
     expect(await rootFrom("apps", "billing")).toBe(tree.root)
   })
 
   it("stops at a repository nested under another marker", async () => {
-    await tree.mkdir(".git")
-    await tree.mkdir("vendor/lib/.git")
+    await gitDirectory(".git")
+    await gitDirectory("vendor/lib/.git")
     await tree.mkdir("vendor/lib/src")
 
     expect(await rootFrom("vendor", "lib", "src")).toBe(join(tree.root, "vendor", "lib"))
@@ -82,26 +84,43 @@ describe("the walk upward", () => {
 
   it("stops at the `.git` file a linked worktree or a submodule has", async () => {
     await tree.writeSource("pnpm-workspace.yaml", "packages: ['apps/*']")
-    await tree.mkdir(".git")
+    await gitDirectory(".git")
     await tree.mkdir(".worktrees/feat/src")
-    await tree.writeSource(".worktrees/feat/.git", "gitdir: ../../.git/worktrees/feat\n")
+    await makeGitPointer(join(tree.root, ".worktrees/feat/.git"), "../../.git/worktrees/feat")
 
     expect(await rootFrom(".worktrees", "feat", "src")).toBe(join(tree.root, ".worktrees", "feat"))
   })
 
   it("stops at a `.git` beside another marker, in any probing order", async () => {
     await tree.writeSource("turbo.json", "{}")
-    await tree.mkdir("repo/.git")
+    await gitDirectory("repo/.git")
     await tree.mkdir("repo/src")
     await tree.writeSource("repo/turbo.json", "{}")
 
     expect(await rootFrom("repo", "src")).toBe(join(tree.root, "repo"))
   })
 
-  it("passes a `.git` file that is not a `gitdir:` pointer", async () => {
-    await tree.mkdir(".git")
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a `.git` file that is not a `gitdir:` pointer",
+      () => tree.writeSource("vendor/lib/.git", ""),
+    ],
+    [
+      "a `gitdir:` pointer to nothing",
+      () => tree.writeSource("vendor/lib/.git", "gitdir: ../../gone/.git\n"),
+    ],
+    ["an empty `.git` directory", () => tree.mkdir("vendor/lib/.git")],
+    [
+      "a `.git` directory with no `objects/`",
+      async () => {
+        await tree.mkdir("vendor/lib/.git/refs")
+        await tree.writeSource("vendor/lib/.git/HEAD", "ref: refs/heads/main\n")
+      },
+    ],
+  ])("passes %s, which git reads as no repository", async (_, write) => {
+    await gitDirectory(".git")
     await tree.mkdir("vendor/lib/src")
-    await tree.writeSource("vendor/lib/.git", "")
+    await write()
 
     expect(await rootFrom("vendor", "lib", "src")).toBe(tree.root)
   })
@@ -152,7 +171,7 @@ describe("a working tree git reports for a repository kept outside it", () => {
 
   it("still stops at a repository between the start and the top", async () => {
     const workTree = await workTreeBelowMarker()
-    await tree.mkdir("outer/wt/vendor/lib/.git")
+    await gitDirectory("outer/wt/vendor/lib/.git")
     await tree.mkdir("outer/wt/vendor/lib/src")
 
     expect(await rootFor(named("outer", "wt"), "outer", "wt", "vendor", "lib", "src")).toBe(
@@ -187,7 +206,7 @@ describe("a working tree git reports for a repository kept outside it", () => {
   })
 
   it("roots at the `.git` above a start git takes as the top, as a hook run from a package does", async () => {
-    await tree.mkdir(".git")
+    await gitDirectory(".git")
     await tree.mkdir("packages/app")
 
     expect(await rootFor("start", "packages", "app")).toBe(tree.root)
@@ -196,7 +215,7 @@ describe("a working tree git reports for a repository kept outside it", () => {
 
 describe("a manifest that cannot be read", () => {
   it("is raised below the workspace root", async () => {
-    await tree.mkdir(".git")
+    await gitDirectory(".git")
     await tree.writeSource("apps/billing/package.json", "{ not json")
 
     expect(await codeFrom("apps", "billing")).toBe("workspace-manifest-malformed")
@@ -213,7 +232,7 @@ describe("a manifest that cannot be read", () => {
   })
 
   it("is never opened in a directory a `.git` already makes the root", async () => {
-    await tree.mkdir(".git")
+    await gitDirectory(".git")
     await tree.writeSource("package.json", "{ not json")
 
     expect(await rootFrom()).toBe(tree.root)

@@ -1,22 +1,12 @@
 import { scanWith } from "@aburi/test-harness"
-import { recordingLogger, relativePath, spend, useScratchWorkspace } from "@aburi/test-support"
-import { beforeAll, describe, expect, it } from "vitest"
-import { langTypescriptPlugin } from "../src/index"
+import { recordingLogger, spend, useScratchWorkspace } from "@aburi/test-support"
+import { describe, expect, it } from "vitest"
 import { pluginOverriding } from "./fixtures/scan"
 
 const workspace = useScratchWorkspace("parse-timeout")
 
 const BUDGET_MS = 500
 const OVERRUN_MS = 1250
-
-beforeAll(async () => {
-  const warm = await langTypescriptPlugin.parseFile({
-    path: relativePath("warm.ts"),
-    content: "export function warm() {}\n",
-  })
-  // Whoever calls `parseFile` directly owns the tree it hands back.
-  if (warm.tree !== null) langTypescriptPlugin.releaseTree(warm.tree)
-})
 
 /** A scan in which extracting `slow` runs past the parse budget. */
 async function scanOverrunning(slow: string) {

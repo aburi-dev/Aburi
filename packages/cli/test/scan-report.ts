@@ -17,6 +17,7 @@ export function scanReportWith(overrides: Partial<ScanReport>): ScanReport {
     extractionFailures: [],
     lspEnrichment: undefined,
     lspWarnings: [],
+    unreadLanguages: [],
     callResolutionLine: "",
     unresolvedCalls: [],
     configSource: null,

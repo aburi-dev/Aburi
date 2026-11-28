@@ -46,6 +46,18 @@ describe("runFilePipeline — Unicode normalization at the plugin boundary", () 
 
   it.each<Row>([
     [
+      "the name",
+      { candidate: stubCandidate(decomposed, { id: `stub:test.stub#${composed}` }) },
+      (file) => file.symbols[0]?.name,
+      composed,
+    ],
+    [
+      "the name an export clause gives",
+      { candidate: stubCandidate("Fn", { derivedBy: [`export-clause:${decomposed}`] }) },
+      (file) => file.symbols[0]?.derivedBy,
+      [`export-clause:${composed}`],
+    ],
+    [
       "source.file",
       {
         candidate: stubCandidate("Fn", {

@@ -1,13 +1,12 @@
-import { open, readFile, realpath, stat } from "node:fs/promises"
+import { readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { stripUtf8Bom } from "./codepoints"
 import { CoreError } from "./errors"
+import { isRepository } from "./git-directory"
 import { isVanishedFile } from "./scan/faults"
 import { pathExists, readJson } from "./workspace-fs"
 
 export const REPOSITORY_MARKER = ".git"
-
-const GITDIR_POINTER = "gitdir: "
 
 const ROOT_MARKERS = [
   "pnpm-workspace.yaml",
@@ -134,26 +133,6 @@ async function probeDirectoryMarkers(dir: string): Promise<MarkerProbe> {
     }
   }
   return { marker: null, failure }
-}
-
-export async function isRepository(path: string): Promise<boolean> {
-  let entry: Awaited<ReturnType<typeof stat>>
-  try {
-    entry = await stat(path)
-  } catch (err: unknown) {
-    if (isVanishedFile(err)) return false
-    throw err
-  }
-  if (entry.isDirectory()) return true
-  if (!entry.isFile()) return false
-  const opening = Buffer.alloc(GITDIR_POINTER.length)
-  const handle = await open(path, "r")
-  try {
-    const { bytesRead } = await handle.read(opening, 0, opening.length, 0)
-    return opening.subarray(0, bytesRead).toString("utf8") === GITDIR_POINTER
-  } finally {
-    await handle.close()
-  }
 }
 
 function isAtOrBelow(dir: string, root: string): boolean {

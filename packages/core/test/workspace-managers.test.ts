@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { errorFrom } from "@aburi/test-support"
+import { errorFrom, makeGitPointer } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { CoreError, detectManagers } from "../src/index"
 import { useWorkspaceTree } from "./fixtures/workspace"
@@ -68,7 +68,7 @@ describe("detectManagers", () => {
     await tree.writeJson(".github/actions/deploy/project.json", {})
     await tree.writeJson(".git/modules/vendored/project.json", {})
     await tree.writeJson(".worktrees/feat/libs/shared/project.json", {})
-    await tree.writeSource(".worktrees/feat/.git", "gitdir: /r/.git/worktrees/feat\n")
+    await makeGitPointer(join(tree.root, ".worktrees/feat/.git"), "../../.git/worktrees/feat")
 
     const result = await detectManagers(tree.root)
 

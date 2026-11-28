@@ -52,7 +52,7 @@ The reader rule is what carries backward compatibility, and it is the more impor
 | `generatedAt` | no | B | reserved for the producer's clock; **no writer emits it today**, so the key is always absent. `--no-timestamp` (implied by `CI`) drops the clock from `aburi-vocab-discovered.json` (`discoveredAt`) and from the Markdown projection's "Generated" line, which has none to drop while this key is absent |
 | `stats.effectClassifyTimeouts` | no | B | omitted when no classification overran its budget |
 | `stats.declinedCalls` | no | B | omitted when no call an effect plugin declined stayed in `calls[]` |
-| `stats.lspEnrichment` | no | B | omitted when the LSP pass did not run |
+| `stats.lspEnrichment` | no | B | omitted when the LSP pass did not run, which is when `lsp.enabled` is not `true` |
 | `stats.lspEnrichment.hintsProduced` | no | B | emitted by the current pipeline whenever the enclosing record is; absence means the document predates the counter |
 | `stats.lspEnrichment.hintsConsumed` | no | B | as above |
 | `stats.lspEnrichment.hintsRejected` | no | B | as above; emitted with all five buckets at `0` rather than omitted when nothing was rejected |
@@ -109,12 +109,14 @@ Normalization therefore happens **where a string enters the process**, not where
 | `toRelativePosix` (workspace detection) | the separator conversion and NFC of a found package directory, before `toDocumentPath` mints it as a `components[].roots` / `workspace.managers[].roots` entry |
 | `resolveComponents` (CLI config load) | `components[].roots` when they come from `aburi.json` rather than from detection |
 | `normalizePackagePath` (component detection) | `components[].publicApi` |
-| the scan pipeline's plugin boundary | `symbols[].source.file`, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target` (a framework plugin's added calls included), `effects[].target` or `stats.declinedCalls[].target`, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
+| the scan pipeline's plugin boundary | `symbols[].source.file`, `symbols[].name` and the name an `export-clause:` token in `symbols[].derivedBy` gives, `signature.inputs[].name` and `signature.inputs[].bindings`, the import edges the call resolver matches, the call target that becomes `calls[].target` (a framework plugin's added calls included), `effects[].target` or `stats.declinedCalls[].target`, the reason an effect plugin gives for a decline (`stats.declinedCalls[].reason`), and the names a framework plugin hands back as `symbols[].middleware[]` |
 | `buildDropCFilter` | the `suppress` / `keep` / `dropCallees` prefixes those call targets are matched against |
 
 Normalization is all these entry points do to a path. None of them converts a native path into a POSIX one, because the conversion is not decidable from the string: `\` is a separator on Windows and an ordinary filename character on POSIX, so a rewrite applied to every path silently renames any file whose name holds one. A caller that knows it holds a native path converts it — `toRelativePosix` does, on the platform separator, which is a separator exactly where a filename cannot hold one — and everything else hands over a path that is already POSIX and is validated as it stands.
 
 **A normalized path is not a filename.** What comes out of these entry points addresses the Document, and a filesystem that stores the name it was given — NTFS, ext4 — does not answer to it: a `stat` or a `readFile` under the normalized spelling of a decomposed name misses, and a `file://` URI built from it names nothing. Whatever opens a file keeps the spelling the filesystem handed back, which is why `DiscoveredFile` carries both and only `path` reaches the Document.
+
+Two declarations whose names differ only in composition are two bindings to ECMAScript, which compares identifiers by code point, and one Symbol name here: in one file they mint one id, and the per-file duplicate-id check withdraws that file ([`lang-plugin.md`](./lang-plugin.md) §7.2), as it does for any two declarations that claim one id. A name the plugin wrote decomposed otherwise reaches the Document composed, as its id and the call targets that name it do.
 
 Two names that differ only in composition therefore claim one Document path. That is not a spelling to choose between: the scan withdraws every claimant and reports them, because one path naming two files mints the same Symbol id for both, which invariant #1 refuses. (The mirror case — one file reachable under two spellings, and so holding two ids — is the one #10 exists for, and the one #1 by construction cannot see.)
 
@@ -761,7 +763,7 @@ Shapes the schema would have if v1 were not frozen, recorded here so the reasoni
 
 Whether the promotion is worth doing in v2 at all is open. The §1.1 reader rule already makes an absent key and `null` indistinguishable to every conforming consumer, so promoting buys stricter validation of third-party producers and nothing else.
 
-- **Split `stats.skippedFiles[].reason: "unroutable"` into the two things it means.** Today it covers both "no loaded plugin claims this extension" and "this name holds `:` or `#`, so nothing in it can be given a Symbol id". The two want different fixes — a plugin, and a rename — and the skip detail is currently what tells them apart. A distinct value (`unnameable`, say) would put the distinction where a machine reads it.
+- **Split `stats.skippedFiles[].reason: "unroutable"` into the two things it means.** It covers "this name holds `:` or `#`, so nothing in it can be given a Symbol id" and, for a scan that loads no language plugin at all and so gives discovery no extension to filter by, "no loaded plugin claims this extension". The two want different fixes — a rename, and a plugin — and the skip detail is currently what tells them apart. A distinct value (`unnameable`, say) would put the distinction where a machine reads it. A file of a language no plugin claims is otherwise never recorded: discovery lists none, and the scan names the Component that holds them instead ([`component-detect.md`](./component-detect.md) §6.5).
 
   Not v1: `reason` is a closed `enum` here and, as an inline copy (its `SkipReason`), in `aburi.diff.v1.json`, so a document carrying a new value is rejected by any validating reader. §15.2 permits enum additions "only where consumers tolerate unknowns", and this is the same condition the `kind` enum fails — Aburi's own CLI maps the reason through a table that is total over the union by design.
 

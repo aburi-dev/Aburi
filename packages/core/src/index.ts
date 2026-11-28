@@ -125,6 +125,7 @@ export {
   type DiscoverResult,
   discoverFiles,
   type SkippedFile,
+  type UnclaimedFile,
   type UnnameableFile,
   type UnrepresentableFile,
 } from "./scan/discover"
@@ -182,6 +183,7 @@ export {
   type ParseTimeoutEvent,
   startParseDeadline,
 } from "./scan/timeout"
+export type { UnreadLanguage } from "./scan/unread-languages"
 export { isStrict, type UndeclaredVocabOccurrence, VocabCheck } from "./scan/vocab"
 export {
   type DecodedLiteral,

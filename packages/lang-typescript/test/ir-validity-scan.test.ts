@@ -110,3 +110,20 @@ describe("scan — source under dot directories", () => {
     expect(irSchemaViolations(JSON.parse(serializeCanonical(ir)))).toEqual([])
   })
 })
+
+describe("scan — a name saved in decomposed Unicode", () => {
+  it("names the Symbol in NFC, so a call spelled composed reaches it", async () => {
+    await workspace.writeSource("src/name.ts", "export function café() { return 1 + 1 }\n")
+    await workspace.writeSource(
+      "src/use.ts",
+      'import { café } from "./name"\nexport function use() { return café() }\n',
+    )
+    const { ir } = await scanTypeScript(workspace.root)
+
+    expect(ir.symbols.map((s) => [s.id, s.name])).toEqual([
+      ["ts:src/name.ts#café", "café"],
+      ["ts:src/use.ts#use", "use"],
+    ])
+    expect(ir.symbols[1]?.calls.map((c) => c.resolved)).toEqual(["ts:src/name.ts#café"])
+  })
+})

@@ -246,7 +246,7 @@ Under any fallback:
 }
 ```
 
-`enabled` is `true` when `lsp.enabled` was and at least one language the scan found Symbols in has an `lsp.servers` entry, whether or not its server could then be started. Otherwise it is `false`, with every counter at `0`: no server was looked up for anything the scan found, and the CLI says so among the scan's incidents.
+`enabled` is `true` when `lsp.enabled` was and at least one language the scan found Symbols in has an `lsp.servers` entry, whether or not its server could then be started. Otherwise it is `false`, with every counter at `0`: no server was looked up for anything the scan found, and the CLI says so among the scan's incidents. A configuration with no `lsp.servers` at all, as `aburi scan --lsp` over a config without an `lsp` block gives, is read as an empty one and writes the same record.
 
 **Why the hint counters exist.** The seven counters above them describe requests, not answers. A request that comes back on time, with a body this pass cannot read a callee out of, is a healthy row in every one of them: it counts in `requestsIssued`, in neither failure counter, it resets the consecutive-failure counter in §6.1, and its file still lands in `filesEnriched`. So `requestsIssued: 5170, requestsFailed: 0` describes a run that resolved 331 extra call sites and a run that resolved none, and nothing in the document tells the two apart. The hint counters are that distinction, and they are the only place it is recorded — §6.2 keeps errors out of the IR, and a hint the pass declined to write leaves no other trace anywhere.
 
@@ -398,7 +398,7 @@ Concrete rules:
 
 - LE29 (`didOpen` names the extension's language): files ending in `.ts`, `.tsx`, `.js` and `.jsx` (and their module variants, whatever their letter case) are opened as `typescript`, `typescriptreact`, `javascript` and `javascriptreact`, whichever language plugin owns them. A file whose extension names none of them is opened under its own language id, except that `ts` becomes `typescript`; that id is a guess, so each language and extension that falls back to it → one warning naming the extension, the language and the id the files were opened under.
 - LE30 (a server key nothing looks up is reported): with `lsp.enabled` true and the caller having passed the loaded language plugins' ids, an `lsp.servers` key that is not the id of a plugin the run loaded (`typescript` where the plugin is `ts`) → one warning naming the key and the loaded ids, and no server is started for it. When no key matches at all, an empty or missing `servers` included (`aburi scan --lsp` over a config with no `lsp` block) → one warning naming every configured key and the loaded ids, in place of the per-key ones. Keys that match stay quiet, and so does every key when `lsp.enabled` is false or the caller did not say what was loaded.
-- LE31 (`enabled` says whether a server was configured for what was found): a run in which no language the scan found Symbols in has an `lsp.servers` entry → `stats.lspEnrichment.enabled` is `false`; one in which some language does → `true`, even when that server cannot be started (§7.2).
+- LE31 (`enabled` says whether a server was configured for what was found): a run in which no language the scan found Symbols in has an `lsp.servers` entry, `lsp.servers` missing or empty included → `stats.lspEnrichment.enabled` is `false`, every counter `0`, and the incident saying no LSP request was made; one in which some language does → `true`, even when that server cannot be started (§7.2).
 
 The warnings of LE29 and LE30 are returned with the scan rather than logged, so the CLI reports them among the scan's incidents and `aburi diff` labels each with the side it came from.
 
@@ -430,6 +430,7 @@ The warnings of LE29 and LE30 are returned with the scan rather than logged, so 
 ### 12.2 Field definitions
 
 - `lsp.enabled` (bool, default `false`): master switch. `false` short-circuits the pass to a no-op regardless of `servers`.
+- `lsp.servers` (object, default `{}`): the servers by language. Leaving it out is writing it empty.
 - `lsp.servers.<language-id>` (object): one entry per language plugin, keyed by that plugin's language id exactly as Symbol ids carry it ([`ir-schema.md`](./ir-schema.md) §3): `ts` for `@aburi/lang-typescript`, which covers `.js` / `.jsx` / `.tsx` as well. A key that names no loaded plugin is never looked up; the pass warns about each one, and about a configuration in which no key matches at all, rather than leaving the servers unused in silence (§11.8).
 - `lsp.servers.<lang>.command` (string, required when the entry is present): absolute path or PATH-resolvable binary.
 - `lsp.servers.<lang>.args` (string[], default `[]`).

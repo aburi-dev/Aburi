@@ -1069,7 +1069,7 @@ leaves Symbols on the other, and those become `unknown` (§3.5.1); a file skippe
 leaves nothing anywhere, so the document said nothing about it — and a diff that says nothing
 about a path is exactly what a diff that compared it and found it unchanged looks like. Most
 skip reasons are properties of the file rather than of the revision (a generated bundle over
-the size cap, a language no plugin claims, a file unparseable since before the branch was cut),
+the size cap, a path holding `#`, a file unparseable since before the branch was cut),
 so this is the ordinary case: a workspace with a standing blind spot got a clean-looking diff
 on every pull request while a whole directory sat outside the comparison.
 

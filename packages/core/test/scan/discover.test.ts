@@ -1,6 +1,12 @@
-import { chmod, symlink } from "node:fs/promises"
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { errorFrom, linkDirectory, useScratchWorkspace } from "@aburi/test-support"
+import {
+  errorFrom,
+  linkDirectory,
+  makeGitDirectory,
+  makeGitPointer,
+  useScratchWorkspace,
+} from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { CoreError, type DiscoverOptions, discoverFiles } from "../../src"
 
@@ -140,20 +146,29 @@ describe("discoverFiles", () => {
 })
 
 describe("discoverFiles — another checkout below the root", () => {
-  it.each([
-    ["a linked worktree in a dot directory", ".claude/worktrees/feat/.git", "gitdir: /r/.git/x\n"],
-    ["a linked worktree", "worktrees/feat/.git", "gitdir: /r/.git/worktrees/feat\n"],
-    ["a submodule", "libs/sub/.git", "gitdir: ../../.git/modules/sub\n"],
-    ["a nested repository", "libs/vendored/.git/HEAD", "ref: refs/heads/main\n"],
-  ])("lists none of the files of %s", async (_label, store, content) => {
-    await workspace.writeSource(store, content)
-    const checkout = store.slice(0, store.indexOf("/.git"))
+  it.each<[string, string, (store: string) => Promise<void>]>([
+    [
+      "a linked worktree in a dot directory",
+      ".claude/worktrees/feat",
+      (store) => makeGitPointer(store, join(workspace.root, ".git/worktrees/feat")),
+    ],
+    ["a linked worktree", "worktrees/feat", (store) => makeGitPointer(store, "../../.git/wt/feat")],
+    ["a submodule", "libs/sub", (store) => makeGitPointer(store, "../../.git/modules/sub")],
+    ["a nested repository", "libs/vendored", makeGitDirectory],
+  ])("lists none of the files of %s", async (_label, checkout, makeStore) => {
+    await makeStore(join(workspace.root, checkout, ".git"))
     const result = await discover(["src/keep.ts", `${checkout}/src/one.ts`])
     expect(result.files.map((f) => f.path)).toEqual(["src/keep.ts"])
   })
 
-  it("lists the files beside a .git file that is not a gitdir: pointer", async () => {
-    const result = await discover(["src/keep.ts", "libs/plain/.git", "libs/plain/a.ts"])
+  it.each<[string, (store: string) => Promise<void>]>([
+    ["a .git file that is not a gitdir: pointer", (store) => writeFile(store, "")],
+    ["a gitdir: pointer to nothing", (store) => writeFile(store, "gitdir: /nonexistent/.git/wt\n")],
+    ["an empty .git directory", (store) => mkdir(store)],
+  ])("lists the files beside %s, as git does", async (_label, makeStore) => {
+    await workspace.writeSource("libs/plain/a.ts", "1")
+    await makeStore(join(workspace.root, "libs", "plain", ".git"))
+    const result = await discover(["src/keep.ts"])
     expect(result.files.map((f) => f.path)).toEqual(["libs/plain/a.ts", "src/keep.ts"])
   })
 
