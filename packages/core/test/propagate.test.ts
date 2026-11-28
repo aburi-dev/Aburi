@@ -458,7 +458,10 @@ describe("the classification a propagated effect carries", () => {
     expect(propagatedOf(out, A)).toMatchObject([{ derivedBy: "effects-plugin:a", plugin: "a" }])
   })
 
-  it("stays the one a member of the caller's cycle detected, over a smaller one from below", () => {
+  it.each([
+    ["a member of the caller's cycle detected", [edge(A, B), edge(B, A), edge(A, C)], [B, C]],
+    ["the callee it passes through detected", [edge(A, B), edge(B, C)], [B]],
+  ])("stays the one %s, over a smaller one from below", (_, edges, derivedFrom) => {
     const symbols = [
       makeSymbol(A),
       makeSymbol(B, {
@@ -472,12 +475,10 @@ describe("the classification a propagated effect carries", () => {
         ],
       }),
     ]
-    const edges = [edge(A, B), edge(B, A), edge(A, C)]
-
     const { symbols: out } = propagateEffects({ symbols, edges })
 
     expect(propagatedOf(out, A)).toMatchObject([
-      { derivedBy: "effects-plugin:z", plugin: "z", derivedFrom: [B, C] },
+      { derivedBy: "effects-plugin:z", plugin: "z", derivedFrom },
     ])
   })
 })

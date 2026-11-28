@@ -322,8 +322,8 @@ says how many the filter left out:
 
 A Slice that holds a change you kept is drawn whole, its other members included, so a call
 path is not cut in two. Component changes, dependency changes and Not compared are listed in
-full, except a dependency change made by test code whose change the filter left out: it leaves
-the report with that change, and the note counts it. `diff.json` keeps every change, and so does
+full, except a dependency change made by test code or by a generated file whose change the
+filter left out: it leaves the report with that change, and the note counts it. `diff.json` keeps every change, and so does
 the glyph line on stdout.
 
 `--fail-on` counts every change too, whatever the filter: a display option does not decide

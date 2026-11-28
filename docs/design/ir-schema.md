@@ -689,8 +689,8 @@ Roles of the three axes:
 
 | Axis | Changes when | Invariant under |
 |---|---|---|
-| `api` | signature / visibility / boundary decorator changes | body implementation changes |
-| `logic` | changes to the set of rules / effects | local variable renames / method reordering / comments / added decoration |
+| `api` | kind / extKind / short name / signature / visibility / decorator (boundary or not) / export-name changes | body implementation changes |
+| `logic` | changes to the rules, effects or middleware, or to their order | local variable renames / method reordering / comments / added decoration |
 | `syntax` | any AST structural change | formatting-only changes |
 
 For symbols with `dropped: true`, all fingerprints are fixed to the 12-hex string `"000000000000"`.

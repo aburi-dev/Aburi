@@ -628,7 +628,7 @@ A change whose `delta.confidenceChanged` is also true adds a row such as ``- con
 
 #### 🔧 Logic changes
 
-Entries with `delta.logicChanged: true`.
+Entries with `status: "changed"` or `"moved+changed"`, `delta.logicChanged: true` and `apiChanged: false`: a change with both flags is listed once, under API changes, whose delta body shows its logic rows too.
 
 ```md
 ### `RolesGuard.canActivate` *(method)*

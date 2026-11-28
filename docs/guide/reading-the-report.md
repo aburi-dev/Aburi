@@ -42,6 +42,7 @@ a React component, because its role is not in its body.
 
 Sections appear in a fixed order, most important first. Aburi drops the empty
 ones and folds Moved, Dropped changes, Syntax-only changes and Test files behind a `<details>`.
+Generated files, last, is a single line.
 
 | Section | What it tells you | Your next move |
 |---|---|---|
@@ -60,6 +61,7 @@ ones and folds Moved, Dropped changes, Syntax-only changes and Test files behind
 | 🎚 Confidence changes | Aburi is more or less sure of a symbol, and nothing it fingerprints changed. | Check the new badge (see [Confidence](#confidence)). |
 | 🎨 Syntax-only changes | Edits outside the API, rules, effects and middleware: a reformat or a rename inside a body, but also what Aburi does not weigh, such as an operator outside a rule, which function a call calls, an `await`, or a `break` taken out of a `switch`. | Skim the names. A behaviour change Aburi cannot read lands here. |
 | 🧪 Test files | Every change to a symbol of test code, by name, and the call edges those symbols gained or lost. A change listed here is not listed in the sections above, though a Slice that reaches from test code into the code under test still draws its test members. The Summary line ends with how many changes there are. | Open it when the tests are the point of the change. |
+| ⚙ Generated files | Changes to symbols of generated code, counted in one line per generated file by status (`+2016 -24`) and not listed, along with the call edges those changes gained or lost. A change counted here is not listed in the sections above. | Check the generator ran, and that a removal it counts is one you expected. |
 
 Learn the split between **API changes** and **Logic changes** first. An API
 change breaks other people's code. A logic change alters what your own code

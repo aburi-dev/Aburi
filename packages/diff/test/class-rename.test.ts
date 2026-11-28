@@ -109,6 +109,12 @@ describe("ownersAreCompatible", () => {
     ["a merely similar namespace", "Repo.Store.x", "Report.Store.x"],
     ["one namespace more", "Services.UserRepo.x", "UserRepo.x"],
     ["one nesting more", "Users.Repo.x", "Users.Repo.Inner.x"],
+    [
+      "an owner that differs past its first `::`",
+      "Billing::Store::create",
+      "Billing::Cart::create",
+    ],
+    ["a `.` owner inside a `::` one", "Repo::helpers.save", "Repo::loaders.save"],
   ])("refuses %s", (_, base, head) => {
     expect(ownersAreCompatible(base, head)).toBe(false)
   })
