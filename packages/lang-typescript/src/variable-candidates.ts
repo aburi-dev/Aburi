@@ -3,6 +3,7 @@ import type { Node } from "web-tree-sitter"
 import {
   asClassValue,
   asFunctionValue,
+  functionBodyOf,
   hasChildOfType,
   makeSourceRange,
   nameFieldText,
@@ -68,7 +69,7 @@ function makeVariableCandidate(
         signature: buildSignature(value, readLeadingJsDoc(statement)),
         source: makeSourceRange(statement, ctx),
         derivedBy: ["variable-assigned-function", ...exportEvidence(statement)],
-        bodyNode: value.childForFieldName("body"),
+        bodyNode: functionBodyOf(value),
         fullNode: value,
       },
     ]
@@ -182,7 +183,7 @@ function makeObjectMemberCandidate(
     signature: buildSignature(fn, readLeadingJsDoc(entry)),
     source: makeSourceRange(entry, ctx),
     derivedBy,
-    bodyNode: fn.childForFieldName("body"),
+    bodyNode: functionBodyOf(fn),
     fullNode: fn,
   }
 }

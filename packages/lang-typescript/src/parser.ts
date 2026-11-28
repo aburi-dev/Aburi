@@ -10,7 +10,7 @@ import { type ImportTypePatch, importTypePatches, rememberImportTypes } from "./
 import { extractImports, isTypeStarKeyword } from "./imports"
 import { jsxStringCommentPatches } from "./jsx-string-comment"
 import { type Patch, reparsePatched } from "./reparse"
-import { typedTagCompletion } from "./typed-tag"
+import { rememberJavaScript, typedTagCalledBy, typedTagOf } from "./typed-tag"
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -47,6 +47,8 @@ const EXTENSION_GRAMMAR: ReadonlyMap<string, string> = new Map([
 
 export const TYPESCRIPT_FILE_EXTENSIONS: readonly string[] = [...EXTENSION_GRAMMAR.keys()]
 
+const JAVASCRIPT_EXTENSIONS: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".jsx"])
+
 let runtimeInitPromise: Promise<void> | null = null
 const languageCache = new Map<string, Promise<Language>>()
 
@@ -82,6 +84,7 @@ async function loadLanguage(wasmPath: string): Promise<Language> {
 
 export async function parseTypescriptFile(file: SourceFile): Promise<ParseResult<Tree>> {
   const wasmPath = pickGrammarForPath(file.path)
+  const javascript = JAVASCRIPT_EXTENSIONS.has(extensionOf(file.path))
   await ensureRuntimeInitialized()
   const language = await loadLanguage(wasmPath)
 
@@ -92,6 +95,7 @@ export async function parseTypescriptFile(file: SourceFile): Promise<ParseResult
       parser,
       parser.parse(file.content),
       file.content,
+      javascript,
     )
     if (tree === null) {
       return {
@@ -107,8 +111,9 @@ export async function parseTypescriptFile(file: SourceFile): Promise<ParseResult
         imports: [],
       }
     }
+    if (javascript) rememberJavaScript(tree)
     try {
-      const syntaxErrors = collectParseErrors(tree)
+      const syntaxErrors = collectParseErrors(tree, javascript)
       const { edges, errors: importErrors } = extractImports(tree, file.content)
       return { tree, errors: [...repairErrors, ...syntaxErrors, ...importErrors], imports: edges }
     } catch (postParseError) {
@@ -124,6 +129,7 @@ function repairedOrFirst(
   parser: Parser,
   first: Tree | null,
   source: string,
+  javascript: boolean,
 ): { tree: Tree | null; errors: ParseError[] } {
   if (first === null || !first.rootNode.hasError) return { tree: first, errors: [] }
   let importTypes: readonly ImportTypePatch[] = []
@@ -146,7 +152,9 @@ function repairedOrFirst(
     try {
       const patches = patchesOf()
       if (patches.length === 0) continue
-      const repaired = reparsePatched(parser, best, source, [...kept, ...patches], damageOf)
+      const repaired = reparsePatched(parser, best, source, [...kept, ...patches], (tree) =>
+        damageOf(tree, javascript),
+      )
       if (repaired === null) continue
       if (best !== first) best.delete()
       best = repaired.tree
@@ -166,9 +174,13 @@ function repairedOrFirst(
   return { tree: best, errors }
 }
 
-function pickGrammarForPath(path: string): string {
+function extensionOf(path: string): string {
   const dot = path.lastIndexOf(".")
-  const ext = dot < 0 ? "" : path.slice(dot).toLowerCase()
+  return dot < 0 ? "" : path.slice(dot).toLowerCase()
+}
+
+function pickGrammarForPath(path: string): string {
+  const ext = extensionOf(path)
   const grammar = EXTENSION_GRAMMAR.get(ext)
   if (grammar === undefined) {
     throw new Error(
@@ -179,8 +191,8 @@ function pickGrammarForPath(path: string): string {
   return grammar
 }
 
-function collectParseErrors(tree: Tree): ParseError[] {
-  return reportedErrors(tree).map((node) => ({
+function collectParseErrors(tree: Tree, javascript: boolean): ParseError[] {
+  return reportedErrors(tree, javascript).map((node) => ({
     message: node.isError ? "syntax error" : "missing token",
     line: node.startPosition.row + 1,
     column: node.startPosition.column + 1,
@@ -189,24 +201,25 @@ function collectParseErrors(tree: Tree): ParseError[] {
 }
 
 /** How broken a tree reads: its errors, then how much of the file they cover. */
-function damageOf(tree: Tree): readonly [number, number] {
-  const errors = reportedErrors(tree)
+function damageOf(tree: Tree, javascript: boolean): readonly [number, number] {
+  const errors = reportedErrors(tree, javascript)
   return [errors.length, errors.reduce((sum, node) => sum + node.endIndex - node.startIndex, 0)]
 }
 
-function reportedErrors(tree: Tree): Node[] {
+// JavaScript has no type arguments, so neither typed-tag repair applies to a tree read from it.
+function reportedErrors(tree: Tree, javascript: boolean): Node[] {
   const root = tree.rootNode
   if (!root.hasError) return []
   const errors: Node[] = []
-  const descend = (n: Node) => n.hasError && !isTaggedTemplateEscapeArtifact(n)
+  const descend = (n: Node) => n.hasError && !isTaggedTemplateEscapeArtifact(n, javascript)
   for (const node of walkDescendants(root, { anonymous: true, descend })) {
     if (!node.isError && !node.isMissing) continue
-    if (isTypedTagCompletion(node)) continue
+    if (!javascript && isTypedTagCompletion(node)) continue
     if (
       node.isError &&
       (isJsxEntityArtifact(node) ||
         isVarianceModifierArtifact(node) ||
-        isTaggedTemplateEscapeArtifact(node) ||
+        isTaggedTemplateEscapeArtifact(node, javascript) ||
         isTypeStarKeyword(node))
     ) {
       continue
@@ -222,22 +235,28 @@ function reportedErrors(tree: Tree): Node[] {
  * grammar holds every template to a string's escapes. Recovery can fold a broken substitution
  * written right after such an escape into the same ERROR, which must still report.
  */
-function isTaggedTemplateEscapeArtifact(node: Node): boolean {
+function isTaggedTemplateEscapeArtifact(node: Node, javascript: boolean): boolean {
   const template = node.parent
   if (!node.isError || template?.type !== "template_string") return false
   if (!node.text.startsWith("\\") || node.text.includes("${")) return false
-  return (
-    template.parent?.type === "call_expression" &&
-    template.parent.childForFieldName("arguments")?.equals(template) === true
-  )
+  const call = template.parent
+  if (call?.type === "call_expression") {
+    if (call.childForFieldName("arguments")?.equals(template) === true) return true
+  }
+  return !javascript && typedTagOf(template) !== null
 }
 
 function isTypedTagCompletion(node: Node): boolean {
+  const asserted = node.parent
+  const call = asserted?.parent
   return (
     node.isMissing &&
     node.type === "!" &&
-    node.parent !== null &&
-    typedTagCompletion(node.parent) !== null
+    asserted?.type === "non_null_expression" &&
+    call !== null &&
+    call !== undefined &&
+    call.childForFieldName("function")?.equals(asserted) === true &&
+    typedTagCalledBy(call) !== null
   )
 }
 

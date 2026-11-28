@@ -1,7 +1,11 @@
-import { unwrapValue } from "@aburi/core"
 import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Language, Node, TreeCursor } from "web-tree-sitter"
-import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
+import {
+  asFunctionValue,
+  firstNonCommentChild,
+  hasLeadingOperator,
+  leadingOperatorOperand,
+} from "./ast-helpers"
 import { redundantlyParenthesized } from "./parentheses"
 import {
   canonicalNumber,
@@ -12,6 +16,7 @@ import {
   stringValueOf,
   unquotedKey,
 } from "./spelling"
+import { arrowBodyTop } from "./typed-tag"
 
 export function normalizeAst(symbol: SymbolCandidate<Node>): string {
   if (symbol.kind === "call") return serialize(symbol.fullNode)
@@ -95,7 +100,7 @@ function fieldHolding(fn: Node): Node | null {
   for (let node = fn.parent; node !== null; node = node.parent) {
     if (node.type === "public_field_definition") {
       const value = node.childForFieldName("value")
-      return value !== null && unwrapValue(value).id === fn.id ? node : null
+      return value !== null && asFunctionValue(value)?.id === fn.id ? node : null
     }
     if (FIELD_BOUNDARIES.has(node.type)) return null
   }
@@ -124,7 +129,9 @@ const CLASS_TYPES: ReadonlySet<string> = new Set([
 
 function describedNode(declaration: Pick<MergedDeclaration<Node>, "bodyNode" | "fullNode">): Node {
   const { bodyNode, fullNode } = declaration
-  return bodyNode !== null && bodyNode.parent?.id === fullNode.id ? bodyNode : fullNode
+  if (bodyNode === null) return fullNode
+  const own = bodyNode.parent?.id === fullNode.id || arrowBodyTop(fullNode)?.id === bodyNode.id
+  return own ? bodyNode : fullNode
 }
 
 function serialize(node: Node): string {

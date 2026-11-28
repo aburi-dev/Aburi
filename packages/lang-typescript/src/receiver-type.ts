@@ -3,6 +3,7 @@ import type { Node } from "web-tree-sitter"
 import { firstNonCommentChild, hasChildOfType, nameFieldText } from "./ast-helpers"
 import { isParameterProperty } from "./class-members"
 import { bindingOf, isModuleBinding, type NameBinding, PARAMETER_TYPES } from "./name-binding"
+import { callOf } from "./typed-tag"
 
 const THIS_REBINDING_FUNCTIONS: ReadonlySet<string> = new Set([
   "function_expression",
@@ -60,7 +61,7 @@ export function initializingCall(name: Node): Node | null {
   if (declaration.childForFieldName("name")?.type !== "identifier") return null
   if (declaration.childForFieldName("type") !== null || !isConst(declaration)) return null
   const value = declaration.childForFieldName("value")
-  return value?.type === "call_expression" ? value : null
+  return value === null ? null : callOf(value)
 }
 
 // A `const` holding a name holds what the module binds under it where the `const` is written.

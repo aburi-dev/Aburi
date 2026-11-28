@@ -1,6 +1,7 @@
 import { unwrapValue } from "@aburi/core"
 import type { ExtractionContext, SymbolCandidate, WrittenSourceRange } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
+import { arrowBodyTop, arrowReadingOf } from "./typed-tag"
 
 export function bodyNodesOf(symbol: SymbolCandidate<Node>): Node[] {
   const out: Node[] = symbol.bodyNode === null ? [] : [symbol.bodyNode]
@@ -28,7 +29,17 @@ const FUNCTION_VALUE_TYPES: ReadonlySet<string> = new Set([
 
 export function asFunctionValue(node: Node): Node | null {
   const value = unwrapValue(node)
-  return FUNCTION_VALUE_TYPES.has(value.type) ? value : null
+  return FUNCTION_VALUE_TYPES.has(value.type) ? value : arrowReadingOf(value)
+}
+
+/** The node a function's body is walked and described by. */
+export function functionBodyOf(fn: Node): Node | null {
+  return arrowBodyTop(fn) ?? fn.childForFieldName("body")
+}
+
+/** The node that spans a function as TypeScript reads it. */
+export function functionExtentOf(fn: Node): Node {
+  return arrowBodyTop(fn) ?? fn
 }
 
 export function asClassValue(node: Node): Node | null {

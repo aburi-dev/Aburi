@@ -540,6 +540,12 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
       ["firstNegativeRow"],
     ],
     [
+      "the query a concise arrow runs through a tagged template with type arguments",
+      "export const count = (db: Db) => db.$queryRaw<Row[]>`select count(*) from a`\n",
+      "export const count = (db: Db) => db.$queryRaw<Row[]>`select count(*) from b`\n",
+      ["count"],
+    ],
+    [
       "a concise conditional rewritten as a block that returns it in parentheses",
       "export const larger = (a: number, b: number): number => (a > b ? a : b)\n",
       "export const larger = (a: number, b: number): number => {\n  return (a > b ? a : b)\n}\n",

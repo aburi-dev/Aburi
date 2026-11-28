@@ -11,6 +11,8 @@ import {
   asFunctionValue,
   findChild,
   firstNonCommentChild,
+  functionBodyOf,
+  functionExtentOf,
   inAmbientContext,
   makeSourceRange,
   nameFieldText,
@@ -47,6 +49,7 @@ import {
   makeTypeDeclarationCandidate,
   TYPE_ALIAS_SHAPE,
 } from "./type-candidates"
+import { arrowReadingOf } from "./typed-tag"
 import { makeVariableCandidates } from "./variable-candidates"
 
 export function extractSymbols(tree: Tree, ctx: ExtractionContext): SymbolCandidate<Node>[] {
@@ -229,9 +232,9 @@ function functionCandidate(
     visibility: exportVisibility(evidence),
     decorators: readDecorators(node),
     signature: buildSignature(node, jsDoc),
-    source: makeSourceRange(node, ctx),
+    source: makeSourceRange(functionExtentOf(node), ctx),
     derivedBy: [...evidence],
-    bodyNode: node.childForFieldName("body"),
+    bodyNode: functionBodyOf(node),
     fullNode: node,
   }
 }
@@ -240,6 +243,8 @@ function functionCandidate(
 function wrappedDefaultValue(statement: Node, value: Node): Node | null {
   if (!isDefaultExportStatement(statement)) return null
   const unwrapped = unwrapValue(value)
+  const arrow = arrowReadingOf(unwrapped)
+  if (arrow !== null) return arrow
   if (unwrapped.id === value.id) return null
   return asFunctionValue(unwrapped) ?? asClassValue(unwrapped)
 }

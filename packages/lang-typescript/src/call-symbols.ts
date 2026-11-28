@@ -13,8 +13,15 @@ import {
   type SymbolCandidate,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { asFunctionValue, findChild, firstNonCommentChild, makeSourceRange } from "./ast-helpers"
+import {
+  asFunctionValue,
+  findChild,
+  firstNonCommentChild,
+  functionBodyOf,
+  makeSourceRange,
+} from "./ast-helpers"
 import { makeTsSymbolId, nestedQname } from "./qname"
+import { awaitedCallOf, callOf } from "./typed-tag"
 
 const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "get",
@@ -151,15 +158,14 @@ export interface CallBodies {
 // walked as a function of its own.
 export function callBodies(value: Node, holder: Node): CallBodies {
   const unwrapped = unwrapValue(value)
-  const awaited = unwrapped.type === "await_expression"
-  const operand = awaited ? firstNonCommentChild(unwrapped) : unwrapped
-  const call = operand === null ? null : unwrapValue(operand)
-  if (call?.type !== "call_expression") return { bodies: [], evidence: [] }
+  const awaitedCall = awaitedCallOf(unwrapped)
+  const call = awaitedCall ?? callOf(unwrapped)
+  if (call === null) return { bodies: [], evidence: [] }
   // An invoked function runs whether or not its result is awaited. An awaited call's value is what
   // it resolves to, not a function wrapping the ones it is handed, so the functions it is handed are
   // walked with the call, not as functions of their own.
   const invoked = invokedBody(call)
-  const handed = awaited ? [] : wrappedHandlers(call)
+  const handed = awaitedCall === null ? wrappedHandlers(call) : []
   return {
     bodies: [holder, ...(invoked === null ? [] : [invoked]), ...handed],
     evidence: [
@@ -242,7 +248,7 @@ function invokedBody(call: Node): Node | null {
 
 // A body of no width is the parser's stand-in for one that was not written.
 function writtenBody(fn: Node): Node | null {
-  const body = fn.childForFieldName("body")
+  const body = functionBodyOf(fn)
   return body === null || body.text.length === 0 ? null : body
 }
 

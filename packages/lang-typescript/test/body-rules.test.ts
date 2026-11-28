@@ -35,6 +35,12 @@ describe("the rules a body yields", () => {
     ["a literal return", "return 1", []],
     ["a return of a member chain off `this`", "return this.a.b.c", []],
     ["a return of a call", "return foo()", []],
+    ["a return of a tagged template with type arguments", "return sql<number>`x`", []],
+    [
+      "a computed return around a tagged template with type arguments",
+      "return 1 + sql<number>`x`",
+      [["return", "1 + sql<number> `x`"]],
+    ],
     ["a computed return", "return a + b", [["return", "a + b"]]],
     ["an `if` that does not leave early", "if (x) go()", [["branch", "x"]]],
     ["an `if` with an `else`", "if (x) go(); else stop()", [["branch", "x"]]],

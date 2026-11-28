@@ -9,44 +9,82 @@ import {
   receiverTypeOf,
   thisBindingAt,
 } from "./receiver-type"
-import { typedTagComparison, typedTagCompletion, typedTagOfTemplate } from "./typed-tag"
+import { type TypedTag, typedTagCalledBy, typedTagOf } from "./typed-tag"
 
-/** A call, a `new`, or a tagged template with type arguments the grammar read as comparisons. */
-export function isCall(node: Node): boolean {
-  return (
-    node.type === "call_expression" ||
-    node.type === "new_expression" ||
-    typedTagComparison(node) !== null
-  )
+/**
+ * Where a walk records a call: a call, a `new`, and the template of a tagged template with type
+ * arguments, which stands for a call the grammar spread over other nodes.
+ */
+export function isCallSite(node: Node): boolean {
+  switch (node.type) {
+    case "call_expression":
+      return typedTagCalledBy(node) === null
+    case "new_expression":
+      return true
+    case "template_string":
+      return typedTagOf(node) !== null
+    default:
+      return false
+  }
+}
+
+/** Where a walk records a call of a function, as `isCallSite` reads one. */
+export function isFunctionCallSite(node: Node): boolean {
+  return node.type !== "new_expression" && isCallSite(node)
 }
 
 interface CallParts {
   readonly callee: Node
   readonly argsNode: Node | null
   readonly inAwait: boolean
+  readonly inNew: boolean
+  /** Where the call TypeScript reads begins. */
+  readonly start: Node
 }
 
 function callParts(node: Node): CallParts | null {
-  const inAwait = node.parent?.type === "await_expression"
-  if (node.type === "binary_expression") {
-    const typed = typedTagComparison(node)
-    if (typed === null) return null
-    return { callee: typed.tag, argsNode: typed.template, inAwait: inAwait || typed.awaited }
+  switch (node.type) {
+    case "template_string": {
+      const typed = typedTagOf(node)
+      return typed === null ? null : typedTagParts(typed)
+    }
+    case "call_expression": {
+      const typed = typedTagCalledBy(node)
+      return typed === null ? writtenParts(node, "function") : typedTagParts(typed)
+    }
+    case "new_expression":
+      return writtenParts(node, "constructor")
+    default:
+      return null
   }
-  const isNew = node.type === "new_expression"
-  const written = node.childForFieldName(isNew ? "constructor" : "function") ?? node.namedChild(0)
-  if (written === null) return null
-  const argsNode = node.childForFieldName("arguments") ?? findChild(node, "arguments")
-  const typed = typedTagCompletion(written)
-  if (typed === null) return { callee: written, argsNode, inAwait }
-  return { callee: typed.tag, argsNode, inAwait: inAwait || typed.awaited }
+}
+
+// What a call is made on, as `callParts` reads it, without the parent its `inAwait` asks the tree
+// for: a callee is read down a chain, where each parent costs the chain's depth.
+function calledFunction(call: Node): Node | null {
+  return typedTagCalledBy(call)?.tag ?? call.childForFieldName("function") ?? call.namedChild(0)
+}
+
+function typedTagParts({ tag, template, awaited }: TypedTag): CallParts {
+  return { callee: tag, argsNode: template, inAwait: awaited, inNew: false, start: tag }
+}
+
+function writtenParts(node: Node, calleeField: string): CallParts | null {
+  const callee = node.childForFieldName(calleeField) ?? node.namedChild(0)
+  if (callee === null) return null
+  return {
+    callee,
+    argsNode: node.childForFieldName("arguments") ?? findChild(node, "arguments"),
+    inAwait: node.parent?.type === "await_expression",
+    inNew: node.type === "new_expression",
+    start: node,
+  }
 }
 
 export function readCall(node: Node): CallCandidate | null {
-  const parts = callParts(node)
+  const parts = isCallSite(node) ? callParts(node) : null
   if (parts === null) return null
   const { callee, argsNode } = parts
-  const isNew = node.type === "new_expression"
   const shape = describeCallee(callee)
   if (shape === null) return null
   const args = (argsNode?.namedChildren ?? []).filter(
@@ -59,10 +97,10 @@ export function readCall(node: Node): CallCandidate | null {
     : null
   return {
     target: shape.target,
-    line: node.startPosition.row + 1,
+    line: parts.start.startPosition.row + 1,
     argumentCount: args.length,
     inAwait: parts.inAwait,
-    inNew: isNew,
+    inNew: parts.inNew,
     literalArgs: args.map(literalOf),
     ...(shape.dynamic ? { dynamicReceiver: true } : {}),
     ...(receiverType === null ? {} : { receiverType }),
@@ -79,7 +117,9 @@ const THIS_RECEIVERS: ReadonlySet<string> = new Set(["this", "super"])
 function receiverCallOf(callee: Node): CallSiteRef | null {
   if (callee.type !== "member_expression") return null
   const receiver = callee.childForFieldName("object")
-  if (receiver?.type === "call_expression") return callSiteOf(receiver)
+  if (receiver?.type === "call_expression" || receiver?.type === "template_string") {
+    return callSiteOf(receiver)
+  }
   const call = receiver?.type === "identifier" ? initializingCall(receiver) : null
   return call === null ? null : callSiteOf(call)
 }
@@ -114,7 +154,10 @@ function leadingName(callee: Node): Node | null {
         node = node.childForFieldName("object")
         break
       case "call_expression":
-        node = node.childForFieldName("function")
+        node = calledFunction(node)
+        break
+      case "template_string":
+        node = typedTagOf(node)?.tag ?? null
         break
       case "parenthesized_expression":
         node = parenthesizedReceiver(node)
@@ -123,10 +166,8 @@ function leadingName(callee: Node): Node | null {
       case "satisfies_expression":
       case "type_assertion":
       case "instantiation_expression":
-        node = wrappedExpression(node)
-        break
       case "non_null_expression":
-        node = typedTagCompletion(node)?.tag ?? wrappedExpression(node)
+        node = wrappedExpression(node)
         break
       default:
         return null
@@ -138,7 +179,8 @@ function leadingName(callee: Node): Node | null {
 export function callSiteOf(call: Node): CallSiteRef | null {
   const parts = callParts(call)
   const shape = parts === null ? null : describeCallee(parts.callee)
-  return shape === null ? null : { target: shape.target, line: call.startPosition.row + 1 }
+  if (parts === null || shape === null) return null
+  return { target: shape.target, line: parts.start.startPosition.row + 1 }
 }
 
 function literalOf(node: Node): string | null {
@@ -230,12 +272,11 @@ export function describeCallee(node: Node): CalleeShape | null {
       if (inner === null) return null
       return { target: inner.target, dynamic: inner.dynamic || inner.opaque, opaque: false }
     }
-    case "call_expression": {
-      const innerNode = node.childForFieldName("function")
-      if (innerNode === null) return null
-      const inner = describeCallee(innerNode)
-      if (inner === null) return null
-      return { target: inner.target, dynamic: true, opaque: false }
+    case "call_expression":
+      return describeResultOf(calledFunction(node))
+    case "template_string": {
+      const typed = typedTagOf(node)
+      return typed === null ? UNMODELLED_EXPRESSION : describeResultOf(typed.tag)
     }
     case "as_expression":
     case "satisfies_expression":
@@ -244,19 +285,17 @@ export function describeCallee(node: Node): CalleeShape | null {
       const innerNode = wrappedExpression(node)
       return innerNode === null ? null : describeCallee(innerNode)
     }
-    case "non_null_expression": {
-      const typed = typedTagCompletion(node)
-      return typed === null ? describeNonNull(node) : describeCallee(typed.tag)
-    }
-    case "template_string": {
-      const typed = typedTagOfTemplate(node)
-      const tag = typed === null ? null : describeCallee(typed.tag)
-      if (tag === null) return UNMODELLED_EXPRESSION
-      return { target: tag.target, dynamic: true, opaque: false }
-    }
+    case "non_null_expression":
+      return describeNonNull(node)
     default:
       return node.text.length > 0 ? UNMODELLED_EXPRESSION : null
   }
+}
+
+// What a call gives back is known only at run time, so a receiver read off it is dynamic.
+function describeResultOf(callee: Node | null): CalleeShape | null {
+  const inner = callee === null ? null : describeCallee(callee)
+  return inner === null ? null : { target: inner.target, dynamic: true, opaque: false }
 }
 
 // A pair holding more than its expression is read by its first fragment, the part its receiver
@@ -271,6 +310,8 @@ function describeNonNull(node: Node): CalleeShape | null {
   if (innerNode === null) return null
   const inner = describeCallee(innerNode)
   if (inner === null) return null
+  // A `!` the grammar inserted asserts nothing the source wrote.
+  if (node.lastChild?.isMissing === true) return inner
   if (inner.dynamic) return { target: inner.target, dynamic: true, opaque: false }
   return { target: `${inner.target}!`, dynamic: false, opaque: true }
 }
