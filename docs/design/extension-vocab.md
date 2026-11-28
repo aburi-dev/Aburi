@@ -38,22 +38,22 @@ Each plugin has exactly **one manifest**, in which it declares its name, its typ
 The manifest is the `manifest` property of the plugin object the module exports: its default export, a `plugin` export, or the first top-level export carrying a `manifest`, in that order. Neither `package.json` nor a standalone file is read for it.
 
 ```jsonc
-// type=effects plugin (effects only, e.g. lifecycle hooks)
+// type=effects plugin (effects only, e.g. an in-house billing SDK's calls)
 {
   "$schema": "https://aburi.dev/schema/aburi.plugin.v1.json",
-  "name": "effects-nest",
+  "name": "effects-acme",
   "version": "1.0.0",
   "type": "effects",
-  "xPrefix": "nest",                            // owns x-nest:* (§5.2)
+  "xPrefix": "acme",                            // owns x-acme:* (§5.2)
   "engines": { "aburi": "^1.0.0" },
   "provides": {
     "effects": [                                // individual enumeration
-      { "id": "x-nest:lifecycle.on-module-init", "description": "..." }
+      { "id": "x-acme:invoice.issue", "description": "..." }
     ],
     "effectPrefixes": [],                        // wildcard ownership (§3.3)
     "extKinds": [],                              // type=effects may not declare extKinds
     "extKindPrefixes": [],
-    "derivedByPrefixes": ["effects-plugin:nest"],
+    "derivedByPrefixes": ["effects-plugin:acme"],
     "frameworks": []                             // type=effects may not declare frameworks
   }
 }
@@ -78,7 +78,7 @@ The manifest is the `manifest` property of the plugin object the module exports:
 }
 ```
 
-As official npm packages these are split into two: `@aburi/effects-nest` and `@aburi/framework-nestjs`.
+A library that needs both roles ships two plugins. NestJS's are `@aburi/framework-nestjs`, which reads its boundaries, and `@aburi/effects-nest`, which classifies its event publishing into the core `event.publish` and so declares no effect id of its own; lifecycle hooks are the framework plugin's ([`effect-plugin.md`](./effect-plugin.md) §9.2).
 
 A `type: lang` manifest also declares `languageId`, the `<language>` token every Symbol id the plugin mints opens with (`"languageId": "ts"`, [`multi-language-id.md`](./multi-language-id.md) Rule L-1). The schema makes it optional, so that a lang manifest written before the field stays a valid v1 document (§9.5), and the registry requires it of every lang manifest. It belongs to one type: an effects or framework manifest that declares one is refused. `xPrefix` is not held to the same rule the other way: only an effects manifest's is read, and the registry ignores one on any other type rather than refusing it.
 
@@ -280,7 +280,7 @@ aburi vocab list                                       # show all vocab
 aburi vocab effects                                    # effect ids and prefixes
 aburi vocab extkinds                                   # extKinds and prefixes
 aburi vocab plugins                                    # list plugins
-aburi vocab who-owns x-nest:lifecycle.on-module-init   # the plugin that owns this id
+aburi vocab who-owns x-acme:invoice.issue              # the plugin that owns this id
 aburi vocab list --json                                # the same, as JSON
 ```
 

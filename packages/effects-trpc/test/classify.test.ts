@@ -31,6 +31,19 @@ describe("classifyTrpcCall — client procedure calls", () => {
     })
   })
 
+  it.each([
+    ["trpc.post.list.queryOptions", "query:post.list"],
+    ["trpc.post.list.infiniteQueryOptions", "query:post.list"],
+    ["trpc.post.add.mutationOptions", "mutation:post.add"],
+    ["trpc.onAdd.subscriptionOptions", "subscription:onAdd"],
+  ])("records the options %s builds as network.rpc at medium, tagged %s", (target, tag) => {
+    expect(classifyTrpcCall(makeCall({ target }), clientCtx)).toEqual({
+      effectId: "network.rpc",
+      confidence: "medium",
+      derivedBy: `effects-plugin:trpc:${tag}`,
+    })
+  })
+
   it("over-qualifies the path when the client sits behind a multi-segment receiver", () => {
     expect(
       classifyTrpcCall(makeCall({ target: "api.trpc.user.byId.query" }), clientCtx),
@@ -130,10 +143,6 @@ describe("classifyTrpcCall — calls that are not a procedure call", () => {
     ["utils.user.byId.invalidate", "the useUtils cache surface"],
     ["utils.user.byId.fetch", "the useUtils cache surface"],
     ["utils.post.all.ensureData", "the useUtils cache surface"],
-    ["trpc.post.list.queryOptions", "the @trpc/tanstack-react-query options surface"],
-    ["trpc.post.list.infiniteQueryOptions", "the @trpc/tanstack-react-query options surface"],
-    ["trpc.post.add.mutationOptions", "the @trpc/tanstack-react-query options surface"],
-    ["trpc.onAdd.subscriptionOptions", "the @trpc/tanstack-react-query options surface"],
     ["client.user.byId.query.then", "a promise continuation"],
     ["caller.user.byId", "a server-side caller, which has no terminal"],
   ])("returns null for %s — %s", (target) => {

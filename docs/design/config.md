@@ -547,7 +547,7 @@ classifies, to the first-party plugin for it (§13).
 | `@prisma/client` | `effects-prisma` |
 | `drizzle-orm` | `effects-drizzle` |
 | `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs` | `effects-nest` |
-| `@trpc/client`, `@trpc/react-query`, `@trpc/next` | `effects-trpc` |
+| `@trpc/client`, `@trpc/react-query`, `@trpc/next`, `@trpc/tanstack-react-query` | `effects-trpc` |
 
 Each names a package an effects plugin's import gate reads, so a plugin is written where the manifests declare a library it classifies: a NestJS service that depends on neither an event emitter nor `@nestjs/cqrs` gets no `effects-nest`. A declared dependency is not a call, so a library a root `devDependencies` entry or a test alone names still gets its plugin. The other modules `effects-prisma`'s gate reads, a driver adapter, a client extension and a generated client, are installed beside `@prisma/client`, so they need no entry of their own. The components it writes are the whole set from then on (§6.1), so a package added later is in none until it is added to them.
 

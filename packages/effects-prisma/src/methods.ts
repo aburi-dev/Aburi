@@ -7,6 +7,7 @@ const PRISMA_READ_METHODS_LIST = [
   "count",
   "aggregate",
   "groupBy",
+  "findRaw",
 ] as const
 
 const PRISMA_WRITE_METHODS_LIST = [
@@ -61,4 +62,11 @@ const PRISMA_RAW_QUERY_METHODS: ReadonlySet<PrismaRawQueryMethod> = new Set(
 
 export function isPrismaRawQueryMethod(name: string): name is PrismaRawQueryMethod {
   return (PRISMA_RAW_QUERY_METHODS as ReadonlySet<string>).has(name)
+}
+
+/** MongoDB's pipeline can end in `$out` or `$merge`, so it may write. */
+const PRISMA_MODEL_RAW_QUERY_METHOD = "aggregateRaw"
+
+export function isPrismaModelRawQueryMethod(name: string): name is "aggregateRaw" {
+  return name === PRISMA_MODEL_RAW_QUERY_METHOD
 }

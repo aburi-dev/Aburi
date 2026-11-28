@@ -153,6 +153,42 @@ describe("scan — Prisma calls in a service file", () => {
     expect(irSchemaViolations(result.ir)).toEqual([])
   })
 
+  it("reads MongoDB's findRaw and declines its aggregateRaw", async () => {
+    await workspace.writeSource(
+      "src/mongo.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        "",
+        "const prisma = new PrismaClient()",
+        "",
+        "export async function adults() {",
+        "  return prisma.user.findRaw({ filter: { age: { $gt: 25 } } })",
+        "}",
+        "",
+        "export async function registered() {",
+        '  return prisma.user.aggregateRaw({ pipeline: [{ $match: { status: "registered" } }] })',
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    expect(symbolNamed(result, "adults").effects).toMatchObject([
+      { id: "db.read", target: "prisma.user.findRaw", confidence: "high" },
+    ])
+    expect(symbolNamed(result, "registered").effects).toEqual([])
+    expect(result.ir.stats.declinedCalls).toEqual([
+      {
+        plugin: "effects-prisma",
+        symbolId: "ts:src/mongo.ts#registered",
+        target: "prisma.user.aggregateRaw",
+        line: 10,
+        reason: "effects-plugin:prisma:raw-query",
+      },
+    ])
+  })
+
   it("records nothing in a file that does not import @prisma/client", async () => {
     await workspace.writeSource(
       "src/users.ts",

@@ -26,6 +26,7 @@ export const DEPENDENCY_TO_EFFECTS_PLUGIN: ReadonlyMap<string, string> = new Map
   ["@trpc/client", "effects-trpc"],
   ["@trpc/react-query", "effects-trpc"],
   ["@trpc/next", "effects-trpc"],
+  ["@trpc/tanstack-react-query", "effects-trpc"],
 ])
 
 export function pluginForDetectorId(

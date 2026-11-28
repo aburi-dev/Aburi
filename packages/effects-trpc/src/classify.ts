@@ -15,6 +15,7 @@ import {
   isTrpcMutationTerminal,
   isTrpcQueryTerminal,
   isTrpcSubscriptionTerminal,
+  TRPC_OPTIONS_TERMINALS,
   type TrpcQueryTerminal,
 } from "./methods"
 
@@ -54,7 +55,9 @@ export function classifyTrpcCall(
 
   return {
     effectId: "network.rpc",
-    confidence: call.dynamicReceiver === true ? "medium" : "high",
+    // Options can be built and never handed to anything that sends them.
+    confidence:
+      call.dynamicReceiver === true || TRPC_OPTIONS_TERMINALS.has(terminal) ? "medium" : "high",
     derivedBy: `${EFFECTS_TRPC_DERIVED_BY_PREFIX}:${family}:${procedurePath}`,
   }
 }

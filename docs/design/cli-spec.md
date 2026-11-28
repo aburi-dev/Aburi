@@ -1230,12 +1230,12 @@ plugin, under the entry that loaded it first.
 
 `aburi vocab effects` — owner, id, description:
 ```
-core            db.read                          Database read
-core            db.write                         Database write
+core          db.read               Database read
+core          db.write              Database write
 ...
-core            process.signal                   Process signal sent or handled
-effects-nest    x-nest:lifecycle.on-module-init  NestJS OnModuleInit hook
-effects-prisma  (prefix x-prisma)
+core          process.signal        Process signal sent or handled
+effects-acme  x-acme:invoice.issue  Issue an invoice
+effects-acme  (prefix x-acme)
 ```
 
 `aburi vocab extkinds` — owner, id, base kind, description:
@@ -1250,7 +1250,7 @@ hint-acme         (prefix framework:hint:acme)
 lang-typescript   0.6.0  lang       languages "lang-typescript"
 framework-nestjs  0.6.0  framework  frameworks "framework-nestjs"
 effects-nest      1.2.3  effects    effects "effects-nest"
-effects-prisma    0.6.0  effects    effects "./plugins/effects-prisma.mjs"
+effects-acme      0.6.0  effects    effects "./plugins/effects-acme.mjs"
 hint-acme         0.0.0  framework  frameworkHints "acme"
 ```
 
@@ -1272,19 +1272,19 @@ manifest lists its frameworks as bare names.
 
 ```
 Vocabulary:  effect
-Plugin:      effects-nest (v1.2.3)
+Plugin:      effects-acme (v0.6.0)
 Type:        effects
-Listed in:   effects "effects-nest"
+Listed in:   effects "./plugins/effects-acme.mjs"
 Declaration: explicit (provides.effects[])
-Description: NestJS OnModuleInit hook
+Description: Issue an invoice
 ```
 
 ```
 Vocabulary:  effect
-Plugin:      effects-prisma (v0.6.0)
+Plugin:      effects-acme (v0.6.0)
 Type:        effects
-Listed in:   effects "./plugins/effects-prisma.mjs"
-Declaration: prefix x-prisma (provides.effectPrefixes[])
+Listed in:   effects "./plugins/effects-acme.mjs"
+Declaration: prefix x-acme (provides.effectPrefixes[])
 ```
 
 A core effect id has no plugin to name:
@@ -1317,14 +1317,14 @@ reads these too:
 ```jsonc
 {
   "plugins": [
-    { "name": "effects-prisma", "version": "0.6.0", "type": "effects",
-      "listedIn": { "field": "effects", "ref": "./plugins/effects-prisma.mjs" } }   // field: languages | frameworks | effects | frameworkHints
+    { "name": "effects-acme", "version": "0.6.0", "type": "effects",
+      "listedIn": { "field": "effects", "ref": "./plugins/effects-acme.mjs" } }   // field: languages | frameworks | effects | frameworkHints
   ],
   "effects": [
     { "id": "db.read", "description": "Database read", "owner": null },   // null: the core vocabulary
-    { "id": "x-nest:lifecycle.on-module-init", "description": "NestJS OnModuleInit hook", "owner": "effects-nest" }
+    { "id": "x-acme:invoice.issue", "description": "Issue an invoice", "owner": "effects-acme" }
   ],
-  "effectPrefixes": [{ "prefix": "x-prisma", "owner": "effects-prisma" }],
+  "effectPrefixes": [{ "prefix": "x-acme", "owner": "effects-acme" }],
   "extKinds": [
     { "id": "framework:nestjs:controller", "baseKind": "class", "description": "NestJS controller", "owner": "framework-nestjs" }
   ],
@@ -1342,11 +1342,11 @@ still on stderr:
 {
   "vocabulary": "effect",            // effect | extKind | framework | derivedBy
   "declaration": "prefix",           // core | explicit | prefix
-  "prefix": "x-prisma",              // null unless declaration is prefix
+  "prefix": "x-acme",                // null unless declaration is prefix
   "description": null,               // null for a value only a prefix covers, and for a framework name
   "plugin": {                        // null for a core effect id; as a plugins[] entry otherwise
-    "name": "effects-prisma", "version": "0.6.0", "type": "effects",
-    "listedIn": { "field": "effects", "ref": "./plugins/effects-prisma.mjs" }
+    "name": "effects-acme", "version": "0.6.0", "type": "effects",
+    "listedIn": { "field": "effects", "ref": "./plugins/effects-acme.mjs" }
   }
 }
 ```
@@ -1777,7 +1777,7 @@ a command's option, not a global one (§3).
 | CL84 | `aburi diff HEAD..main` with the commit before `main` checked out and an uncommitted edit in the working tree; `aburi diff HEAD~1..HEAD` and `HEAD~1..main` with `main` checked out and the same edit | The first reports only what `main` added, without the edit, labels the head's lines `head ref "main"`, and leaves no worktree behind; the other two report the edit as well, labelling the head `head (working tree)` (§6.3) |
 | CL85 | `aburi diff HEAD..HEAD --fail-on removed` after `git mv src/a.ts src/b.ts`, or after a plain `mv` git was not told of; `aburi diff HEAD..main` with the rename committed on `main` and the commit before it checked out | exit 0, every Symbol of the file moved by `git-rename` and none removed, and the caller's index as it was ([`diff-algorithm.md`](./diff-algorithm.md) §3.2) |
 | CL86 | `aburi diff main..HEAD^{tree}`; `aburi diff <tag>..HEAD` where the annotated tag names a tree | exit 2, `Head ref 'HEAD^{tree}' names no commit` (`Base ref '<tag>'` for the second) with git's own report appended, before anything is checked out |
-| CL87 | `aburi init` in a workspace whose manifests depend, in any of the four dependency fields, on a package of the table in [`config.md`](./config.md) §13 (`@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs`, `@trpc/client`, `@trpc/react-query`, `@trpc/next`), in the root manifest alone or in a workspace package's, a manifest that opens with a byte order mark included; with `--with-suggestions` and none installed | `effects` names that package's plugin, each plugin once and sorted, and the `suggested:` line and banner name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
+| CL87 | `aburi init` in a workspace whose manifests depend, in any of the four dependency fields, on a package of the table in [`config.md`](./config.md) §13 (`@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs`, `@trpc/client`, `@trpc/react-query`, `@trpc/next`, `@trpc/tanstack-react-query`), in the root manifest alone or in a workspace package's, a manifest that opens with a byte order mark included; with `--with-suggestions` and none installed | `effects` names that package's plugin, each plugin once and sorted, and the `suggested:` line and banner name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
 | CL88 | `aburi scan` after `aburi init` wrote the components of two packages and a third, `c`, was added; the same scan with the components detected, with all three declared, with `c`'s files under `ignore`, or with a declared root inside `c` | One warning naming `c`'s root and its Symbol count; none in the other four |
 
 ## 18. Design Decisions

@@ -13,11 +13,18 @@ Recognised shapes:
 | `<client>.<path…>.useQuery / useInfiniteQuery / useSuspenseQuery / useSuspenseInfiniteQuery / usePrefetchQuery / usePrefetchInfiniteQuery(...)` | `network.rpc` | `effects-plugin:trpc:query:<path>` |
 | `<client>.<path…>.mutate(...)` / `.useMutation(...)` | `network.rpc` | `effects-plugin:trpc:mutation:<path>` |
 | `<client>.<path…>.subscribe(...)` / `.useSubscription(...)` | `network.rpc` | `effects-plugin:trpc:subscription:<path>` |
+| `<proxy>.<path…>.queryOptions / infiniteQueryOptions / mutationOptions / subscriptionOptions(...)` (`@trpc/tanstack-react-query`), at `medium` | `network.rpc` | `effects-plugin:trpc:query / mutation / subscription:<path>` |
 
 `<path>` is the router-relative procedure path — `client.user.byId.query()`
 records `user.byId`. A leading `this` receiver is stripped first, so
 `this.trpc.user.byId.query()` inside a class method produces the same path as the
 same procedure called through a module-level binding.
+
+Under the TanStack React Query integration a component names the procedure
+through an options factory (`useQuery(trpc.greeting.queryOptions(input))`) and
+hands the options to TanStack's own hook or `QueryClient` method, which no plugin
+claims. The factory is the call site that names the procedure, so the effect is
+recorded there, at `medium`: options can be built and never sent.
 
 ### Why every family maps to `network.rpc`
 
@@ -30,7 +37,8 @@ read the suffix, and `Effect.target` still carries the verbatim callee.
 
 ### Layered gate
 
-A file that imports `@trpc/client`, `@trpc/react-query`, or `@trpc/next` (or any
+A file that imports `@trpc/client`, `@trpc/react-query`, `@trpc/next` or
+`@trpc/tanstack-react-query` (or any
 subpath such as `@trpc/client/links/httpBatchLink`) is a prerequisite, and the
 target must have at least three segments — tRPC's proxy is always addressed as
 `<client>.<procedure path…>.<terminal>`, so even a top-level procedure
@@ -111,10 +119,9 @@ script or a Next.js file beside an adapter import is `network.rpc`.
   (`utils.post.all.invalidate()` / `.fetch()` / `.prefetch()` / `.ensureData()`) —
   the receiver is a local binding with nothing tying it back to tRPC, and `fetch`
   is far too generic a name to claim.
-- `queryOptions()` / `infiniteQueryOptions()` / `mutationOptions()` /
-  `subscriptionOptions()` from `@trpc/tanstack-react-query` — these build an
-  options object; the request happens in the `useQuery` that consumes it.
-  Classifying here would attach an effect to code that never reaches the network.
+- `queryKey()` / `queryFilter()` / `pathKey()` from `@trpc/tanstack-react-query`
+  — they build a key or a filter for the `QueryClient`'s cache methods, and name
+  no request.
 - `createCaller` server-side invocations (`caller.user.byId()`) — invoked by the
   procedure's own name, so there is no terminal to match.
 

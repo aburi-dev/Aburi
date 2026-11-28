@@ -70,6 +70,7 @@ describe("aburi init — the plugins it writes", () => {
     ["@trpc/client", "effects-trpc"],
     ["@trpc/react-query", "effects-trpc"],
     ["@trpc/next", "effects-trpc"],
+    ["@trpc/tanstack-react-query", "effects-trpc"],
   ])("writes the effects plugin for a dependency on %s, %s", async (dependency, plugin) => {
     const { report, config } = await initWithDependencies({ [dependency]: "^1.0.0" })
 

@@ -365,8 +365,8 @@ Criteria:
 
 | Value | Criterion |
 |---|---|
-| `high` | Explicit in the AST (export modifier, throw statement, if statement), or explicitly declared by a framework/effect plugin |
-| `medium` | Identifier match (inferring `db.write` from `prisma.invoice.create`), or determination from naming conventions (`*Service`, `*Controller`) |
+| `high` | Explicit in the AST (export modifier, throw statement, if statement), or explicitly declared by a framework/effect plugin: `db.write` on `prisma.invoice.create`, whose receiver names a client binding ([`effect-plugin.md`](./effect-plugin.md) §5.4) |
+| `medium` | Identifier match on a receiver the plugin cannot place (`db.write` on `store.invoice.create`, whose receiver names no client binding, or on one reached through a call), or determination from naming conventions (`*Service`, `*Controller`) |
 | `low` | Heuristic (symbol connectivity or file location is the only evidence) |
 
 Symbols with `medium` or `low` confidence get a badge on every Markdown heading, and every names-only row, that names them ([`markdown-projection.md`](./markdown-projection.md) §3.5), so reviewers clearly know the machine is not confident. No fingerprint reads `confidence`, so `aburi diff` compares it on its own: a Symbol whose confidence moved is `changed` with `delta.confidenceChanged` ([`diff-algorithm.md`](./diff-algorithm.md) §4, §5.4).
@@ -569,7 +569,7 @@ Effects specific to a particular runtime/library/domain are declared by the plug
 Examples:
 - `x-stripe:charge`
 - `x-s3:upload`
-- `x-nest:lifecycle.on-module-init`
+- `x-acme:invoice.issue`
 - `x-auth:permission-check`
 - `x-react:state-update`
 

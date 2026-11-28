@@ -22,6 +22,14 @@ export function namesDrizzleClient(segment: string): boolean {
   return identifierMentions(segment, DRIZZLE_CLIENT_WORDS as ReadonlySet<string>)
 }
 
+// Another ORM's client words too, since it is that ORM's `<client>.<model>.<verb>` the delegate
+// gate keeps out.
+const ORM_CLIENT_WORDS: ReadonlySet<string> = new Set([...DRIZZLE_CLIENT_WORDS_LIST, "prisma"])
+
+export function namesOrmClient(segment: string): boolean {
+  return identifierMentions(segment, ORM_CLIENT_WORDS)
+}
+
 export function classificationConfidence(
   clientSegment: string | undefined,
   call: CallCandidate,

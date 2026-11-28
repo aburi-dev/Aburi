@@ -23,6 +23,7 @@ describe("Prisma method vocabulary", () => {
         "count",
         "aggregate",
         "groupBy",
+        "findRaw",
       ],
     ],
     [

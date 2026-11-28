@@ -6,11 +6,17 @@ const TRPC_QUERY_TERMINALS_LIST = [
   "useSuspenseInfiniteQuery",
   "usePrefetchQuery",
   "usePrefetchInfiniteQuery",
+  "queryOptions",
+  "infiniteQueryOptions",
 ] as const
 
-const TRPC_MUTATION_TERMINALS_LIST = ["mutate", "useMutation"] as const
+const TRPC_MUTATION_TERMINALS_LIST = ["mutate", "useMutation", "mutationOptions"] as const
 
-const TRPC_SUBSCRIPTION_TERMINALS_LIST = ["subscribe", "useSubscription"] as const
+const TRPC_SUBSCRIPTION_TERMINALS_LIST = [
+  "subscribe",
+  "useSubscription",
+  "subscriptionOptions",
+] as const
 
 export type TrpcQueryTerminal = (typeof TRPC_QUERY_TERMINALS_LIST)[number]
 export type TrpcMutationTerminal = (typeof TRPC_MUTATION_TERMINALS_LIST)[number]
@@ -37,3 +43,14 @@ export function isTrpcMutationTerminal(name: string): name is TrpcMutationTermin
 export function isTrpcSubscriptionTerminal(name: string): name is TrpcSubscriptionTerminal {
   return (TRPC_SUBSCRIPTION_TERMINALS as ReadonlySet<string>).has(name)
 }
+
+/**
+ * `@trpc/tanstack-react-query`'s option factories: they name the procedure, and the request is made
+ * by the TanStack hook or `QueryClient` method the options are handed to.
+ */
+export const TRPC_OPTIONS_TERMINALS: ReadonlySet<string> = new Set([
+  "queryOptions",
+  "infiniteQueryOptions",
+  "mutationOptions",
+  "subscriptionOptions",
+])
