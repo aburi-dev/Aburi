@@ -1,7 +1,0 @@
----
-"@aburi/lang-typescript": patch
----
-
-Leave a name the Symbol binds itself, a parameter, a `catch` binding or a local, out of `signature.throws`, so renaming one is no API change. A thrown identifier, the constructor of `throw new` and the callee of a thrown call are followed back through the accesses, subscripts, calls and `!` they start with to the name they start from, and recorded as written only when something outside the Symbol binds it: the module, a namespace, an import, the class around a method or the global scope. So `catch (e) { throw e }` → `catch (error) { throw error }` and renaming `fs` in `const fs = load(); throw fs[kind]()` no longer list the function under API changes, while `throw TIMEOUT` for a module-level `TIMEOUT` and `throw new NotFound()` for a class a namespace declares still record it. A chain that starts from `this` or `super` is recorded as written, and one that starts from no name, such as a literal, records nothing.
-
-The api fingerprint moves once for a Symbol that threw such a name, with no change to the source: on the pinned `cal-com` checkout, 171 of the 14,531 kept Symbols, which threw `error`, `err`, `reason`, `e` and a few other locals. `throws` is also a term of the score that pairs a renamed Symbol with its old self, so such a pairing may score differently. An `aburi diff` against an IR an earlier version wrote reports them as API changes; one that scans both sides with this version does not.

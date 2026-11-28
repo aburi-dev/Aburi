@@ -1,5 +1,33 @@
 # @aburi/framework-trpc
 
+## 0.4.0
+
+### Minor Changes
+
+- 8e03a3f: A router names what each procedure written inside its object literal is built on, prefixed by the
+  path a client calls the procedure by (`delete:protectedProcedure`, and
+  `post.delete:protectedProcedure` through a router written inside it as `t.router({ … })`, a plain
+  object or a `mergeRouters` call), and calls each base procedure and middleware it names. Switching
+  an inline procedure from `protectedProcedure` to `publicProcedure` is now a logic change to the
+  router, reported as one `middleware` entry removed and one added, where it was syntax-only. The
+  entries are ordered by path, so swapping two keys is no logic change.
+
+### Patch Changes
+
+- 8735e88: Read a CommonJS `require("…")` as an import. The TypeScript plugin now records an import edge for every call of `require` with one static specifier, unless a function binds that `require` itself, so the effect and framework plugins that gate on a file's imports classify a `.js` or `.cjs` file as they classify an ESM one: `prisma.user.create()` below `const { PrismaClient } = require("@prisma/client")` is a `db.write`, a tRPC server reached through `require("@trpc/server")` is classified at `high`, and the workspace report draws a Component dependency for the module.
+  
+  At the top of a file, `const m = require("./m")`, `const { a, b: c } = require("./m")` and `const R = require("./m").Router`, exported or not, also bind their names, as `import m = require("./m")`, `import { a, b as c }` and `import { Router as R }` would, and call resolution reads such a declaration through its import first: `createUser()` below `const { createUser } = require("./users")` now reaches the function `users.js` declares, and takes its effects, where it used to stop at the `const`. A member the import does not find is still looked for in the rest of the workspace, as before, and a name the import binds from a package outside it still resolves to the `const`. A `require()` anywhere else records only that the file loads the module.
+  
+  On the pinned `express` benchmark repository this resolves 52 more calls (2,133 → 2,185) and moves 4 from the local `const` to the function it names; `cal-com` gains 18 Prisma effects in its CommonJS scripts.
+  
+  A caller whose calls now resolve picks up its callees' effects as propagated effects, so its `logic` fingerprint moves with no change to its source. An `aburi diff` against an IR an earlier version wrote reports those callers as changed; one that scans both sides with this version does not.
+- 3a7c63c: An Express registration calls every handler and middleware it names, so their effects reach the route and swapping a route's handler for one that writes is a logic change that reports the write. `use` and mounts call what they hand over. An inline function, a factory call, a computed member, a member of `this` and a spread whose contents the statement does not show (`...guards`) add no call.
+  
+  Where one Symbol holds several routes, as a `.route(path)` chain or a statement chaining several registrations does, each of its routes' middleware entries is prefixed with the method it guards (`put:requireAdmin`), and a route that takes none is marked (`get:`). A `.route(path)` chain is prefixed and marked even while it holds one method. Moving a guard to another method, adding a method or dropping one moves `logic`. What `use` takes keeps bare names. `derivedBy` names every method of a chain, the one the Symbol is named after first.
+  
+  `@aburi/core` exports `referenceCalls`, the reading framework-trpc used for the base procedure and middleware a procedure is built on, now shared by both plugins.
+- Updated dependencies: `@aburi/core@0.10.0`, `@aburi/types@0.10.0`
+
 ## 0.3.0
 
 ### Minor Changes

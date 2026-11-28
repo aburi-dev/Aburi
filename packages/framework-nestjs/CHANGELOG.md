@@ -1,5 +1,11 @@
 # @aburi/framework-nestjs
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/core@0.10.0`, `@aburi/plugin-registry@0.9.0`, `@aburi/types@0.10.0`
+
 ## 0.6.0
 
 ### Minor Changes

@@ -1,5 +1,22 @@
 # @aburi/cli
 
+## 0.10.0
+
+### Minor Changes
+
+- 06326d4: `aburi diff <base>..<head>` now scans the head it is given. A head that names the commit checked out is still read from the working tree, uncommitted changes included; any other head (`v1.2.0..v1.3.0` with neither tag checked out, or `origin/main..$SHA` in a checkout that is elsewhere) is checked out into a temporary worktree of its own, as the base is, and its warnings are labelled `head ref "<head>"`. Both scans still use the working tree's config, plugins and installed dependencies. A ref that names no commit, such as `HEAD^{tree}` or a tag of a tree, is refused at exit 2 before anything is checked out.
+  
+  The rename map now describes the trees the scans read. For a working-tree head it is read from the base against the working tree, through a scratch copy of the index that also holds the files git does not track yet, so a file moved with `git mv` or a plain `mv` and not yet committed is reported as moved rather than removed and added, and no longer trips `--fail-on removed`. The caller's index is never written. An untracked file git cannot add to that copy, such as one named `NUL` on Windows, is named in a warning, and the rest of the map is kept. The line-ending notes git prints while reading the working tree are the one thing it says there that is not passed on.
+  
+  `GitRunner.run` takes an `env` option, typed `GitRunOptions`, for variables set on one command alone, and a runner must apply it: rename detection names its scratch index there, and when git answers with the caller's index instead it leaves the untracked files out, with a warning, rather than add them to that index.
+- 799daab: `aburi init` now writes `effects`, as it writes `languages` and `frameworks`: `effects-prisma` for a dependency on `@prisma/client`, `effects-drizzle` for `drizzle-orm`, `effects-nest` for `@nestjs/event-emitter`, `eventemitter2` or `@nestjs/cqrs`, and `effects-trpc` for `@trpc/client`, `@trpc/react-query` or `@trpc/next`, in any dependency field of the manifests at the workspace root and at each Component's root, a manifest that opens with a byte order mark included. Its summary gains an `effects:` line, and `--with-suggestions` names the effects plugins that are not installed after the language and framework ones. Following the guides used to leave every effect out of the IR until `effects` was written by hand.
+  
+  `aburi scan` now warns when the config declares `components` and a workspace package it leaves out gave the IR Symbols, naming each package and how many Symbols count towards no Component, and the three ways out: add it to the list, leave its files out with `ignore`, or remove `components`. A list `aburi init` wrote used to stop covering a package added later without a word. A package whose files `ignore` leaves out is not named, and neither is one a declared root lies inside, since declaring part of it leaves the rest out on purpose.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/config@0.5.3`, `@aburi/core@0.10.0`, `@aburi/diff@0.10.0`, `@aburi/markdown-projection@0.8.0`, `@aburi/plugin-registry@0.9.0`, `@aburi/types@0.10.0`
+
 ## 0.9.0
 
 ### Minor Changes

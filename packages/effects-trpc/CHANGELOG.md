@@ -1,5 +1,24 @@
 # @aburi/effects-trpc
 
+## 0.7.0
+
+### Minor Changes
+
+- 799daab: Each effects plugin exports the packages its import gate opens on: `PRISMA_CLIENT_MODULES_LIST`, `DRIZZLE_MODULES_LIST`, `NEST_EMITTER_MODULES_LIST` (beside `NEST_CQRS_MODULE`) and `TRPC_CLIENT_MODULES_LIST`. `aburi init` writes the plugin for a dependency on any of them.
+- afa9fa9: Classify the calls on a client another module of the workspace builds. `prisma.user.findMany()` after `import { prisma } from "./lib/db"`, `this.prisma.post.delete(…)` beside `constructor(private prisma: PrismaService)`, `db.insert(users)` after `import { db } from "./db"`, and `api.post.list.useQuery()` after `import { api } from "~/utils/trpc"` now get their effects, through barrels and the `export *` target that exports the name, where the file imports nothing from the library itself. Before, each needed an import of the library in the calling file, so an `import type { User } from "@prisma/client"` added or removed beside the call made its `db.write` appear or vanish. Now the import that binds the call's leading name decides first, so such a type import changes nothing for a name the file imports from the workspace; a receiver no import binds, such as `this.store`, still reads the file's imports as a whole. Where the leading name is declared in a workspace module that uses the library, or only some other module the file imports from does, Prisma and Drizzle classify the call only on a receiver their client vocabulary names or the library's type declares, and tRPC classifies the first and not the second.
+  
+  `effects-prisma` recognises a client generated to `generated/prisma` (`prisma init`'s default from Prisma 6.6, and Prisma 7's), with or without `/client`, `/edge` or `/browser`, every subpath of `@prisma/client`, and the `@prisma/adapter-*` and `@prisma/extension-*` packages. A client generated elsewhere is named in `pluginOptions["effects-prisma"].clientModules`, matched by its last path segments; an options value of any other shape, or an entry that names no path, fails the plugin's `init`.
+  
+  A call whose receiver is declared with a class the workspace declares the called member on, such as `this.usersService.create(dto)`, is no longer handed to any effect plugin, whether the module exports the class by its name, as its default or under an export clause's name: it stays in `calls[]`, resolves to `UsersService.create`, and the write that method makes reaches the caller as a propagated effect. Before, a Prisma type imported in the controller made it a `medium` `db.write` and cut the edge to the service. A member inherited from a package class (`PrismaService extends PrismaClient`) is still the library's. A receiver declared with the library's own type is the client whatever it is called, and `high`: Drizzle's `db: NodePgDatabase`, and for Prisma `store: PrismaClient` on `this.store.$transaction(…)` and the raw queries, or a delegate declared as `Prisma.UserDelegate`. `this.store.user.findMany()` calls a delegate no declaration types, and is graded by the name `store` as before.
+  
+  `ImportEdge` gains `upstream`, which the scan sets on the edges effect plugins are handed: for each name an edge into the workspace binds, the specifiers the module declaring it imports. `ParseResult.imports` is typed `WrittenImportEdge[]`, the edge without the fields the scan sets. `@aburi/plugin-registry/plugin-input` gains `importGate` (`direct`, `bound`, `reached` or `null`), `importBindingOf`, `receiverTypeFromMatchingModule` and `typedReceiverConfidence`.
+  
+  On the pinned `cal-com` checkout, Prisma effects go from 0 to 2,247 and tRPC effects from 24 to 219, with no call resolution changed. A file whose bodies make calls now has each workspace module it imports from parsed once per extraction thread for its imports, and in that parse for its declarations where it is a barrel, an `export *` target or the module a receiver's class comes from, so a scan with an effect plugin loaded takes longer: `cal-com` from 17.9 s to 22.0 s on four threads, the median of three runs each. A Symbol that gains an effect moves its `logic` fingerprint with no change to its source, so an `aburi diff` against an IR an earlier version wrote reports it as changed; one that scans both sides with this version does not.
+
+### Patch Changes
+
+- Updated dependencies: `@aburi/plugin-registry@0.9.0`, `@aburi/types@0.10.0`
+
 ## 0.6.0
 
 ### Minor Changes
