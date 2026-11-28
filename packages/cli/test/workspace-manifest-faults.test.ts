@@ -61,7 +61,9 @@ describe("a workspace manifest the reader wrote and the component search cannot 
 
       expect(code, stderr).toBe(EXIT.INPUT_ERROR)
       expect(stderr).toContain(`${prefix}${says} `)
-      expect(stderr).toContain(resolve(workspace.root, file))
+      expect(stderr.replaceAll("\\", "/")).toContain(
+        resolve(workspace.root, file).replaceAll("\\", "/"),
+      )
     },
   )
 })
