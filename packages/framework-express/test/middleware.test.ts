@@ -22,6 +22,7 @@ describe("analyzeUseArguments", () => {
       { hasErrorHandler: true },
     ],
     ["a handler named by an identifier", "app.use(logger)", { hasIdentifierArg: true }],
+    ["a middleware factory's call", "app.use(cors())", { hasCallArg: true }],
     ["an arity-2 arrow, which is neither shape", "app.use((req, res) => res.end())", {}],
   ])("reads %s", async (_label, line, flags) => {
     const shape = analyzeUseArguments((await useCall(line)).fullNode)
@@ -44,6 +45,7 @@ describe("analyzeUseArguments", () => {
       secondArgIsIdentifier: true,
       argCount: 2,
       hasIdentifierArg: true,
+      hasCallArg: false,
     })
   })
 

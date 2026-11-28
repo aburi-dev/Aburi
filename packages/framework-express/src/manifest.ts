@@ -18,13 +18,13 @@ const EXT_KIND_ENTRIES: ExpressExtKindEntry[] = [
     id: "framework:express:route",
     baseKind: "call",
     description:
-      "Route registration — a module-level `receiver.<method>(path, handler)` call where <method> is one of get/post/put/patch/delete/all.",
+      "Route registration — a module-level `receiver.<method>(path, handler)` call where <method> is one of get/post/put/patch/delete/options/head/all.",
   },
   {
     id: "framework:express:middleware",
     baseKind: "call",
     description:
-      "Non-error middleware — a module-level `receiver.use(...)` call whose handler argument has arity 3 (`req, res, next`), optionally preceded by a path literal.",
+      "Non-error middleware — a module-level `receiver.use(...)` call handed an arity-3 handler (`req, res, next`), a name, or a middleware factory's call (`cors()`), optionally after a path literal.",
   },
   {
     id: "framework:express:error-middleware",
@@ -36,7 +36,7 @@ const EXT_KIND_ENTRIES: ExpressExtKindEntry[] = [
     id: "framework:express:mount",
     baseKind: "call",
     description:
-      "Sub-router mount point — a module-level `receiver.use(pathLiteral, subRouter)` call whose second argument is an identifier (assumed to reference an Express Router in scope).",
+      "Sub-router mount point — a module-level `receiver.use(pathLiteral, subRouter)` call whose second argument is an identifier the module does not declare as a function; `high` only for a Router the module declares.",
   },
 ]
 

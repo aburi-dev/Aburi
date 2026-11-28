@@ -118,7 +118,7 @@ describe("scan — an Express app", () => {
       "framework:express:middleware high framework:express:middleware:app.use arity-3",
       "framework:express:middleware medium framework:express:middleware:app.use identifier-arg",
       "framework:express:mount high framework:express:mount:app.use router-identifier",
-      "framework:express:mount high framework:express:mount:app.use router-identifier",
+      "framework:express:mount medium framework:express:mount:app.use router-identifier",
       "framework:express:router high framework:express:router:express.Router",
     ])
   })
@@ -297,7 +297,7 @@ describe("scan — a .use argument behind a wrapper", () => {
     ],
     [
       "a router cast to its type",
-      `app.use("/api", apiRouter as Router)`,
+      `const apiRouter = express.Router()\napp.use("/api", apiRouter as Router)`,
       "framework:express:mount high framework:express:mount:app.use router-identifier",
     ],
   ])("classifies %s as the bare argument is", async (_label, line, expected) => {
@@ -355,8 +355,8 @@ describe("scan — a call's derivedBy", () => {
     ],
     [
       "a mount wrapped over two lines",
-      `app\n  .use("/api", adminRouter)`,
-      `app.use("/api", adminRouter)`,
+      `const adminRouter = express.Router()\napp\n  .use("/api", adminRouter)`,
+      `const adminRouter = express.Router()\napp.use("/api", adminRouter)`,
       "framework:express:mount high framework:express:mount:app.use router-identifier",
     ],
     [
@@ -373,7 +373,7 @@ describe("scan — a call's derivedBy", () => {
   it.each([
     [
       "a mount chained after middleware",
-      `app.use(cors()).use("/api", adminRouter)`,
+      `const adminRouter = express.Router()\napp.use(cors()).use("/api", adminRouter)`,
       "framework:express:mount high framework:express:mount:app.use router-identifier",
     ],
     [
@@ -691,5 +691,74 @@ describe("scan — the handlers a registration names, as calls", () => {
       ["requireAdmin", "ts:src/guards.ts#requireAdmin"],
       ["listUsers", "ts:src/users.ts#listUsers"],
     ])
+  })
+})
+
+describe("scan — preflight and HEAD routes, middleware factories and what a mount hands over", () => {
+  it("classifies each registration of an app that uses cors and helmet", async () => {
+    await workspace.writeSource(
+      "src/handlers.ts",
+      [
+        'import type { NextFunction, Request, Response } from "express"',
+        "export function requireAdmin(req: Request, res: Response, next: NextFunction) { next() }",
+        "export function getUser(req: Request, res: Response) { res.json({}) }",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/app.ts",
+      [
+        'import cors from "cors"',
+        'import express from "express"',
+        'import helmet from "helmet"',
+        'import { getUser, requireAdmin } from "./handlers"',
+        "export const app = express()",
+        "const api = express.Router()",
+        "function audit(req, res, next) { next() }",
+        "app.use(helmet())",
+        "app.use(cors())",
+        'app.use("/admin", requireAdmin)',
+        'app.use("/audit", audit)',
+        'app.use("/api", api)',
+        'app.options("/users/:id", cors())',
+        'app.head("/health", (req, res) => res.end())',
+        'app.route("/users/:id").get(requireAdmin, getUser).options(cors())',
+      ].join("\n"),
+    )
+
+    const ir = await scanWorkspace()
+    const calls = ir.symbols.filter((s) => s.source.file === "src/app.ts" && s.kind === "call")
+
+    const byLine = Object.fromEntries(
+      calls.map((s) => [s.source.startLine, [classification(s), s.middleware ?? []]]),
+    )
+
+    expect(byLine).toEqual({
+      8: [
+        "framework:express:middleware medium framework:express:middleware:app.use factory-call",
+        ["helmet()"],
+      ],
+      9: [
+        "framework:express:middleware medium framework:express:middleware:app.use factory-call",
+        ["cors()"],
+      ],
+      10: [
+        "framework:express:mount medium framework:express:mount:app.use router-identifier",
+        ["requireAdmin"],
+      ],
+      11: [
+        "framework:express:middleware medium framework:express:middleware:app.use identifier-arg",
+        ["audit"],
+      ],
+      12: [
+        "framework:express:mount high framework:express:mount:app.use router-identifier",
+        ["api"],
+      ],
+      13: ["framework:express:route high framework:express:route:app.options", []],
+      14: ["framework:express:route high framework:express:route:app.head", []],
+      15: [
+        "framework:express:route high framework:express:route:app.options framework:express:route:app.get",
+        ["get:requireAdmin", "options:"],
+      ],
+    })
   })
 })

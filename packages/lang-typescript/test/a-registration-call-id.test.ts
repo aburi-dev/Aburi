@@ -41,6 +41,18 @@ describe("a module-level registration call is a Symbol", () => {
     ])
   })
 
+  it.each([
+    ["a preflight route", "app.options('/users/:id', cors())", "app__options__$users$Zid__d0"],
+    ["a HEAD route", "app.head('/health', (req, res) => res.end())", "app__head__$health__d0"],
+    [
+      "a route chain ending in options",
+      "app.route('/users/:id').get(getUser).options(cors())",
+      "app__options__$users$Zid__d0",
+    ],
+  ])("is made of %s, named after its outermost method", async (_label, source, qname) => {
+    expect(await idsOf(`${source}\n`)).toEqual([`ts:src/a.ts#${qname}`])
+  })
+
   it("is read from an ordinary expression statement, which wraps no declaration", async () => {
     expect(await idsOf("import { app } from './app'\napp.get('/users', () => 1)\n")).toEqual([
       "ts:src/a.ts#app__get__$users__d0",

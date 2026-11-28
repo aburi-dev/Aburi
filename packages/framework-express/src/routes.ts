@@ -14,6 +14,8 @@ export const EXPRESS_ROUTE_METHODS: ReadonlySet<string> = new Set([
   "put",
   "patch",
   "delete",
+  "options",
+  "head",
   "all",
 ])
 

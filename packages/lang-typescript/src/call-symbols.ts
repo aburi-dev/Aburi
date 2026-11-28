@@ -22,6 +22,8 @@ const PROMOTABLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   "put",
   "patch",
   "delete",
+  "options",
+  "head",
   "all",
   "use",
   "route",
