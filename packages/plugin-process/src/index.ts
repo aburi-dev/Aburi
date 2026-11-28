@@ -7,4 +7,5 @@ export {
   type PluginProcessOptions,
   type RequestOptions,
   type RpcError,
+  type StartingProcess,
 } from "./plugin-process"

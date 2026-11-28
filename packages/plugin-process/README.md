@@ -22,9 +22,15 @@ let parser: PluginProcess
 export const plugin = {
   // manifest (with its languageId), fileExtensions, capabilities …
   async init(ctx) {
-    parser = createPluginProcess({ command: "python3", args: ["-m", "my_parser"], cwd: ctx.workspaceRoot })
+    parser = createPluginProcess({
+      command: "python3",
+      args: ["-m", "my_parser"],
+      cwd: ctx.workspaceRoot,
+      // Sent to every process it starts, the one replacing a parser that crashed included.
+      onStart: (started) => started.request("initialize", { workspaceRoot: ctx.workspaceRoot }),
+    })
     try {
-      await parser.request("initialize", { workspaceRoot: ctx.workspaceRoot })
+      await parser.start()
     } catch (error) {
       // A plugin whose init fails is not cleaned up, so it ends what it started.
       await parser.close()
@@ -43,9 +49,13 @@ export const plugin = {
 ```
 
 The scan calls `init` before its first file and `cleanup` after its last plugin call, so the
-process lives as long as the scan. `createPluginProcess` starts nothing; the first request does.
-Awaiting one in `init` makes a parser that cannot run end the scan with exit `3`, naming the
-plugin, instead of withdrawing every file of its language.
+process lives as long as the scan. `createPluginProcess` starts nothing; the first request does,
+or `start()`, which resolves once the process runs and `onStart` has finished. Awaiting it in
+`init` makes a parser that cannot run end the scan with exit `3`, naming the plugin, instead of
+withdrawing every file of its language.
+
+`onStart` runs on each process before any other request reaches it, so a parser the helper
+replaces after a crash is told what the first one was. A request made meanwhile waits for it.
 
 ## The other end
 
@@ -87,6 +97,7 @@ for line in sys.stdin:
 | `env` | the host's | Variables set over the host's environment, each replacing the host's variable of that name (in any case, on Windows); one set to `undefined` is left out, except for the few Windows itself needs, such as `PATH` |
 | `timeoutMs` | `30000` | How long a request may wait, the start included, at most 2^31−1 ms; `request(method, params, { timeoutMs })` overrides it for one |
 | `maxResponseBytes` | 256 MiB | The longest line the process may write |
+| `onStart` | none | Run on each process before any other request; when it fails, that start fails with `start-failed` |
 
 ## Failures
 
@@ -97,8 +108,9 @@ carries the process's error object, `code` and `data` included, on `rpcError`, a
 process. Thrown from `parseFile`, any of them withdraws that one file and the scan goes on.
 
 A process that crashed, timed out or wrote something other than an answer is replaced by the next
-request; after three in a row end without answering anything, requests fail with `abandoned` until
-`close`. An idle process never keeps its host alive; one being ended does, until it exits.
+request; after three in a row end without answering anything, a failed `onStart` counting as
+answering nothing, requests fail with `abandoned` until `close`. An idle process never keeps its
+host alive; one being ended does, until it exits.
 
 ## See also
 

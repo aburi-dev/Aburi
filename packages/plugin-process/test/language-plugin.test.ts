@@ -55,7 +55,9 @@ function toyLanguage(): { plugin: LanguagePlugin<ToyTree, ToyFunction>; trees: T
         command: process.execPath,
         args: [TOY_PARSER],
         cwd: ctx.workspaceRoot,
+        onStart: (started) => started.request("initialize", { workspaceRoot: ctx.workspaceRoot }),
       })
+      await parser.start()
     },
     async cleanup() {
       await parser?.close()
@@ -126,7 +128,7 @@ describe("a language plugin whose parser is another process", () => {
     expect(toy.trees.map((tree) => isRunning(tree.pid))).toEqual([false, false, false, false])
   })
 
-  it("withdraws the file its parser dies on and extracts the next on a new process", async () => {
+  it("withdraws the file its parser dies on and extracts the next on a new process, set up as the first was", async () => {
     await workspace.writeSource("a.toy", "def create\n")
     await workspace.writeSource("b.toy", "def broken\n!crash\n")
     await workspace.writeSource("c.toy", "def render\n")

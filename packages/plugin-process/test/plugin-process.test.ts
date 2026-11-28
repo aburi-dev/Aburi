@@ -10,6 +10,7 @@ import {
   PluginProcessError,
   type PluginProcessErrorCode,
   type PluginProcessOptions,
+  type StartingProcess,
 } from "../src"
 import { isRunning } from "./processes"
 
@@ -201,6 +202,106 @@ describe("a plugin process", () => {
     await crash()
     await crash()
     expect(await plugin.request("pid")).toEqual(expect.any(Number))
+  })
+
+  it("runs onStart once on each process it starts, before the requests that wait for it", async () => {
+    const starts: unknown[] = []
+    const plugin = peer({
+      onStart: async (started) => {
+        starts.push(await started.request("pid"))
+        await started.request("remember", { value: "/repo" })
+      },
+    })
+
+    expect(await Promise.all([plugin.request("recall"), plugin.request("recall")])).toEqual([
+      "/repo",
+      "/repo",
+    ])
+    await expect(plugin.request("crash", { code: 1, stderr: "" })).rejects.toMatchObject({
+      code: "exited",
+    })
+    expect(await plugin.request("recall")).toBe("/repo")
+    expect(starts).toHaveLength(2)
+    expect(starts[1]).not.toBe(starts[0])
+  })
+
+  it("starts the process on start and resolves once onStart has finished", async () => {
+    let runs = 0
+    let finished = false
+    const plugin = peer({
+      onStart: async (started) => {
+        runs += 1
+        await started.request("delay", { ms: 100, value: null })
+        finished = true
+      },
+    })
+
+    await Promise.all([plugin.start(), plugin.start()])
+
+    expect([runs, finished]).toEqual([1, true])
+    await plugin.request("pid")
+    expect(runs).toBe(1)
+  })
+
+  it("rejects start when the command cannot be started", async () => {
+    const plugin = peer({ command: "aburi-no-such-command", args: [] })
+
+    await expect(plugin.start()).rejects.toMatchObject({
+      code: "start-failed",
+      message: expect.stringMatching(/^Could not start aburi-no-such-command: .*ENOENT/),
+    })
+  })
+
+  it.each<[string, (started: StartingProcess) => Promise<unknown>, string]>([
+    [
+      "rejects",
+      async () => {
+        throw new Error("no workspace")
+      },
+      "no workspace",
+    ],
+    [
+      "throws before it returns a promise",
+      () => {
+        throw new Error("no workspace")
+      },
+      "no workspace",
+    ],
+    [
+      "meets an error answer",
+      (started) => started.request("fail", { message: "no workspace" }),
+      `${NAME} answered fail with an error: no workspace`,
+    ],
+  ])(
+    "fails the start of a process whose onStart %s, counting it as one that answered nothing",
+    async (_, onStart, reason) => {
+      const plugin = peer({ onStart })
+      const failed = `Could not start ${NAME}: onStart failed: ${reason}`
+
+      await expect(plugin.start()).rejects.toMatchObject({ code: "start-failed", message: failed })
+      for (let attempt = 1; attempt < 3; attempt++) {
+        await expect(plugin.request("pid")).rejects.toMatchObject({
+          code: "start-failed",
+          message: failed,
+        })
+      }
+      await expect(plugin.request("pid")).rejects.toMatchObject({
+        code: "abandoned",
+        message: `${NAME} ended 3 times without answering a request, so no more are sent to it. The last time: ${failed}`,
+      })
+    },
+  )
+
+  it("rejects with closed the requests waiting on an onStart that close interrupts", async () => {
+    const plugin = peer({ onStart: (started) => started.request("hang") })
+    const waiting = expect(plugin.request("pid")).rejects.toMatchObject({
+      code: "closed",
+      message: `${NAME} was closed before it answered`,
+    })
+
+    await plugin.close()
+
+    await waiting
   })
 
   it("counts a command that spawn refuses outright as a start that failed", async () => {

@@ -33,9 +33,15 @@ let parser: PluginProcess
 export const plugin: LanguagePlugin<PythonTree, PythonNode> = {
   // manifest (with its languageId), fileExtensions, capabilities …
   async init(ctx) {
-    parser = createPluginProcess({ command: "python3", args: ["-m", "aburi_python"], cwd: ctx.workspaceRoot })
+    parser = createPluginProcess({
+      command: "python3",
+      args: ["-m", "aburi_python"],
+      cwd: ctx.workspaceRoot,
+      onStart: (started) =>
+        started.request("initialize", { workspaceRoot: ctx.workspaceRoot }, { timeoutMs: 60_000 }),
+    })
     try {
-      await parser.request("initialize", { workspaceRoot: ctx.workspaceRoot }, { timeoutMs: 60_000 })
+      await parser.start()
     } catch (error) {
       // A plugin whose init fails is not cleaned up, so it ends what it started.
       await parser.close()
@@ -55,10 +61,19 @@ export const plugin: LanguagePlugin<PythonTree, PythonNode> = {
 }
 ```
 
-`createPluginProcess(options)` starts nothing. The first request starts the process, so a scan with
-no file of the language never does. A first request from `init` is where a parser that cannot run
-ends the scan with exit `3`, naming the plugin, rather than withdrawing every file of its language;
-it also keeps an expensive start-up out of the first file's `parseTimeoutMs`.
+`createPluginProcess(options)` starts nothing. The first request starts the process, or `start()`,
+which resolves once the process is running and `onStart` has finished, and rejects as a request
+would. Starting it from `init` is where a parser that cannot run ends the scan with exit `3`,
+naming the plugin, rather than withdrawing every file of its language; it also keeps an expensive
+start-up out of the first file's `parseTimeoutMs`. A plugin that leaves `start` out starts no
+process for a scan with no file of its language.
+
+`onStart` runs on each process the helper starts, the one that replaces a process that ended
+included (PP-2), before any other request reaches it: a request made meanwhile, `start` included,
+waits for it. What a parser has to be told before it reads a file, such as the workspace it loads,
+goes there, because a new process starts knowing nothing. The process `onStart` is given sends to
+that process alone, each request bounded by its own `timeoutMs`; a request waiting on `onStart`
+does not count that wait against its own.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -67,6 +82,7 @@ it also keeps an expensive start-up out of the first file's `parseTimeoutMs`.
 | `env` | the host's | Variables set over the host's environment, each replacing the host's variable of that name (in any case, on Windows); one set to `undefined` is left out. On Windows, `spawn` passes the few the system needs, `PATH` and `SYSTEMROOT` among them, from the host even so |
 | `timeoutMs` | `30000` | How long one request may wait for its answer, the process's start included. `request(method, params, { timeoutMs })` overrides it for one request. A value above 2^31−1 (about 24.8 days) waits that long |
 | `maxResponseBytes` | `268435456` (256 MiB) | The longest line the process may write on stdout |
+| `onStart` | none | Run on each process before any other request reaches it (above). When it rejects, or throws, the process's start has failed (PP-1) |
 
 Both numbers must be positive integers; anything else is a `RangeError` from
 `createPluginProcess`, or from the `request` that passed it.
@@ -111,29 +127,31 @@ message on `ScanResult.extractionFailures`, and the scan goes on.
 | `timeout` | No answer within `timeoutMs`: `<command> did not answer <method> within <n>ms` | Ended |
 | `oversize` | A line passed `maxResponseBytes` | Ended |
 | `protocol` | A line on stdout that answers no request (§3), quoted to its first 200 characters | Ended |
-| `start-failed` | The command could not be started, whether `spawn` refused it outright or reported it: `Could not start <command>: <reason>` | — |
+| `start-failed` | The command could not be started, whether `spawn` refused it outright or reported it: `Could not start <command>: <reason>`. Or `onStart` failed: `Could not start <command>: onStart failed: <reason>`, where a request it sent that failed gives the reason its own message | —, or ended when `onStart` failed |
 | `abandoned` | See PP-3 | Not started |
 | `closed` | `close` was called before the request was answered | Ended |
 
 Rule PP-2: **a process that has ended is replaced by the next request**, so one file that kills
 the parser costs that file alone: the request that met the fault, and any others in flight with
-it, are rejected, and the next file is parsed by a fresh process. A process the helper ends has its
-stdin closed and a second to exit; then it is sent `SIGTERM`, and `SIGKILL` five seconds later if
-it is still running. On Windows either signal ends the process at once (`TerminateProcess`), so the
-second after its stdin closes is all the warning it gets there. Five seconds after `SIGKILL` the
-helper stops waiting. Once the process has exited, its pipes have a second to close: a launcher
-that runs the parser without `exec`ing it leaves the parser holding them, and the helper closes its
-own ends and leaves that parser running.
+it, are rejected, and the next file is parsed by a fresh process, which runs `onStart` first. A
+process the helper ends has its stdin closed and a second to exit; then it is sent `SIGTERM`, and
+`SIGKILL` five seconds later if it is still running. On Windows either signal ends the process at
+once (`TerminateProcess`), so the second after its stdin closes is all the warning it gets there.
+Five seconds after `SIGKILL` the helper stops waiting. Once the process has exited, its pipes have
+a second to close: a launcher that runs the parser without `exec`ing it leaves the parser holding
+them, and the helper closes its own ends and leaves that parser running.
 
 Rule PP-3: **after three processes in a row end without answering a request, no fourth is
-started.** Every request after them rejects at once with `abandoned`, quoting the last one's end,
+started.** A process whose `onStart` failed counts as one that answered nothing, whatever it
+answered. Every request after them rejects at once with `abandoned`, quoting the last one's end,
 until `close` is called. A parser that cannot start, or dies on its first line of input, would
 otherwise be started again for every file of a scan.
 
 ## 5. Lifetime
 
 Rule PP-4: **`close` ends every process the helper started**, the one running and any it is still
-ending, and resolves once they have exited. A request still waiting rejects with `closed`. A
+ending, and resolves once they have exited. A request still waiting rejects with `closed`, one
+waiting on `onStart` included. A
 request after `close` starts a new process, so a plugin object scanned twice opens and closes one
 per scan through `init` and `cleanup`. A scan extracting on parser workers loads the plugin on
 each, so it runs one process for each worker ([`lang-plugin.md`](./lang-plugin.md) §3).
@@ -159,7 +177,7 @@ stdin and exits too.
 | PP9 | `timeoutMs` `0` or `1.5` for the helper, `0` for one request, `maxResponseBytes` `-1`; `timeoutMs` 2^53−1 for the helper and 2^32 for one request | `RangeError` naming the option; requests answered after 50 ms |
 | PP10 | A host that makes one request and never calls `close` | The host exits `0`, and the process after it |
 | PP11 | A language plugin whose parser is a process, over a workspace scanned twice | One process per scan, gone when the scan ends, and the same IR both times |
-| PP12 | The same plugin over a file its parser exits on | That file withdrawn with `exited`; the next file parsed by a new process |
+| PP12 | The same plugin, whose parser answers nothing before an `initialize` its `onStart` sends, over a file the parser exits on | That file withdrawn with `exited`; the next file parsed by a new process |
 | PP13 | An answer of over a megabyte whose multi-byte characters straddle the reads | Resolved whole |
 | PP14 | A line that is `null` or an array, has a string `id`, neither or both of `result` and `error`, an `error` that is no object or has no integer `code`, or an `id` no request waits on | `protocol`; the process ended |
 | PP15 | Two processes that end without answering, one that answers before it exits, then two more that end without answering | The next request starts a process and is answered (PP-3 counts ends in a row) |
@@ -170,6 +188,11 @@ stdin and exits too.
 | PP20 | A host whose last step awaits `close` of a process that holds `SIGTERM` | The host exits `0` after `close` resolves, with the process gone |
 | PP21 | `env` setting one variable and two of the host's to `undefined`, one named in another case | That variable set, the one named alike unset, the other unset on Windows alone, the host's other variables as they were |
 | PP22 | `isPluginProcessError` over its own error, one from another copy of the package, one so named with another code, another error, and an object that is no error | `true` for the first two |
+| PP23 | An `onStart` that tells the process a value, two requests at once for it, a request the process exits on, then another for the value | `onStart` run once on each of the two processes; each request for the value answered with it |
+| PP24 | `start` twice at once, with an `onStart` that waits 100 ms on the process | Both resolve once `onStart` has finished, which ran once; a request after is sent to that process |
+| PP25 | `start` of a command that does not exist | `start-failed` |
+| PP26 | An `onStart` that rejects, that throws before it returns a promise, or whose request is answered with an error; `start`, then two requests, then a third | `start-failed` `Could not start <command>: onStart failed: <reason>` three times, then `abandoned` quoting it |
+| PP27 | `close` while `onStart` waits on the process | The request waiting on it rejects with `closed` |
 
 ## 7. Design Decisions
 
@@ -202,7 +225,15 @@ Starting an interpreter costs tens of milliseconds, a type checker loading a mod
 once per file, that is minutes over five thousand files. One process answers every file, and only
 a fault replaces it.
 
-### 7.4 Why JSON-RPC over lines
+### 7.4 Why a hook for each start
+
+A parser that keeps state across requests, such as a workspace it has loaded, loses it when the
+helper replaces it (PP-2). Told only from `init`, the replacement would refuse every later file, so
+one file that kills the parser would cost every file of its language after it. The helper cannot
+replay what the first process was sent, since it cannot tell which requests set state; the plugin
+names them once, in `onStart`, and the helper runs them on every process before anything else.
+
+### 7.5 Why JSON-RPC over lines
 
 It is the framing MCP's stdio transport uses, so Python and Go have libraries that speak it, and
 a parser with none writes it in a few lines: read a line, write a line. A length prefix, as LSP

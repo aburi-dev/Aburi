@@ -14,6 +14,8 @@ const exitsFile = process.env.PEER_EXITS
 if (exitsFile !== undefined) process.on("exit", () => appendFileSync(exitsFile, "x"))
 if (process.argv.includes("--exit-at-start")) process.exit(4)
 
+// What `remember` was last told, which a new process starts without.
+let remembered = null
 const write = (text) => process.stdout.write(text)
 const answer = (id, body) => write(`${JSON.stringify({ jsonrpc: "2.0", id, ...body })}\n`)
 
@@ -25,6 +27,11 @@ createInterface({ input: process.stdin })
         return answer(id, { result: line })
       case "pid":
         return answer(id, { result: process.pid })
+      case "remember":
+        remembered = params.value
+        return answer(id, { result: true })
+      case "recall":
+        return answer(id, { result: remembered })
       case "delay":
         return setTimeout(() => answer(id, { result: params.value }), params.ms)
       case "fail":
