@@ -62,7 +62,10 @@ export async function loadPlugins(options: LoadPluginsOptions): Promise<LoadedPl
     const module = await tryImport(importFn, specifier, ref)
     const plugin = pickPlugin(module, ref)
     registerManifest(registry, plugin.manifest, ref)
-    routePlugin(plugin, field, loaded, ref)
+    assertListedUnderItsType(plugin, field, ref)
+    // The registry refuses a second manifest under a name unless it is the same manifest again.
+    if (listedIn.has(plugin.manifest.name)) continue
+    routePlugin(plugin, field, loaded)
     list(plugin.manifest.name, { field, ref })
   }
   for (const plugin of options.syntheticPlugins ?? []) {
@@ -204,12 +207,7 @@ function isPluginLike(value: unknown): value is AnyPlugin {
   return typeof name === "string" && typeof type === "string"
 }
 
-function routePlugin(
-  plugin: AnyPlugin,
-  field: PluginField,
-  into: LoadedPlugins,
-  ref: string,
-): void {
+function assertListedUnderItsType(plugin: AnyPlugin, field: PluginField, ref: string): void {
   const type = plugin.manifest.type
   if (type !== PLUGIN_FIELDS[field]) {
     throw new CliError(
@@ -217,6 +215,9 @@ function routePlugin(
       "plugin-error",
     )
   }
+}
+
+function routePlugin(plugin: AnyPlugin, field: PluginField, into: LoadedPlugins): void {
   switch (field) {
     case "languages":
       into.languages.push(plugin as unknown as LanguagePlugin)

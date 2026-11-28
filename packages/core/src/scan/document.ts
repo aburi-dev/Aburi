@@ -65,7 +65,13 @@ export function buildStats(input: BuildStatsInput): Stats {
 
 export function sortComponents(components: readonly Component[]): Component[] {
   return components
-    .map((c) => ({ ...c, description: c.description ?? null }))
+    .map((c) => {
+      const component: Component = { ...c, description: c.description ?? null }
+      if (c.publicApi !== undefined) {
+        component.publicApi = [...new Set(c.publicApi)].sort(compareCodeUnit)
+      }
+      return component
+    })
     .sort(compareBy((component) => component.id))
 }
 

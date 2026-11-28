@@ -108,3 +108,16 @@ describe("a packages field that is not a list of patterns", () => {
     expect(error.message).toContain(file)
   })
 })
+
+describe("a pnpm-workspace.yaml that does not parse", () => {
+  it("names the file and the parser's reason, with its line and column", async () => {
+    await tree.writeSource("pnpm-workspace.yaml", "packages:\n  - [packages/*\n")
+
+    const error = await errorFrom(CoreError, () => detectManagers(tree.root))
+
+    expect(error.code).toBe("workspace-manifest-malformed")
+    expect(error.message).toMatch(
+      /^Failed to parse pnpm-workspace\.yaml at .*pnpm-workspace\.yaml: \S.* at line 3, column 1$/,
+    )
+  })
+})

@@ -6,7 +6,7 @@ import { toNfc } from "./codepoints"
 import { CoreError } from "./errors"
 import { documentPathOrViolation, type UnnameableSite, unnameableSite } from "./id"
 import { compareBy, compareCodeUnit } from "./order"
-import { describeJsonType } from "./scan/faults"
+import { describeJsonType, describeThrown } from "./scan/faults"
 import { type GitignoreTree, openGitignoreTree } from "./scan/gitignore"
 import { walk } from "./scan/walk"
 import { pathExists, readJson } from "./workspace-fs"
@@ -192,7 +192,7 @@ async function detectPnpm(root: string): Promise<ManagerScan | null> {
     parsed = parseYaml(text)
   } catch (cause) {
     throw new CoreError(
-      `Failed to parse pnpm-workspace.yaml at ${manifestPath}`,
+      `Failed to parse pnpm-workspace.yaml at ${manifestPath}: ${describeYamlFailure(cause)}`,
       { code: "workspace-manifest-malformed", value: manifestPath },
       { cause },
     )
@@ -200,6 +200,12 @@ async function detectPnpm(root: string): Promise<ManagerScan | null> {
   const patterns = readPatternList(parsed, "packages", manifestPath)
   const candidates = await resolveDeclaredPackages(root, patterns, "pnpm")
   return { tool: "pnpm", candidates, manifestPath, declaredPatterns: patterns }
+}
+
+// The parser's message goes on to quote the offending lines under the one that names the position.
+function describeYamlFailure(cause: unknown): string {
+  const [reason = ""] = describeThrown(cause).split("\n", 1)
+  return reason.replace(/:$/, "")
 }
 
 async function detectPackageJsonWorkspaces(root: string): Promise<ManagerScan[]> {

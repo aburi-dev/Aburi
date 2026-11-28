@@ -17,7 +17,7 @@ import {
   LANGUAGE_TO_PLUGIN,
 } from "../plugin-catalog"
 import { resolveWorkspaceRoot } from "../workspace-root"
-import { isUnreadableTree } from "./scan-components"
+import { componentFaultKind } from "./scan-components"
 
 const CONFIG_ARTEFACT = "the config"
 
@@ -67,7 +67,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
   const { respectGitignore } = options
   const managers = await detectManagers(workspaceRoot, { respectGitignore }).catch(
     (error: unknown) => {
-      throw isUnreadableTree(error) ? detectionFailure(error) : error
+      throw detectionFailure(error)
     },
   )
   const { components, dependencyNames } = await detectComponents({
@@ -213,7 +213,7 @@ function renderConfig(input: RenderedConfigInput): string {
 function detectionFailure(error: unknown): CliError {
   return new CliError(
     `Failed to detect components: ${errorMessage(error)}${gitignoreEscapeHatch(error)}`,
-    isUnreadableTree(error) ? "runtime-error" : "config-error",
+    componentFaultKind(error),
     { cause: error },
   )
 }

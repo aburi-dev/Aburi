@@ -489,7 +489,7 @@
         "publicApi": {
           "type": "array",
           "items": { "type": "string", "minLength": 1, "not": { "pattern": "\\\\" } },
-          "description": "Glob patterns or symbol ids that designate the component's public surface. POSIX (no backslash). Class B: writers MUST omit the key when the component declares no public surface, never emit as []."
+          "description": "Glob patterns or symbol ids that designate the component's public surface, ascending by UTF-16 code unit, each once. POSIX (no backslash). Class B: writers MUST omit the key when the component declares no public surface, never emit as []."
         },
         "languages": {
           "type": "array",

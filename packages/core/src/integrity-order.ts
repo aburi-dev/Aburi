@@ -9,6 +9,9 @@ export function checkArraySortOrder(ir: IR, out: IntegrityViolation[]): void {
     "components[]",
     out,
   )
+  for (const component of ir.components) {
+    assertSorted(component.publicApi ?? [], `components[id=${component.id}].publicApi[]`, out)
+  }
   assertSorted(
     ir.symbols.map((s) => s.id),
     "symbols[]",

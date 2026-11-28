@@ -203,16 +203,17 @@ describe("aburi init — a package.json on the way to the workspace root", () =>
   it.each([
     ["the root's own", "", true],
     ["a marker-less package's own", "pkg", false],
-  ])("reports %s unparseable manifest at exit 1", async (_, below, gitRoot) => {
+  ])("reports %s unparseable manifest as the reader's to fix", async (_, below, gitRoot) => {
     const directory = resolve(workspace.root, below)
     if (gitRoot) await mkdir(resolve(directory, ".git"), { recursive: true })
     await workspace.writeSource(`${below === "" ? "" : `${below}/`}package.json`, TRAILING_COMMA)
 
     const { code, stderr } = await runCliIn(directory, ["init"])
 
-    expect(code).toBe(EXIT.RUNTIME)
-    expect(stderr).toContain("Failed to parse JSON at")
-    expect(stderr).toContain(resolve(directory, "package.json"))
+    expect(code).toBe(EXIT.INPUT_ERROR)
+    expect(stderr).toContain(
+      `Failed to detect components: Failed to parse JSON at ${resolve(directory, "package.json")}: `,
+    )
   })
 
   it("runs anyway when the unparseable manifest is above the workspace root", async () => {

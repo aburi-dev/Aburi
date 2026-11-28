@@ -224,6 +224,18 @@ describe("scan — the Document it assembles", () => {
     ])
   })
 
+  it("writes a Component's publicApi sorted by code unit, each entry once", async () => {
+    const app = component({
+      id: "app",
+      name: "app",
+      publicApi: ["src/z/**", "src/a/**", "src/z/**", "src/Z/**"],
+    })
+
+    const { ir } = await scanStubs(workspace.root, { components: [app] })
+
+    expect(ir.components[0]?.publicApi).toEqual(["src/Z/**", "src/a/**", "src/z/**"])
+  })
+
   it("collapses repeated calls between two Symbols into one outbound dependency", async () => {
     const { ir } = await callerAndHelper()
 

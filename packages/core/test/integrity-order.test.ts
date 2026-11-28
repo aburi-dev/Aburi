@@ -37,6 +37,14 @@ describe("checkIRIntegrity — ordering", () => {
       "components[]",
     ],
     [
+      "a Component's publicApi by value",
+      () =>
+        makeIR({
+          components: [component({ id: "a", name: "a", publicApi: ["src/z/**", "src/a/**"] })],
+        }),
+      "components[id=a].publicApi[]",
+    ],
+    [
       "symbols[] by id",
       () => makeIR({ symbols: [makeSymbol("ts:src/a.ts#z"), makeSymbol("ts:src/a.ts#a")] }),
       "symbols[]",
