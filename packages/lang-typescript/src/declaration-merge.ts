@@ -29,15 +29,13 @@ export function makeCandidateSink(): CandidateSink {
   }
 }
 
-// What exists at run time leads what only adds to it or describes it, the first written within a
-// rank: a class, the entity `new` builds; a function, a binding or an enum; a namespace, which adds
-// members; an interface or a type alias of its name.
+// What exists at run time leads what only adds to it or describes it; the first written breaks a tie.
 function leadOf(group: readonly SymbolCandidate<Node>[]): SymbolCandidate<Node> | null {
   let lead: SymbolCandidate<Node> | null = null
   let leadRank = Number.POSITIVE_INFINITY
   for (const declaration of group) {
     if (isOverloadSignature(declaration.fullNode)) continue
-    const rank = LEAD_RANKS.get(declaration.kind) ?? RUN_TIME_VALUE_RANK
+    const rank = LEAD_RANKS[declaration.kind]
     if (rank < leadRank) {
       lead = declaration
       leadRank = rank
@@ -46,14 +44,20 @@ function leadOf(group: readonly SymbolCandidate<Node>[]): SymbolCandidate<Node> 
   return lead
 }
 
-const RUN_TIME_VALUE_RANK = 1
-
-const LEAD_RANKS: ReadonlyMap<SymbolKind, number> = new Map<SymbolKind, number>([
-  ["class", 0],
-  ["namespace", 2],
-  ["interface", 3],
-  ["type", 3],
-])
+const LEAD_RANKS: Readonly<Record<SymbolKind, number>> = {
+  class: 0,
+  function: 1,
+  method: 1,
+  constructor: 1,
+  const: 1,
+  variable: 1,
+  enum: 1,
+  module: 1,
+  call: 1,
+  namespace: 2,
+  interface: 3,
+  type: 3,
+}
 
 function isOverloadSignature(node: Node): boolean {
   return (

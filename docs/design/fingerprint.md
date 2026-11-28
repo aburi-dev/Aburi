@@ -339,7 +339,7 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 - Changing a literal → changes
 - Changing an operator, a declaration keyword (`let` / `const`), a modifier or a primitive type → changes
 - Changing a function's parameter list where the api axis does not read it — a parameter's name, a destructuring pattern, a default's value, the order of its decorators → changes. The api input reads a parameter's type, form, modifiers and decorators only (§3.1), so the language plugin's normalized string covers the list as well as the body ([lang-plugin.md](./lang-plugin.md) LP8p1). The list goes in whole, so an edit to a parameter's type, form, modifier or decorator changes `syntax` as well as `api`; a return type or a type parameter, outside the list, changes `api` alone
-- Changing a member's own modifiers where neither its id nor the api axis reads them — `override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor` — that field's type annotation, or rewriting it as a method of the same name → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
+- Changing a member's own modifiers where neither its id nor the api axis reads them (`override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor`), that field's type annotation, or rewriting it as a method of the same name → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
 
 ### 5.5 Uses of the syntax fingerprint
 

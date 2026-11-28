@@ -120,11 +120,10 @@ function detachedExportsByLocalName(root: Node): ReadonlyMap<string, readonly Ex
       }
       continue
     }
-    const value = exportedValue(stmt)
-    const inner = value === null ? null : unwrapValue(value)
-    if (inner?.type !== "identifier") continue
+    const local = detachedExportLocal(stmt)
+    if (local === null) continue
     record(
-      inner.text,
+      local,
       isExportAssignment(stmt) ? EXPORT_ASSIGNMENT_DERIVED_BY : EXPORT_DEFAULT_DERIVED_BY,
       false,
     )
@@ -136,6 +135,13 @@ function clauseToken(as: string): string {
   return as === DEFAULT_EXPORT_NAME
     ? EXPORT_DEFAULT_DERIVED_BY
     : `${EXPORT_CLAUSE_DERIVED_BY_PREFIX}${as}`
+}
+
+/** The local `export default h` or `export = h` names, read through the wrappers it is written behind. */
+export function detachedExportLocal(statement: Node): string | null {
+  const value = exportedValue(statement)
+  const inner = value === null ? null : unwrapValue(value)
+  return inner?.type === "identifier" ? inner.text : null
 }
 
 // The grammar gives `export default`'s value a field and `export =`'s none.

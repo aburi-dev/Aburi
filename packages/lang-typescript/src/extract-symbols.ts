@@ -38,6 +38,7 @@ import {
 } from "./export-evidence"
 import { readLeadingJsDoc } from "./leading-jsdoc"
 import { isControlStatement, makeModuleScopeCandidate, runsCode } from "./module-scope"
+import { assignedValueName } from "./name-binding"
 import { defaultExportQname, makeTsSymbolId, nestedQname } from "./qname"
 import { returnedValueOf } from "./returned-value"
 import { buildSignature } from "./signature"
@@ -272,7 +273,7 @@ function addAssignedValue(
 ): void {
   const evidence = statementExportEvidence(statement)
   const named = (node: Node) => {
-    const name = nameFieldText(node)
+    const name = assignedValueName(node, statement)
     const qname = name === null ? defaultExportQname() : nestedQname([...namespacePath, name])
     return { name, qname }
   }
@@ -287,8 +288,11 @@ function addAssignedValue(
     addNamedClass(cls, named(cls), evidence, ctx, namespacePath, out)
     return
   }
-  const candidate = makeDefaultCallCandidate(value, ctx)
-  if (candidate !== null) out.add(candidate)
+  // A declaration the statement names gains the export; an import it names is its edge's re-export.
+  if (unwrapValue(value).type === "identifier") return
+  out.add(
+    makeDefaultCallCandidate(value, ctx) ?? defaultConstCandidate(value, [statement], [], ctx),
+  )
 }
 
 function makeDefaultCallCandidate(
@@ -300,6 +304,16 @@ function makeDefaultCallCandidate(
   // The statement holds the value so that the syntax string still describes it whole.
   const { bodies, evidence } = callBodies(value, statement)
   if (bodies.length === 0) return null
+  return defaultConstCandidate(value, bodies, evidence, ctx)
+}
+
+function defaultConstCandidate(
+  value: Node,
+  bodies: readonly Node[],
+  evidence: readonly string[],
+  ctx: ExtractionContext,
+): SymbolCandidate<Node> {
+  const statement = value.parent ?? value
   const qname = defaultExportQname()
   return {
     id: makeTsSymbolId(ctx.file.path, qname),

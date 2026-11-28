@@ -1,8 +1,6 @@
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type Confidence,
-  EXPORT_ASSIGNMENT_DERIVED_BY,
-  EXPORT_DEFAULT_DERIVED_BY,
   FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type ImportEdge,
   type Symbol as IRSymbol,
@@ -13,7 +11,12 @@ import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { packageName } from "./component-manifest"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
-import { DEFAULT_EXPORT_NAME, importBindsLocal, splitAliasedImportName } from "./import-edge"
+import {
+  DEFAULT_EXPORT_NAME,
+  EXPORT_ASSIGNMENT_NAME,
+  importBindsLocal,
+  splitAliasedImportName,
+} from "./import-edge"
 
 export interface ResolutionTrace {
   ambiguousCandidates: Set<SymbolId>
@@ -438,10 +441,10 @@ function importedNamesOf(
       renamed = true
       const file = importTargetOf(ctx, edge)
       if (file === null) continue
-      // `import m = require()` binds the value `export =` makes the module, which exports nothing else.
-      const assigned = exportAssignmentsOf(ctx.run.table, file)
-      if (assigned.length > 0) {
-        for (const name of assigned) names.push({ file, name, rest: tail })
+      // A whole-module binding of a module that writes `export =` is that value: such a module
+      // exports nothing else.
+      if (writesExportAssignment(ctx.run, file)) {
+        names.push({ file, name: EXPORT_ASSIGNMENT_NAME, rest: tail })
         continue
       }
       const [first, ...rest] = tail
@@ -459,6 +462,15 @@ function importedNamesOf(
     }
   }
   return { names, renamed, foreign }
+}
+
+// Whether or not the value can be followed, the module exports nothing else.
+function writesExportAssignment(run: ResolutionRun, file: string): boolean {
+  if (run.table.exportsByFile.get(file)?.has(EXPORT_ASSIGNMENT_NAME) === true) return true
+  return (run.importsByFile.get(file) ?? []).some(
+    (edge) =>
+      !edge.dynamic && edge.reexports?.some((entry) => entry.exported === EXPORT_ASSIGNMENT_NAME),
+  )
 }
 
 // A workspace package whose manifest names only files the scan did not read, such as built output,
@@ -516,6 +528,7 @@ function declarationsOf(
   trace: ResolutionTrace,
 ): ImportedName[] | null {
   let { file, name, rest } = entry
+  const assigned = new Set<string>()
   for (;;) {
     const answer = exportAnswerOf(ctx.run, ctx.caller.language, file, name)
     switch (answer.kind) {
@@ -532,8 +545,18 @@ function declarationsOf(
         trace.reexportedFromOutside = true
         return []
       case "none":
-        return name === DEFAULT_EXPORT_NAME ? [] : [{ file, name, rest }]
+        return name === DEFAULT_EXPORT_NAME || name === EXPORT_ASSIGNMENT_NAME
+          ? []
+          : [{ file, name, rest }]
       case "namespace": {
+        if (writesExportAssignment(ctx.run, answer.file)) {
+          // Two modules that each `export =` the other bind nothing either could call.
+          if (assigned.has(answer.file)) return []
+          assigned.add(answer.file)
+          file = answer.file
+          name = EXPORT_ASSIGNMENT_NAME
+          continue
+        }
         const [member, ...more] = rest
         if (member === undefined) return []
         file = answer.file
@@ -601,7 +624,12 @@ function searchExport(
     }
     return answerExport(run, language, target, reexport.imported, visited)
   }
-  if (name === DEFAULT_EXPORT_NAME) return { answer: NO_ANSWER, whole: true }
+  // The default export of a module that writes `export =` is that value, as `esModuleInterop` has it.
+  if (name === DEFAULT_EXPORT_NAME) {
+    return answerExport(run, language, file, EXPORT_ASSIGNMENT_NAME, visited)
+  }
+  // `export *` passes on neither.
+  if (name === EXPORT_ASSIGNMENT_NAME) return { answer: NO_ANSWER, whole: true }
   return starExport(run, language, file, name, edges, visited)
 }
 
@@ -653,22 +681,28 @@ function distinctAnswers(answers: readonly ExportAnswer[]): ExportAnswer[] {
 const NAMESPACE_EXPORT = "*"
 
 function declaredExport(table: SymbolTable, file: string, name: string): ExportAnswer | null {
-  if (name === DEFAULT_EXPORT_NAME) {
-    const names = defaultExportsOf(table, file)
-    return names.length === 0
-      ? null
-      : { kind: "declared", sites: names.map((declared) => ({ file, name: declared })) }
-  }
   // `export { stringType as string }` exports the declaration under the clause's name, which a
   // declaration of that name, if the module has one, does not then hold.
-  const aliased = table.clauseExportsByFile.get(file)?.get(name)
-  if (aliased !== undefined) {
-    return { kind: "declared", sites: aliased.map((declared) => ({ file, name: declared })) }
+  const exported =
+    name === DEFAULT_EXPORT_NAME
+      ? defaultExportsOf(table, file)
+      : (table.exportsByFile.get(file)?.get(name) ?? [])
+  if (exported.length > 0) {
+    return { kind: "declared", sites: exported.map((declared) => ({ file, name: declared })) }
   }
+  if (name === DEFAULT_EXPORT_NAME || name === EXPORT_ASSIGNMENT_NAME) return null
   const declares =
     table.topLevelByFile.get(file)?.has(name) === true ||
     table.memberOwnersByFile.get(file)?.has(name) === true
   return declares ? { kind: "declared", sites: [{ file, name }] } : null
+}
+
+// The file's `<default>` is its default export whatever export token it carries, or none.
+function defaultExportsOf(table: SymbolTable, file: string): readonly string[] {
+  const exported = table.exportsByFile.get(file)?.get(DEFAULT_EXPORT_NAME) ?? []
+  if (exported.includes(DEFAULT_EXPORT_QNAME)) return exported
+  if (table.topLevelByFile.get(file)?.has(DEFAULT_EXPORT_QNAME) !== true) return exported
+  return [...exported, DEFAULT_EXPORT_QNAME]
 }
 
 const NO_FILES: ReadonlySet<string> = new Set()
@@ -698,36 +732,6 @@ export function mappedTargetOf(
   }
   run.mappedTargets.set(key, resolved)
   return resolved
-}
-
-// A default import of a module `export =` makes binds that value, as `esModuleInterop` has it.
-function defaultExportsOf(table: SymbolTable, file: string): string[] {
-  return topLevelNamesOf(
-    table,
-    file,
-    (symbol) =>
-      symbol.name === DEFAULT_EXPORT_QNAME ||
-      symbol.derivedBy.includes(EXPORT_DEFAULT_DERIVED_BY) ||
-      symbol.derivedBy.includes(EXPORT_ASSIGNMENT_DERIVED_BY),
-  )
-}
-
-function exportAssignmentsOf(table: SymbolTable, file: string): string[] {
-  return topLevelNamesOf(table, file, (symbol) =>
-    symbol.derivedBy.includes(EXPORT_ASSIGNMENT_DERIVED_BY),
-  )
-}
-
-function topLevelNamesOf(
-  table: SymbolTable,
-  file: string,
-  matches: (symbol: IRSymbol) => boolean,
-): string[] {
-  const found: string[] = []
-  for (const bucket of table.topLevelByFile.get(file)?.values() ?? []) {
-    for (const symbol of bucket) if (matches(symbol)) found.push(symbol.name)
-  }
-  return found
 }
 
 function relativeTargetOf(

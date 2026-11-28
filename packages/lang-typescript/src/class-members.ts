@@ -9,6 +9,7 @@ import {
   walkDescendants,
 } from "./ast-helpers"
 import { handedFunctions, wrappedFunctions } from "./call-symbols"
+import { assignedValueName } from "./name-binding"
 
 const CONSTRUCTION_SEGMENT = "constructor"
 
@@ -37,7 +38,7 @@ function namesItsMembers(classNode: Node): boolean {
   let value = classNode
   while (value.parent !== null && unwrapValue(value.parent).id === classNode.id)
     value = value.parent
-  if (isExportAssignment(value.parent)) return nameFieldText(classNode) !== null
+  if (isExportAssignment(value.parent)) return assignedValueName(classNode, value.parent) !== null
   return isHeldByBinding(value)
 }
 

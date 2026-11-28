@@ -202,6 +202,23 @@ describe("what else exists at run time leads an interface or a type written befo
     expect(symbol.derivedBy).toContain("declaration-merged")
   })
 
+  it.each([
+    [
+      "the first written of two at one rank",
+      "export enum User { A }\nexport enum User { B = 1 }",
+      ["enum", 1],
+    ],
+    [
+      "an overloaded function's implementation, past its overloads",
+      "export interface User { extra: number }\nexport function User(a: string): void\nexport function User(a: any) { go() }",
+      ["function", 3],
+    ],
+  ])("takes the kind and range of %s", async (_label, source, lead) => {
+    const symbol = await symbolOf(source, "ts:src/a.ts#User")
+
+    expect([symbol.kind, symbol.source.startLine]).toEqual(lead)
+  })
+
   it("leaves a function-led merge `internal` under a type-only export clause", async () => {
     const source =
       "interface User { extra: number }\nfunction User() { go() }\nexport type { User }"

@@ -1,15 +1,12 @@
-import {
-  type CallCandidate,
-  EXPORT_CLAUSE_DERIVED_BY_PREFIX,
-  EXPORT_DEFAULT_DERIVED_BY,
-  EXPORT_KEYWORD_DERIVED_BY,
-  type ExtractionContext,
-  type ImportEdge,
-  type ImportResolver,
-  type LanguagePlugin,
-  type OpaqueAstNode,
-  type SourceFile,
-  type SymbolCandidate,
+import type {
+  CallCandidate,
+  ExtractionContext,
+  ImportEdge,
+  ImportResolver,
+  LanguagePlugin,
+  OpaqueAstNode,
+  SourceFile,
+  SymbolCandidate,
 } from "@aburi/types"
 import { AsyncMemo } from "../async-memo"
 import {
@@ -20,7 +17,13 @@ import {
 } from "../callgraph-specifier"
 import { toNfc } from "../codepoints"
 import { packageName, type WorkspacePackage } from "../component-manifest"
-import { DEFAULT_EXPORT_NAME, decoratorReference, splitAliasedImportName } from "../import-edge"
+import { exportNames } from "../export-names"
+import {
+  DEFAULT_EXPORT_NAME,
+  decoratorReference,
+  EXPORT_ASSIGNMENT_NAME,
+  splitAliasedImportName,
+} from "../import-edge"
 import { compareCodeUnit } from "../order"
 import { withoutQuery } from "./component-edges"
 import type { DiscoveredFile } from "./discover"
@@ -271,13 +274,17 @@ export class ImportOrigins {
     if (own !== undefined) return { module, shape: own }
     const hop = reexportOf(edges, name)
     if (hop !== null) {
-      if (hop.imported === NAMESPACE) return null
       const target = await this.#upstreamTarget(file, hop.source)
-      return typeof target === "object"
-        ? this.#exportedClass(target.file, hop.imported, visited)
-        : null
+      if (typeof target !== "object") return null
+      // A module re-exported whole is a class only as the value its `export =` makes it.
+      const imported = hop.imported === NAMESPACE ? EXPORT_ASSIGNMENT_NAME : hop.imported
+      return this.#exportedClass(target.file, imported, visited)
     }
-    if (name === DEFAULT_EXPORT_NAME) return null
+    // The default export of a module that writes `export =` is that value, as `esModuleInterop` has it.
+    if (name === DEFAULT_EXPORT_NAME) {
+      return this.#exportedClass(file, EXPORT_ASSIGNMENT_NAME, visited)
+    }
+    if (name === EXPORT_ASSIGNMENT_NAME) return null
     for (const edge of edges) {
       if (edge.reexportsAll !== true) continue
       const target = await this.#upstreamTarget(file, edge.source)
@@ -690,18 +697,13 @@ export function moduleDeclarations(
   return { classes, exports }
 }
 
-// The names the export tokens a language plugin writes in `derivedBy` give the declaration.
+// A plugin outside the tree may write anything in `derivedBy`.
 function exportedNames(candidate: SymbolCandidate<OpaqueAstNode>): string[] {
   const written: unknown = candidate.derivedBy
-  const names: string[] = []
-  for (const token of Array.isArray(written) ? written : []) {
-    if (token === EXPORT_KEYWORD_DERIVED_BY) names.push(toNfc(candidate.name))
-    else if (token === EXPORT_DEFAULT_DERIVED_BY) names.push(DEFAULT_EXPORT_NAME)
-    else if (typeof token === "string" && token.startsWith(EXPORT_CLAUSE_DERIVED_BY_PREFIX)) {
-      names.push(toNfc(token.slice(EXPORT_CLAUSE_DERIVED_BY_PREFIX.length)))
-    }
-  }
-  return names
+  const derivedBy = Array.isArray(written)
+    ? written.filter((token): token is string => typeof token === "string")
+    : []
+  return exportNames({ name: candidate.name, derivedBy }).map(toNfc)
 }
 
 // Several `export *` targets exporting one name: what any of them leads to.
@@ -713,7 +715,8 @@ function joinedUpstream(found: readonly Upstream[]): Upstream {
   return { sources, origin }
 }
 
-// The import that binds `local`, or for `<namespace>.<name>` the namespace import, as a hop.
+// The import that binds `local`, or for `<namespace>.<name>` the namespace import, as a hop. A
+// module bound whole is, by its name alone, the value its `export =` makes it.
 function importedAs(edges: readonly ImportEdge[], local: string): Hop | null {
   const dot = local.indexOf(".")
   const head = dot < 0 ? local : local.slice(0, dot)
@@ -722,9 +725,8 @@ function importedAs(edges: readonly ImportEdge[], local: string): Hop | null {
   for (const edge of edges) {
     if (edge.dynamic) continue
     if (edge.symbols === "*") {
-      if (rest !== null && !rest.includes(".") && edge.namespaceBinding === head) {
-        hop = { source: edge.source, imported: rest }
-      }
+      if (edge.namespaceBinding !== head || rest?.includes(".") === true) continue
+      hop = { source: edge.source, imported: rest ?? EXPORT_ASSIGNMENT_NAME }
       continue
     }
     if (rest !== null) continue

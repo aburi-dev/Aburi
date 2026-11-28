@@ -65,6 +65,11 @@ async function scanModules(
 
 const ANY_CALL = makeCall({ target: "client.user.findMany" })
 
+/** `import local = require(source)`, which binds the module whole. */
+function wholeModule(source: string, local: string): ImportEdge {
+  return importEdge({ source, symbols: "*", namespaceBinding: local })
+}
+
 function consumerOf(...imports: ImportEdge[]): StubModule {
   return { imports, calls: [ANY_CALL] }
 }
@@ -293,6 +298,44 @@ describe("scan — a call of a method the workspace declares on the receiver's c
       },
     ],
     [
+      "a class the module makes its `export =`, the module bound whole",
+      {
+        [CONSUMER]: { imports: [wholeModule("./users.stub", "Users")], calls: create("Users") },
+        "src/users.stub": {
+          classes: [{ name: "UsersService", members: ["create"], exported: "assignment" }],
+        },
+      },
+    ],
+    [
+      "a class the module makes its `export =`, imported as its default",
+      {
+        [CONSUMER]: {
+          imports: [named("./users.stub", "default as Users")],
+          calls: create("Users"),
+        },
+        "src/users.stub": {
+          classes: [{ name: "UsersService", members: ["create"], exported: "assignment" }],
+        },
+      },
+    ],
+    [
+      "a class behind a module whose `export =` names the module it binds whole",
+      {
+        [CONSUMER]: { imports: [wholeModule("./index.stub", "Users")], calls: create("Users") },
+        "src/index.stub": {
+          imports: [
+            importEdge({
+              ...wholeModule("./users.stub", "users"),
+              reexports: [{ imported: "*", exported: "export=" }],
+            }),
+          ],
+        },
+        "src/users.stub": {
+          classes: [{ name: "UsersService", members: ["create"], exported: "assignment" }],
+        },
+      },
+    ],
+    [
       "a class the module exports under the name an export clause gives it",
       {
         [CONSUMER]: { imports: [named("./users.stub", "Users")], calls: create("Users") },
@@ -366,6 +409,15 @@ describe("scan — a call of a method the workspace declares on the receiver's c
       {
         [CONSUMER]: { imports: [named("./users.stub", "Users")], calls: create("Users") },
         "src/users.stub": { imports: [named("@vendor/orm", "Client")] },
+      },
+    ],
+    [
+      "a module bound whole that makes no class its `export =`",
+      {
+        [CONSUMER]: { imports: [wholeModule("./users.stub", "Users")], calls: create("Users") },
+        "src/users.stub": {
+          classes: [{ name: "Users", members: ["create"], exported: "keyword" }],
+        },
       },
     ],
     [

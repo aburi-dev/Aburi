@@ -149,7 +149,7 @@ export function nameFieldText(node: Node): string | null {
 }
 
 /** `export = value`, whose `=` is the statement's own token: `export import A = B` holds it lower. */
-export function isExportAssignment(statement: Node | null): boolean {
+export function isExportAssignment(statement: Node | null): statement is Node {
   return statement?.type === "export_statement" && hasChildOfType(statement, "=")
 }
 

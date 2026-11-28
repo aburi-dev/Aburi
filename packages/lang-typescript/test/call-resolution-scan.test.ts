@@ -266,6 +266,13 @@ describe("scan — a call into a module `export =` makes a value", () => {
   const MODULES = {
     "src/handler.ts": "export = function handler(req: string) {\n  return req\n}\n",
     "src/svc.ts": "export = class UserService {\n  static of() {\n    return 1\n  }\n}\n",
+    "src/ns.ts": "namespace N {\n  export function b() {\n    return 1\n  }\n}\nexport = N\n",
+    "src/barrel.ts": 'import h = require("./handler")\nexport = h\n',
+    "src/plain.ts": "export function run() {\n  return 1\n}\n",
+    "src/object.ts": "function find() {\n  return 1\n}\nexport = { find: lookup }\n",
+    "src/dropped.ts": "function noop() {}\nfunction of() {\n  return work()\n}\nexport = noop\n",
+    "src/reassigned.ts":
+      'import impl = require("./handler")\nfunction run() {\n  return 1\n}\nexport = impl\n',
   }
 
   it.each<[string, string, string[], [string, string][]]>([
@@ -285,13 +292,59 @@ describe("scan — a call into a module `export =` makes a value", () => {
       ],
     ],
     [
+      "`const x = require()`",
+      'const handler = require("./handler")',
+      ['handler("a")'],
+      [["handler", "ts:src/handler.ts#handler"]],
+    ],
+    [
+      "`import * as x`",
+      'import * as Svc from "./svc"',
+      ["Svc.of()"],
+      [["Svc.of", "ts:src/svc.ts#UserService::of"]],
+    ],
+    [
       "a default import",
       'import h from "./handler"',
       ['h("a")'],
       [["h", "ts:src/handler.ts#handler"]],
     ],
+    [
+      "`import x = require()` of a namespace, its function called",
+      'import N = require("./ns")',
+      ["N.b()"],
+      [["N.b", "ts:src/ns.ts#N.b"]],
+    ],
+    [
+      "a module whose `export =` names the module it binds whole",
+      'import b = require("./barrel")',
+      ['b("a")'],
+      [["b", "ts:src/handler.ts#handler"]],
+    ],
+    [
+      "a default import of a module whose `export =` names the module it binds whole",
+      'import d from "./barrel"',
+      ['d("a")'],
+      [["d", "ts:src/handler.ts#handler"]],
+    ],
   ])("reaches it through %s", async (_label, head, calls, resolved) => {
     expect(await callsFromMain(MODULES, [head], calls)).toEqual({ resolved, unresolved: [] })
+  })
+
+  it.each([
+    ["a module with no `export =`, bound whole and called", 'import P = require("./plain")', "P"],
+    ["a property of an object literal", 'import m = require("./object")', "m.find"],
+    ["a member of a value a drop rule removed", 'import m = require("./dropped")', "m.of"],
+    [
+      "a member of a module it binds whole, against a declaration of the member's name",
+      'import m = require("./reassigned")',
+      "m.run",
+    ],
+  ])("finds no declaration by name for %s", async (_label, head, target) => {
+    expect(await callsFromMain(MODULES, [head], [`${target}()`])).toEqual({
+      resolved: [[target, null]],
+      unresolved: [[target, "no-match"]],
+    })
   })
 })
 

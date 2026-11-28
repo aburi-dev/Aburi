@@ -20,8 +20,10 @@ export function refusedModifierPatches(source: string): RefusedModifierPatch[] {
   return patches
 }
 
+export type RefusedModifier = "abstract" | "static"
+
 export interface RefusedModifierPatch extends Patch {
-  readonly modifier: string
+  readonly modifier: RefusedModifier
   /** Where the construct the modifier belongs to starts. */
   readonly opens: number
 }
@@ -36,21 +38,31 @@ export function rememberRefusedModifiers(
 }
 
 /** The modifier written before `node` that the parse had to leave out, if any. */
-export function refusedModifierOf(node: Node): string | undefined {
+export function refusedModifierOf(node: Node): RefusedModifier | undefined {
   return WRITTEN.get(node.tree)?.get(node.startIndex)
 }
 
-const WRITTEN = new WeakMap<Tree, Map<number, string>>()
+const WRITTEN = new WeakMap<Tree, Map<number, RefusedModifier>>()
 
-const ABSTRACT_DEFAULT_CLASS = /(\bexport\s+default\s+)abstract(\s+)(?=class\b)/g
+const GAP = String.raw`(?:\s|\/\*[\s\S]*?\*\/|\/\/.*)+`
+
+// TypeScript reads `abstract` as a modifier only where the next token is on its line.
+const LINE_GAP = String.raw`(?:[^\S\n\r\u2028\u2029]|\/\*(?:(?!\*\/)[^\n\r\u2028\u2029])*\*\/)+`
+
+const ABSTRACT_DEFAULT_CLASS = new RegExp(
+  String.raw`(\bexport${GAP}default${GAP})abstract(${LINE_GAP})(?=class\b)`,
+  "gu",
+)
 
 // An index signature's brackets hold a name and a `:`, which a computed member's key cannot.
-const STATIC_INDEX_SIGNATURE =
-  /\bstatic(\s+)(?=(?:readonly\s+)?\[\s*[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*\s*:)/gu
+const STATIC_INDEX_SIGNATURE = new RegExp(
+  String.raw`\bstatic(${GAP})(?=(?:readonly${GAP})?\[(?:${GAP})?[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*(?:${GAP})?:)`,
+  "gu",
+)
 
 function blank(
   start: number,
-  modifier: string,
+  modifier: RefusedModifier,
   opens: number,
   holds: (tree: Tree) => boolean,
 ): RefusedModifierPatch {

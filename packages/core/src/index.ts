@@ -83,6 +83,7 @@ export {
   DEFAULT_EXPORT_NAME,
   type DecoratorReference,
   decoratorReference,
+  EXPORT_ASSIGNMENT_NAME,
   type ImportBinding,
   splitAliasedImportName,
 } from "./import-edge"
