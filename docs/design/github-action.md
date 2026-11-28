@@ -32,14 +32,15 @@ prefixing a marker, and never decides what is worth failing on — `--fail-on` i
 | `working-directory` | `.` | Where the CLI runs, and — under `cli: workspace` — where it is resolved from. |
 | `cli` | `dlx` | Resolution mode. §3. |
 | `comment` | `true` | Whether to upsert the report as a comment. |
+| `pr-number` | *(empty)* | The pull request the comment goes on. Empty takes the event's own (`pull_request.number`, or `issue.number` for a comment); an event with neither posts nothing (§5). A positive integer or empty, else exit 2. |
 | `max-bytes` | *(empty)* | Forwarded to `--max-bytes`. Empty means 65507; `0` means no cap. §5.2. |
 | `token` | `github.token` | Token for the comment API. |
 | `node-version` / `pnpm-version` | `24` / *(empty)* | Toolchain for `cli: dlx` only. An empty `pnpm-version` installs the pnpm the repository pins, or 10 (§3.1). |
 
-Six input values are validated up front rather than at the point of use: `format`, `cli` and
+Seven input values are validated up front rather than at the point of use: `format`, `cli` and
 `comment`, because each of them has a wrong value that otherwise runs green and does nothing
 (`comment: yes` is the sharp one: every non-`true` value reads as false, silently), and
-`max-bytes` (a non-negative integer, or empty), `output-dir` (not empty, and holding no line
+`max-bytes` (a non-negative integer, or empty), `pr-number` (a positive integer, or empty), `output-dir` (not empty, and holding no line
 break, since the action names its reports in `$GITHUB_OUTPUT` lines) and `pnpm-version` under
 `cli: dlx`, the only mode that reads it (no line break either, since its resolved value is a
 `$GITHUB_OUTPUT` line too). A rejected input is exit 2 from the first step, which is what "your
@@ -261,10 +262,17 @@ One comment per pull request, found by the marker `<!-- aburi:diff-comment -->` 
 place, so a pushed branch does not accumulate a column of reports. A body identical to what is
 already there is left alone (`unchanged`), which keeps a re-run from notifying everyone again.
 
+The pull request is `pr-number`, or the one the event carries. A `push`, `schedule` or
+`workflow_dispatch` run names both sides in `refspec` and carries no pull request, and a clean diff
+there is not a failed job: with no `pr-number` the comment step is skipped and a `::notice::` says
+the report was not posted, naming `pr-number` and `comment: false`. `comment: true` therefore means
+"comment on the pull request there is", not "fail when there is none".
+
 The step's outputs say what it did: `comment-id`, the comment's numeric id, and `comment-action`,
 `created`, `updated` or `unchanged`. Both are empty when no comment was written — under
-`comment: false`, when the step was skipped (§4), and when the upsert failed — which is how the
-fork hand-off of §5.1 tells "nothing posted" from a comment that is there.
+`comment: false`, when the step was skipped (§4), when there was no pull request to comment on, and
+when the upsert failed — which is how the fork hand-off of §5.1 tells "nothing posted" from a
+comment that is there.
 
 The comment meant is the one Aburi wrote: its body opens with the marker, and its author is the
 account the token posts as. A personal token names that account through `GET /user`; an

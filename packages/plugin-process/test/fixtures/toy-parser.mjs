@@ -24,9 +24,21 @@ function parse({ content }) {
   return { pid: process.pid, functions }
 }
 
+// Set by `initialize`, which a parser that loads a project first would need before any file.
+let initialized = false
+
+function answer(method, params) {
+  if (method === "initialize") {
+    initialized = true
+    return { result: true }
+  }
+  if (!initialized) return { error: { code: -32002, message: "parse before initialize" } }
+  return { result: parse(params) }
+}
+
 createInterface({ input: process.stdin })
   .on("line", (line) => {
-    const { id, params } = JSON.parse(line)
-    process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: parse(params) })}\n`)
+    const { id, method, params } = JSON.parse(line)
+    process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, ...answer(method, params) })}\n`)
   })
   .on("close", () => process.exit(0))

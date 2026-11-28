@@ -11,6 +11,17 @@ export interface PluginProcessOptions {
   readonly timeoutMs?: number
   /** The longest line the process may write on stdout, in bytes. */
   readonly maxResponseBytes?: number
+  /**
+   * Run on each process the helper starts, before any other request reaches it. A process that
+   * replaces one that ended starts knowing nothing, so whatever a parser has to be told first,
+   * such as an `initialize`, is sent here rather than once from the plugin's `init`.
+   */
+  readonly onStart?: (process: StartingProcess) => Promise<unknown>
+}
+
+/** The process `onStart` is running on: what it sends goes to that process alone. */
+export interface StartingProcess {
+  request(method: string, params?: unknown, options?: RequestOptions): Promise<unknown>
 }
 
 export interface RequestOptions {
@@ -21,6 +32,8 @@ export interface RequestOptions {
 export interface PluginProcess {
   /** Sends one JSON-RPC request and resolves with its `result`, starting the process if none runs. */
   request(method: string, params?: unknown, options?: RequestOptions): Promise<unknown>
+  /** Starts the process if none runs, and resolves once it is running and `onStart` has finished. */
+  start(): Promise<void>
   /** Ends the process, if one runs. A later request starts another. */
   close(): Promise<void>
 }
@@ -108,52 +121,96 @@ export function createPluginProcess(options: PluginProcessOptions): PluginProces
     "maxResponseBytes",
   )
   const name = [options.command, ...(options.args ?? [])].join(" ")
-  let running: Running | null = null
+  let running: Started | null = null
   const ending = new Set<Promise<void>>()
   let silentEnds = 0
   let lastEnd: PluginProcessError | null = null
   let nextId = 1
 
-  const start = (): Running => {
-    const started = new Running(name, options, maxResponseBytes, (answered, why) => {
-      if (running === started) running = null
-      if (answered) {
+  const waitOf = (requestOptions: RequestOptions): number =>
+    requestOptions.timeoutMs === undefined ? timeoutMs : timeoutOf(requestOptions.timeoutMs)
+
+  const send = (
+    process: Running,
+    method: string,
+    params: unknown,
+    waitMs: number,
+  ): Promise<unknown> => {
+    const id = nextId++
+    const message = JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method,
+      ...(params === undefined ? {} : { params }),
+    })
+    return process.send(id, method, `${message}\n`, waitMs)
+  }
+
+  const launch = (): Started => {
+    const { onStart } = options
+    // A process that answered `onStart` and then failed it has answered nothing a plugin can use.
+    let startedUp = onStart === undefined
+    const process = new Running(name, options, maxResponseBytes, (answered, why) => {
+      if (running?.process === process) running = null
+      if (answered && startedUp) {
         silentEnds = 0
       } else {
         silentEnds += 1
         lastEnd = why
       }
     })
-    ending.add(started.closed)
-    void started.closed.then(() => ending.delete(started.closed))
-    return started
+    ending.add(process.closed)
+    void process.closed.then(() => ending.delete(process.closed))
+    if (onStart === undefined) return { process, ready: Promise.resolve() }
+    const starting: StartingProcess = {
+      request: async (method, params, requestOptions = {}) =>
+        send(process, method, params, waitOf(requestOptions)),
+    }
+    // Run as a callback, so that one throwing before it returns a promise fails the start too.
+    const ready = Promise.resolve()
+      .then(() => onStart(starting))
+      .then(
+        () => {
+          startedUp = true
+        },
+        (error: unknown) => {
+          const failure = onStartFailure(name, error)
+          process.end(failure)
+          throw failure
+        },
+      )
+    return { process, ready }
+  }
+
+  const current = (): Started => {
+    if (silentEnds >= MAX_SILENT_ENDS) {
+      throw new PluginProcessError(
+        `${name} ended ${MAX_SILENT_ENDS} times without answering a request, so no more are sent to it. The last time: ${lastEnd?.message ?? "no reason was given"}`,
+        "abandoned",
+        { cause: lastEnd },
+      )
+    }
+    running ??= launch()
+    return running
   }
 
   return {
     async request(method, params, requestOptions = {}) {
-      const waitMs =
-        requestOptions.timeoutMs === undefined ? timeoutMs : timeoutOf(requestOptions.timeoutMs)
-      if (silentEnds >= MAX_SILENT_ENDS) {
-        throw new PluginProcessError(
-          `${name} ended ${MAX_SILENT_ENDS} times without answering a request, so no more are sent to it. The last time: ${lastEnd?.message ?? "no reason was given"}`,
-          "abandoned",
-          { cause: lastEnd },
-        )
-      }
-      const id = nextId++
-      const message = JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        method,
-        ...(params === undefined ? {} : { params }),
-      })
-      running ??= start()
-      return running.send(id, method, `${message}\n`, waitMs)
+      const waitMs = waitOf(requestOptions)
+      const { process, ready } = current()
+      await ready
+      return send(process, method, params, waitMs)
+    },
+    async start() {
+      const { process, ready } = current()
+      await Promise.all([process.spawned, ready])
     },
     async close() {
-      const current = running
+      const started = running
       running = null
-      current?.end(new PluginProcessError(`${name} was closed before it answered`, "closed"))
+      started?.process.end(
+        new PluginProcessError(`${name} was closed before it answered`, "closed"),
+      )
       silentEnds = 0
       lastEnd = null
       await Promise.all(ending)
@@ -161,9 +218,30 @@ export function createPluginProcess(options: PluginProcessOptions): PluginProces
   }
 }
 
+/** A process, with what has to finish on it before the requests that wait for it are sent. */
+interface Started {
+  readonly process: Running
+  readonly ready: Promise<void>
+}
+
+function onStartFailure(name: string, error: unknown): PluginProcessError {
+  // Closing the helper while `onStart` waits is a close, not a process that failed to start.
+  if (isPluginProcessError(error) && error.code === "closed") return error
+  const reason = error instanceof Error ? error.message : String(error)
+  return new PluginProcessError(
+    `Could not start ${name}: onStart failed: ${reason}`,
+    "start-failed",
+    {
+      cause: error,
+    },
+  )
+}
+
 /** One start of the process, from spawn to exit. */
 class Running {
   readonly closed: Promise<void>
+  /** Settles once the system has started the process, or has refused to. */
+  readonly spawned: Promise<void>
   private readonly child: ChildProcess | null
   private readonly pending = new Map<number, Pending>()
   private readonly line: Buffer[] = []
@@ -178,6 +256,9 @@ class Running {
   /** The next step of ending the process, or of waiting for its pipes. */
   private step: NodeJS.Timeout | undefined
   private done: () => void = () => {}
+  private hasSpawned = false
+  private resolveSpawned: () => void = () => {}
+  private rejectSpawned: (why: PluginProcessError) => void = () => {}
 
   constructor(
     private readonly name: string,
@@ -188,6 +269,11 @@ class Running {
     this.closed = new Promise((done) => {
       this.done = done
     })
+    this.spawned = new Promise((resolve, reject) => {
+      this.resolveSpawned = resolve
+      this.rejectSpawned = reject
+    })
+    this.spawned.catch(() => {})
     let child: ChildProcess
     try {
       child = spawn(options.command, [...(options.args ?? [])], {
@@ -208,6 +294,10 @@ class Running {
       return
     }
     this.child = child
+    child.once("spawn", () => {
+      this.hasSpawned = true
+      this.resolveSpawned()
+    })
     child.on("error", (error) => {
       // Once the process has started, an `error` is a failed signal, and its exit still follows.
       if (child.pid !== undefined) return
@@ -372,6 +462,7 @@ class Running {
     if (this.failure === null) {
       this.failure = why
       this.onEnd(this.answered, why)
+      if (!this.hasSpawned) this.rejectSpawned(why)
     }
     for (const id of [...this.pending.keys()]) this.reject(id, this.failure)
   }
