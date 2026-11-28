@@ -156,7 +156,7 @@ The api fingerprint reads a member's `shortName` (§3.3), not its qualified name
 
 An importer reaches a declaration by the name its module exports it under, and that name is not always the one it was declared with: `const handler = NextAuth(options)` with `export { handler as GET, handler as POST }` is the module's `GET` and `POST`, and Next.js serves a request by which of them the module exports. Adding `handler as DELETE` opens an endpoint, and `export { connect as open }` becoming `export { connect as start }` breaks every `import { open }`, while `shortName` and `visibility` stay as they were. The names are part of the contract for §3.6's reason.
 
-They are read from `derivedBy` ([lang-plugin.md](./lang-plugin.md) LP6a–LP6c): `export-keyword` names the Symbol's own `name`, `export-default` names `default`, and `export-clause:<name>` names `<name>`. The input holds each once, sorted, so the order a module writes its clauses in is no contract. The keyword and a clause exporting a declaration under its own name read as one export because both name the Symbol's own name. When the names are that own name alone, or none, `exportedAs` is left out: `visibility` already tells those two apart, and such a Symbol hashes as it would without the names. An anonymous default export is named `<default>` and exported as `default`, which is its own name in that reading. The own name is the whole qname, so a namespace member exported by the keyword, `N.GET`, is exported under its own name and not as the module's `GET`.
+They are read from `derivedBy` ([lang-plugin.md](./lang-plugin.md) LP6a–LP6c, LP6e): `export-keyword` names the Symbol's own `name`, `export-default` names `default`, `export-clause:<name>` names `<name>`, and `export-assignment` names `export=`, TypeScript's own name for the value `export =` makes the module, which no identifier can spell. `export = handler` becoming `export default handler` changes what `require()` gives an importer, so it moves `api` as a renamed export does. The input holds each once, sorted, so the order a module writes its clauses in is no contract. The keyword and a clause exporting a declaration under its own name read as one export because both name the Symbol's own name. When the names are that own name alone, or none, `exportedAs` is left out: `visibility` already tells those two apart, and such a Symbol hashes as it would without the names. An anonymous default export is named `<default>` and exported as `default`, which is its own name in that reading. The own name is the whole qname, so a namespace member exported by the keyword, `N.GET`, is exported under its own name and not as the module's `GET`.
 
 ## 4. `logic` fingerprint
 
@@ -282,7 +282,7 @@ For such a Symbol the diff reads its shape rather than its hash (`logicShapeFing
 
 ## 5. `syntax` fingerprint
 
-Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head, a function's parameter list and a member's own modifiers ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1, LP8p2). Changes on any structural change other than formatting.
+Represents the **AST structure** of the Symbol: its body, and the parts of its declaration the api axis does not read, a class's head, a function's parameter list and a member's own head, its modifiers and, for a field holding a function, its annotation and its `=` ([lang-plugin.md](./lang-plugin.md) LP8p, LP8p1, LP8p2). Changes on any structural change other than formatting.
 
 ### 5.1 Input fields
 
@@ -339,7 +339,7 @@ Line terminators are held by the core, not by `normalizeAst`, which is why S2d i
 - Changing a literal → changes
 - Changing an operator, a declaration keyword (`let` / `const`), a modifier or a primitive type → changes
 - Changing a function's parameter list where the api axis does not read it — a parameter's name, a destructuring pattern, a default's value, the order of its decorators → changes. The api input reads a parameter's type, form, modifiers and decorators only (§3.1), so the language plugin's normalized string covers the list as well as the body ([lang-plugin.md](./lang-plugin.md) LP8p1). The list goes in whole, so an edit to a parameter's type, form, modifier or decorator changes `syntax` as well as `api`; a return type or a type parameter, outside the list, changes `api` alone
-- Changing a member's own modifiers where neither its id nor the api axis reads them — `override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor` → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
+- Changing a member's own modifiers where neither its id nor the api axis reads them (`override`, `?`, `get` / `set`, and on a field holding a function `readonly` and `accessor`), that field's type annotation, or rewriting it as a method of the same name → changes, on the member as well as its class ([lang-plugin.md](./lang-plugin.md) LP8p2)
 
 ### 5.5 Uses of the syntax fingerprint
 
@@ -620,6 +620,7 @@ export function apiFingerprint(sym) {
 function exportName(sym, token) {
   if (token === 'export-keyword') return [sym.name]
   if (token === 'export-default') return ['default']
+  if (token === 'export-assignment') return ['export=']
   return token.startsWith('export-clause:') ? [token.slice('export-clause:'.length)] : []
 }
 

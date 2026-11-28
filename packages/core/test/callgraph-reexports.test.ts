@@ -252,6 +252,16 @@ describe("a call through a barrel", () => {
       ["ts:src/x.ts#X", "ts:src/y.ts#X"],
     ],
     [
+      "an export a drop rule removed against a kept one",
+      "X",
+      disagreeing,
+      [
+        makeSymbol("ts:src/x.ts#X", { derivedBy: ["export-keyword"], dropped: true }),
+        makeSymbol("ts:src/y.ts#X", { derivedBy: ["export-keyword"] }),
+      ],
+      ["ts:src/y.ts#X"],
+    ],
+    [
       "a barrel that re-exports the conflict by name",
       "X",
       {

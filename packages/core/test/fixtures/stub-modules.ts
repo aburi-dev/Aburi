@@ -2,6 +2,7 @@ import { importEdge, type ScratchWorkspace, spend } from "@aburi/test-support"
 import {
   type CallCandidate,
   type Decorator,
+  EXPORT_ASSIGNMENT_DERIVED_BY,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   EXPORT_DEFAULT_DERIVED_BY,
   EXPORT_KEYWORD_DERIVED_BY,
@@ -13,8 +14,11 @@ import {
 } from "@aburi/types"
 import { fileCandidate, stubCandidate, stubLanguagePlugin } from "./plugins"
 
-/** How a `.stub` file exports a declaration: by its own name, as its default, or under another. */
-export type StubExport = "keyword" | "default" | { readonly as: string }
+/**
+ * How a `.stub` file exports a declaration: by its own name, as its default, as the value its
+ * `export =` makes it, or under another name.
+ */
+export type StubExport = "keyword" | "default" | "assignment" | { readonly as: string }
 
 export interface StubClass {
   readonly name: string
@@ -144,5 +148,6 @@ function classCandidates(file: string, declared: StubClass): SymbolCandidate[] {
 function exportTokens(exported: StubExport): string[] {
   if (exported === "keyword") return [EXPORT_KEYWORD_DERIVED_BY]
   if (exported === "default") return [EXPORT_DEFAULT_DERIVED_BY]
+  if (exported === "assignment") return [EXPORT_ASSIGNMENT_DERIVED_BY]
   return [`${EXPORT_CLAUSE_DERIVED_BY_PREFIX}${exported.as}`]
 }

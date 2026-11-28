@@ -4,10 +4,12 @@ import {
   asFunctionValue,
   hasChildOfType,
   hasErrorChild,
+  isExportAssignment,
   nameFieldText,
   walkDescendants,
 } from "./ast-helpers"
 import { handedFunctions, wrappedFunctions } from "./call-symbols"
+import { assignedValueName } from "./name-binding"
 
 const CONSTRUCTION_SEGMENT = "constructor"
 
@@ -29,15 +31,18 @@ function admitSegment(candidate: string, privateName = false): string | null {
   return isQnameSegment(candidate, { privateName }) ? candidate : null
 }
 
-// A class expression's own name binds nothing in the module, so only a binding names its members.
+// A class expression's own name binds nothing in the module, so only a binding names its members, or
+// `export =`, which has no declaring form and so takes the class's own name for the module's value.
 function namesItsMembers(classNode: Node): boolean {
-  return classNode.type === "class" ? isHeldByBinding(classNode) : nameFieldText(classNode) !== null
-}
-
-function isHeldByBinding(classNode: Node): boolean {
+  if (classNode.type !== "class") return nameFieldText(classNode) !== null
   let value = classNode
   while (value.parent !== null && unwrapValue(value.parent).id === classNode.id)
     value = value.parent
+  if (isExportAssignment(value.parent)) return assignedValueName(classNode, value.parent) !== null
+  return isHeldByBinding(value)
+}
+
+function isHeldByBinding(value: Node): boolean {
   const declarator = value.parent
   return (
     declarator?.type === "variable_declarator" &&

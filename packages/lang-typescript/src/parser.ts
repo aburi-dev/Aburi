@@ -9,6 +9,11 @@ import { callSignatureSeparators } from "./call-signature-separator"
 import { type ImportTypePatch, importTypePatches, rememberImportTypes } from "./import-type-reparse"
 import { extractImports, isTypeStarKeyword } from "./imports"
 import { jsxStringCommentPatches } from "./jsx-string-comment"
+import {
+  type RefusedModifierPatch,
+  refusedModifierPatches,
+  rememberRefusedModifiers,
+} from "./refused-modifiers"
 import { type Patch, reparsePatched } from "./reparse"
 
 const nodeRequire = createRequire(import.meta.url)
@@ -126,6 +131,7 @@ function repairedOrFirst(
 ): { tree: Tree | null; errors: ParseError[] } {
   if (first === null || !first.rootNode.hasError) return { tree: first, errors: [] }
   let importTypes: readonly ImportTypePatch[] = []
+  let modifiers: readonly RefusedModifierPatch[] = []
   const repairs: readonly (readonly [string, () => readonly Patch[]])[] = [
     [
       "import() types",
@@ -136,6 +142,13 @@ function repairedOrFirst(
     ],
     ["generic call signatures", () => callSignatureSeparators(first, source)],
     ["JSX strings opening with <!--", () => jsxStringCommentPatches(source)],
+    [
+      "modifiers the grammar refuses",
+      () => {
+        modifiers = refusedModifierPatches(source)
+        return modifiers
+      },
+    ],
   ]
   const errors: ParseError[] = []
   let best = first
@@ -160,6 +173,10 @@ function repairedOrFirst(
   rememberImportTypes(
     best,
     importTypes.filter((patch) => kept.includes(patch)),
+  )
+  rememberRefusedModifiers(
+    best,
+    modifiers.filter((patch) => kept.includes(patch)),
   )
   first.delete()
   return { tree: best, errors }

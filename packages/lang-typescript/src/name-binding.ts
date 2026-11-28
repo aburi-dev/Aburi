@@ -1,6 +1,6 @@
 import { DEFAULT_EXPORT_NAME, readStaticString } from "@aburi/core"
 import type { Node, Tree } from "web-tree-sitter"
-import { findChild, firstNonCommentChild, walkDescendants } from "./ast-helpers"
+import { findChild, firstNonCommentChild, nameFieldText, walkDescendants } from "./ast-helpers"
 import { collectPatternBindings } from "./pattern-bindings"
 
 /** The scope nearest to a use that declares a value name, and the declarations it gives it. */
@@ -29,6 +29,15 @@ export function bindingOf(use: Node, name: string): NameBinding | null {
     if (ownName?.text === name) return { scope: node, declarations: [node] }
   }
   return null
+}
+
+/**
+ * The name a function or class expression `export =` makes the module's value goes by: its own,
+ * unless the scope around the statement binds that name, which the expression's name never shadows.
+ */
+export function assignedValueName(value: Node, statement: Node): string | null {
+  const written = nameFieldText(value)
+  return written !== null && bindingOf(statement, written) === null ? written : null
 }
 
 export function isModuleBinding(binding: NameBinding): boolean {

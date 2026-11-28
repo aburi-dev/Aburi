@@ -161,9 +161,9 @@ describe("a Symbol several declarations wrote describes each of them once", () =
       "N",
     ],
     [
-      "a type, then a const handing its call two functions",
+      "a type, then a const handing its call two functions, which leads",
       ["export type N = string", "export const N = pipe(() => { a() }, () => { b() })"],
-      [["export type N = string"], ["export const N = pipe(() => { a() }, () => { b() })"]],
+      [["export const N = pipe(() => { a() }, () => { b() })"], ["export type N = string"]],
       "N",
     ],
     [

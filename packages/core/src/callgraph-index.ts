@@ -1,11 +1,11 @@
 import {
   AMBIENT_DECLARATION_DERIVED_BY,
-  EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   type Symbol as IRSymbol,
   type SymbolId,
   type SymbolKind,
 } from "@aburi/types"
 import { groupBy } from "./collections"
+import { exportNames } from "./export-names"
 
 type Language = string
 type FilePath = string
@@ -24,10 +24,11 @@ export interface SymbolTable {
   topLevelByFile: ReadonlyMap<FilePath, ByName>
   memberOwnersByFile: ReadonlyMap<FilePath, ReadonlySet<string>>
   /**
-   * By file, then by a name an export clause exports: the top-level declarations it exports under
-   * that name, dropped ones included.
+   * By file, then by each name an export token gives — a declaration's own, an export clause's,
+   * `default` and `export=` — the top-level declarations it exports under that name, dropped ones
+   * included.
    */
-  clauseExportsByFile: ReadonlyMap<FilePath, ReadonlyMap<string, readonly string[]>>
+  exportsByFile: ReadonlyMap<FilePath, ReadonlyMap<string, readonly string[]>>
   filesByLanguage: ReadonlyMap<Language, ReadonlySet<FilePath>>
   byComponent: ReadonlyMap<Language, ReadonlyMap<ComponentKey, ByName>>
   byWorkspace: ReadonlyMap<Language, ByName>
@@ -56,7 +57,8 @@ export function buildSymbolTable(
       topLevelPerFile(symbols.filter(listsItsMembers)),
       (owners) => new Set(owners.map((symbol) => symbol.name)),
     ),
-    clauseExportsByFile: mapValues(topLevelPerFile(symbols), clauseExportsOf),
+    // What a module exports is what it writes, whatever a drop rule removed.
+    exportsByFile: mapValues(topLevelPerFile(symbols), clauseExportsOf),
     filesByLanguage: filesByLanguageOf(symbols, moduleFiles),
     byComponent: mapValues(keptByLanguage, (perLanguage) =>
       mapValues(
@@ -89,14 +91,14 @@ function listsItsMembers(symbol: IRSymbol): boolean {
   )
 }
 
+// Each export is read as the clause that would write it: `export function f` as `export { f }`,
+// `export default f` as `export { f as default }`, and `export = f` as TypeScript's `export=`.
 function clauseExportsOf(symbols: readonly IRSymbol[]): Map<string, string[]> {
   const out = new Map<string, string[]>()
   for (const symbol of symbols) {
-    for (const token of symbol.derivedBy) {
-      if (!token.startsWith(EXPORT_CLAUSE_DERIVED_BY_PREFIX)) continue
-      const exported = token.slice(EXPORT_CLAUSE_DERIVED_BY_PREFIX.length)
-      const names = out.get(exported)
-      if (names === undefined) out.set(exported, [symbol.name])
+    for (const name of exportNames(symbol)) {
+      const names = out.get(name)
+      if (names === undefined) out.set(name, [symbol.name])
       else names.push(symbol.name)
     }
   }

@@ -517,7 +517,7 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
   })
 })
 
-describe("an edit to a member's own modifier moves the member", () => {
+describe("an edit to a member's own head moves the member", () => {
   const member = (head: string, rest = "m() {\n    use()\n  }") =>
     `export class C extends B {\n  ${head}${rest}\n}\n`
   const GETTER = "get m() {\n    return use()\n  }"
@@ -565,6 +565,17 @@ describe("an edit to a member's own modifier moves the member", () => {
       member("", "m = (() => {\n    use()\n  }) satisfies Handler"),
       member("readonly ", "m = (() => {\n    use()\n  }) satisfies Handler"),
     ],
+    [
+      "a type annotation added to a field holding a function",
+      member("", FIELD),
+      member("", FIELD.replace("m =", "m: Handler =")),
+    ],
+    [
+      "the type annotation of a field holding a function changed",
+      member("", FIELD.replace("m =", "m: A =")),
+      member("", FIELD.replace("m =", "m: X =")),
+    ],
+    ["a field holding a function rewritten as a method", member("", FIELD), member("")],
   ])("reports %s on the member and its class", async (_label, before, after) => {
     const diff = await diffOfEdit(workspace, FILE, before, after)
     const changed = changedSymbols(diff)

@@ -251,6 +251,11 @@ describe("apiFingerprint moves with", () => {
       exported("Page", ["export-default"]),
       exported("Page", ["export-keyword"]),
     ],
+    [
+      "a default export becoming the module's export assignment",
+      exported("<default>", ["export-assignment"]),
+      exported("<default>", ["export-default"]),
+    ],
   ])("%s", (_what, a, b) => {
     expect(apiFingerprint(a)).not.toBe(apiFingerprint(b))
   })

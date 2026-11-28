@@ -4,6 +4,9 @@ export type { ImportBinding }
 
 export const DEFAULT_EXPORT_NAME = "default"
 
+// TypeScript's own name for the value `export =` makes the module: no identifier can spell it.
+export const EXPORT_ASSIGNMENT_NAME = "export="
+
 export function splitAliasedImportName(raw: string): ImportBinding {
   const marker = " as "
   const idx = raw.indexOf(marker)

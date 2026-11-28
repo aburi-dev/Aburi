@@ -12,6 +12,7 @@ import {
   findChild,
   firstNonCommentChild,
   inAmbientContext,
+  isExportAssignment,
   makeSourceRange,
   nameFieldText,
 } from "./ast-helpers"
@@ -22,7 +23,7 @@ import {
   makeCallExtractionState,
   visitCallStatement,
 } from "./call-symbols"
-import { addClassAndMembers, makeClassCandidate } from "./class-candidates"
+import { addClassAndMembers, addNamedClass, makeClassCandidate } from "./class-candidates"
 import { type CandidateSink, makeCandidateSink } from "./declaration-merge"
 import { declaredOrDefaultQname } from "./declared-name"
 import { readDecorators } from "./decorators"
@@ -37,6 +38,7 @@ import {
 } from "./export-evidence"
 import { readLeadingJsDoc } from "./leading-jsdoc"
 import { isControlStatement, makeModuleScopeCandidate, runsCode } from "./module-scope"
+import { assignedValueName } from "./name-binding"
 import { defaultExportQname, makeTsSymbolId, nestedQname } from "./qname"
 import { returnedValueOf } from "./returned-value"
 import { buildSignature } from "./signature"
@@ -82,6 +84,10 @@ function visitStatement(
   if (node.type === "export_statement") {
     const declarationNode = exportedDeclaration(node)
     if (declarationNode === null) return
+    if (isExportAssignment(node)) {
+      addAssignedValue(declarationNode, node, ctx, namespacePath, out)
+      return
+    }
     const wrapped = wrappedDefaultValue(node, declarationNode)
     if (wrapped !== null) {
       out.add(makeWrappedDefaultCandidate(wrapped, node, ctx))
@@ -256,6 +262,39 @@ function makeWrappedDefaultCandidate(
     : functionCandidate(value, qname, evidence, readLeadingJsDoc(statement), ctx)
 }
 
+// `export =` has no declaring form, so a function or class expression's own name is the only one the
+// module gives its value.
+function addAssignedValue(
+  value: Node,
+  statement: Node,
+  ctx: ExtractionContext,
+  namespacePath: readonly string[],
+  out: CandidateSink,
+): void {
+  const evidence = statementExportEvidence(statement)
+  const named = (node: Node) => {
+    const name = assignedValueName(node, statement)
+    const qname = name === null ? defaultExportQname() : nestedQname([...namespacePath, name])
+    return { name, qname }
+  }
+  const fn = asFunctionValue(value)
+  if (fn !== null) {
+    const { qname } = named(fn)
+    out.add(functionCandidate(fn, qname, evidence, readLeadingJsDoc(statement), ctx))
+    return
+  }
+  const cls = asClassValue(value)
+  if (cls !== null) {
+    addNamedClass(cls, named(cls), evidence, ctx, namespacePath, out)
+    return
+  }
+  // A declaration the statement names gains the export; an import it names is its edge's re-export.
+  if (unwrapValue(value).type === "identifier") return
+  out.add(
+    makeDefaultCallCandidate(value, ctx) ?? defaultConstCandidate(value, [statement], [], ctx),
+  )
+}
+
 function makeDefaultCallCandidate(
   value: Node,
   ctx: ExtractionContext,
@@ -265,6 +304,16 @@ function makeDefaultCallCandidate(
   // The statement holds the value so that the syntax string still describes it whole.
   const { bodies, evidence } = callBodies(value, statement)
   if (bodies.length === 0) return null
+  return defaultConstCandidate(value, bodies, evidence, ctx)
+}
+
+function defaultConstCandidate(
+  value: Node,
+  bodies: readonly Node[],
+  evidence: readonly string[],
+  ctx: ExtractionContext,
+): SymbolCandidate<Node> {
+  const statement = value.parent ?? value
   const qname = defaultExportQname()
   return {
     id: makeTsSymbolId(ctx.file.path, qname),

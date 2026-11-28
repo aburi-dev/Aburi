@@ -1,12 +1,14 @@
 import {
   compareCodeUnit,
   DEFAULT_EXPORT_NAME,
+  EXPORT_ASSIGNMENT_NAME,
   readStaticString,
   splitAliasedImportName,
 } from "@aburi/core"
 import type { ImportEdge, ParseError, Reexport } from "@aburi/types"
 import type { Node, Tree } from "web-tree-sitter"
-import { findChild, firstNonCommentChild } from "./ast-helpers"
+import { findChild, firstNonCommentChild, isExportAssignment } from "./ast-helpers"
+import { detachedExportLocal, isDefaultExportStatement } from "./export-evidence"
 import { maskedImportSpecifier, masksImportTypes } from "./import-type-reparse"
 import { bindingOf, isModuleBinding } from "./name-binding"
 
@@ -78,9 +80,10 @@ function boundLocals(edge: ImportEdge): string[] {
 function readLocalExports(node: Node, exportedLocals: Map<string, string[]>): void {
   const add = (local: string, exported: string): void =>
     addExportedLocal(exportedLocals, local, exported)
-  const value = node.childForFieldName("value")
-  if (value !== null) {
-    if (value.type === "identifier") add(value.text, DEFAULT_EXPORT_NAME)
+  const assignment = isExportAssignment(node)
+  if (assignment || isDefaultExportStatement(node)) {
+    const local = detachedExportLocal(node)
+    if (local !== null) add(local, assignment ? EXPORT_ASSIGNMENT_NAME : DEFAULT_EXPORT_NAME)
     return
   }
   if (isTypeOnly(node)) return

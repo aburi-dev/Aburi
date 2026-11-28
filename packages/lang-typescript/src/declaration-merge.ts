@@ -1,5 +1,5 @@
 import { compareBy } from "@aburi/core"
-import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
+import type { MergedDeclaration, SymbolCandidate, SymbolKind } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { inAmbientContext } from "./ast-helpers"
 
@@ -29,13 +29,34 @@ export function makeCandidateSink(): CandidateSink {
   }
 }
 
-// A class is what exists at run time; an interface or type of its name only describes it.
+// What exists at run time leads what only adds to it or describes it; the first written breaks a tie.
 function leadOf(group: readonly SymbolCandidate<Node>[]): SymbolCandidate<Node> | null {
-  return (
-    group.find((declaration) => declaration.kind === "class") ??
-    group.find((declaration) => !isOverloadSignature(declaration.fullNode)) ??
-    null
-  )
+  let lead: SymbolCandidate<Node> | null = null
+  let leadRank = Number.POSITIVE_INFINITY
+  for (const declaration of group) {
+    if (isOverloadSignature(declaration.fullNode)) continue
+    const rank = LEAD_RANKS[declaration.kind]
+    if (rank < leadRank) {
+      lead = declaration
+      leadRank = rank
+    }
+  }
+  return lead
+}
+
+const LEAD_RANKS: Readonly<Record<SymbolKind, number>> = {
+  class: 0,
+  function: 1,
+  method: 1,
+  constructor: 1,
+  const: 1,
+  variable: 1,
+  enum: 1,
+  module: 1,
+  call: 1,
+  namespace: 2,
+  interface: 3,
+  type: 3,
 }
 
 function isOverloadSignature(node: Node): boolean {

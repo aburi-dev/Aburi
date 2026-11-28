@@ -1,5 +1,5 @@
 import { importEdge, reexportEdge } from "@aburi/test-support"
-import type { ImportEdge, Symbol as IRSymbol } from "@aburi/types"
+import type { ImportEdge, Symbol as IRSymbol, Reexport } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { resolveCallGraph } from "../src/callgraph"
 import { makeLanguageId } from "../src/id"
@@ -302,6 +302,167 @@ describe("import scope", () => {
       expect(resolvedOf("x", ["default as x"], [b, a])).toEqual({
         edges: [],
         unresolved: [["ambiguous", ["ts:src/x.ts#a", "ts:src/x.ts#b"]]],
+      })
+    })
+  })
+
+  describe("the value `export =` makes a module is what an import of the module binds", () => {
+    const handler = makeSymbol("ts:src/x.ts#handler", { derivedBy: ["export-assignment"] })
+    const svc = makeSymbol("ts:src/x.ts#Svc", { kind: "class", derivedBy: ["export-assignment"] })
+    const of = makeSymbol("ts:src/x.ts#Svc::of", { kind: "method" })
+    const whole = (source: string, reexports?: Reexport[]): ImportClause => ({
+      source,
+      symbols: "*",
+      namespaceBinding: "m",
+      ...(reexports === undefined ? {} : { reexports }),
+    })
+    const reassigned = (imported: string): Reexport[] => [{ imported, exported: "export=" }]
+
+    function resolvedOf(
+      target: string,
+      edge: ImportClause,
+      callees: readonly IRSymbol[],
+      barrels: Readonly<Record<string, ImportClause>> = {},
+    ) {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 4 }])
+      const importsByFile = new Map([
+        ...importsOf("src/a.ts", edge),
+        ...Object.entries(barrels).flatMap(([file, barrel]) => [...importsOf(file, barrel)]),
+      ])
+      const result = resolveCallGraph({
+        symbols: [caller, ...callees],
+        importsByFile,
+        moduleFiles: new Map([["ts", new Set(importsByFile.keys())]]),
+      })
+      return {
+        edges: result.edges.map((e) => [e.to, e.confidence]),
+        unresolved: result.diagnostics.map((d) => d.bucket),
+      }
+    }
+
+    it.each<[string, string, ImportClause, IRSymbol[], Record<string, ImportClause>, string]>([
+      ["the module bound whole, called", "m", whole("./x"), [handler], {}, "ts:src/x.ts#handler"],
+      [
+        "a member of the module bound whole",
+        "m.of",
+        whole("./x"),
+        [svc, of],
+        {},
+        "ts:src/x.ts#Svc::of",
+      ],
+      [
+        "a default import",
+        "h",
+        { source: "./x", symbols: ["default as h"] },
+        [handler],
+        {},
+        "ts:src/x.ts#handler",
+      ],
+      [
+        "a module whose `export =` names the module it binds whole",
+        "m",
+        whole("./b"),
+        [handler],
+        { "src/b.ts": { ...whole("./x", reassigned("*")), namespaceBinding: "h" } },
+        "ts:src/x.ts#handler",
+      ],
+      [
+        "a member of a module whose `export =` names the module it binds whole",
+        "m.of",
+        whole("./b"),
+        [svc, of],
+        { "src/b.ts": { ...whole("./x", reassigned("*")), namespaceBinding: "S" } },
+        "ts:src/x.ts#Svc::of",
+      ],
+      [
+        "a default import of a module whose `export =` names the module it binds whole",
+        "h",
+        { source: "./b", symbols: ["default as h"] },
+        [handler],
+        { "src/b.ts": { ...whole("./x", reassigned("*")), namespaceBinding: "h" } },
+        "ts:src/x.ts#handler",
+      ],
+      [
+        "a module whose `export =` names an export it imports",
+        "m",
+        whole("./b"),
+        [makeSymbol("ts:src/x.ts#run", { derivedBy: ["export-keyword"] })],
+        {
+          "src/b.ts": {
+            source: "./x",
+            symbols: ["run as h"],
+            reexports: reassigned("run"),
+          },
+        },
+        "ts:src/x.ts#run",
+      ],
+    ])("reaches it through %s", (_binding, target, edge, callees, barrels, to) => {
+      expect(resolvedOf(target, edge, callees, barrels)).toEqual({
+        edges: [[to, "high"]],
+        unresolved: [],
+      })
+    })
+
+    const local = (name: string) => makeSymbol(`ts:src/x.ts#${name}`)
+
+    it.each<[string, string, IRSymbol[], Record<string, ImportClause>]>([
+      [
+        "a member of a value a drop rule removed",
+        "m.of",
+        [
+          makeSymbol("ts:src/x.ts#noop", { derivedBy: ["export-assignment"], dropped: true }),
+          local("of"),
+        ],
+        {},
+      ],
+      [
+        "a value a drop rule removed",
+        "m",
+        [makeSymbol("ts:src/x.ts#noop", { derivedBy: ["export-assignment"], dropped: true })],
+        {},
+      ],
+      [
+        "a member of a value no name holds",
+        "m.find",
+        [
+          makeSymbol("ts:src/x.ts#<default>", { kind: "const", derivedBy: ["export-assignment"] }),
+          local("find"),
+        ],
+        {},
+      ],
+      [
+        "a member of a module it imports whole, against a declaration of the member's name",
+        "m.run",
+        [local("run"), makeSymbol("ts:src/impl.ts#handler", { derivedBy: ["export-assignment"] })],
+        { "src/x.ts": { ...whole("./impl", reassigned("*")), namespaceBinding: "impl" } },
+      ],
+      [
+        "a member of a module it imports whole that the scan did not read",
+        "m.run",
+        [local("run")],
+        { "src/x.ts": { ...whole("./missing", reassigned("*")), namespaceBinding: "impl" } },
+      ],
+      [
+        "a value two modules each make the other's",
+        "m",
+        [],
+        {
+          "src/x.ts": { ...whole("./y", reassigned("*")), namespaceBinding: "y" },
+          "src/y.ts": { ...whole("./x", reassigned("*")), namespaceBinding: "x" },
+        },
+      ],
+    ])("finds no declaration by name for %s", (_what, target, callees, barrels) => {
+      expect(resolvedOf(target, whole("./x"), callees, barrels)).toEqual({
+        edges: [],
+        unresolved: ["no-match"],
+      })
+    })
+
+    it("leaves a module with no export assignment, called whole, unresolved", () => {
+      const anon = makeSymbol("ts:src/x.ts#<default>", { derivedBy: ["export-default"] })
+      expect(resolvedOf("m", whole("./x"), [anon])).toEqual({
+        edges: [],
+        unresolved: ["no-match"],
       })
     })
   })

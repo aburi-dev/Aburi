@@ -148,6 +148,11 @@ export function nameFieldText(node: Node): string | null {
   return text.length > 0 ? text : null
 }
 
+/** `export = value`, whose `=` is the statement's own token: `export import A = B` holds it lower. */
+export function isExportAssignment(statement: Node | null): statement is Node {
+  return statement?.type === "export_statement" && hasChildOfType(statement, "=")
+}
+
 export function statementParent(node: Node): Node | null {
   const parent = node.parent
   if (parent !== null && parent.type === AMBIENT_DECLARATION_TYPE) return parent.parent

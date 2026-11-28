@@ -161,6 +161,15 @@ describe("the binding an object is read under", () => {
     ])
   })
 
+  it("keeps the member a method where a namespace above declares a type of its name", async () => {
+    const source =
+      "namespace api {\n  export type get = number\n}\nexport const api = {\n  get() {\n    go()\n  },\n}\n"
+    const kinds = async (id: string) => (await symbolOf(source, `ts:src/a.ts#${id}`)).kind
+
+    expect([await kinds("api"), await kinds("api.get")]).toEqual(["const", "method"])
+    expect(await callsOf(source, "ts:src/a.ts#api.get")).toEqual(["go"])
+  })
+
   it("names a member under the namespace the binding is in", async () => {
     expect(await idsOf("namespace N { export const h = { x: () => q() } }")).toEqual([
       "ts:src/a.ts#N",

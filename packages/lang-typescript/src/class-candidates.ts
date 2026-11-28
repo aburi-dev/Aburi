@@ -36,11 +36,22 @@ export function addClassAndMembers(
   namespacePath: readonly string[],
   out: CandidateSink,
 ): void {
-  const { name: className, qname } = declaredOrDefaultQname(node, "class", ctx, namespacePath)
-  out.add(makeClassCandidate(node, qname, exportEvidence(node), ctx))
+  const { name, qname } = declaredOrDefaultQname(node, "class", ctx, namespacePath)
+  addNamedClass(node, { name, qname }, exportEvidence(node), ctx, namespacePath, out)
+}
 
-  if (className === null) return
-  for (const member of classMemberCandidates(node, ctx, [...namespacePath, className])) {
+/** A class under the name it is given, and its members when that name is its own. */
+export function addNamedClass(
+  node: Node,
+  named: { readonly name: string | null; readonly qname: string },
+  evidence: readonly string[],
+  ctx: ExtractionContext,
+  namespacePath: readonly string[],
+  out: CandidateSink,
+): void {
+  out.add(makeClassCandidate(node, named.qname, evidence, ctx))
+  if (named.name === null) return
+  for (const member of classMemberCandidates(node, ctx, [...namespacePath, named.name])) {
     out.add(member)
   }
 }
