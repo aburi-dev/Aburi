@@ -38,8 +38,9 @@ jobs:
           fail-on: "removed,dropped-toggled:to-dropped:>10"
 ```
 
-`cli: workspace` runs the `@aburi/cli` and the plugins your project installed, which is what
-a config from `aburi init` needs: it names its plugins by package
+`cli: workspace` runs the `@aburi/cli` and the plugins your project installed, both pinned by
+your lockfile. A config from `aburi init` names its plugins by package, which load from your
+project's `node_modules` once the install step has run
 ([Running the CLI your project installed](#running-the-cli-your-project-installed)).
 
 The action reports what merging the pull request would change on its base
@@ -99,18 +100,19 @@ this repository is not one of them, are in
 
 ### Running the CLI your project installed
 
-By default the action fetches the CLI with `pnpm dlx`, which needs no install step and puts
-`@aburi/cli` in the pnpm store rather than in your checkout. The CLI resolves plugin refs
-from its own location, so a config naming a plugin **by package** —
-`languages: ["lang-typescript"]`, which is what `aburi init` writes — fails there with
-`Cannot find package '@aburi/lang-typescript'`, no matter what your project has installed.
-A plugin named by relative path (`./plugins/x.mjs`) resolves against your workspace root, and
-one named by absolute path loads that file, so both are fine either way.
+By default the action fetches the CLI with `pnpm dlx`, which puts `@aburi/cli` in the pnpm
+store rather than in your checkout. A plugin the config names **by package** —
+`languages: ["lang-typescript"]`, which is what `aburi init` writes — is imported from your
+project's `node_modules` first, wherever the CLI runs from, so it loads under `dlx` once the
+workspace is installed. With no install step nothing there holds it, and the scan exits 3 with
+`Cannot find package '@aburi/lang-typescript'`. A plugin named by relative path
+(`./plugins/x.mjs`) resolves against your workspace root, and one named by absolute path loads
+that file, so both are fine either way.
 
-Set `cli: workspace` and the action runs the `@aburi/cli` in your own `node_modules`
-instead, plugins beside it — the install [Getting started](./getting-started.md) walks
-through. Install the workspace first; `version` then has nothing to pin, because your
-lockfile already pinned it.
+Set `cli: workspace` and the action runs the `@aburi/cli` in your own `node_modules` as well,
+plugins beside it — the install [Getting started](./getting-started.md) walks through — so your
+lockfile pins the CLI along with its plugins. Install the workspace first; `version` then has
+nothing to pin, because your lockfile already pinned it.
 
 ```yaml
 - uses: actions/checkout@v7

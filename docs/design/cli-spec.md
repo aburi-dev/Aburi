@@ -96,7 +96,7 @@ aburi init [--output <path>] [--force] [--with-suggestions]
 |---|---|
 | `--output <path>` | Output destination (default: `./aburi.json`) |
 | `--force` | Overwrite an existing file |
-| `--with-suggestions` | Include enable candidates for the plugins written for the detected languages, frameworks and effect libraries as JSONC comments |
+| `--with-suggestions` | Name the plugins written for the detected languages, frameworks and effect libraries that the workspace has not installed, with the command that installs them (§4.6) |
 | `--respect-gitignore` / `--no-respect-gitignore` | Whether the language census and the nx detector's search for `project.json` honour `.gitignore` (default: honour), as `config.respectGitignore` decides for `aburi scan`: whether a git-ignored file counts, a git-ignored `project.json` is a project, and a git-ignored directory either search cannot list may go unread. No config exists yet to override, so this is also the only way past a `.gitignore` that cannot be read |
 
 ### 4.3 Behavior
@@ -133,23 +133,43 @@ aburi init [--output <path>] [--force] [--with-suggestions]
   effects: effects-prisma
   components: 3
   suggested: @aburi/framework-nestjs, @aburi/effects-prisma
+  install: pnpm add -D -w @aburi/framework-nestjs @aburi/effects-prisma
 ```
 
-The `suggested:` line appears under `--with-suggestions` when it names anything. Warnings go to
+The `suggested:` and `install:` lines appear under `--with-suggestions` when it names anything. Warnings go to
 stderr: a `--force` that replaced a file (`⚠ Overwrote /repo/aburi.json; the config that was there
 is gone.`), and a detected language or framework no first-party plugin covers.
 
 `languages`, `frameworks` and `effects` always name the first-party plugins for what was detected,
 installed or not, because a scan loads nothing it is not told to. `effects` comes from the
 dependencies the workspace's manifests declare ([`config.md`](./config.md) §13), and the `effects:`
-line names the plugins written there, or `—`. `--with-suggestions` adds one JSONC comment per
-plugin among them that the workspace has not installed — no `node_modules/@aburi/<name>` directory
-in the workspace root or any directory above it, the walk an ESM import from there makes:
+line names the plugins written there, or `—`. `--with-suggestions` names each plugin among them
+that the workspace has not installed: one the workspace's own imports do not find, which is where a
+scan looks for a plugin named by package first ([`config.md`](./config.md) §5.2). A plugin the CLI
+carries beside it is still named, because the config is the project's and is loaded from the
+project wherever else the CLI runs.
+
+The `install:` line is the command that adds them to the workspace root's dev dependencies, for
+the package manager the root uses:
+
+| The workspace root holds | `install:` |
+|---|---|
+| `pnpm-workspace.yaml` | `pnpm add -D -w <packages>` |
+| `pnpm-lock.yaml` | `pnpm add -D <packages>` |
+| `yarn.lock` of Yarn 1 (`# yarn lockfile v1`), and a `package.json` declaring `workspaces` | `yarn add -D -W <packages>` |
+| any other `yarn.lock` | `yarn add -D <packages>` |
+| `bun.lockb` or `bun.lock` | `bun add -d <packages>` |
+| none of these | `npm install -D <packages>` |
+
+The first row that applies wins, in the order of the table. pnpm refuses to add to the root of a
+workspace without `-w`, and Yarn 1 without `-W`, which later versions of Yarn do not accept.
+
+When the output is a `.jsonc` file, the config opens with the command as a comment too. A `.json`
+file stays JSON, which `JSON.parse`, `jq` and an editor read as it stands (`config.md` §1):
 
 ```jsonc
 {
-  // Suggested install: pnpm add -D @aburi/framework-nestjs
-  // Suggested install: pnpm add -D @aburi/effects-prisma
+  // Suggested install: pnpm add -D -w @aburi/framework-nestjs @aburi/effects-prisma
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
@@ -734,7 +754,7 @@ The two diagnosing questions are asked only once a ref has failed, so a run whos
 When scanning a revision it checked out for `aburi diff <base>..<head>` — the base, and a head that is not the working tree (§6.3) — Aburi **shares the working tree's `node_modules`** (the worktree only materializes that revision's sources at a separate path; dependency resolution uses the original cwd's `node_modules`). The rest of this section says "the base" for such a revision, and "the head" for the working tree whose environment both scans use.
 
 - **Rationale**: since §6.4 decided to "apply the head's `aburi.json` to the base scan as well", the plugin set also comes from the head. Reinstalling from the base ref's `package.json` for the base scan would explode build time, and `--frozen-lockfile` does not work on shallow clones
-- A **relative plugin ref** (`./plugins/x.mjs`) in that config resolves against the head's workspace root, not the worktree, for the same reason: the ref belongs to the head's plugin set, and a commit that adds a plugin file would otherwise make the base scan fail to load a config the head reads fine. Everything else inside the config — `ignore`, `components[].roots` — keeps resolving against the scan's own workspace root, which for the base scan is the worktree, because those name *sources* and the base's sources are what the worktree holds
+- A **relative plugin ref** (`./plugins/x.mjs`) in that config resolves against the head's workspace root, not the worktree, and a **package ref** is imported from the head's `node_modules` first ([`config.md`](./config.md) §5.2), which the worktree has none of, for the same reason: the ref belongs to the head's plugin set, and a commit that adds a plugin file would otherwise make the base scan fail to load a config the head reads fine. Everything else inside the config — `ignore`, `components[].roots` — keeps resolving against the scan's own workspace root, which for the base scan is the worktree, because those name *sources* and the base's sources are what the worktree holds
 - The base scan's **import resolvers** look up a dependency in the head's `node_modules` too, since the worktree has none: the scan passes the head's workspace root as `installedRoot` ([lang-plugin.md](./lang-plugin.md) §4.8). A workspace package that the head's install links there, such as a shared `tsconfig` package, is read from the worktree's copy, so the base's own revision of it applies; anything else installed is read as the head has it
 - **Known limitation**: when the base ref's sources cannot be extracted with the head's plugins (e.g. the base uses syntax from an older framework version and the head's framework plugin only supports the newer one), parsing/extraction may fail
   - This is a consequence of the "IR generator is pinned to the head environment" design
@@ -1777,8 +1797,11 @@ a command's option, not a global one (§3).
 | CL84 | `aburi diff HEAD..main` with the commit before `main` checked out and an uncommitted edit in the working tree; `aburi diff HEAD~1..HEAD` and `HEAD~1..main` with `main` checked out and the same edit | The first reports only what `main` added, without the edit, labels the head's lines `head ref "main"`, and leaves no worktree behind; the other two report the edit as well, labelling the head `head (working tree)` (§6.3) |
 | CL85 | `aburi diff HEAD..HEAD --fail-on removed` after `git mv src/a.ts src/b.ts`, or after a plain `mv` git was not told of; `aburi diff HEAD..main` with the rename committed on `main` and the commit before it checked out | exit 0, every Symbol of the file moved by `git-rename` and none removed, and the caller's index as it was ([`diff-algorithm.md`](./diff-algorithm.md) §3.2) |
 | CL86 | `aburi diff main..HEAD^{tree}`; `aburi diff <tag>..HEAD` where the annotated tag names a tree | exit 2, `Head ref 'HEAD^{tree}' names no commit` (`Base ref '<tag>'` for the second) with git's own report appended, before anything is checked out |
-| CL87 | `aburi init` in a workspace whose manifests depend, in any of the four dependency fields, on a package of the table in [`config.md`](./config.md) §13 (`@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs`, `@trpc/client`, `@trpc/react-query`, `@trpc/next`), in the root manifest alone or in a workspace package's, a manifest that opens with a byte order mark included; with `--with-suggestions` and none installed | `effects` names that package's plugin, each plugin once and sorted, and the `suggested:` line and banner name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
+| CL87 | `aburi init` in a workspace whose manifests depend, in any of the four dependency fields, on a package of the table in [`config.md`](./config.md) §13 (`@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs`, `@trpc/client`, `@trpc/react-query`, `@trpc/next`), in the root manifest alone or in a workspace package's, a manifest that opens with a byte order mark included; with `--with-suggestions` and none installed | `effects` names that package's plugin, each plugin once and sorted, and the `suggested:` line and the `install:` command name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
 | CL88 | `aburi scan` after `aburi init` wrote the components of two packages and a third, `c`, was added; the same scan with the components detected, with all three declared, with `c`'s files under `ignore`, or with a declared root inside `c` | One warning naming `c`'s root and its Symbol count; none in the other four |
+| CL89 | `aburi init --with-suggestions` with nothing installed, at a root holding `pnpm-workspace.yaml`; `pnpm-lock.yaml`; a Yarn 1 `yarn.lock` with and without `workspaces` in `package.json`; a later Yarn's `yarn.lock` with `workspaces`; `bun.lock`; `bun.lockb`; `package-lock.json`; no lockfile | `install:` reads `pnpm add -D -w`, `pnpm add -D`, `yarn add -D -W`, `yarn add -D`, `yarn add -D`, `bun add -d`, `bun add -d`, `npm install -D`, `npm install -D`, then the packages |
+| CL90 | `aburi init --with-suggestions` writing `aburi.json`, then `--output aburi.jsonc` | The first file parses as JSON, the command on stdout alone; the second opens with `// Suggested install: <command>` and loads as the config |
+| CL91 | `aburi init --with-suggestions` with `node_modules/@aburi/lang-typescript` a package the workspace can import, then an empty directory | No suggestion for it, then one |
 
 ## 18. Design Decisions
 

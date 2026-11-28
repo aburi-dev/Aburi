@@ -94,11 +94,11 @@ comment on every push.
 [Pinning](packages/github-action/README.md#pinning) has the rest of the options, and why
 the tag `changeset publish` writes is not one of them.
 
-`cli: workspace` runs the `@aburi/cli` those install steps put in your `node_modules`, which
-is also what lets it load the plugins your `aburi.json` names. Set `cli: dlx` instead and the
-action fetches the CLI itself, with no install step — and no plugin named by package, since it
-resolves those from the pnpm store rather than from your project. Aburi runs itself the first
-way: [`.github/workflows/aburi.yml`](.github/workflows/aburi.yml).
+`cli: workspace` runs the `@aburi/cli` those install steps put in your `node_modules`, so your
+lockfile pins it along with the plugins your `aburi.json` names. Set `cli: dlx` instead and the
+action fetches the CLI itself; the plugins still load from your `node_modules`, so keep the
+install step. Aburi runs itself the first way:
+[`.github/workflows/aburi.yml`](.github/workflows/aburi.yml).
 
 ## Documentation
 

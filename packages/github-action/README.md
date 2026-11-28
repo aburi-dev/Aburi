@@ -111,12 +111,11 @@ uses the alias.
 
 ## Choosing `cli`
 
-`dlx` needs no install step, and cannot load a plugin your config names **by package**.
-`pnpm dlx` puts `@aburi/cli` in the pnpm store, and the CLI resolves plugin refs from its
-own location — so `languages: ["lang-typescript"]` fails there with `Cannot find package
-'@aburi/lang-typescript'`, whatever your project has installed. A ref written as a relative
-path (`./plugins/x.mjs`) resolves against your workspace root, and an absolute path loads that
-file, so both work fine.
+`dlx` fetches the CLI itself. A plugin your config names **by package**
+(`languages: ["lang-typescript"]`) is imported from your project's `node_modules` first, so it
+loads once the workspace is installed; with no install step it fails with `Cannot find package
+'@aburi/lang-typescript'`. A ref written as a relative path (`./plugins/x.mjs`) resolves against
+your workspace root, and an absolute path loads that file, so both work with no install at all.
 
 `workspace` runs the `@aburi/cli` your project installed, resolved from `working-directory`,
 with its plugins beside it — the install the [quick start](../../README.md#quick-start)

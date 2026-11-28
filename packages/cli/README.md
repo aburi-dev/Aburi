@@ -11,8 +11,9 @@ defined in [`docs/design/cli-spec.md`](../../docs/design/cli-spec.md).
 
 - **`aburi init`** — autodetect the workspace, write `aburi.json` with the
   detected languages / frameworks / components. `--force` overwrites, and says so on
-  stderr; `--with-suggestions` adds a `// Suggested install: pnpm add -D @aburi/<plugin>`
-  JSONC comment for each detected first-party plugin the workspace has not installed;
+  stderr; `--with-suggestions` names each detected first-party plugin the workspace has not
+  installed, with the install command for the workspace's package manager (and as a
+  `// Suggested install:` comment when the output is `.jsonc`);
   `--respect-gitignore` / `--no-respect-gitignore` decides whether the language census
   and the nx project search read `.gitignore` (honoured by default).
 - **`aburi scan`** — load config, resolve plugins, run `@aburi/core` scan,

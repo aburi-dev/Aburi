@@ -222,7 +222,8 @@ function extractWorkspacePatterns(parsed: unknown, manifestPath: string): string
   return readPatternList(parsed, "workspaces", manifestPath)
 }
 
-async function detectJsPackageManagerTool(root: string): Promise<string> {
+/** The JavaScript package manager the lockfile at `root` belongs to, `npm` when there is none. */
+export async function detectJsPackageManagerTool(root: string): Promise<string> {
   if (await pathExists(join(root, "pnpm-lock.yaml"))) return "pnpm"
   if (await pathExists(join(root, "yarn.lock"))) return "yarn"
   if (await pathExists(join(root, "bun.lockb"))) return "bun"

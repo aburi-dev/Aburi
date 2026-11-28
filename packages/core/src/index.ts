@@ -213,6 +213,7 @@ export { computeWeaklyConnectedComponents } from "./wcc"
 export {
   type DetectManagersOptions,
   type DetectManagersResult,
+  detectJsPackageManagerTool,
   detectManagers,
   type UnnameableRoot,
   type UnresolvedDeclaration,

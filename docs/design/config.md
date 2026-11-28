@@ -192,6 +192,17 @@ Examples:
 A bare name is therefore *only* resolvable under the `@aburi` scope. Third-party plugins
 must be listed by their full package name.
 
+A specifier from rule 2 or 3 that names a package, not a `file:` URL, is imported the way the
+workspace's own modules would import it: Node's resolution from the workspace root, up through the
+`node_modules` of each directory above it, with the conditions an `import` uses. Only when no
+`node_modules` on that walk holds the package, or what it holds has nothing to import, is the
+package imported from where the CLI is installed — what a CLI run by `pnpm dlx` or installed
+globally finds the plugins installed beside it with. So a CLI run from anywhere loads the plugin
+the project pinned, and the config means the same under every way of running it. A package the
+workspace holds but that cannot be imported, an `exports` map with no entry for the specifier
+for one, fails there (exit 3), because the install the project pinned is the one to fix. Neither
+having it fails the same way, naming both places.
+
 ### 5.3 Meaning of Array Order
 
 | Array | Meaning of order |
@@ -591,6 +602,8 @@ Each names a package an effects plugin's import gate reads, so a plugin is writt
 | C27 | `testFiles: ["test", "src/__mocks__/"]` | The Symbols of `test/helpers.ts` and `src/__mocks__/db.ts` carry the key; those of `tools/test/run.ts` do not, as neither pattern starts with `**/` |
 | C28 | `testFiles: ["**/test/**", "!tools"]`, and `testFiles: ["!tools/**"]` | The first marks `test/helpers.ts` and not `tools/test/run.ts`; the second marks no file |
 | C29 | C24 with a plugin that drops the Symbol of `src/a.test.ts` | That Symbol carries `dropped: true` and `inTestFile: true` |
+| C30 | `effects: ["@myorg/aburi-x"]` with the package in the workspace's `node_modules` and not beside the CLI; `effects: ["effects-prisma"]` with a copy in each, with none in the workspace, with a workspace copy whose `exports` has no `.` entry, and `effects: ["@myorg/aburi-missing"]` with neither | The workspace's plugin loads; the workspace's copy; the CLI's; exit 3 with the resolver's reason; exit 3 naming the workspace root and the CLI's location |
+| C31 | `aburi diff main..HEAD` whose head config names a package only the head's `node_modules` holds | The base scan loads it from there |
 
 ## 14.1 Config Schema Compatibility Policy
 

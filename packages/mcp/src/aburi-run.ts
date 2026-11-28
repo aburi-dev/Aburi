@@ -68,8 +68,8 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
 }
 
 /**
- * The workspace's own CLI when `cwd` resolves one, since a plugin `aburi.json` names by package is
- * imported from where the CLI is installed; else the CLI this package was installed with.
+ * The workspace's own CLI when `cwd` resolves one, so a run answers as the CLI the workspace pinned
+ * would; else the CLI this package was installed with.
  */
 function aburiBin(cwd: string): string {
   const manifestPath =

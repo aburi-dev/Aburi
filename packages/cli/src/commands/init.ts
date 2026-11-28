@@ -1,7 +1,9 @@
-import { dirname, join, resolve } from "node:path"
+import { open } from "node:fs/promises"
+import { extname, join, resolve } from "node:path"
 import {
   CoreError,
   detectComponents,
+  detectJsPackageManagerTool,
   detectManagers,
   type UnnameableRoot,
   type UnresolvedDeclaration,
@@ -16,6 +18,7 @@ import {
   FRAMEWORK_TO_PLUGIN,
   LANGUAGE_TO_PLUGIN,
 } from "../plugin-catalog"
+import { workspacePackageUrl } from "../plugin-loader"
 import { resolveWorkspaceRoot } from "../workspace-root"
 import { isUnreadableTree } from "./scan-components"
 
@@ -39,6 +42,8 @@ export interface InitReport {
   effectsPlugins: string[]
   componentCount: number
   suggestedPlugins: readonly string[]
+  /** The command that installs `suggestedPlugins` at the workspace root, or `null` when it names none. */
+  installCommand: string | null
   unmappedLanguages: readonly string[]
   unresolvedDeclarations: readonly UnresolvedDeclaration[]
   unnameableRoots: readonly UnnameableRoot[]
@@ -86,11 +91,16 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
 
   const effects = pluginRefsFor(new Set(dependencyNames), DEPENDENCY_TO_EFFECTS_PLUGIN)
   const suggestions = options.withSuggestions
-    ? await uninstalledPackages(
-        workspaceRoot,
-        suggestPluginsFor(languageSet, frameworkSet, effects),
-      )
+    ? uninstalledPackages(workspaceRoot, suggestPluginsFor(languageSet, frameworkSet, effects))
     : []
+  const command =
+    suggestions.length === 0
+      ? null
+      : await installCommand(
+          workspaceRoot,
+          suggestions,
+          managers.managers.some((manager) => manager.tool === "yarn"),
+        )
   const contents = renderConfig({
     languages: pluginRefsFor(languageSet, LANGUAGE_TO_PLUGIN),
     frameworks: pluginRefsFor(frameworkSet, FRAMEWORK_TO_PLUGIN),
@@ -102,7 +112,8 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
       languages: [...component.languages].sort(),
       frameworks: [...(component.frameworks ?? [])].sort(),
     })),
-    suggestions,
+    // JSON has no comments, and a `.json` file is read by more than Aburi.
+    banner: command !== null && extname(outputPath).toLowerCase() === ".jsonc" ? command : null,
   })
 
   await writeOutputFile({ command: "init", artefact: CONFIG_ARTEFACT, path: outputPath }, contents)
@@ -116,6 +127,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     effectsPlugins: effects,
     componentCount: components.length,
     suggestedPlugins: suggestions,
+    installCommand: command,
     unmappedLanguages: unmappedIds(languageSet, LANGUAGE_TO_PLUGIN),
     unmappedFrameworks: unmappedIds(frameworkSet, FRAMEWORK_TO_PLUGIN),
     unresolvedDeclarations: managers.unresolved,
@@ -150,22 +162,53 @@ function suggestPluginsFor(
   ].map((name) => `@aburi/${name}`)
 }
 
-async function uninstalledPackages(
-  workspaceRoot: string,
-  packages: readonly string[],
-): Promise<string[]> {
-  const missing: string[] = []
-  for (const name of packages) {
-    if (!(await installedFrom(workspaceRoot, name))) missing.push(name)
-  }
-  return missing
+function uninstalledPackages(workspaceRoot: string, packages: readonly string[]): string[] {
+  return packages.filter((name) => !installedFrom(workspaceRoot, name))
 }
 
-/** The `node_modules` walk an ESM import makes, which never reads `NODE_PATH`, so a hoisted install counts and a global one does not. */
-async function installedFrom(directory: string, name: string): Promise<boolean> {
-  for (let dir = directory; ; dir = dirname(dir)) {
-    if ((await pathKind(join(dir, "node_modules", name))) === "directory") return true
-    if (dirname(dir) === dir) return false
+/**
+ * Looked up where a scan looks first. A plugin the CLI carries beside it is still suggested: the
+ * config goes wherever the project goes, and the CLIs that read it there need the project to
+ * hold the plugin.
+ */
+function installedFrom(directory: string, name: string): boolean {
+  return workspacePackageUrl(name, directory) !== null
+}
+
+async function installCommand(
+  workspaceRoot: string,
+  packages: readonly string[],
+  yarnWorkspace: boolean,
+): Promise<string> {
+  const names = packages.join(" ")
+  // pnpm refuses to add to a workspace's root package unless told that is the one meant.
+  if ((await pathKind(join(workspaceRoot, "pnpm-workspace.yaml"))) === "file") {
+    return `pnpm add -D -w ${names}`
+  }
+  switch (await detectJsPackageManagerTool(workspaceRoot)) {
+    case "pnpm":
+      return `pnpm add -D ${names}`
+    case "yarn":
+      // Yarn 1 refuses to add to a workspace root without -W, which later versions do not accept.
+      return yarnWorkspace && (await isYarnClassic(workspaceRoot))
+        ? `yarn add -D -W ${names}`
+        : `yarn add -D ${names}`
+    case "bun":
+      return `bun add -d ${names}`
+    default:
+      return `npm install -D ${names}`
+  }
+}
+
+const YARN_CLASSIC_HEADER = /^# yarn lockfile v1$/m
+
+async function isYarnClassic(workspaceRoot: string): Promise<boolean> {
+  const lockfile = await open(join(workspaceRoot, "yarn.lock"))
+  try {
+    const { buffer, bytesRead } = await lockfile.read(Buffer.alloc(512), 0, 512, 0)
+    return YARN_CLASSIC_HEADER.test(buffer.toString("utf8", 0, bytesRead))
+  } finally {
+    await lockfile.close()
   }
 }
 
@@ -184,7 +227,7 @@ interface RenderedConfigInput {
     languages: readonly string[]
     frameworks: readonly string[]
   }[]
-  suggestions: readonly string[]
+  banner: string | null
 }
 
 function renderConfig(input: RenderedConfigInput): string {
@@ -202,12 +245,8 @@ function renderConfig(input: RenderedConfigInput): string {
     })),
   }
   const json = JSON.stringify(config, null, 2)
-  if (input.suggestions.length === 0) return `${json}\n`
-  const banner = input.suggestions
-    .map((suggestion) => `// Suggested install: pnpm add -D ${suggestion}`)
-    .join("\n")
-  const insertion = `\n  ${banner.split("\n").join("\n  ")}`
-  return `${json.replace("{\n", `{${insertion}\n`)}\n`
+  if (input.banner === null) return `${json}\n`
+  return `${json.replace("{\n", `{\n  // Suggested install: ${input.banner}\n`)}\n`
 }
 
 function detectionFailure(error: unknown): CliError {
