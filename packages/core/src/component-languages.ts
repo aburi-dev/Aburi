@@ -1,7 +1,7 @@
 import type { LanguageId } from "@aburi/types"
 import { toNfc } from "./codepoints"
 import type { DetectComponentsOptions } from "./component"
-import { languageOfFile } from "./language-extensions"
+import { languageOfExtension } from "./language-extensions"
 import { compareCodeUnit } from "./order"
 import { CORE_IGNORE_PATTERNS } from "./scan/discover"
 import { openGitignoreTree } from "./scan/gitignore"
@@ -34,7 +34,7 @@ export async function countLanguagesPerRoot(
 
   const counts = new Map<string, Map<LanguageId, number>>(roots.map((root) => [root, new Map()]))
   for (const file of files) {
-    const language = languageOfFile(file)
+    const language = languageOfExtension(file)
     if (language === null) continue
     if (gitignore !== null && (await gitignore.ignores(file))) continue
     const normalized = toNfc(file)

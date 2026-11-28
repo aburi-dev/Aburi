@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import type { LanguageId, RelativePath, SkippedFile as SkippedFileRecord } from "@aburi/types"
 import { toNfc } from "../codepoints"
 import { symbolIdSeparatorSite, toDocumentPath, type UnnameableSite, unnameableSite } from "../id"
-import { languageOfFile } from "../language-extensions"
+import { languageOfExtension } from "../language-extensions"
 import { compareBy } from "../order"
 import { describeThrown, isVanishedFile } from "./faults"
 import { openGitignoreTree } from "./gitignore"
@@ -130,7 +130,7 @@ export async function discoverFiles(options: DiscoverOptions): Promise<DiscoverR
 
   for (const rawPath of matches) {
     const claimed = extensions.size === 0 || hasKnownExtension(rawPath, extensions)
-    const unclaimedLanguage = claimed ? null : languageOfFile(rawPath)
+    const unclaimedLanguage = claimed ? null : languageOfExtension(rawPath)
     if (!claimed && unclaimedLanguage === null) continue
 
     if (gitignore !== null && (await gitignore.ignores(rawPath))) continue

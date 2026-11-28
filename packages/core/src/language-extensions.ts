@@ -26,8 +26,9 @@ const EXTENSION_TO_LANGUAGE: ReadonlyMap<string, string> = new Map([
   [".exs", "ex"],
 ])
 
-export function languageOfFile(path: string): LanguageId | null {
-  const extension = fileExtension(path)
+export function languageOfExtension(file: string): LanguageId | null {
+  const extension = fileExtension(file)
   const raw = extension === null ? undefined : EXTENSION_TO_LANGUAGE.get(extension)
-  return raw === undefined ? null : makeLanguageId(raw)
+  if (raw === undefined) return null
+  return makeLanguageId(raw)
 }
