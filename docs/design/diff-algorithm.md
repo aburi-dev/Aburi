@@ -416,12 +416,14 @@ The owner is therefore a **gate**, not a term in the score: a pair whose owners 
 
 ```
 ownerOf(qname):
-  if '::' in qname: return qname[:first index of '::']    # the Class:: portion of a static method
-  if '.'  in qname: return qname[:last index of '.']      # the nested.namespace.Class portion
+  cut = the later of the last index of '::' and the last index of '.'
+  if there is one: return qname[:cut]                     # everything the member sits in
   return ''
-  # 'Class::method' → 'Class'
-  # 'A.B.C.method'  → 'A.B.C'
-  # 'topLevel'      → ''   (empty)
+  # 'Class::method'      → 'Class'
+  # 'A.B.C.method'       → 'A.B.C'
+  # 'A::B::c'            → 'A::B'
+  # 'Repo::helpers.save' → 'Repo::helpers'
+  # 'topLevel'           → ''   (empty)
 
 ownersAreCompatible(baseName, headName):
   baseOwner = ownerOf(baseName)
@@ -451,6 +453,7 @@ As a result:
 | `Users.UserRepo.getUser` vs `Users.UserRepos.getUser` | segment by segment | compatible, **pairs** |
 | `UserRepo.getUser` vs `AdminRepo.getUser` | `user` has no partner | **refused** |
 | `RepoManager.load` vs `ReportManager.load` | `repo` is not `report` inflected | **refused** |
+| `Billing::Store::create` vs `Billing::Cart::create` | `Billing::Store` -> `Billing::Cart`: `store` has no partner | **refused** |
 
 **Why a gate and not a weight.** The previous design added `0.2 * jaccardTokens(baseOwner, headOwner)` to the score, and could satisfy neither requirement.
 

@@ -692,8 +692,12 @@ instead of recording the same failure against every file.
 
 ## Publishing
 
-- Namespace under `@aburi/*` if first-party. Third-party plugins can use any
-  scope, or none at all. The loader accepts both.
+- Namespace under `@aburi/*` if first-party. A third-party plugin publishes
+  under a scope of its own (`@myorg/aburi-effects-foo`) and is named in
+  `aburi.json` by that full name. An unscoped package cannot be named by package
+  name: a bare name resolves under `@aburi/` (`aburi-effects-foo` is
+  `@aburi/aburi-effects-foo`), so one is reached only by a path, such as
+  `./node_modules/aburi-effects-foo/dist/index.mjs`.
 - Follow the workspace tsdown / tsconfig config so the plugin ships ESM
   (`.mjs` + `.d.mts`).
 - Export the plugin object itself, by default or under any name: the loader

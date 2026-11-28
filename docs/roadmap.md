@@ -39,17 +39,21 @@ comments, and `@aburi/mcp`, an MCP server through which an AI coding agent asks
 what its edits did, what a component exposes, or what one symbol reaches.
 
 **Performance.** Measured monthly against nine public repositories at pinned
-commits, from `zustand`'s 49 files to `cal-com`'s 5,002. On a 4-core runner a
-1,081-file scan takes 3.7 s and a 5,002-file one 14.7 s, single-threaded, with no
-scan passing 470 MiB peak — cost is roughly linear in file count. Three
-consecutive scans of an unchanged tree produce byte-identical IR. `aburi diff`
-runs its two scans at once on a machine with two or more CPUs, so it takes about
-1.3× one scan where it took 1.7–2.2×; on one CPU it still runs them in turn.
-Each scan extracts its files on a [pool of worker threads](./design/performance.md),
-one fewer than the processors by default and none for a small workspace, and
-writes the same analysis and log as on one thread: on four processors it takes a
-scan of Aburi's own 878 files from 6.0 s to 3.9 s. `--concurrency 1` keeps every
-file on the main thread.
+commits, from `zustand`'s 49 files to `cal-com`'s 5,003. In the [2026-11-01
+sweep](https://github.com/aburi-dev/Aburi/blob/main/benchmarks/public-repos/results/2026-11-01.md),
+the last before the worker pool, a 4-core runner scanned 1,062 files in 3.5 s and
+5,003 in 15.2 s on one thread, with no scan passing 578 MiB peak — cost is roughly
+linear in file count;
+[`results/`](https://github.com/aburi-dev/Aburi/tree/main/benchmarks/public-repos/results)
+holds every sweep. Three consecutive scans of an unchanged tree produce
+byte-identical IR. `aburi diff` runs its two scans at once on a machine with two
+or more CPUs, so it takes about 1.3× one scan where it took 1.7–2.2×; on one CPU
+it still runs them in turn. Each scan extracts its files on a [pool of worker
+threads](./design/performance.md), one fewer than the processors by default and
+none for a small workspace, and writes the same analysis and log as on one thread:
+on four processors it took a scan of Aburi's own 878 files from 6.0 s to 3.9 s
+when it landed in November 2026. `--concurrency 1` keeps every file on the main
+thread.
 
 ## Not yet
 

@@ -60,9 +60,9 @@ Full specification: [`slice-view.md`](./slice-view.md).
 | # | Stage | Produces |
 |---|---|---|
 | 1 | tree-sitter parse (plus LSP enrichment when available) | AST |
-| 2 | Drop list — `.scm` queries and the decoration callee set | Filtered AST |
+| 2 | Drop list — file patterns skip whole files, and the core's and plugins' rules filter calls, trivial returns and decorators ([`drop-list.md`](./drop-list.md) §3, §5) | Filtered AST |
 | 3 | Tag propagation — Boundary / Effect / Rule / DataModel / language extensions | Tagged nodes |
-| 4 | Score and filter — untagged symbols are dropped | Symbols |
+| 4 | Symbol-level drop — interfaces, type aliases, pure DTOs, empty bodies and re-exports are kept with `dropped: true` and a zero fingerprint ([`drop-list.md`](./drop-list.md) §4); every other Symbol is kept, tagged or not | Symbols |
 | 5 | Normalize — callee whitespace, expression canonicalization, sort | Normalized symbols |
 | 6 | Call resolution — fill in `Symbol.calls[].resolved` | `CallEdge[]` |
 | 7 | Effect propagation — augment `Symbol.effects[]` along resolved edges | Propagated effects |
@@ -93,7 +93,6 @@ The IR schema (`aburi.ir.v1`) is defined in [`ir-schema.md`](./ir-schema.md); th
 The configuration file is `aburi.json` or `aburi.jsonc` (workspace root). Details in [`config.md`](./config.md).
 
 **Deliberately not configurable** (to keep time-series comparison stable):
-- score weights
 - output ordering
 - IR schema
 - AST traversal details
@@ -141,7 +140,6 @@ Explicitly out of scope:
 - Beautiful SVG visualization (diff-unstable / overlaps with existing tools)
 - Lint use cases (Biome/ESLint own that)
 - Natural-language summaries (that is the job of whatever consumes the IR downstream, e.g. an AI)
-- Exposing score weights in configuration
 - Tracking the IR in git (by default)
 
 ## 9. Failure Patterns and Mitigations

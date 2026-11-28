@@ -3,8 +3,8 @@
 Exact computation rules for the three axes — `api` / `logic` / `syntax` — of the `Symbol.fingerprint` emitted by Aburi.
 Diff stability is guaranteed only by implementations that follow the conventions in this document.
 
-Reference implementation: [`schema/fingerprint.mjs`](https://github.com/aburi-dev/Aburi/blob/main/schema/fingerprint.mjs)
-Invariance tests: [`schema/fingerprint.test.mjs`](https://github.com/aburi-dev/Aburi/blob/main/schema/fingerprint.test.mjs)
+Reference implementation: [`packages/core/src/fingerprint/`](https://github.com/aburi-dev/Aburi/tree/main/packages/core/src/fingerprint) (`api.ts`, `logic.ts`, `syntax.ts`)
+Invariance tests: [`packages/core/test/fingerprint/`](https://github.com/aburi-dev/Aburi/tree/main/packages/core/test/fingerprint), with the hashes pinned in `pinned-hashes.test.ts`
 
 ---
 

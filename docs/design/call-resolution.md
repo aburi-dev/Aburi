@@ -255,10 +255,10 @@ The exact protocol subset used, plus fallback and timeout policy, is specified i
 
 ### 5.2 Method dispatch through `this` / `super`
 
-For `this.<method>` in a caller Symbol whose parent class C is known:
-- Resolve to `<lang>:<file>#C.<method>` when that Symbol exists.
-- If C is a subclass, walk the class hierarchy via `implementers`; the nearest ancestor that declares `<method>` wins.
-- `confidence = high` when the resolution is direct on C, `medium` when it required walking the hierarchy.
+For `this.<method>` in a caller Symbol whose parent class C is known, the receiver hint names the declaration the type checker binds the member to:
+- `<lang>:<file>#C.<method>` when C declares it;
+- when C inherits it, the nearest ancestor that declares it, a class that extends a call included (`class Svc extends Timestamped(Base)`), which the untyped tier's walk does not reach.
+- `confidence = high` either way. The hint does not record how far the lookup walked ([`lsp-enrichment.md`](./lsp-enrichment.md) §5), and the member is the checker's binding rather than one read off the class names, which is what makes the untyped tier's `this.<method>` `medium` (§4.7.1).
 
 For `super.<method>`: same but starting one level up the class hierarchy.
 
@@ -332,9 +332,8 @@ The edge's `confidence` is the resolution confidence at the moment of resolution
 | §4.5 component scope (unique) | `medium` |
 | §4.6 workspace scope (unique) | `low` |
 | §4.7.1 declared receiver type | `medium` |
-| §4.7.1 `super(…)`, `super.<member>`, the classes it extends walked included | `high`: `super` reads the prototype of the class the caller's class extends, which no subclass's override replaces, unlike `this` in §5.2's walked hierarchy |
-| §5.2 LSP `this`/`super` direct | `high` |
-| §5.2 LSP walked hierarchy | `medium` |
+| §4.7.1 `super(…)`, `super.<member>`, the classes it extends walked included | `high`: `super` reads the prototype of the class the caller's class extends, which no subclass's override replaces, unlike an untyped `this.<method>` |
+| §5.2 LSP `this`/`super`, an inherited member included | `high` |
 | §5.3 LSP interface with single impl (planned) | `medium` |
 | §5.3 LSP interface with DI-resolved impl (planned, §7.4) | `medium` |
 
@@ -500,7 +499,7 @@ Every implementation of the resolver must pass the following.
 | ID | Input | Expected |
 |---|---|---|
 | CR16 | `this.foo()` in class C with method `foo` | `resolved` = `C.foo`, confidence `high` |
-| CR17 | `this.foo()` inherited from parent class B | `resolved` = `B.foo`, confidence `medium` |
+| CR17 | `this.foo()` inherited from parent class B, with an LSP hint for the call; and inherited through a class that extends a call (`class Svc extends Timestamped(Base)`) | `resolved` = `B.foo`, confidence `high`, as for a member C declares (CR16); `Base.foo` at `high` through the mixin. Without the hint, the first is CR14b's `medium` and the second is `null`, bucketed `dynamic` |
 | CR18 | `super.foo()` | `resolved` = parent's `foo` Symbol, confidence `high` |
 | CR19 | interface-typed receiver with single implementer (planned, §5.3) | `resolved` = implementer's method, confidence `medium` |
 | CR20 | interface-typed receiver with multiple implementers, no framework hook | `resolved` = `null` |
