@@ -1,9 +1,10 @@
 import {
+  EXPORT_ASSIGNMENT_DERIVED_BY,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   EXPORT_DEFAULT_DERIVED_BY,
   EXPORT_KEYWORD_DERIVED_BY,
 } from "@aburi/types"
-import { DEFAULT_EXPORT_NAME } from "./import-edge"
+import { DEFAULT_EXPORT_NAME, EXPORT_ASSIGNMENT_NAME } from "./import-edge"
 
 export interface ExportEvidence {
   readonly name: string
@@ -18,6 +19,7 @@ export function exportNames(symbol: ExportEvidence): string[] {
   for (const token of symbol.derivedBy) {
     if (token === EXPORT_KEYWORD_DERIVED_BY) names.add(symbol.name)
     else if (token === EXPORT_DEFAULT_DERIVED_BY) names.add(DEFAULT_EXPORT_NAME)
+    else if (token === EXPORT_ASSIGNMENT_DERIVED_BY) names.add(EXPORT_ASSIGNMENT_NAME)
     else if (token.startsWith(EXPORT_CLAUSE_DERIVED_BY_PREFIX)) {
       names.add(token.slice(EXPORT_CLAUSE_DERIVED_BY_PREFIX.length))
     }

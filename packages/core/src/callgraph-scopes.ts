@@ -1,6 +1,7 @@
 import {
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   type Confidence,
+  EXPORT_ASSIGNMENT_DERIVED_BY,
   EXPORT_DEFAULT_DERIVED_BY,
   FIELD_ASSIGNED_FUNCTION_DERIVED_BY,
   type ImportEdge,
@@ -435,9 +436,16 @@ function importedNamesOf(
     if (edge.symbols === "*") {
       if (edge.namespaceBinding !== head) continue
       renamed = true
-      const [first, ...rest] = tail
       const file = importTargetOf(ctx, edge)
-      if (first !== undefined && file !== null) names.push({ file, name: first, rest })
+      if (file === null) continue
+      // `import m = require()` binds the value `export =` makes the module, which exports nothing else.
+      const assigned = exportAssignmentsOf(ctx.run.table, file)
+      if (assigned.length > 0) {
+        for (const name of assigned) names.push({ file, name, rest: tail })
+        continue
+      }
+      const [first, ...rest] = tail
+      if (first !== undefined) names.push({ file, name: first, rest })
       continue
     }
 
@@ -692,17 +700,32 @@ export function mappedTargetOf(
   return resolved
 }
 
+// A default import of a module `export =` makes binds that value, as `esModuleInterop` has it.
 function defaultExportsOf(table: SymbolTable, file: string): string[] {
+  return topLevelNamesOf(
+    table,
+    file,
+    (symbol) =>
+      symbol.name === DEFAULT_EXPORT_QNAME ||
+      symbol.derivedBy.includes(EXPORT_DEFAULT_DERIVED_BY) ||
+      symbol.derivedBy.includes(EXPORT_ASSIGNMENT_DERIVED_BY),
+  )
+}
+
+function exportAssignmentsOf(table: SymbolTable, file: string): string[] {
+  return topLevelNamesOf(table, file, (symbol) =>
+    symbol.derivedBy.includes(EXPORT_ASSIGNMENT_DERIVED_BY),
+  )
+}
+
+function topLevelNamesOf(
+  table: SymbolTable,
+  file: string,
+  matches: (symbol: IRSymbol) => boolean,
+): string[] {
   const found: string[] = []
   for (const bucket of table.topLevelByFile.get(file)?.values() ?? []) {
-    for (const symbol of bucket) {
-      if (
-        symbol.name === DEFAULT_EXPORT_QNAME ||
-        symbol.derivedBy.includes(EXPORT_DEFAULT_DERIVED_BY)
-      ) {
-        found.push(symbol.name)
-      }
-    }
+    for (const symbol of bucket) if (matches(symbol)) found.push(symbol.name)
   }
   return found
 }

@@ -305,4 +305,40 @@ describe("import scope", () => {
       })
     })
   })
+
+  describe("the value `export =` makes a module is what an import of the module binds", () => {
+    const handler = makeSymbol("ts:src/x.ts#handler", { derivedBy: ["export-assignment"] })
+    const svc = makeSymbol("ts:src/x.ts#Svc", { kind: "class", derivedBy: ["export-assignment"] })
+    const of = makeSymbol("ts:src/x.ts#Svc::of", { kind: "method" })
+    const whole = { source: "./x", symbols: "*", namespaceBinding: "m" } as const
+
+    it.each<[string, string, ImportClause, IRSymbol[], string]>([
+      ["the module bound whole, called", "m", whole, [handler], "ts:src/x.ts#handler"],
+      ["a member of the module bound whole", "m.of", whole, [svc, of], "ts:src/x.ts#Svc::of"],
+      [
+        "a default import",
+        "h",
+        { source: "./x", symbols: ["default as h"] },
+        [handler],
+        "ts:src/x.ts#handler",
+      ],
+    ])("reaches it through %s", (_binding, target, edge, callees, to) => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, ...callees],
+        importsByFile: importsOf("src/a.ts", edge),
+      })
+      expect(result.edges.map((e) => [e.to, e.confidence])).toEqual([[to, "high"]])
+    })
+
+    it("leaves a module with no export assignment, called whole, unresolved", () => {
+      const anon = makeSymbol("ts:src/x.ts#<default>", { derivedBy: ["export-default"] })
+      const caller = withCalls("ts:src/a.ts#caller", [{ target: "m", line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, anon],
+        importsByFile: importsOf("src/a.ts", whole),
+      })
+      expect(result.edges).toEqual([])
+    })
+  })
 })

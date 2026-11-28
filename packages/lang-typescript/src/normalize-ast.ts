@@ -3,6 +3,7 @@ import type { MergedDeclaration, SymbolCandidate } from "@aburi/types"
 import type { Language, Node, TreeCursor } from "web-tree-sitter"
 import { firstNonCommentChild, hasLeadingOperator, leadingOperatorOperand } from "./ast-helpers"
 import { redundantlyParenthesized } from "./parentheses"
+import { refusedModifierOf } from "./refused-modifiers"
 import {
   canonicalNumber,
   cleanJsxText,
@@ -80,13 +81,20 @@ const MEMBER_HEAD_MODIFIERS: ReadonlySet<string> = new Set([
   "accessor",
 ])
 
+// A field is described by the function it holds, so its annotation, which the function's signature
+// does not read, and the `=` that tells it from a method of its name sit outside that string.
+const FIELD_HEAD_TYPES: ReadonlySet<string> = new Set(["type_annotation", "="])
+
 function memberHead(fullNode: Node): string {
-  const member = fullNode.type === "method_definition" ? fullNode : fieldHolding(fullNode)
+  const field = fullNode.type === "method_definition" ? null : fieldHolding(fullNode)
+  const member = field ?? (fullNode.type === "method_definition" ? fullNode : null)
   if (member === null) return ""
   const parts: string[] = []
   for (const child of member.children) {
-    if (child === null || !MEMBER_HEAD_MODIFIERS.has(child.type)) continue
-    parts.push(child.isNamed ? serialize(child) : JSON.stringify(child.type))
+    if (child === null) continue
+    const read =
+      MEMBER_HEAD_MODIFIERS.has(child.type) || (field !== null && FIELD_HEAD_TYPES.has(child.type))
+    if (read) parts.push(child.isNamed ? serialize(child) : JSON.stringify(child.type))
   }
   return parts.join(" ")
 }
@@ -107,7 +115,12 @@ const FIELD_BOUNDARIES: ReadonlySet<string> = new Set(["class_body", "statement_
 function classHead(fullNode: Node): string {
   if (!CLASS_TYPES.has(fullNode.type)) return ""
   const parts: string[] = []
-  if (fullNode.type === "abstract_class_declaration") parts.push(JSON.stringify("abstract"))
+  if (
+    fullNode.type === "abstract_class_declaration" ||
+    refusedModifierOf(fullNode) === "abstract"
+  ) {
+    parts.push(JSON.stringify("abstract"))
+  }
   for (const child of fullNode.namedChildren) {
     if (child !== null && CLASS_HEAD_TYPES.has(child.type)) parts.push(serialize(child))
   }
@@ -198,6 +211,9 @@ function serializeAt(cursor: TreeCursor, type: string, grammar: Grammar): string
     cursor.gotoParent()
   }
   flushText()
+  if (type === "index_signature" && refusedModifierOf(cursor.currentNode) === "static") {
+    children.unshift(JSON.stringify("static"))
+  }
   // `new A` calls `A` with no arguments, as `new A()` does.
   if (type === "new_expression" && isBareNew(cursor.currentNode)) children.push("(arguments)")
 

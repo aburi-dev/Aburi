@@ -165,10 +165,75 @@ describe("a class leads the declarations merged with it, whichever is written fi
     expect(after).not.toBe(before)
   })
 
-  it("leaves an interface merged with no class an interface", async () => {
-    const symbol = await symbolOf(`${INTERFACE}\nexport namespace P {}`, "ts:src/a.ts#P")
+  it("leaves interfaces merged with nothing else an interface", async () => {
+    const symbol = await symbolOf(`${INTERFACE}\n${INTERFACE}`, "ts:src/a.ts#P")
 
     expect(symbol.kind).toBe("interface")
+  })
+})
+
+describe("what else exists at run time leads an interface or a type written before it", () => {
+  it.each([
+    [
+      "a binding below a type alias",
+      "export type User = ReturnType<typeof User>\nexport const User = make({ a: 1 })",
+      "const",
+    ],
+    [
+      "a function below an interface",
+      "export interface User { extra: number }\nexport function User() { go() }",
+      "function",
+    ],
+    ["an enum below a type alias", "export type User = 1\nexport enum User { A }", "enum"],
+    [
+      "a namespace below an interface",
+      "export interface User { extra: number }\nexport namespace User { export const a = 1 }",
+      "namespace",
+    ],
+    [
+      "a function below a namespace",
+      "namespace User { export const a = 1 }\nfunction User() { go() }",
+      "function",
+    ],
+  ])("takes the kind and range of %s", async (_label, source, kind) => {
+    const symbol = await symbolOf(source, "ts:src/a.ts#User")
+
+    expect([symbol.kind, symbol.source.startLine]).toEqual([kind, 2])
+    expect(symbol.derivedBy).toContain("declaration-merged")
+  })
+
+  it("leaves a function-led merge `internal` under a type-only export clause", async () => {
+    const source =
+      "interface User { extra: number }\nfunction User() { go() }\nexport type { User }"
+
+    expect((await symbolOf(source, "ts:src/a.ts#User")).visibility).toBe("internal")
+  })
+})
+
+describe("scan — a function or a binding an interface or a type is written above", () => {
+  const workspace = useScratchWorkspace("value-below-type")
+
+  it.each([
+    [
+      "a binding below a type alias",
+      "export type User = ReturnType<typeof User>\nexport const User = make({ a: 1 })",
+      ["make"],
+    ],
+    [
+      "a function below an interface",
+      "export interface User { extra: number }\nexport function User() { go() }",
+      ["go"],
+    ],
+  ])("keeps %s, with its calls, and resolves a call to it", async (_label, source, calls) => {
+    const use = "export function use() {\n  User()\n}"
+    await workspace.writeSource("src/a.ts", `${source}\n${use}\n`)
+    const ir = await scanWithoutWarnings(workspace.root)
+    const user = symbolById({ ir }, "ts:src/a.ts#User")
+
+    expect([user.dropped, user.calls.map((c) => c.target)]).toEqual([false, calls])
+    expect(symbolById({ ir }, "ts:src/a.ts#use").calls.map((c) => [c.target, c.resolved])).toEqual([
+      ["User", "ts:src/a.ts#User"],
+    ])
   })
 })
 

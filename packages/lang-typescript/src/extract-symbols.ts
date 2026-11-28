@@ -12,6 +12,7 @@ import {
   findChild,
   firstNonCommentChild,
   inAmbientContext,
+  isExportAssignment,
   makeSourceRange,
   nameFieldText,
 } from "./ast-helpers"
@@ -22,7 +23,7 @@ import {
   makeCallExtractionState,
   visitCallStatement,
 } from "./call-symbols"
-import { addClassAndMembers, makeClassCandidate } from "./class-candidates"
+import { addClassAndMembers, addNamedClass, makeClassCandidate } from "./class-candidates"
 import { type CandidateSink, makeCandidateSink } from "./declaration-merge"
 import { declaredOrDefaultQname } from "./declared-name"
 import { readDecorators } from "./decorators"
@@ -82,6 +83,10 @@ function visitStatement(
   if (node.type === "export_statement") {
     const declarationNode = exportedDeclaration(node)
     if (declarationNode === null) return
+    if (isExportAssignment(node)) {
+      addAssignedValue(declarationNode, node, ctx, namespacePath, out)
+      return
+    }
     const wrapped = wrappedDefaultValue(node, declarationNode)
     if (wrapped !== null) {
       out.add(makeWrappedDefaultCandidate(wrapped, node, ctx))
@@ -254,6 +259,36 @@ function makeWrappedDefaultCandidate(
   return value.type === "class"
     ? makeClassCandidate(value, qname, evidence, ctx)
     : functionCandidate(value, qname, evidence, readLeadingJsDoc(statement), ctx)
+}
+
+// `export =` has no declaring form, so a function or class expression's own name is the only one the
+// module gives its value.
+function addAssignedValue(
+  value: Node,
+  statement: Node,
+  ctx: ExtractionContext,
+  namespacePath: readonly string[],
+  out: CandidateSink,
+): void {
+  const evidence = statementExportEvidence(statement)
+  const named = (node: Node) => {
+    const name = nameFieldText(node)
+    const qname = name === null ? defaultExportQname() : nestedQname([...namespacePath, name])
+    return { name, qname }
+  }
+  const fn = asFunctionValue(value)
+  if (fn !== null) {
+    const { qname } = named(fn)
+    out.add(functionCandidate(fn, qname, evidence, readLeadingJsDoc(statement), ctx))
+    return
+  }
+  const cls = asClassValue(value)
+  if (cls !== null) {
+    addNamedClass(cls, named(cls), evidence, ctx, namespacePath, out)
+    return
+  }
+  const candidate = makeDefaultCallCandidate(value, ctx)
+  if (candidate !== null) out.add(candidate)
 }
 
 function makeDefaultCallCandidate(

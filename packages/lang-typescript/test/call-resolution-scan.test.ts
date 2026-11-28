@@ -262,6 +262,39 @@ describe("scan — a call through a CommonJS require()", () => {
   )
 })
 
+describe("scan — a call into a module `export =` makes a value", () => {
+  const MODULES = {
+    "src/handler.ts": "export = function handler(req: string) {\n  return req\n}\n",
+    "src/svc.ts": "export = class UserService {\n  static of() {\n    return 1\n  }\n}\n",
+  }
+
+  it.each<[string, string, string[], [string, string][]]>([
+    [
+      "`import x = require()`, the value called",
+      'import handler = require("./handler")',
+      ['handler("a")'],
+      [["handler", "ts:src/handler.ts#handler"]],
+    ],
+    [
+      "`import x = require()`, a static member called and the class constructed",
+      'import Svc = require("./svc")',
+      ["Svc.of()", "new Svc()"],
+      [
+        ["Svc.of", "ts:src/svc.ts#UserService::of"],
+        ["Svc", "ts:src/svc.ts#UserService"],
+      ],
+    ],
+    [
+      "a default import",
+      'import h from "./handler"',
+      ['h("a")'],
+      [["h", "ts:src/handler.ts#handler"]],
+    ],
+  ])("reaches it through %s", async (_label, head, calls, resolved) => {
+    expect(await callsFromMain(MODULES, [head], calls)).toEqual({ resolved, unresolved: [] })
+  })
+})
+
 describe("scan — a call through the name of a class a namespace merged into", () => {
   it("reaches the namespace's export, the member TypeScript calls", async () => {
     await workspace.writeSource(

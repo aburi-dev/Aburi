@@ -1,5 +1,6 @@
 import { DEFAULT_EXPORT_NAME, readStaticString, unwrapValue } from "@aburi/core"
 import {
+  EXPORT_ASSIGNMENT_DERIVED_BY,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   EXPORT_DEFAULT_DERIVED_BY,
   EXPORT_KEYWORD_DERIVED_BY,
@@ -8,7 +9,13 @@ import {
   type Visibility,
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
-import { findChild, hasChildOfType, statementParent } from "./ast-helpers"
+import {
+  findChild,
+  firstNonCommentChild,
+  hasChildOfType,
+  isExportAssignment,
+  statementParent,
+} from "./ast-helpers"
 import { hasPrivateName } from "./class-members"
 
 export function exportEvidence(node: Node): string[] {
@@ -19,6 +26,7 @@ export function exportEvidence(node: Node): string[] {
 // parent.
 export function statementExportEvidence(statement: Node | null): string[] {
   if (statement?.type !== "export_statement") return []
+  if (isExportAssignment(statement)) return [EXPORT_ASSIGNMENT_DERIVED_BY]
   return [
     isDefaultExportStatement(statement) ? EXPORT_DEFAULT_DERIVED_BY : EXPORT_KEYWORD_DERIVED_BY,
   ]
@@ -85,11 +93,7 @@ interface ExportedName {
 
 function detachedExportsByLocalName(root: Node): ReadonlyMap<string, readonly ExportedName[]> {
   const exported = new Map<string, ExportedName[]>()
-  const record = (local: string, as: string, typeOnly: boolean): void => {
-    const token =
-      as === DEFAULT_EXPORT_NAME
-        ? EXPORT_DEFAULT_DERIVED_BY
-        : `${EXPORT_CLAUSE_DERIVED_BY_PREFIX}${as}`
+  const record = (local: string, token: string, typeOnly: boolean): void => {
     let names = exported.get(local)
     if (names === undefined) {
       names = []
@@ -112,17 +116,32 @@ function detachedExportsByLocalName(root: Node): ReadonlyMap<string, readonly Ex
         if (local === null || local.type !== "identifier") continue
         const as = moduleExportName(specifier.childForFieldName("alias") ?? local)
         const typeOnly = typeOnlyClause || hasChildOfType(specifier, "type")
-        if (as !== null) record(local.text, as, typeOnly)
+        if (as !== null) record(local.text, clauseToken(as), typeOnly)
       }
       continue
     }
-    if (!isDefaultExportStatement(stmt)) continue
-    const value = stmt.childForFieldName("value")
-    if (value === null) continue
-    const inner = unwrapValue(value)
-    if (inner.type === "identifier") record(inner.text, DEFAULT_EXPORT_NAME, false)
+    const value = exportedValue(stmt)
+    const inner = value === null ? null : unwrapValue(value)
+    if (inner?.type !== "identifier") continue
+    record(
+      inner.text,
+      isExportAssignment(stmt) ? EXPORT_ASSIGNMENT_DERIVED_BY : EXPORT_DEFAULT_DERIVED_BY,
+      false,
+    )
   }
   return exported
+}
+
+function clauseToken(as: string): string {
+  return as === DEFAULT_EXPORT_NAME
+    ? EXPORT_DEFAULT_DERIVED_BY
+    : `${EXPORT_CLAUSE_DERIVED_BY_PREFIX}${as}`
+}
+
+// The grammar gives `export default`'s value a field and `export =`'s none.
+function exportedValue(statement: Node): Node | null {
+  if (isDefaultExportStatement(statement)) return statement.childForFieldName("value")
+  return isExportAssignment(statement) ? firstNonCommentChild(statement) : null
 }
 
 function moduleExportName(node: Node): string | null {
