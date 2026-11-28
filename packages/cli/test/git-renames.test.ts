@@ -1,4 +1,4 @@
-import { mkdir, rename } from "node:fs/promises"
+import { rename } from "node:fs/promises"
 import { resolve } from "node:path"
 import {
   commitAll,
@@ -300,8 +300,8 @@ describe("aburi diff — a file renamed between the revisions", () => {
     await commitAll(root, "base")
     await git(["mv", "src/a.ts", "src/b.ts"], root)
     await rename(resolve(root, "src/c.ts"), resolve(root, "src/d.ts"))
-    await mkdir(resolve(root, "nested"))
-    await git(["init", "-q"], resolve(root, "nested"))
+    // A name git keeps for its own directory, which it refuses to stage on every platform.
+    await writeFileAt(root, "notes/git~1", "not a source\n")
     const index = await git(["ls-files", "-z", "--stage"], root)
     const log = recordingLogger()
 
@@ -319,7 +319,7 @@ describe("aburi diff — a file renamed between the revisions", () => {
     expect(log.warnings[0]).toContain(
       "Rename detection for HEAD against the working tree may be missing files git does not track: ",
     )
-    expect(log.warnings[0]).toContain("'nested/' does not have a commit checked out")
+    expect(log.warnings[0]).toContain("invalid path 'notes/git~1'")
     expect(await git(["ls-files", "-z", "--stage"], root)).toBe(index)
   })
 

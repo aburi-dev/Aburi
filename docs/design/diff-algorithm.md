@@ -118,8 +118,8 @@ yet committed — the one a commit hook is there to check — would degrade into
 `added` pair.
 
 Adding the untracked files is the step that can fall short, and it costs only those files. git
-refuses a path it cannot stage — an untracked repository with no commit, a name the platform
-reserves (`NUL` on Windows) — and `--ignore-errors` keeps that refusal from leaving every other
+refuses a path it cannot stage — a name the platform reserves (`NUL` on Windows), one it keeps for
+its own directory (`git~1`), and in some versions an untracked repository with no commit — and `--ignore-errors` keeps that refusal from leaving every other
 untracked file out with it. Whatever the add says, and its failure if it fails, goes into one
 warning that untracked files may be missing from rename detection, and the diff is read over the
 scratch index as it stands, so a move `git mv` staged still pairs. `--no-warn-embedded-repo` keeps

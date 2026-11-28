@@ -60,8 +60,8 @@ export async function collectRenames(
 const NAME_STATUS: readonly string[] = ["diff", "--find-renames", "--name-status", "-z"]
 
 /**
- * `--ignore-errors` so one path git cannot add (an untracked repository with no commit, a name
- * the platform reserves) does not keep the rest out; `--no-warn-embedded-repo` because the advice
+ * `--ignore-errors` so one path git cannot add (a name the platform reserves, one git keeps for its
+ * own directory) does not keep the rest out; `--no-warn-embedded-repo` because the advice
  * git gives on an untracked repository is about committing it.
  */
 const ADD_UNTRACKED: readonly string[] = [
