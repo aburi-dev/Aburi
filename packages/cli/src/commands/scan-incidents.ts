@@ -1,4 +1,4 @@
-import { dirname } from "node:path"
+import { dirname, isAbsolute, relative, sep } from "node:path"
 import {
   type CollidingFile,
   compareCodeUnit,
@@ -257,10 +257,12 @@ function reportStrayPluginOptions(report: ScanReport, warn: WarnFn, said: Set<st
 function reportConfigOutsideWorkspaceRoot(report: ScanReport, sayIncident: SayIncident): void {
   if (report.configSource === null) return
   if (report.configPinnedByCaller) return
-  if (dirname(report.configSource) === report.workspaceRoot) return
+  const fromRoot = relative(report.workspaceRoot, dirname(report.configSource))
+  if (fromRoot === "") return
+  const outside = fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)
   sayIncident(
-    `Config ${report.configSource} sits below the workspace root ${report.workspaceRoot}. ` +
-      `Paths inside it (ignore, components[].roots, relative plugin refs) resolve against the root, ` +
+    `Config ${report.configSource} ${outside ? "is outside" : "sits below"} the workspace root ${report.workspaceRoot}. ` +
+      `Paths inside it (ignore, components[].roots, relative plugin refs) resolve against the root, not against the config's own directory, ` +
       `and the scan covers the whole workspace.`,
   )
 }

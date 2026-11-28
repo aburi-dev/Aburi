@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { errorFrom, useScratchWorkspace } from "@aburi/test-support"
+import { errorFrom, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { CliError, runScan } from "../src"
 import { runCliIn } from "./run-cli"
@@ -86,6 +86,18 @@ describe("aburi scan — a config below the workspace root", () => {
     expect(stderr).toContain(
       `Config ${resolve(app, "aburi.json")} sits below the workspace root ${workspace.root}.`,
     )
+  })
+
+  it("says a config kept beside the workspace is outside the root, not below it", async () => {
+    const repository = resolve(workspace.root, "repo")
+    const app = await writeMonorepo(repository)
+    await initRepository(repository)
+    await writeConfig(workspace.root, TYPESCRIPT)
+    const shared = resolve(workspace.root, "aburi.json")
+
+    const { stderr } = await runCliIn(app, ["scan", "--format", "json", "--config", shared])
+
+    expect(stderr).toContain(`Config ${shared} is outside the workspace root ${repository}.`)
   })
 
   it("stays quiet when the config sits at the root", async () => {

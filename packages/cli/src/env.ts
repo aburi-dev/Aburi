@@ -1,3 +1,5 @@
+import { readForceColor } from "./force-color"
+
 export interface AburiEnv {
   configPath: string | null
   logLevel: LogLevel | null
@@ -29,14 +31,6 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AburiEnv {
     dumbTerminal: source.TERM?.trim() === "dumb",
     ci: hasValue(source.CI),
   }
-}
-
-// Node's own reading, so that aburi and the Node tools beside it in a pipeline agree.
-const FORCE_COLOR_ON: ReadonlySet<string> = new Set(["", "1", "true", "2", "3"])
-
-function readForceColor(value: string | undefined): boolean | null {
-  if (value === undefined) return null
-  return FORCE_COLOR_ON.has(value)
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

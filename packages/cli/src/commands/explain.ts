@@ -239,7 +239,7 @@ async function readOrScanIR(
     for (const candidate of candidates) {
       if (await pathExists(candidate)) {
         if (candidate !== nearest) {
-          options.warn?.(`Answering from ${candidate}; there is no IR under ${resolve(cwd)}.`)
+          options.warn?.(`⚠ Answering from ${candidate}; there is no IR under ${resolve(cwd)}.`)
         }
         return { ir: await readIR(candidate), unresolvedCalls: null, scanFaulted: false }
       }

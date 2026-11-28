@@ -223,7 +223,7 @@ describe("aburi explain — where it reads", () => {
 
     expect(outcome.exitCode).toBe(EXIT.SUCCESS)
     expect(log.warnings).toEqual([
-      `Answering from ${under("artifacts", IR_JSON_FILENAME)}; there is no IR under ${app}.`,
+      `⚠ Answering from ${under("artifacts", IR_JSON_FILENAME)}; there is no IR under ${app}.`,
     ])
   })
 

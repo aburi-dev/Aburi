@@ -1068,7 +1068,7 @@ than a name, and is looked up as any other path.
 | Option | Meaning |
 |---|---|
 | `--output <path>` | Write to a file (default: stdout). The directories the path names are created, as `--output-dir` creates its own; a path that cannot hold a file — it names a directory, or a file stands on its parent path — is exit 2 |
-| `--ir <path>` | Use an existing IR file. Resolved against the working directory, as every path-bearing flag is. Without it the command looks for `<output-dir>/aburi.ir.json` — `config.output.dir` when the config names one, otherwise `.aburi` — starting at the working directory and walking up to the workspace root, taking the nearest — `aburi scan` writes under the directory it was run from, and a scan covers the whole workspace wherever it was started, so either place holds an answer about the same tree. Nothing found triggers a scan, or exits 2 under `--no-rescan` |
+| `--ir <path>` | Use an existing IR file. Resolved against the working directory, as every path-bearing flag is. Without it the command looks for `<output-dir>/aburi.ir.json` — `config.output.dir` when the config names one, otherwise `.aburi` — starting at the working directory and walking up to the workspace root, taking the nearest — `aburi scan` writes under the directory it was run from, and a scan covers the whole workspace wherever it was started, so either place holds an answer about the same tree. One found above the working directory is named on stderr, `⚠ Answering from <path>; there is no IR under <working directory>.`, since the answer may come from a scan run elsewhere. Nothing found triggers a scan, or exits 2 under `--no-rescan` |
 | `--no-rescan` | Exit `2` when the lookup above finds no IR, instead of scanning. Staleness is not examined: an IR that is found is read whatever its age. An `aburi scan --format md` removes the IR an earlier run left in its output directory (§5.3), so a scan that wrote only pages leaves none to be read in its place |
 | `--concurrency <n>` | How many parser workers the scan of §7.4 step 1 extracts its files on (§14.2), with `aburi scan`'s default. No effect when an IR is read, though anything but a positive integer is exit 2 there too |
 | `--config <path>` | The config file the rescan reads, and where `config.output.dir` comes from for the lookup above (§13) |
@@ -1434,7 +1434,12 @@ Colour is decided once per run, by the first rule that applies:
 
 `FORCE_COLOR` is read as Node reads it, so that aburi and the Node tools beside it in a pipeline
 agree, and it wins over `NO_COLOR` as it does for Node itself: it is the one a user sets for a
-single run against a `NO_COLOR` exported for every program. With colour on:
+single run against a `NO_COLOR` exported for every program. Node also says so on stderr, a warning
+of its own at the first colour check any module makes, which would put two lines no colour-off run
+writes in every CI log that forces colour under an exported `NO_COLOR`. So when `FORCE_COLOR` turns
+colour on, the CLI drops `NO_COLOR` and `NODE_DISABLE_COLORS` from its environment before it loads
+anything else; the worker threads and the processes it starts inherit the environment without
+them. With colour on:
 
 | Line | Colour |
 |---|---|
@@ -1526,6 +1531,14 @@ run outside CI mode, and stack traces follow `--log-level` alone (§10.3).
 ```
 
 Passing `--cwd` (planned, §3) will change the cwd and therefore the search origin.
+
+A config found anywhere but at the workspace root is named in the scan's incident report (§5.6):
+`⚠ Config <path> sits below the workspace root <root>.` for one inside the workspace, and
+`⚠ Config <path> is outside the workspace root <root>.` for one above it or beside it, as a config
+shared across repositories or one named by `--config ../shared.json` is. Both go on: `Paths inside
+it (ignore, components[].roots, relative plugin refs) resolve against the root, not against the
+config's own directory, and the scan covers the whole workspace.` Neither is said for a config the
+caller pinned, as `aburi diff <base>..<head>` pins one for both its scans.
 
 `aburi diff` in ref mode runs this list **once**, against the invoking cwd, before it
 materialises either worktree — and hands the single answer (an absolute path, or "nothing
@@ -1701,7 +1714,7 @@ a command's option, not a global one (§3).
 | CL12 | `aburi vocab who-owns <unknown>`, with and without `--json` | exit 1, the `No owner` line on stderr in both; under `--json`, `{ "value": "<unknown>", "owners": [] }` on stdout |
 | CL13 | `aburi vocab list --json` | One JSON object on stdout holding the seven lists of §8.6, the core effect ids first with `owner: null`, exit 0 |
 | CL14 | `aburi scan --quiet \| wc -l` | `2`: the census lines alone, whatever the format, with no escape sequences |
-| CL15 | `NO_COLOR=1 aburi scan` with stderr on a terminal, over a workspace that draws a warning | No escape sequence on stderr; the progress line still drawn. `FORCE_COLOR=1` beside it colours the warning yellow, and `--no-color` beside that leaves it plain |
+| CL15 | `NO_COLOR=1 aburi scan` with stderr on a terminal, over a workspace that draws a warning | No escape sequence on stderr; the progress line still drawn. `FORCE_COLOR=1` beside it colours the warning yellow, and `--no-color` beside that leaves it plain. `FORCE_COLOR=1` beside `NO_COLOR=1` or `NODE_DISABLE_COLORS=1`, for `aburi --version`, a scan on parser workers and a ref diff, puts none of Node's own warnings on stderr (§10.1) |
 | CL16 | `CI=true aburi scan`, or `aburi scan --ci`, with stderr on a terminal | No progress line and no colour, `discoveredAt` left out as under `--no-timestamp`; stdout and the exit code those of the run outside CI mode |
 | CL18 | `aburi scan --config ./custom.json` | Uses the specified config. `aburi --config ./custom.json scan` exits 2: `--config` is the command's option (§3) |
 | CL19 | `aburi explain <name>` where a plugin threw during the rescan | exit 3, incident lines on stderr |
