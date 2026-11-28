@@ -27,9 +27,11 @@ function resolveOneCall(target: string, setup: CallSetup = {}) {
     component: "billing",
     signature: setup.signature ?? null,
   })
+  const importsByFile = setup.imports ?? NO_IMPORTS
   return resolveCallGraph({
     symbols: [caller, ...(setup.callees ?? [])],
-    importsByFile: setup.imports ?? NO_IMPORTS,
+    importsByFile,
+    moduleFiles: new Map([["ts", new Set(importsByFile.keys())]]),
     dynamicCallSites: new Set(
       setup.dynamicReceiver === true ? [makeCallSiteKey("src/a.ts", 4, target)] : [],
     ),
@@ -42,6 +44,12 @@ function resolveOneCall(target: string, setup: CallSetup = {}) {
 /** A member of that name elsewhere, so a call of it is one the workspace could hold. */
 const namesake = (member: string): IRSymbol =>
   makeSymbol(`ts:src/other.ts#Other.${member}`, { kind: "method" })
+
+/** A class `Heap` with a member `push`, which its file keeps to itself unless it exports it. */
+const heap = (file: string, exported = false): IRSymbol[] => [
+  makeSymbol(`ts:${file}#Heap`, { kind: "class", derivedBy: exported ? ["export-keyword"] : [] }),
+  makeSymbol(`ts:${file}#Heap.push`, { kind: "method" }),
+]
 
 function competingSaves(): IRSymbol[] {
   return [
@@ -191,6 +199,16 @@ describe("unresolved calls are bucketed by cause", () => {
     { cause: "a member nothing in the workspace names", target: "items.map" },
     { cause: "a member behind a non-null assertion nothing names", target: "items.map!" },
     { cause: "a function's `bind`, which calls nothing", target: "helper.bind" },
+    {
+      cause: "a member only a class another file keeps to itself declares",
+      target: "items.push",
+      callees: heap("src/heap.ts"),
+    },
+    {
+      cause: "a member only a function another file keeps to itself is named",
+      target: "parts.join",
+      callees: [makeSymbol("ts:src/text.ts#join")],
+    },
   ])("`external` for $cause, which no declaration the scan read can be", (c) => {
     const result = resolveOneCall(c.target, c)
     expect(result.symbols[0]?.calls[0]?.resolved).toBeNull()
@@ -240,6 +258,35 @@ describe("unresolved calls are bucketed by cause", () => {
       cause: "a member a barrel re-exports under its name",
       target: "z.string",
       imports: new Map([["src/z.ts", [reexportEdge("./types", "stringType as string")]]]),
+      bucket: "no-match",
+    },
+    {
+      cause: "a member a class of the caller's file keeps to itself",
+      target: "items.push",
+      callees: heap("src/a.ts"),
+      bucket: "no-match",
+    },
+    {
+      cause: "a member a class keeps to a file the caller's file imports",
+      target: "items.push",
+      callees: heap("src/heap.ts"),
+      imports: importsOf("src/a.ts", { source: "./heap", symbols: ["makeHeap"] }),
+      bucket: "no-match",
+    },
+    {
+      cause: "a member a class keeps to a file a barrel the caller's file imports re-exports",
+      target: "items.push",
+      callees: heap("src/heap.ts"),
+      imports: new Map([
+        ...importsOf("src/a.ts", { source: "./lib", symbols: ["makeHeap"] }),
+        ["src/lib.ts", [reexportEdge("./heap", "makeHeap")]],
+      ]),
+      bucket: "no-match",
+    },
+    {
+      cause: "a member of a class its file exports, which any module may be handed",
+      target: "items.push",
+      callees: heap("src/heap.ts", true),
       bucket: "no-match",
     },
     { cause: "a computed member", target: "items.<computed>", bucket: "no-match" },

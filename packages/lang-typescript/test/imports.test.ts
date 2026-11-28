@@ -9,7 +9,36 @@ describe("the edge an import statement makes", () => {
       "import { A as B } from './x'",
       [{ source: "./x", symbols: ["A as B"] }],
     ],
-    ["a type-only import", "import type { X } from './y'", [{ source: "./y", symbols: ["X"] }]],
+    [
+      "a type-only import, its names marked",
+      "import type { X, A as B } from './y'",
+      [{ source: "./y", symbols: ["X", "A as B"], typeOnlyLocals: ["X", "B"] }],
+    ],
+    [
+      "a type-only specifier beside a value one, the type's local alone marked",
+      "import { type X, type A as B, C } from './y'",
+      [{ source: "./y", symbols: ["X", "A as B", "C"], typeOnlyLocals: ["X", "B"] }],
+    ],
+    [
+      "a type-only default import beside named ones",
+      "import type D, { E } from './y'",
+      [{ source: "./y", symbols: ["default as D", "E"], typeOnlyLocals: ["D", "E"] }],
+    ],
+    [
+      "a type-only namespace import",
+      "import type * as ns from './y'",
+      [{ source: "./y", symbols: "*", namespaceBinding: "ns", typeOnlyLocals: ["ns"] }],
+    ],
+    [
+      "a type-only require-equals",
+      "import type m = require('./y')",
+      [{ source: "./y", symbols: "*", namespaceBinding: "m", typeOnlyLocals: ["m"] }],
+    ],
+    [
+      "names spelled `type`, which mark nothing",
+      "import type, { type as t, type } from './y'",
+      [{ source: "./y", symbols: ["default as type", "type as t", "type"] }],
+    ],
     [
       "a default import, as the module's `default` under its local name",
       "import Foo from './foo'",

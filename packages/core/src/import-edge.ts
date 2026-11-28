@@ -23,6 +23,10 @@ export function importBindsLocal(edge: ImportEdge, local: string): boolean {
   return edge.symbols.some((raw) => splitAliasedImportName(raw).local === local)
 }
 
+export function reexportsAny(edge: ImportEdge): boolean {
+  return edge.reexportsAll === true || (edge.reexports?.length ?? 0) > 0
+}
+
 export interface DecoratorReference {
   /** The local the decorator is read through: its name, or its receiver's first segment. */
   readonly head: string

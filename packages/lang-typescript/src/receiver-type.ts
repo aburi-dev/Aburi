@@ -21,7 +21,7 @@ interface ThisScope {
 export function receiverTypeOf(callee: Node): string | null {
   if (callee.type === "super") return extendedClassOf(callee)
   if (callee.type !== "member_expression") return null
-  const receiver = callee.childForFieldName("object")
+  const receiver = withoutNonNullAssertion(callee.childForFieldName("object"))
   if (receiver?.type === "this") return instanceClassOf(receiver)
   if (receiver?.type === "super") return extendedClassOf(receiver)
   if (receiver?.type === "identifier") return nameTypeOf(receiver)
@@ -34,6 +34,14 @@ export function receiverTypeOf(callee: Node): string | null {
   if (scope === null || scope.declaresThis) return null
   const type = declaredType(scope, field.text)
   return type === null || isShadowed(scope.classBody, headOf(type)) ? null : type
+}
+
+// The assertion takes `null` and `undefined` out of the value's type and leaves the rest, which is
+// all a receiver's type is read for.
+export function withoutNonNullAssertion(node: Node | null): Node | null {
+  let value = node
+  while (value?.type === "non_null_expression") value = firstNonCommentChild(value)
+  return value
 }
 
 // A name is a value of the type its one declaration gives it: a parameter's or a variable's
@@ -109,8 +117,10 @@ export function constructedClass(value: Node | null): string | null {
 // A callback's parameter, a block's `const` or a `catch` clause named after an import hides it.
 export function isImportedReceiver(callee: Node): boolean {
   if (callee.type !== "member_expression") return false
-  let head = callee.childForFieldName("object")
-  while (head?.type === "member_expression") head = head.childForFieldName("object")
+  let head = withoutNonNullAssertion(callee.childForFieldName("object"))
+  while (head?.type === "member_expression") {
+    head = withoutNonNullAssertion(head.childForFieldName("object"))
+  }
   if (head?.type !== "identifier") return false
   const binding = bindingOf(head, head.text)
   const [declaration, ...others] = binding?.declarations ?? []

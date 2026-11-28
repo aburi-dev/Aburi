@@ -42,6 +42,12 @@ export interface ImportEdge {
   dynamic: boolean
   namespaceBinding?: string
   /**
+   * The local names, of those `symbols` and `namespaceBinding` bind, that the import binds as a type
+   * alone (`import type { X }`, `import { type X }`, `import type * as ns`): they name no value at
+   * run time, so no call reaches through them. Absent when the edge binds none.
+   */
+  typeOnlyLocals?: readonly string[]
+  /**
    * What the importing module exports from the edge's module: a named or namespace re-export
    * (`export { A as B } from`, `export * as ns from`), or an import that an export clause or
    * `export default` republishes. `symbols` cannot say it: a re-export binds no local, and an

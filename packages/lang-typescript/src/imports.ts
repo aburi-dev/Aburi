@@ -154,20 +154,28 @@ function readImportStatement(node: Node, errors: ParseError[]): ImportEdge[] {
   if (clause === null) {
     return [{ source, symbols: "*", line, dynamic: false }]
   }
-  const { names, namespaceBinding } = readImportClauseParts(clause)
+  const { names, namespaceBinding, typeOnly } = readImportClauseParts(clause, isTypeOnly(node))
   const edges: ImportEdge[] = []
-  if (names.length > 0) edges.push({ source, symbols: names, line, dynamic: false })
+  if (names.length > 0) {
+    const locals = names.map((raw) => splitAliasedImportName(raw).local)
+    const edge: ImportEdge = { source, symbols: names, line, dynamic: false }
+    edges.push(withTypeOnlyLocals(edge, locals, typeOnly))
+  }
   if (namespaceBinding !== null) {
-    edges.push({
-      source,
-      symbols: "*",
-      line,
-      dynamic: false,
-      namespaceBinding,
-    })
+    const edge: ImportEdge = { source, symbols: "*", line, dynamic: false, namespaceBinding }
+    edges.push(withTypeOnlyLocals(edge, [namespaceBinding], typeOnly))
   }
   if (edges.length === 0) edges.push({ source, symbols: "*", line, dynamic: false })
   return edges
+}
+
+function withTypeOnlyLocals(
+  edge: ImportEdge,
+  locals: readonly string[],
+  typeOnly: ReadonlySet<string>,
+): ImportEdge {
+  const typeOnlyLocals = locals.filter((local) => typeOnly.has(local))
+  return typeOnlyLocals.length === 0 ? edge : { ...edge, typeOnlyLocals }
 }
 
 function readRequireClause(statement: Node, clause: Node, errors: ParseError[]): ImportEdge[] {
@@ -177,7 +185,14 @@ function readRequireClause(statement: Node, clause: Node, errors: ParseError[]):
   const line = statement.startPosition.row + 1
   const binding = findChild(clause, "identifier")
   if (binding === null) return [{ source, symbols: "*", line, dynamic: false }]
-  return [{ source, symbols: "*", line, dynamic: false, namespaceBinding: binding.text }]
+  const edge: ImportEdge = {
+    source,
+    symbols: "*",
+    line,
+    dynamic: false,
+    namespaceBinding: binding.text,
+  }
+  return [isTypeOnly(statement) ? { ...edge, typeOnlyLocals: [binding.text] } : edge]
 }
 
 /**
@@ -309,22 +324,34 @@ function importedAs(imported: string, local: string): string {
   return imported === local ? imported : `${imported} as ${local}`
 }
 
-function readImportClauseParts(clause: Node): {
+function readImportClauseParts(
+  clause: Node,
+  typeOnlyStatement: boolean,
+): {
   names: string[]
   namespaceBinding: string | null
+  typeOnly: ReadonlySet<string>
 } {
   const names: string[] = []
   let namespaceBinding: string | null = null
+  const typeOnly = new Set<string>()
+  const markIfTypeOnly = (local: string, typeOnlySpecifier = false): void => {
+    if (typeOnlyStatement || typeOnlySpecifier) typeOnly.add(local)
+  }
   for (const child of clause.namedChildren) {
     if (child === null) continue
     switch (child.type) {
       case "namespace_import": {
         const alias = findChild(child, "identifier")
-        if (alias !== null) namespaceBinding = alias.text
+        if (alias !== null) {
+          namespaceBinding = alias.text
+          markIfTypeOnly(alias.text)
+        }
         break
       }
       case "identifier":
         names.push(`${DEFAULT_EXPORT_NAME} as ${child.text}`)
+        markIfTypeOnly(child.text)
         break
       case "named_imports":
         for (const spec of child.namedChildren) {
@@ -332,16 +359,14 @@ function readImportClauseParts(clause: Node): {
           const exportedName = spec.childForFieldName("name")
           if (exportedName === null || exportedName.type !== "identifier") continue
           const aliasNode = spec.childForFieldName("alias")
-          if (aliasNode !== null && aliasNode.type === "identifier") {
-            names.push(`${exportedName.text} as ${aliasNode.text}`)
-          } else {
-            names.push(exportedName.text)
-          }
+          const local = aliasNode?.type === "identifier" ? aliasNode.text : exportedName.text
+          names.push(local === exportedName.text ? local : `${exportedName.text} as ${local}`)
+          markIfTypeOnly(local, isTypeOnly(spec))
         }
         break
     }
   }
-  return { names, namespaceBinding }
+  return { names, namespaceBinding, typeOnly }
 }
 
 function readReExport(node: Node, errors: ParseError[]): ImportEdge | null {
@@ -446,7 +471,8 @@ function dedupeEdges(edges: readonly ImportEdge[]): ImportEdge[] {
     const symbolsKey =
       edge.symbols === "*" ? '"*"' : JSON.stringify([...edge.symbols].sort(compareCodeUnit))
     const reexportsKey = JSON.stringify(edge.reexports ?? [])
-    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}\t${edge.reexportsAll === true}`
+    const typeOnlyKey = JSON.stringify(edge.typeOnlyLocals ?? [])
+    const key = `${edge.line}\t${edge.source}\t${edge.dynamic}\t${symbolsKey}\t${edge.namespaceBinding ?? ""}\t${reexportsKey}\t${edge.reexportsAll === true}\t${typeOnlyKey}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(edge)

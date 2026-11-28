@@ -31,6 +31,7 @@ import {
   type ReturnSourceEntry,
   type ValueTypeEntry,
 } from "../call-site"
+import { reexportsAny } from "../import-edge"
 import { assertIdLanguage, buildDroppedSymbol, buildKeptSymbol } from "./build-symbol"
 import { type ClassifyCallsInput, classifyCalls } from "./classify-calls"
 import { decideDropReason, mergeFrameworkClassification } from "./classify-symbol"
@@ -427,10 +428,6 @@ function isName(value: unknown): value is string {
 }
 
 const NO_CALLS: ReadonlySet<CallCandidate> = new Set()
-
-function reexportsAny(edge: ImportEdge): boolean {
-  return edge.reexportsAll === true || (edge.reexports?.length ?? 0) > 0
-}
 
 export function releaseParsedTree(
   language: LanguagePlugin,

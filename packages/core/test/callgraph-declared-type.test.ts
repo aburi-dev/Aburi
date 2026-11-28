@@ -10,9 +10,11 @@ const CALLER = "ts:src/service.ts#UserService.byId"
 const TARGET = "this.repo.find"
 
 const repository = (file = "src/repo.ts", overrides: SymbolOverrides = {}) => [
-  makeSymbol(`ts:${file}#UserRepository`, { kind: "class", ...overrides }),
+  makeSymbol(`ts:${file}#UserRepository`, { kind: "class", ...EXPORTED, ...overrides }),
   makeSymbol(`ts:${file}#UserRepository.find`, { kind: "method" }),
 ]
+
+const EXPORTED = { derivedBy: ["export-keyword"] }
 
 const typed = (type: string, target = TARGET) =>
   new Map([[makeSymbolCallKey(CALLER, 3, target), type]])
@@ -64,6 +66,12 @@ describe("a call through a receiver of a declared type", () => {
       repository(),
       [{ source: "./repo", symbols: "*", namespaceBinding: "repos" }],
       "repos.UserRepository",
+    ],
+    [
+      "a class a type-only import names",
+      repository(),
+      [{ ...FROM_REPO, typeOnlyLocals: ["UserRepository"] }],
+      "UserRepository",
     ],
   ])("resolves to the member of %s, at medium confidence", (_case, symbols, imports, type) => {
     const result = resolve(symbols, { imports, declaredReceiverTypes: typed(type) })
@@ -295,7 +303,8 @@ describe("a call through a receiver of a declared type, to a member its class in
   const USER = "ts:src/repo.ts#UserRepository"
   const MIDDLE = "ts:src/repo.ts#Middle"
   const BASE = "ts:src/base.ts#BaseRepository"
-  const classes = (...ids: string[]) => ids.map((id) => makeSymbol(id, { kind: "class" }))
+  const classes = (...ids: string[]) =>
+    ids.map((id) => makeSymbol(id, { kind: "class", ...EXPORTED }))
   const method = (id: string, overrides: SymbolOverrides = {}) =>
     makeSymbol(id, { kind: "method", ...overrides })
   const FROM_BASE: ImportClause = { source: "./base", symbols: ["BaseRepository"] }
@@ -400,7 +409,11 @@ describe("a call through a receiver of a declared type, to a member its class in
     ],
     [
       "a superclass name that binds no class",
-      [makeSymbol(BASE, { kind: "function" }), ...classes(USER), method(`${BASE}.find`)],
+      [
+        makeSymbol(BASE, { kind: "function", ...EXPORTED }),
+        ...classes(USER),
+        method(`${BASE}.find`),
+      ],
       [[USER, "BaseRepository"]],
       { repo: [FROM_BASE] },
     ],
@@ -592,7 +605,7 @@ describe("a call through a variable another module declares, whose type that mod
   const FROM_MANAGER: ImportClause = { source: "./manager", symbols: ["manager"] }
   const FROM_CLASSES: ImportClause = { source: "./classes", symbols: ["Manager"] }
   const manager = (file = "src/classes.ts") => [
-    makeSymbol(`ts:${file}#Manager`, { kind: "class" }),
+    makeSymbol(`ts:${file}#Manager`, { kind: "class", ...EXPORTED }),
     makeSymbol(`ts:${file}#Manager.stop`, { kind: "method" }),
   ]
 
@@ -703,7 +716,7 @@ describe("a call through a variable another module declares, whose type that mod
     ["a variable its module names no type for", manager(), { valueTypes: new Map() }],
     [
       "a type its module binds to no class",
-      [makeSymbol(CLASS, { kind: "interface" }), makeSymbol(STOP, { kind: "method" })],
+      [makeSymbol(CLASS, { kind: "interface", ...EXPORTED }), makeSymbol(STOP, { kind: "method" })],
       {},
     ],
     [

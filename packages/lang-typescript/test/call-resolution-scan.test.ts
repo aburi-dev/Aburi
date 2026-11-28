@@ -1,5 +1,5 @@
 import type { ScanExtras } from "@aburi/test-harness"
-import { recordingLogger, useScratchWorkspace } from "@aburi/test-support"
+import { recordingLogger, symbolById, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { scanTypeScript } from "./fixtures/scan"
 
@@ -260,6 +260,92 @@ describe("scan — a call through a CommonJS require()", () => {
       })
     },
   )
+})
+
+describe("scan — a call through a type-only import", () => {
+  const MODULES = {
+    "src/h.ts":
+      'export function helper() {\n  return fetch("x")\n}\nexport function other() {\n  return fetch("y")\n}\n',
+  }
+
+  it("binds the name to no value, so neither the import nor another scope resolves it", async () => {
+    const result = await callsFromMain(
+      { ...MODULES, "src/elsewhere.ts": "export function helper() {}\n" },
+      ['import type { helper } from "./h"', 'import { type other } from "./h"'],
+      ["helper()", "other()"],
+    )
+
+    expect(result).toEqual({
+      resolved: [
+        ["helper", null],
+        ["other", null],
+      ],
+      unresolved: [
+        ["helper", "no-match"],
+        ["other", "no-match"],
+      ],
+    })
+  })
+
+  it("still gives a declared type its class", async () => {
+    await workspace.writeSource(
+      "src/repo.ts",
+      "export class Repo {\n  save() {\n    return 1\n  }\n}\n",
+    )
+    await workspace.writeSource(
+      "src/svc.ts",
+      'import type { Repo } from "./repo"\nexport class Svc {\n  constructor(private readonly repo: Repo) {}\n  run() {\n    this.repo.save()\n  }\n}\n',
+    )
+    const { ir } = await scanTypeScript(workspace.root)
+
+    expect(symbolById({ ir }, "ts:src/svc.ts#Svc.run").calls.map((c) => c.resolved)).toEqual([
+      "ts:src/repo.ts#Repo.save",
+    ])
+  })
+})
+
+describe("scan — a call through a non-null assertion", () => {
+  it("resolves as it does without the assertion", async () => {
+    await workspace.writeSource(
+      "src/repo.ts",
+      'export class Repo {\n  save() {\n    return fetch("s")\n  }\n}\n',
+    )
+    await workspace.writeSource(
+      "src/manager.ts",
+      "class Manager {\n  stop() {\n    return 1\n  }\n}\nexport const manager = new Manager()\n",
+    )
+    await workspace.writeSource(
+      "src/x.ts",
+      [
+        'import { Repo } from "./repo"',
+        'import { manager } from "./manager"',
+        'export const api = { ping: () => fetch("p") }',
+        'export function helper() {\n  return fetch("h")\n}',
+        "export class Svc {",
+        "  constructor(private readonly repo?: Repo) {}",
+        "  go(other?: Repo) {",
+        "    this.repo!.save()",
+        "    api!.ping()",
+        "    helper!()",
+        "    other!.save()",
+        "    manager!.stop()",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    const { ir } = await scanTypeScript(workspace.root)
+
+    expect(
+      symbolById({ ir }, "ts:src/x.ts#Svc.go").calls.map((c) => [c.target, c.resolved]),
+    ).toEqual([
+      ["this.repo!.save", "ts:src/repo.ts#Repo.save"],
+      ["api!.ping", "ts:src/x.ts#api.ping"],
+      ["helper!", "ts:src/x.ts#helper"],
+      ["other!.save", "ts:src/repo.ts#Repo.save"],
+      ["manager!.stop", "ts:src/manager.ts#Manager.stop"],
+    ])
+  })
 })
 
 describe("scan — a call through the name of a class a namespace merged into", () => {
@@ -1162,6 +1248,28 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
       ["store.flush", "external"],
       ["localHelper", "external"],
       ["list.map", "local-scope"],
+    ])
+  })
+
+  it("buckets a member only a class another module keeps to itself declares `external`, unless the caller's module imports that one", async () => {
+    const heap = {
+      "src/heap.ts": [
+        "class Heap {",
+        "  push(value: number) { return value }",
+        "}",
+        "export function makeHeap() { return new Heap() }",
+        "",
+      ].join("\n"),
+    }
+    const apart = await callsFromMain(heap, ["const items = [1, 2]"], ["items.push(3)"])
+    const importing = await callsFromMain(
+      heap,
+      ['import { makeHeap } from "./heap"', "const items = [1, 2]"],
+      ["items.push(3)"],
+    )
+    expect([apart.unresolved, importing.unresolved]).toEqual([
+      [["items.push", "external"]],
+      [["items.push", "no-match"]],
     ])
   })
 })

@@ -26,15 +26,21 @@ interface ClassifyUnresolvedInput {
   unboundHead?: boolean
   /** What the workspace's declarations are named, when the call is read against them. */
   names?: WorkspaceNames
+  /** The caller's file and the files its imports reach, whose declarations its values can be. */
+  reachedFiles: () => ReadonlySet<string>
 }
 
 /**
- * Every name a Symbol's qualified name starts with (`leading`) or ends with (`last`), dropped ones
- * included, and in `last` every name a module exports a declaration under.
+ * What the workspace's Symbols are named, dropped ones included: every name a qualified name starts
+ * with (`leading`), and every name one ends with or a module exports a declaration under. Those a
+ * module exports, and those of the members of a declaration it exports, are `exported`, since any
+ * module may be handed a value of it. The rest are `declaredIn` their files, whose values reach
+ * only the file and the modules that import it.
  */
 export interface WorkspaceNames {
   readonly leading: ReadonlySet<string>
-  readonly last: ReadonlySet<string>
+  readonly exported: ReadonlySet<string>
+  readonly declaredIn: ReadonlyMap<string, ReadonlySet<string>>
 }
 
 export function classifyUnresolved(input: ClassifyUnresolvedInput): UnresolvedCallDiagnostic {
@@ -80,7 +86,7 @@ function isOutOfReach(input: ClassifyUnresolvedInput): boolean {
   }
   const { names } = input
   if (names === undefined) return false
-  const segments = splitTargetSegments(input.target).map((segment) => segment.replace(/!+$/, ""))
+  const segments = splitTargetSegments(input.target)
   const [head] = segments
   if (
     input.unboundHead === true &&
@@ -95,8 +101,21 @@ function isOutOfReach(input: ClassifyUnresolvedInput): boolean {
     member !== undefined &&
     member !== COMPUTED_TARGET_SEGMENT &&
     !INVOKING_MEMBERS.has(member) &&
-    !names.last.has(member)
+    !canHold(names, member, input.reachedFiles)
   )
+}
+
+function canHold(
+  names: WorkspaceNames,
+  member: string,
+  reachedFiles: () => ReadonlySet<string>,
+): boolean {
+  if (names.exported.has(member)) return true
+  const files = names.declaredIn.get(member)
+  if (files === undefined) return false
+  const reached = reachedFiles()
+  for (const file of files) if (reached.has(file)) return true
+  return false
 }
 
 export function workspaceNamesOf(
@@ -104,19 +123,51 @@ export function workspaceNamesOf(
   importsByFile: ReadonlyMap<string, readonly ImportEdge[]>,
 ): WorkspaceNames {
   const leading = new Set<string>()
-  const last = new Set<string>()
+  const exported = new Set<string>()
+  const declaredIn = new Map<string, Set<string>>()
+  const record = (name: string, file: string, isExported: boolean): void => {
+    if (isExported) exported.add(name)
+    else addTo(declaredIn, name, file)
+  }
+  const privateTopLevel = privateTopLevelNames(symbols)
   for (const symbol of symbols) {
+    const file = symbol.source.file
     const segments = symbol.name.split(QNAME_SEPARATOR)
     const [first] = segments
     const final = segments.at(-1)
     if (first !== undefined) leading.add(first)
-    if (final !== undefined) last.add(final)
-    for (const name of exportNames(symbol)) last.add(name)
+    if (first !== undefined && final !== undefined) {
+      record(final, file, privateTopLevel.get(file)?.has(first) !== true)
+    }
+    for (const name of exportNames(symbol)) record(name, file, true)
   }
-  for (const edges of importsByFile.values()) {
-    for (const edge of edges) for (const { exported } of edge.reexports ?? []) last.add(exported)
+  for (const [file, edges] of importsByFile) {
+    for (const edge of edges) {
+      for (const reexport of edge.reexports ?? []) record(reexport.exported, file, true)
+    }
   }
-  return { leading, last }
+  return { leading, exported, declaredIn }
+}
+
+// A member whose owner has no Symbol of its file may be of an exported declaration, and counts as one.
+function privateTopLevelNames(symbols: readonly IRSymbol[]): Map<string, Set<string>> {
+  const declared = new Map<string, Set<string>>()
+  const exported = new Map<string, Set<string>>()
+  for (const symbol of symbols) {
+    if (QNAME_SEPARATOR.test(symbol.name)) continue
+    addTo(declared, symbol.source.file, symbol.name)
+    if (exportNames(symbol).length > 0) addTo(exported, symbol.source.file, symbol.name)
+  }
+  for (const [file, names] of declared) {
+    for (const name of exported.get(file) ?? []) names.delete(name)
+  }
+  return declared
+}
+
+function addTo(sets: Map<string, Set<string>>, key: string, value: string): void {
+  const set = sets.get(key)
+  if (set === undefined) sets.set(key, new Set([value]))
+  else set.add(value)
 }
 
 const QNAME_SEPARATOR = /::|\./

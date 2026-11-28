@@ -8,6 +8,7 @@ import {
   isImportedReceiver,
   receiverTypeOf,
   thisBindingAt,
+  withoutNonNullAssertion,
 } from "./receiver-type"
 
 export function readCall(node: Node): CallCandidate | null {
@@ -46,7 +47,7 @@ const THIS_RECEIVERS: ReadonlySet<string> = new Set(["this", "super"])
 
 function receiverCallOf(callee: Node): CallSiteRef | null {
   if (callee.type !== "member_expression") return null
-  const receiver = callee.childForFieldName("object")
+  const receiver = withoutNonNullAssertion(callee.childForFieldName("object"))
   if (receiver?.type === "call_expression") return callSiteOf(receiver)
   const call = receiver?.type === "identifier" ? initializingCall(receiver) : null
   return call === null ? null : callSiteOf(call)

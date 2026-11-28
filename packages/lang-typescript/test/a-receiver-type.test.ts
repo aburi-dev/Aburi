@@ -257,6 +257,12 @@ describe("a call through a field of `this` carries the type the class declares t
       "C.m",
       "ee.EventEmitter2",
     ],
+    [
+      "an optional field behind a non-null assertion",
+      classOf("  events?: EventEmitter2", '  m() { this.events!!.emit("a") }'),
+      "C.m",
+      "EventEmitter2",
+    ],
   ])("reads %s", async (_label, source, id, type) => {
     expect(await emitReceiverType(source, id)).toBe(type)
   })
@@ -369,11 +375,6 @@ describe("a call through `this` carries no type where the class does not declare
     [
       "a method whose `this` parameter declares another type",
       classOf("  events: EventEmitter2", '  m(this: Other) { this.events.emit("a") }'),
-      "C.m",
-    ],
-    [
-      "a field behind a non-null assertion",
-      classOf("  events!: EventEmitter2", '  m() { this.events!.emit("a") }'),
       "C.m",
     ],
     [
@@ -557,6 +558,11 @@ describe("a call through a name carries the type the name is declared with", () 
       "f",
       "ee.EventEmitter2",
     ],
+    [
+      "an optional parameter behind a non-null assertion",
+      "export function f(events?: EventEmitter2) { events!.emit() }",
+      "f",
+    ],
   ])("reads %s", async (_label, source, id, type = "EventEmitter2") => {
     expect(await emitReceiverType(source, id)).toBe(type)
   })
@@ -618,10 +624,6 @@ describe("a call through a name carries the type the name is declared with", () 
     [
       "a class a parameter around the `new` names, which shadows the class the module binds",
       "export function f(EventEmitter2: any) { const events = new EventEmitter2(); events.emit() }",
-    ],
-    [
-      "a name behind a non-null assertion",
-      "export function f(events?: EventEmitter2) { events!.emit() }",
     ],
     ["a member of a name", "export function f(deps: Deps) { deps.events.emit() }"],
   ])("reads nothing from %s", async (_label, source) => {
@@ -759,6 +761,11 @@ describe("a call through a name marks whether one of the module's imports binds 
       calling('import * as managers from "./manager"', "  managers.manager.stop()"),
       "managers.manager.stop",
     ],
+    [
+      "each link of a chain behind a non-null assertion",
+      calling('import * as managers from "./manager"', "  managers!.manager!.stop()"),
+      "managers!.manager!.stop",
+    ],
   ])("marks a call through %s", async (_label, source, target) => {
     expect(await importedOf(source, target)).toBe(true)
   })
@@ -821,6 +828,18 @@ describe("a call through what another call gave back names that call", () => {
       "export function f() {\n  const s = a.b().c()\n  s.run()\n}",
       "s.run",
       { target: "a.b.c", line: 2 },
+    ],
+    [
+      "a call behind a non-null assertion",
+      "export function f() {\n  make()!.run()\n}",
+      "make.run",
+      { target: "make", line: 2 },
+    ],
+    [
+      "a `const` behind a non-null assertion",
+      "export function f() {\n  const s = make()\n  s!.run()\n}",
+      "s!.run",
+      { target: "make", line: 2 },
     ],
   ])("for %s", async (_label, source, target, call) => {
     expect(await receiverCallOf(source, target)).toEqual(call)

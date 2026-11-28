@@ -136,6 +136,10 @@ export function normalizeImportEdge(written: WrittenImportEdge): ImportEdge {
   const namespaceBinding = typeof binding === "string" ? toNfc(binding) : binding
   const symbols =
     written.symbols === "*" ? written.symbols : mapPreservingIdentity(written.symbols, toNfc)
+  const typeOnlyLocals =
+    written.typeOnlyLocals === undefined
+      ? undefined
+      : mapPreservingIdentity(written.typeOnlyLocals, toNfc)
   const reexports =
     written.reexports === undefined
       ? undefined
@@ -146,12 +150,14 @@ export function normalizeImportEdge(written: WrittenImportEdge): ImportEdge {
     source === written.source &&
     namespaceBinding === binding &&
     symbols === written.symbols &&
+    typeOnlyLocals === written.typeOnlyLocals &&
     reexports === written.reexports
   ) {
     return written
   }
   const next: ImportEdge = { source, symbols, line: written.line, dynamic: written.dynamic }
   if (namespaceBinding !== undefined) next.namespaceBinding = namespaceBinding
+  if (typeOnlyLocals !== undefined) next.typeOnlyLocals = typeOnlyLocals
   if (reexports !== undefined) next.reexports = reexports
   if (written.reexportsAll !== undefined) next.reexportsAll = written.reexportsAll
   return next
