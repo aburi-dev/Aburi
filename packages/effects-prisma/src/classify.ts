@@ -15,6 +15,7 @@ import {
 } from "@aburi/types"
 import { EFFECTS_PRISMA_DERIVED_BY_PREFIX, EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
 import {
+  isPrismaModelRawQueryMethod,
   isPrismaRawQueryMethod,
   isPrismaReadMethod,
   isPrismaTransactionMethod,
@@ -113,6 +114,10 @@ export function classifyPrismaCall(
       confidence,
       derivedBy: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:write`,
     }
+  }
+
+  if (isPrismaModelRawQueryMethod(method)) {
+    return { declined: `${EFFECTS_PRISMA_DERIVED_BY_PREFIX}:raw-query` }
   }
 
   return null

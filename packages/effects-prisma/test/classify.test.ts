@@ -17,6 +17,7 @@ describe("classifyPrismaCall — delegate and transaction calls", () => {
     "count",
     "aggregate",
     "groupBy",
+    "findRaw",
   ])("classifies prisma.user.%s as db.read", (method) => {
     expect(classifyPrismaCall(makeCall({ target: `prisma.user.${method}` }), ctx)).toEqual({
       effectId: "db.read",
@@ -214,6 +215,8 @@ describe("classifyPrismaCall — calls that are not Prisma's", () => {
     "this.prisma.$executeRaw",
     "tx.$executeRawUnsafe",
     "prisma.$runCommandRaw",
+    "prisma.user.aggregateRaw",
+    "this.prisma.order.aggregateRaw",
   ])("declines %s — whether it reads or writes is in the query it is handed", (target) => {
     expect(classifyPrismaCall(makeCall({ target, argumentCount: 1 }), ctx)).toEqual({
       declined: "effects-plugin:prisma:raw-query",
@@ -222,6 +225,8 @@ describe("classifyPrismaCall — calls that are not Prisma's", () => {
 
   it("declines no raw query without a client, or in a file that imports no Prisma", () => {
     expect(classifyPrismaCall(makeCall({ target: "$queryRaw" }), ctx)).toBeNull()
+    expect(classifyPrismaCall(makeCall({ target: "events.aggregateRaw" }), ctx)).toBeNull()
+    expect(classifyPrismaCall(makeCall({ target: "this.db.aggregateRaw" }), ctx)).toBeNull()
     expect(
       classifyPrismaCall(makeCall({ target: "prisma.$queryRaw" }), makeCtx({ imports: [] })),
     ).toBeNull()

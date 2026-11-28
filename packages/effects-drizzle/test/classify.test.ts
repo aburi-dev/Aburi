@@ -38,6 +38,26 @@ describe("classifyDrizzleCall — terminals", () => {
     })
   })
 
+  it.each([
+    ["db.with.select", 0, "db.read"],
+    ["db.$with.select", 0, "db.read"],
+    ["tx.with.insert", 1, "db.write"],
+    ["this.db.with.update", 1, "db.write"],
+  ])("reads the client behind the CTE of %s, at high", (target, argumentCount, effectId) => {
+    const literalArgs = Array.from({ length: argumentCount }, () => null)
+    const receiverCall = { target: target.split(".").slice(0, -1).join("."), line: 1 }
+    expect(
+      classify(target, { argumentCount, literalArgs, dynamicReceiver: true, receiverCall }),
+    ).toMatchObject({ effectId, confidence: "high" })
+  })
+
+  it("keeps a CTE's dynamic receiver at medium when no receiver call says it is the CTE", () => {
+    expect(classify("db.with.select", { dynamicReceiver: true })).toMatchObject({
+      effectId: "db.read",
+      confidence: "medium",
+    })
+  })
+
   it.each(["db.query.users.findMany", "db.query.users.findFirst", "this.db.query.users.findMany"])(
     "classifies the relational query %s as db.read",
     (target) => {
@@ -66,6 +86,7 @@ describe("classifyDrizzleCall — one classification per fluent chain", () => {
     "db.update.set.where.returning",
     "db.delete.where",
     "db.delete.where.returning",
+    "db.with.select.from",
   ])("returns null for the chain link %s, whose root already classifies", (target) => {
     expect(classify(target)).toBeNull()
   })
@@ -176,18 +197,50 @@ describe("classifyDrizzleCall — calls that are not Drizzle's", () => {
     expect(classify(target, { argumentCount: 1 })).toBeNull()
   })
 
-  it.each(["db.execute", "this.db.execute", "tx.execute", "this.database.execute"])(
-    "declines %s — whether raw SQL reads or writes is in the SQL",
+  it.each([
+    "prisma.user.delete",
+    "prisma.user.update",
+    "tx.user.update",
+    "this.prisma.post.insert",
+    "this.prismaService.user.delete",
+    "db.users.delete",
+  ])("returns null for %s — another ORM's client in front of a model", (target) => {
+    expect(classify(target, { argumentCount: 1 })).toBeNull()
+  })
+
+  it.each(["this.db.delete", "ctx.db.update", "this.conn.delete", "services.tx.insert"])(
+    "still classifies %s, whose client segment names a Drizzle client",
     (target) => {
-      expect(classify(target, { argumentCount: 1 })).toEqual({
-        declined: "effects-plugin:drizzle:raw-sql",
+      expect(classify(target, { argumentCount: 1 })).toMatchObject({
+        effectId: "db.write",
+        confidence: "high",
       })
     },
   )
 
   it.each([
+    "db.execute",
+    "this.db.execute",
+    "tx.execute",
+    "this.database.execute",
+    "db.run",
+    "db.all",
+    "db.get",
+    "db.values",
+    "tx.run",
+  ])("declines %s — whether raw SQL reads or writes is in the SQL", (target) => {
+    expect(classify(target, { argumentCount: 1 })).toEqual({
+      declined: "effects-plugin:drizzle:raw-sql",
+    })
+  })
+
+  it.each([
     ["command.execute", 1, "a receiver no Drizzle client is named"],
+    ["Promise.all", 1, "a receiver no Drizzle client is named"],
+    ["cache.get", 1, "a receiver no Drizzle client is named"],
+    ["Object.values", 1, "a receiver no Drizzle client is named"],
     ["db.execute", 0, "no statement"],
+    ["db.run", 0, "no statement"],
     ["db.select.from.execute", 1, "a prepared chain, whose root the select already classified"],
   ])("declines nothing for %s with %i argument(s) — %s", (target, argumentCount) => {
     expect(classify(target, { argumentCount })).toBeNull()

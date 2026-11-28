@@ -11,6 +11,7 @@ Recognised shapes:
 | `<client>.select() / selectDistinct() / selectDistinctOn()` (root of a fluent chain) | `db.read` |
 | `<client>.query.<table>.findMany / findFirst` (relational query API) | `db.read` |
 | `<client>.insert(...) / update(...) / delete(...)` (root of a fluent chain) | `db.write` |
+| `<client>.with(cte).select() / insert(...) / ...` (a root built on a CTE) | as the root |
 | `<client>.transaction(...) / batch(...)` | `db.transaction` |
 
 ### Fluent chain handling
@@ -26,19 +27,21 @@ survives and is anchored to the query origin line.
 
 ### Raw SQL and other unclassified surfaces
 
-`.execute()` is intentionally **not** classified — a raw SQL call can be
+`.execute()`, and the SQLite drivers' `.run()` / `.all()` / `.get()` /
+`.values()`, are intentionally **not** classified — a raw SQL call can be
 either a read or a write, and which one is in the SQL, not in the call site.
 On a receiver named like a Drizzle client (`db.execute(sql…)`,
-`tx.execute(…)`), the plugin declines it instead: the call stays in `calls[]`
+`tx.execute(…)`, `db.run(sql…)`), the plugin declines it instead: the call stays in `calls[]`
 and the IR's `stats.declinedCalls` lists it under
 `effects-plugin:drizzle:raw-sql`, which `aburi explain` shows under the Symbol's
 `## Declined effects`. This mirrors how `@aburi/effects-prisma` treats
 `$queryRaw` / `$executeRaw`.
 
-`.$count()` and CTE builders (`db.with(sq).select().from(...)`) are also not
-in the current vocab — the CTE case still works transparently because
-`db.with.select` is the natural root of a fluent chain, but `$count` returns
-null today. A future revision may add it as `db.read`.
+A root built on a CTE (`db.with(sq).select().from(sq)`, target
+`db.with.select`) is read as the root it leads to, with the client one segment
+further back: `db.with.select` is `db.read` at `high`, as `db.select` is. The
+CTE's own `db.$with("sq").as(…)` names no statement. `.$count()` is not in the
+vocabulary.
 
 ### Layered gate
 
@@ -108,6 +111,15 @@ literal list if a house convention deserves to be in it. A receiver declared
 with a type a `drizzle-orm` module binds (`db: NodePgDatabase`) gets `high`
 whatever it is called; one declared with a type the workspace declares
 (`type Db = typeof db`) is read by its name, as above.
+
+A client in front of a segment no client word names is another ORM's
+`<client>.<model>.<verb>`, so `prisma.user.delete(…)`, `tx.user.update(…)` and
+`this.prismaService.user.delete(…)` are not classified in a file that imports
+both: plugins are asked in config order and the first claim wins, so a
+`medium` claim here would hide `@aburi/effects-prisma`'s `high`. The client
+words in front are Drizzle's and `prisma`, matched word-wise. Drizzle's own
+`this.db.delete(table)` and `ctx.db.update(table)` have a client word in the
+client segment and are classified as before.
 
 A call of a method your own class declares is never Drizzle's:
 `this.repo.update(id, dto)` beside `constructor(private repo: UsersRepo)` stays

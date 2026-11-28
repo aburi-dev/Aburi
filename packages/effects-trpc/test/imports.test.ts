@@ -17,6 +17,7 @@ describe("hasTrpcClientImport", () => {
     "@trpc/client/links/httpBatchLink",
     "@trpc/react-query/shared",
     "@trpc/next/app-dir/client",
+    "@trpc/tanstack-react-query",
   ])("returns true for %s, a client package or one of its subpaths", (source) => {
     expect(hasTrpcClientImport([edge(source)], PATH)).toBe(true)
   })
@@ -29,7 +30,7 @@ describe("hasTrpcClientImport", () => {
     "not-@trpc/client",
     "@trpc/server",
     "@trpc/server/adapters/next",
-    "@trpc/tanstack-react-query",
+    "@trpc/tanstack-react-query-devtools",
   ])("returns false for %s", (source) => {
     expect(hasTrpcClientImport([edge(source)], PATH)).toBe(false)
   })

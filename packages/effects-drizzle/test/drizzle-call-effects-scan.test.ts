@@ -172,6 +172,62 @@ describe("scan — raw SQL on a Drizzle client", () => {
   })
 })
 
+describe("scan — Drizzle on SQLite", () => {
+  it("declines each statement a SQLite runner is handed, and reads a CTE's query at high", async () => {
+    await workspace.writeSource(
+      "src/sqlite.ts",
+      [
+        'import { sql } from "drizzle-orm"',
+        'import { drizzle } from "drizzle-orm/libsql"',
+        'import { integer, sqliteTable } from "drizzle-orm/sqlite-core"',
+        "",
+        'const users = sqliteTable("users", { id: integer("id") })',
+        'const db = drizzle(process.env.DB_URL ?? "")',
+        "",
+        "export async function purge(id: number) {",
+        `  await db.run(sql\`DELETE FROM users WHERE id = \${id}\`)`,
+        "}",
+        "",
+        "export async function all() {",
+        "  return db.all(sql`SELECT * FROM users`)",
+        "}",
+        "",
+        "export async function first() {",
+        "  return db.get(sql`SELECT * FROM users LIMIT 1`)",
+        "}",
+        "",
+        "export async function ids() {",
+        "  return db.values(sql`SELECT id FROM users`)",
+        "}",
+        "",
+        "export async function viaCte() {",
+        '  const sq = db.$with("sq").as(db.select().from(users))',
+        "  return db.with(sq).select().from(sq)",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    expect(
+      result.ir.stats.declinedCalls?.map((d) => [d.symbolId.split("#")[1], d.target, d.reason]),
+    ).toEqual([
+      ["all", "db.all", "effects-plugin:drizzle:raw-sql"],
+      ["first", "db.get", "effects-plugin:drizzle:raw-sql"],
+      ["ids", "db.values", "effects-plugin:drizzle:raw-sql"],
+      ["purge", "db.run", "effects-plugin:drizzle:raw-sql"],
+    ])
+    expect(
+      symbolNamed(result, "viaCte").effects.map((e) => [e.id, e.target, e.confidence]),
+    ).toEqual([
+      ["db.read", "db.select", "high"],
+      ["db.read", "db.with.select", "high"],
+    ])
+    expect(irSchemaViolations(result.ir)).toEqual([])
+  })
+})
+
 describe("scan — a file that does not import drizzle-orm", () => {
   it("records nothing, though the calls are spelled like Drizzle's", async () => {
     await workspace.writeSource(

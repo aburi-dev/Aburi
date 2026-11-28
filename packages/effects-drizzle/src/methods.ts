@@ -77,3 +77,18 @@ export const DRIZZLE_FLUENT_ROOT_METHODS: ReadonlySet<DrizzleReadMethod | Drizzl
 
 /** `db.execute(sql\`…\`)`: a statement the call site does not say is a read or a write. */
 export const DRIZZLE_RAW_SQL_METHOD = "execute"
+
+/** The SQLite drivers' own runners of a statement, beside the `execute` every driver has. */
+export const DRIZZLE_SQLITE_RAW_SQL_METHODS: ReadonlySet<string> = new Set([
+  "run",
+  "all",
+  "get",
+  "values",
+])
+
+export function isDrizzleRawSqlMethod(name: string): boolean {
+  return name === DRIZZLE_RAW_SQL_METHOD || DRIZZLE_SQLITE_RAW_SQL_METHODS.has(name)
+}
+
+/** `db.with(sq).select()`: the CTE sits between the client and the verb it leads to. */
+export const DRIZZLE_CTE_METHODS: ReadonlySet<string> = new Set(["with", "$with"])

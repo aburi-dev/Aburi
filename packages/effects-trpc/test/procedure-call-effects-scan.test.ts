@@ -97,6 +97,36 @@ describe("scan — tRPC procedure calls", () => {
     ])
   })
 
+  it("records the procedures a component names through the TanStack integration's options", async () => {
+    await workspace.writeSource(
+      "src/components/Greeting.tsx",
+      [
+        'import { useMutation, useQuery } from "@tanstack/react-query"',
+        'import { createTRPCContext } from "@trpc/tanstack-react-query"',
+        'import type { AppRouter } from "../server"',
+        "",
+        "export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>()",
+        "",
+        "export function Greeting() {",
+        "  const trpc = useTRPC()",
+        '  const greeting = useQuery(trpc.greeting.queryOptions({ name: "Jerry" }))',
+        "  const createUser = useMutation(trpc.createUser.mutationOptions())",
+        '  return <button onClick={() => createUser.mutate({ name: "x" })}>{greeting.data}</button>',
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const result = await scanWorkspace()
+
+    expect(
+      symbolNamed(result, "Greeting").effects.map((e) => [e.target, e.confidence, e.derivedBy]),
+    ).toEqual([
+      ["trpc.greeting.queryOptions", "medium", "effects-plugin:trpc:query:greeting"],
+      ["trpc.createUser.mutationOptions", "medium", "effects-plugin:trpc:mutation:createUser"],
+    ])
+  })
+
   it.each([
     [
       "a router definition, which imports @trpc/server",

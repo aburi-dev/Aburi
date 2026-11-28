@@ -22,14 +22,21 @@ describe("tRPC terminal vocabulary", () => {
         "useSuspenseInfiniteQuery",
         "usePrefetchQuery",
         "usePrefetchInfiniteQuery",
+        "queryOptions",
+        "infiniteQueryOptions",
       ],
     ],
-    ["mutation", TRPC_MUTATION_TERMINALS, isTrpcMutationTerminal, ["mutate", "useMutation"]],
+    [
+      "mutation",
+      TRPC_MUTATION_TERMINALS,
+      isTrpcMutationTerminal,
+      ["mutate", "useMutation", "mutationOptions"],
+    ],
     [
       "subscription",
       TRPC_SUBSCRIPTION_TERMINALS,
       isTrpcSubscriptionTerminal,
-      ["subscribe", "useSubscription"],
+      ["subscribe", "useSubscription", "subscriptionOptions"],
     ],
   ] as const)(
     "lists exactly the %s terminals, and its guard accepts each",

@@ -15,16 +15,17 @@ import type {
 import { EFFECTS_DRIZZLE_DERIVED_BY_PREFIX, EFFECTS_DRIZZLE_PLUGIN_NAME } from "./constants"
 import { isDrizzleModule } from "./imports"
 import {
+  DRIZZLE_CTE_METHODS,
   DRIZZLE_FLUENT_ROOT_METHODS,
-  DRIZZLE_RAW_SQL_METHOD,
   isDrizzleQueryMethod,
+  isDrizzleRawSqlMethod,
   isDrizzleReadMethod,
   isDrizzleTransactionMethod,
   isDrizzleWriteMethod,
   maxArgumentsFor,
   minArgumentsFor,
 } from "./methods"
-import { classificationConfidence, namesDrizzleClient } from "./receivers"
+import { classificationConfidence, namesDrizzleClient, namesOrmClient } from "./receivers"
 
 export function classifyDrizzleCall(
   call: CallCandidate,
@@ -71,14 +72,35 @@ export function classifyDrizzleCall(
     }
   }
 
-  // Every remaining shape is a call directly on the client, so the client is at -2.
-  const clientSegment = segments.at(-2)
+  // Every remaining shape is a call directly on the client, so the client is at -2, or at -3
+  // behind the CTE a root verb is built on.
+  const behindCte = fluentRoots.has(method) && DRIZZLE_CTE_METHODS.has(segments.at(-2) ?? "")
+  const clientIndex = behindCte ? -3 : -2
+  const clientSegment = segments.at(clientIndex)
   if (!placed(clientSegment)) return null
 
+  // `prisma.user.delete` and `tx.user.update` are another ORM's `<client>.<model>.<verb>`. Plugins
+  // are asked in config order and the first claim wins, so a `medium` claim here would hide its `high`.
+  const inFront = segments.at(clientIndex - 1)
+  if (
+    !typed &&
+    clientSegment !== undefined &&
+    !namesDrizzleClient(clientSegment) &&
+    inFront !== undefined &&
+    namesOrmClient(inFront)
+  ) {
+    return null
+  }
+
+  // `db.with(sq).select()` is read off the CTE's own call, which is no less the client's.
+  const tiered =
+    behindCte && call.receiverCall?.target === segments.slice(0, -1).join(".")
+      ? { ...call, dynamicReceiver: false }
+      : call
   const confidence = (maxArguments: number) =>
     typed
-      ? typedReceiverConfidence(call, maxArguments)
-      : classificationConfidence(clientSegment, call, maxArguments)
+      ? typedReceiverConfidence(tiered, maxArguments)
+      : classificationConfidence(clientSegment, tiered, maxArguments)
 
   if (isDrizzleReadMethod(method)) {
     if (hasLiteralFirstArgument(call)) return null
@@ -110,7 +132,7 @@ export function classifyDrizzleCall(
 
   // Whether raw SQL reads or writes is in the SQL, which no call site spells.
   if (
-    method === DRIZZLE_RAW_SQL_METHOD &&
+    isDrizzleRawSqlMethod(method) &&
     call.argumentCount > 0 &&
     clientSegment !== undefined &&
     namesDrizzleClient(clientSegment)
