@@ -13,6 +13,8 @@ export interface UseArgumentShape {
   readonly secondArgIsIdentifier: boolean
   readonly argCount: number
   readonly hasIdentifierArg: boolean
+  /** A call handed over, as a middleware factory's is: `cors()`, `express.json()`. */
+  readonly hasCallArg: boolean
 }
 
 export function analyzeUseArguments(callExpression: unknown): UseArgumentShape | null {
@@ -26,6 +28,7 @@ export function analyzeUseArguments(callExpression: unknown): UseArgumentShape |
   let hasErrorHandler = false
   let hasRegularHandler = false
   let hasIdentifierArg = false
+  let hasCallArg = false
 
   for (const written of argChildren) {
     const arg = unwrapValue(written)
@@ -37,6 +40,7 @@ export function analyzeUseArguments(callExpression: unknown): UseArgumentShape |
       continue
     }
     if (isIdentifier(arg)) hasIdentifierArg = true
+    else if (arg.type === "call_expression") hasCallArg = true
   }
 
   const first = argChildren[0]
@@ -48,6 +52,7 @@ export function analyzeUseArguments(callExpression: unknown): UseArgumentShape |
     secondArgIsIdentifier: second !== undefined && isIdentifier(unwrapValue(second)),
     argCount: argChildren.length,
     hasIdentifierArg,
+    hasCallArg,
   }
 }
 

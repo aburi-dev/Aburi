@@ -10,15 +10,23 @@ Recognised shapes:
 | Source shape | `extKind` | Signal |
 |---|---|---|
 | `const r = Router()` / `const r = express.Router()` | `framework:express:router` | Router factory call bound to that const's own declarator; in `const a = 1, r = Router()` only `r` |
-| `app.get('/users', h)` / `router.post(…)` | `framework:express:route` | member call whose leaf is `get`/`post`/`put`/`patch`/`delete`/`all` and handed a handler after its path |
+| `app.get('/users', h)` / `router.post(…)` | `framework:express:route` | member call whose leaf is `get`/`post`/`put`/`patch`/`delete`/`options`/`head`/`all` and handed a handler after its path |
 | `app.use((req, res, next) => …)` | `framework:express:middleware` | `.use(…)` with an arity-3 inline handler |
 | `app.use(logger)` | `framework:express:middleware` | `.use(…)` with an out-of-scope identifier argument (confidence: `medium`) |
+| `app.use(cors())` / `app.use(express.json())` | `framework:express:middleware` | `.use(…)` handed a call, as a middleware factory's result is (confidence: `medium`) |
 | `app.use((err, req, res, next) => …)` | `framework:express:error-middleware` | `.use(…)` with an arity-4 handler |
-| `app.use('/api', router)` | `framework:express:mount` | `.use(pathLiteral, identifier)` two-arg shape |
+| `app.use('/api', router)` | `framework:express:mount` | `.use(pathLiteral, identifier)` two-arg shape, the identifier not a function the module declares |
 
 Priorities inside `.use(...)` are first-match-wins in the order above: an
 arity-4 handler always wins over any other shape, then the two-arg
 `(path, identifier)` mount pattern, then plain middleware.
+
+A mount hands Express a name the syntax cannot tell a Router from middleware by.
+It is `high` only when the module binds that name to a Router itself, at its top
+level (`const api = express.Router()`, exported or not), and the file imports
+Express; a name it imports (`app.use("/admin", requireAdmin)`) is a mount at
+`medium`, and a name it declares as a function (`function audit(req, res, next)`,
+or a const holding an arrow or a function expression) is middleware.
 
 A route method's name is shared vocabulary (`map.delete(key)`,
 `settings.get("port")`, Express's own settings getter `app.get("env")`), so a

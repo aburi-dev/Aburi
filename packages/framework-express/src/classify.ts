@@ -1,4 +1,11 @@
-import { asSyntaxNode, calleeName, referenceCalls, type SyntaxNode } from "@aburi/core"
+import {
+  asSyntaxNode,
+  calleeName,
+  referenceCalls,
+  type SyntaxNode,
+  unwrapValue,
+  writtenChildren,
+} from "@aburi/core"
 import type {
   Confidence,
   FrameworkCall,
@@ -17,7 +24,7 @@ import {
   registrationMiddleware,
   registrationsOf,
 } from "./registration-middleware"
-import { extractRouterCall } from "./router"
+import { extractRouterCall, moduleBindings } from "./router"
 import { hasRouteArguments, isRouteMethod } from "./routes"
 
 /** `extKind` narrowed to the plugin's own union so a typo fails to compile. */
@@ -114,7 +121,7 @@ function classifyRegistration(
   }
 
   if (callee.leaf === EXPRESS_MIDDLEWARE_METHOD) {
-    return classifyUseCall(callee.name, symbol, importAnchored)
+    return classifyUseCall(callee.name, call, symbol, importAnchored)
   }
 
   return null
@@ -122,6 +129,7 @@ function classifyRegistration(
 
 function classifyUseCall(
   name: string,
+  call: SyntaxNode,
   symbol: SymbolCandidate<OpaqueAstNode>,
   importAnchored: boolean,
 ): ExpressClassification | null {
@@ -136,17 +144,25 @@ function classifyUseCall(
     }
   }
 
-  if (isMountShape(shape)) {
+  const mounted = isMountShape(shape) ? mountedName(call) : null
+  const bindings = mounted === null ? null : moduleBindings(call)
+  if (mounted !== null && bindings !== null && !bindings.functions.has(mounted)) {
+    // A name the module does not bind to a Router may be any middleware: imported, it is unread.
+    const declaredRouter = bindings.routers.has(mounted)
     return {
       extKind: "framework:express:mount",
       derivedBy: `${EXPRESS_DERIVED_BY_PREFIX}:mount:${name};router-identifier`,
-      confidence: importAnchored ? "high" : "medium",
+      confidence: declaredRouter && importAnchored ? "high" : "medium",
     }
   }
 
-  if (shape.hasRegularHandler || shape.hasIdentifierArg) {
-    const arity = shape.hasRegularHandler ? "arity-3" : "identifier-arg"
-    // An identifier argument cannot be arity-checked here, so it is capped at medium.
+  if (shape.hasRegularHandler || shape.hasIdentifierArg || shape.hasCallArg) {
+    const arity = shape.hasRegularHandler
+      ? "arity-3"
+      : shape.hasIdentifierArg
+        ? "identifier-arg"
+        : "factory-call"
+    // A name or a factory's result cannot be arity-checked here, so it is capped at medium.
     const confidence: Confidence = shape.hasRegularHandler && importAnchored ? "high" : "medium"
     return {
       extKind: "framework:express:middleware",
@@ -156,6 +172,11 @@ function classifyUseCall(
   }
 
   return null
+}
+
+function mountedName(call: SyntaxNode): string | null {
+  const second = writtenChildren(call.childForFieldName("arguments"))[1]
+  return second === undefined ? null : unwrapValue(second).text
 }
 
 function isMountShape(shape: UseArgumentShape): boolean {
