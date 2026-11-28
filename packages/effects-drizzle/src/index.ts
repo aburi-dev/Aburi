@@ -1,6 +1,6 @@
 export { classifyDrizzleCall } from "./classify"
 export { EFFECTS_DRIZZLE_DERIVED_BY_PREFIX, EFFECTS_DRIZZLE_PLUGIN_NAME } from "./constants"
-export { hasDrizzleImport } from "./imports"
+export { DRIZZLE_MODULES_LIST, hasDrizzleImport } from "./imports"
 export { effectsDrizzleManifest } from "./manifest"
 export {
   DRIZZLE_QUERY_METHODS,

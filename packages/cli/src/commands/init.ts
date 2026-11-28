@@ -1,10 +1,8 @@
-import { readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import {
   CoreError,
   detectComponents,
   detectManagers,
-  NPM_MANIFEST,
   type UnnameableRoot,
   type UnresolvedDeclaration,
 } from "@aburi/core"
@@ -72,11 +70,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
       throw isUnreadableTree(error) ? detectionFailure(error) : error
     },
   )
-  const { components } = await detectComponents({ workspaceRoot, respectGitignore }).catch(
-    (error: unknown) => {
-      throw detectionFailure(error)
-    },
-  )
+  const { components, dependencyNames } = await detectComponents({
+    workspaceRoot,
+    respectGitignore,
+  }).catch((error: unknown) => {
+    throw detectionFailure(error)
+  })
 
   const languageSet = new Set<string>()
   const frameworkSet = new Set<string>()
@@ -85,11 +84,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     for (const framework of component.frameworks ?? []) frameworkSet.add(framework)
   }
 
-  const dependencies = await dependencyNames(
-    workspaceRoot,
-    components.flatMap((component) => component.roots),
-  )
-  const effects = pluginRefsFor(dependencies, DEPENDENCY_TO_EFFECTS_PLUGIN)
+  const effects = pluginRefsFor(new Set(dependencyNames), DEPENDENCY_TO_EFFECTS_PLUGIN)
   const suggestions = options.withSuggestions
     ? await uninstalledPackages(
         workspaceRoot,
@@ -153,43 +148,6 @@ function suggestPluginsFor(
     ...pluginRefsFor(frameworks, FRAMEWORK_TO_PLUGIN),
     ...effects,
   ].map((name) => `@aburi/${name}`)
-}
-
-const DEPENDENCY_FIELDS = [
-  "dependencies",
-  "devDependencies",
-  "peerDependencies",
-  "optionalDependencies",
-] as const
-
-/** Every package the workspace root's manifest and each Component root's depends on. */
-async function dependencyNames(
-  workspaceRoot: string,
-  componentRoots: readonly string[],
-): Promise<Set<string>> {
-  const names = new Set<string>()
-  for (const root of new Set([".", ...componentRoots])) {
-    const manifest = await readManifest(join(workspaceRoot, root, NPM_MANIFEST))
-    for (const field of DEPENDENCY_FIELDS) {
-      const block = manifest?.[field]
-      if (block !== null && typeof block === "object") {
-        for (const name of Object.keys(block)) names.add(name)
-      }
-    }
-  }
-  return names
-}
-
-async function readManifest(path: string): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(path, "utf8"))
-    return parsed !== null && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch {
-    // Detection has read every manifest a Component came from; one it did not read names no plugin.
-    return null
-  }
 }
 
 async function uninstalledPackages(

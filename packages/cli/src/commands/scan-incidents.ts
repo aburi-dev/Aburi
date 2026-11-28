@@ -236,7 +236,7 @@ function reportPackagesInNoComponent(
   )
   sayIncident(
     `${packages.length} workspace package(s) are in none of the components the config declares, so their Symbols count towards no Component: ${joinCapped(listed)}. ` +
-      "A declared components list is the whole set: add each package to it, or remove components to have every package detected.",
+      "A declared components list is the whole set: add each package to it, leave its files out with ignore, or remove components to have every package detected.",
   )
 }
 

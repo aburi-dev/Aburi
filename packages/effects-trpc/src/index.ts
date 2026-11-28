@@ -1,6 +1,6 @@
 export { classifyTrpcCall } from "./classify"
 export { EFFECTS_TRPC_DERIVED_BY_PREFIX, EFFECTS_TRPC_PLUGIN_NAME } from "./constants"
-export { hasTrpcClientImport } from "./imports"
+export { hasTrpcClientImport, TRPC_CLIENT_MODULES_LIST } from "./imports"
 export { effectsTrpcManifest } from "./manifest"
 export {
   isTrpcMutationTerminal,

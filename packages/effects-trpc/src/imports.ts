@@ -2,10 +2,10 @@ import { hasMatchingImport, matchesModuleOrSubpath } from "@aburi/plugin-registr
 import type { ImportEdge } from "@aburi/types"
 import { EFFECTS_TRPC_PLUGIN_NAME } from "./constants"
 
+export const TRPC_CLIENT_MODULES_LIST = ["@trpc/client", "@trpc/react-query", "@trpc/next"] as const
+
 export const isTrpcClientModule: (source: string) => boolean = matchesModuleOrSubpath(
-  "@trpc/client",
-  "@trpc/react-query",
-  "@trpc/next",
+  ...TRPC_CLIENT_MODULES_LIST,
 )
 
 export function hasTrpcClientImport(imports: readonly ImportEdge[], filePath: string): boolean {

@@ -1,17 +1,23 @@
 import { PLUGIN_SCHEMA_URL } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { loadPlugins } from "../../src"
-import { FRAMEWORK_TO_PLUGIN, LANGUAGE_TO_PLUGIN } from "../../src/plugin-catalog"
+import {
+  DEPENDENCY_TO_EFFECTS_PLUGIN,
+  FRAMEWORK_TO_PLUGIN,
+  LANGUAGE_TO_PLUGIN,
+} from "../../src/plugin-catalog"
 
 type PluginField = "languages" | "frameworks" | "effects"
 
 const listed = (field: PluginField, names: Iterable<string>) =>
   [...new Set(names)].map((name) => [field, name] as const)
 
+const BUNDLED_EFFECTS = ["effects-drizzle", "effects-nest", "effects-prisma", "effects-trpc"]
+
 const BUNDLED = [
   ...listed("languages", LANGUAGE_TO_PLUGIN.values()),
   ...listed("frameworks", FRAMEWORK_TO_PLUGIN.values()),
-  ...listed("effects", ["effects-drizzle", "effects-nest", "effects-prisma", "effects-trpc"]),
+  ...listed("effects", BUNDLED_EFFECTS),
 ]
 
 describe("a bundled plugin, loaded the way aburi scan loads it", () => {
@@ -27,4 +33,8 @@ describe("a bundled plugin, loaded the way aburi scan loads it", () => {
       expect(plugin?.manifest.$schema).toBe(PLUGIN_SCHEMA_URL)
     },
   )
+
+  it("is written by aburi init for some dependency, when it is an effects plugin", () => {
+    expect(new Set(DEPENDENCY_TO_EFFECTS_PLUGIN.values())).toEqual(new Set(BUNDLED_EFFECTS))
+  })
 })

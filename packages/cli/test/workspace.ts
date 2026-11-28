@@ -1,11 +1,15 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, posix, relative, resolve, sep } from "node:path"
+import { recordingLogger } from "@aburi/test-support"
 import { CONFIG_SCHEMA_URL, type IR } from "@aburi/types"
 import {
   DEFAULT_OUTPUT_DIRNAME,
   DIFF_FULL_MD_FILENAME,
   DIFF_JSON_FILENAME,
   DIFF_MD_FILENAME,
+  runScan,
+  type ScanOptions,
+  type ScanReport,
 } from "../src"
 
 export const TYPESCRIPT: { languages: string[] } = { languages: ["lang-typescript"] }
@@ -62,10 +66,36 @@ export async function writeTypeScriptWorkspace(directory: string, name: string):
 export async function writeMonorepo(root: string): Promise<string> {
   await writeFileAt(root, "pnpm-workspace.yaml", "packages:\n  - 'pkgs/*'\n")
   await writePackageJson(root, { name: "root", private: true })
-  const app = resolve(root, "pkgs/app")
-  await writePackageJson(app, { name: "app" })
-  await writeFileAt(app, "src/a.ts", "export function alpha() { return 1 }\n")
-  return app
+  return writeMonorepoPackage(root, "app", ["alpha"])
+}
+
+/** A package `pkgs/<name>` of the monorepo at `root`, whose `src/a.ts` declares `functions`. */
+export async function writeMonorepoPackage(
+  root: string,
+  name: string,
+  functions: readonly string[],
+): Promise<string> {
+  const directory = resolve(root, "pkgs", name)
+  await writePackageJson(directory, { name })
+  const source = functions.map((fn) => `export function ${fn}() { return 1 }\n`).join("")
+  await writeFileAt(directory, "src/a.ts", source)
+  return directory
+}
+
+/** `aburi scan` of the workspace at `root`, to `out/` as JSON, and the warnings it said. */
+export async function scanSaying(
+  root: string,
+  options: ScanOptions = {},
+): Promise<{ report: ScanReport; warnings: string[] }> {
+  const log = recordingLogger()
+  const report = await runScan({
+    cwd: root,
+    outputDir: resolve(root, "out"),
+    format: "json",
+    ...options,
+    incidents: { warn: log.warn },
+  })
+  return { report, warnings: log.warnings }
 }
 
 export async function writeIRs(

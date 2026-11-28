@@ -2,7 +2,11 @@ import { hasMatchingImport, matchesModuleOrSubpath } from "@aburi/plugin-registr
 import type { ImportEdge } from "@aburi/types"
 import { EFFECTS_DRIZZLE_PLUGIN_NAME } from "./constants"
 
-export const isDrizzleModule: (source: string) => boolean = matchesModuleOrSubpath("drizzle-orm")
+export const DRIZZLE_MODULES_LIST = ["drizzle-orm"] as const
+
+export const isDrizzleModule: (source: string) => boolean = matchesModuleOrSubpath(
+  ...DRIZZLE_MODULES_LIST,
+)
 
 export function hasDrizzleImport(imports: readonly ImportEdge[], filePath: string): boolean {
   return hasMatchingImport(

@@ -6,7 +6,7 @@ import {
 import type { ImportEdge } from "@aburi/types"
 import { EFFECTS_NEST_PLUGIN_NAME } from "./constants"
 
-const NEST_EMITTER_MODULES_LIST = ["@nestjs/event-emitter", "eventemitter2"] as const
+export const NEST_EMITTER_MODULES_LIST = ["@nestjs/event-emitter", "eventemitter2"] as const
 
 type NestEmitterModule = (typeof NEST_EMITTER_MODULES_LIST)[number]
 

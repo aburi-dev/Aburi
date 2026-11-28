@@ -193,10 +193,12 @@ codebase:
 Declaring components turns detection off: the components you list are the
 whole set, with no partial merge, so write out every field you care about. A
 workspace package the list leaves out belongs to no component, and `aburi scan`
-names each one its symbols came from, so a package added after `aburi init` wrote
-the list does not go unnoticed. Add it to the list, or delete `components` to
-have every package detected again. To leave a package out on purpose, exclude its
-files with `ignore`.
+names each one the IR has symbols from, so a package added after `aburi init`
+wrote the list is named once it has symbols. Add it to the list, or delete
+`components` to have every package detected again. To leave a package out on
+purpose, exclude its files with `ignore`. A package one of your roots lies inside,
+such as `apps/storefront` in the example above, is not named: declaring part of it
+leaves the rest out on purpose.
 
 `roots` is also what decides which component a symbol counts towards: a file
 belongs to the component whose root is the deepest path containing it, so a

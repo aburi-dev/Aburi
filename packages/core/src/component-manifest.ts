@@ -158,18 +158,25 @@ async function readJsonManifest(path: string): Promise<Readonly<Record<string, u
   return isRecord(parsed) ? parsed : null
 }
 
-export function collectFrameworks(manifest: NpmManifest | null): string[] {
-  if (manifest === null) return []
-  const depKeys = new Set<string>()
-  for (const block of [
-    manifest.dependencies,
-    manifest.devDependencies,
-    manifest.peerDependencies,
-    manifest.optionalDependencies,
-  ]) {
-    if (block === undefined || block === null) continue
-    for (const key of Object.keys(block)) depKeys.add(key)
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const
+
+/** Every package a manifest names in one of its dependency fields. */
+export function dependencyNamesOf(manifest: NpmManifest | null): Set<string> {
+  const names = new Set<string>()
+  for (const field of DEPENDENCY_FIELDS) {
+    const block: unknown = manifest?.[field]
+    if (isRecord(block)) for (const name of Object.keys(block)) names.add(name)
   }
+  return names
+}
+
+export function collectFrameworks(manifest: NpmManifest | null): string[] {
+  const depKeys = dependencyNamesOf(manifest)
   const out = new Set<string>()
   for (const [dep, framework] of NPM_DEP_TO_FRAMEWORK) {
     if (depKeys.has(dep)) out.add(framework)

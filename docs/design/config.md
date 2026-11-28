@@ -262,7 +262,7 @@ passes silently into the IR, because the detector itself records ids no plugin p
 
 Components explicitly declared in the config **replace** the autodetect results as a whole (no merging):
 
-- A non-empty `components[]` → autodetect does not run at all; the IR holds exactly the declared Components, and a package the list leaves out is in none. `aburi scan` names, on stderr, each workspace package the list leaves out that the IR has Symbols from, with their count ([`cli-spec.md`](./cli-spec.md) §5.6): a list `aburi init` wrote stops covering the workspace the moment a package is added, and nothing else would say so. A package whose files `ignore` leaves out gives the IR no Symbols, so leaving one out on purpose is said that way
+- A non-empty `components[]` → autodetect does not run at all; the IR holds exactly the declared Components, and a package the list leaves out is in none. `aburi scan` names, on stderr, each workspace package the list leaves out that the IR has Symbols from, with their count ([`cli-spec.md`](./cli-spec.md) §5.6): a list `aburi init` wrote stops covering the workspace the moment a package is added, and nothing else would say so. A package whose files `ignore` leaves out gives the IR no Symbols, so leaving one out on purpose is said that way. A package a declared root lies inside is not named either: declaring part of it says the rest is left out on purpose
 - An absent or empty `components[]` → the autodetect result is adopted as-is
 
 No ad-hoc merge is provided for "I only want to tweak part of the autodetect result". Once one component is declared, every component the IR should hold must be written out explicitly.
@@ -546,10 +546,10 @@ classifies, to the first-party plugin for it (§13).
 |---|---|
 | `@prisma/client` | `effects-prisma` |
 | `drizzle-orm` | `effects-drizzle` |
-| `@nestjs/event-emitter`, `eventemitter2` | `effects-nest` |
+| `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs` | `effects-nest` |
 | `@trpc/client`, `@trpc/react-query`, `@trpc/next` | `effects-trpc` |
 
-Each is the package an effects plugin's import gate reads, so a plugin is written only where it has calls to classify: a NestJS service with no event emitter gets no `effects-nest`. The components it writes are the whole set from then on (§6.1), so a package added later is in none until it is added to them.
+Each names a package an effects plugin's import gate reads, so a plugin is written where the manifests declare a library it classifies: a NestJS service that depends on neither an event emitter nor `@nestjs/cqrs` gets no `effects-nest`. A declared dependency is not a call, so a library a root `devDependencies` entry or a test alone names still gets its plugin. The other modules `effects-prisma`'s gate reads, a driver adapter, a client extension and a generated client, are installed beside `@prisma/client`, so they need no entry of their own. The components it writes are the whole set from then on (§6.1), so a package added later is in none until it is added to them.
 
 ## 14. Verifiable Properties
 

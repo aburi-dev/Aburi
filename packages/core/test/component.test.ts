@@ -30,6 +30,37 @@ describe("detectComponents", () => {
     expect(components.map((c) => `${c.roots[0]}=${c.id}`)).toEqual([".=solo"])
   })
 
+  it.each<[string, () => Promise<void>, string[]]>([
+    [
+      "the root's and each workspace package's manifest, in every dependency field",
+      async () => {
+        await tree.writePnpmWorkspace("packages/*")
+        await tree.writePackage(".", { name: "root", devDependencies: { typescript: "^5.0.0" } })
+        await tree.writePackage("packages/alpha", {
+          name: "alpha",
+          dependencies: { zod: "^3.0.0", react: "^18.0.0" },
+        })
+        await tree.writePackage("packages/beta", {
+          name: "beta",
+          peerDependencies: { react: "^18.0.0" },
+          optionalDependencies: { "@prisma/client": "^5.0.0" },
+        })
+      },
+      ["@prisma/client", "react", "typescript", "zod"],
+    ],
+    [
+      "a single project's manifest",
+      () => tree.writePackage(".", { name: "solo", dependencies: { "drizzle-orm": "^0.30.0" } }),
+      ["drizzle-orm"],
+    ],
+  ])("names, once each and sorted, the packages %s depends on", async (_, write, names) => {
+    await write()
+
+    const { dependencyNames } = await detectComponents({ workspaceRoot: tree.root })
+
+    expect(dependencyNames).toEqual(names)
+  })
+
   it("names a root that holds no manifest after its directory, kebab-cased", async () => {
     await tree.mkdir("Store Front")
 

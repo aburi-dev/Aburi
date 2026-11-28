@@ -2,6 +2,7 @@ export { classifyPrismaCall } from "./classify"
 export { EFFECTS_PRISMA_DERIVED_BY_PREFIX, EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
 export {
   hasPrismaImport,
+  PRISMA_CLIENT_MODULES_LIST,
   type PrismaClientModuleMatcher,
   prismaClientModuleMatcher,
 } from "./imports"
