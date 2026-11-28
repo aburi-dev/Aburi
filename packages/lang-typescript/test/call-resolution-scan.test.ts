@@ -1261,3 +1261,23 @@ describe("scan — a type a module names through a path alias, in a file that ma
     ])
   })
 })
+
+describe("scan — calls through a tagged template with type arguments", () => {
+  it("reaches the tag, in each shape the grammar reads it in", async () => {
+    const result = await callsFromMain(
+      {
+        "src/sql.ts":
+          "export function sql(parts: TemplateStringsArray) {\n  return parts.join('')\n}\n",
+      },
+      ['import { sql } from "./sql"'],
+      ["sql<number>`count(*)`", "sql<Row[]>`select 1`"],
+    )
+    expect(result).toEqual({
+      resolved: [
+        ["sql", "ts:src/sql.ts#sql"],
+        ["sql", "ts:src/sql.ts#sql"],
+      ],
+      unresolved: [],
+    })
+  })
+})

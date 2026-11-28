@@ -115,7 +115,7 @@ describe("scan — Prisma calls in a service file", () => {
     ])
   })
 
-  it("names each raw query it declines and keeps the call, a tagged template included", async () => {
+  it("names each raw query it declines and keeps the call, tagged templates included", async () => {
     await workspace.writeSource(
       "src/reports.ts",
       [
@@ -127,6 +127,10 @@ describe("scan — Prisma calls in a service file", () => {
         "",
         "export async function purge(prisma: PrismaClient) {",
         '  return prisma.$executeRawUnsafe("DELETE FROM session")',
+        "}",
+        "",
+        "export async function typed(prisma: PrismaClient) {",
+        '  return prisma.$queryRaw<User[]>`SELECT * FROM "User"`',
         "}",
         "",
       ].join("\n"),
@@ -144,6 +148,7 @@ describe("scan — Prisma calls in a service file", () => {
     expect(result.ir.stats.declinedCalls).toEqual([
       declined("purge", "prisma.$executeRawUnsafe", 8),
       declined("totals", "prisma.$queryRaw", 4),
+      declined("typed", "prisma.$queryRaw", 12),
     ])
     expect(symbolNamed(result, "totals").calls.map((c) => c.target)).toEqual(["prisma.$queryRaw"])
     expect(symbolNamed(result, "purge").calls.map((c) => c.target)).toEqual([

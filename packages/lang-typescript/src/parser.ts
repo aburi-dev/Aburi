@@ -10,6 +10,7 @@ import { type ImportTypePatch, importTypePatches, rememberImportTypes } from "./
 import { extractImports, isTypeStarKeyword } from "./imports"
 import { jsxStringCommentPatches } from "./jsx-string-comment"
 import { type Patch, reparsePatched } from "./reparse"
+import { typedTagCompletion } from "./typed-tag"
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -231,21 +232,12 @@ function isTaggedTemplateEscapeArtifact(node: Node): boolean {
   )
 }
 
-/**
- * The grammar has no tagged template with type arguments (`` sql<Row[]>`…` ``), and completes the
- * instantiation into a callable with a `!` of its own.
- */
 function isTypedTagCompletion(node: Node): boolean {
-  const asserted = node.parent
-  const call = asserted?.parent
   return (
     node.isMissing &&
     node.type === "!" &&
-    asserted?.type === "non_null_expression" &&
-    asserted.child(0)?.type === "instantiation_expression" &&
-    call?.type === "call_expression" &&
-    call.childForFieldName("function")?.equals(asserted) === true &&
-    call.childForFieldName("arguments")?.type === "template_string"
+    node.parent !== null &&
+    typedTagCompletion(node.parent) !== null
   )
 }
 

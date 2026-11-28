@@ -283,7 +283,7 @@ function firstCallExpression(exprStatement: Node): Node | null {
     if (child === null) continue
     if (child.type === "call_expression") return child
     if (child.type === "await_expression") {
-      const inner = child.namedChild(0)
+      const inner = firstNonCommentChild(child)
       if (inner !== null && inner.type === "call_expression") return inner
     }
   }

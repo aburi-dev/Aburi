@@ -24,6 +24,14 @@ describe("the rules a body yields", () => {
         ["throw", "E"],
       ],
     ],
+    [
+      "a guard that throws past a comment",
+      "if (x) throw /* legacy */ new E()",
+      [
+        ["guard", "x"],
+        ["throw", "E"],
+      ],
+    ],
     ["a literal return", "return 1", []],
     ["a return of a member chain off `this`", "return this.a.b.c", []],
     ["a return of a call", "return foo()", []],

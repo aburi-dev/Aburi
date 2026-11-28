@@ -7,7 +7,7 @@ import type {
 } from "@aburi/types"
 import type { Node } from "web-tree-sitter"
 import { bodyNodesOf, firstNonCommentChild, throughParentheses, thrownValue } from "./ast-helpers"
-import { readCall } from "./callee"
+import { isCall, readCall } from "./callee"
 import {
   functionValuedField,
   heldFunctionBodies,
@@ -180,7 +180,7 @@ function visitExcluding(node: Node, skipped: readonly Node[], walk: Walk): void 
       continue
     }
     // Calls a skipped body sits under run on the owner; only the body waits for the member's call.
-    if (part.type === "call_expression") recordCall(part, walk.calls)
+    if (part.type !== "new_expression" && isCall(part)) recordCall(part, walk.calls)
     visitExcluding(part, skipped, walk)
   }
 }
@@ -253,6 +253,7 @@ function visitNode(node: Node, walk: Walk): void {
       visitChildren(node, walk)
       return
     default:
+      if (isCall(node)) recordCall(node, walk.calls)
       visitChildren(node, walk)
       return
   }
@@ -314,10 +315,6 @@ function visitConciseBody(body: Node, walk: Walk): void {
 
 function isConciseBody(body: Node): boolean {
   return body.parent?.type === "arrow_function" && body.type !== "statement_block"
-}
-
-function isCall(node: Node): boolean {
-  return node.type === "call_expression" || node.type === "new_expression"
 }
 
 function visitTryStatement(node: Node, walk: Walk): void {

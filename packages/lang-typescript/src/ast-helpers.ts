@@ -122,7 +122,7 @@ export interface ThrownValue {
 }
 
 export function thrownValue(throwNode: Node): ThrownValue | null {
-  const argument = throwNode.namedChild(0)
+  const argument = firstNonCommentChild(throwNode)
   if (argument === null) return null
   if (argument.type === "new_expression") {
     const ctor = argument.childForFieldName("constructor")

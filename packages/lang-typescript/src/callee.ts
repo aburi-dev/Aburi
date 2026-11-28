@@ -9,14 +9,46 @@ import {
   receiverTypeOf,
   thisBindingAt,
 } from "./receiver-type"
+import { typedTagComparison, typedTagCompletion, typedTagOfTemplate } from "./typed-tag"
+
+/** A call, a `new`, or a tagged template with type arguments the grammar read as comparisons. */
+export function isCall(node: Node): boolean {
+  return (
+    node.type === "call_expression" ||
+    node.type === "new_expression" ||
+    typedTagComparison(node) !== null
+  )
+}
+
+interface CallParts {
+  readonly callee: Node
+  readonly argsNode: Node | null
+  readonly inAwait: boolean
+}
+
+function callParts(node: Node): CallParts | null {
+  const inAwait = node.parent?.type === "await_expression"
+  if (node.type === "binary_expression") {
+    const typed = typedTagComparison(node)
+    if (typed === null) return null
+    return { callee: typed.tag, argsNode: typed.template, inAwait: inAwait || typed.awaited }
+  }
+  const isNew = node.type === "new_expression"
+  const written = node.childForFieldName(isNew ? "constructor" : "function") ?? node.namedChild(0)
+  if (written === null) return null
+  const argsNode = node.childForFieldName("arguments") ?? findChild(node, "arguments")
+  const typed = typedTagCompletion(written)
+  if (typed === null) return { callee: written, argsNode, inAwait }
+  return { callee: typed.tag, argsNode, inAwait: inAwait || typed.awaited }
+}
 
 export function readCall(node: Node): CallCandidate | null {
+  const parts = callParts(node)
+  if (parts === null) return null
+  const { callee, argsNode } = parts
   const isNew = node.type === "new_expression"
-  const callee = node.childForFieldName(isNew ? "constructor" : "function") ?? node.namedChild(0)
-  if (callee === null) return null
   const shape = describeCallee(callee)
   if (shape === null) return null
-  const argsNode = node.childForFieldName("arguments") ?? findChild(node, "arguments")
   const args = (argsNode?.namedChildren ?? []).filter(
     (arg): arg is Node => arg !== null && arg.type !== "comment",
   )
@@ -29,7 +61,7 @@ export function readCall(node: Node): CallCandidate | null {
     target: shape.target,
     line: node.startPosition.row + 1,
     argumentCount: args.length,
-    inAwait: node.parent?.type === "await_expression",
+    inAwait: parts.inAwait,
     inNew: isNew,
     literalArgs: args.map(literalOf),
     ...(shape.dynamic ? { dynamicReceiver: true } : {}),
@@ -90,8 +122,11 @@ function leadingName(callee: Node): Node | null {
       case "as_expression":
       case "satisfies_expression":
       case "type_assertion":
-      case "non_null_expression":
+      case "instantiation_expression":
         node = wrappedExpression(node)
+        break
+      case "non_null_expression":
+        node = typedTagCompletion(node)?.tag ?? wrappedExpression(node)
         break
       default:
         return null
@@ -101,8 +136,8 @@ function leadingName(callee: Node): Node | null {
 }
 
 export function callSiteOf(call: Node): CallSiteRef | null {
-  const callee = call.childForFieldName("function") ?? call.namedChild(0)
-  const shape = callee === null ? null : describeCallee(callee)
+  const parts = callParts(call)
+  const shape = parts === null ? null : describeCallee(parts.callee)
   return shape === null ? null : { target: shape.target, line: call.startPosition.row + 1 }
 }
 
@@ -204,12 +239,21 @@ export function describeCallee(node: Node): CalleeShape | null {
     }
     case "as_expression":
     case "satisfies_expression":
-    case "type_assertion": {
+    case "type_assertion":
+    case "instantiation_expression": {
       const innerNode = wrappedExpression(node)
       return innerNode === null ? null : describeCallee(innerNode)
     }
-    case "non_null_expression":
-      return describeNonNull(node)
+    case "non_null_expression": {
+      const typed = typedTagCompletion(node)
+      return typed === null ? describeNonNull(node) : describeCallee(typed.tag)
+    }
+    case "template_string": {
+      const typed = typedTagOfTemplate(node)
+      const tag = typed === null ? null : describeCallee(typed.tag)
+      if (tag === null) return UNMODELLED_EXPRESSION
+      return { target: tag.target, dynamic: true, opaque: false }
+    }
     default:
       return node.text.length > 0 ? UNMODELLED_EXPRESSION : null
   }

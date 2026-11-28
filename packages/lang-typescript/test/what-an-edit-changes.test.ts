@@ -122,6 +122,23 @@ const check = (...condition: string[]) =>
 const accessor = (parameter: string) =>
   `export class C {\n  get x() {\n    return 1\n  }\n  set x(${parameter}: number) {\n    use()\n  }\n}\n`
 
+const firstNegativeRow = (onZero: string, onNegative: string) =>
+  [
+    "export function firstNegativeRow(grid: number[][]) {",
+    "  outer: for (const row of grid) {",
+    "    inner: for (const v of row) {",
+    `      if (v === 0) continue ${onZero}`,
+    `      if (v < 0) break ${onNegative}`,
+    "      mark(v)",
+    "    }",
+    "  }",
+    "}",
+    "",
+  ].join("\n")
+
+const get = (thrown: string) =>
+  `export function get(id: string) {\n  if (!id) throw ${thrown}\n  return lookup(id)\n}\n`
+
 const CONNECT = "function connect() {\n  return open()\n}\n"
 const PAGE = "function Page() {\n  return render()\n}\n"
 
@@ -172,6 +189,21 @@ describe("an edit to what a caller passes or gets is an api change", () => {
       ])
     },
   )
+})
+
+describe("an edit to what a function throws is an api and a logic change", () => {
+  it("reads the thrown class past a comment after `throw`", async () => {
+    const diff = await diffOfEdit(
+      workspace,
+      FILE,
+      get('/* legacy path */ new NotFound("id")'),
+      get('/* legacy path */ new Gone("id")'),
+    )
+
+    expect(changedSymbols(diff)).toMatchObject([
+      { name: "get", apiChanged: true, logicChanged: true },
+    ])
+  })
 })
 
 describe("an edit to a declaration that has no body is an api change", () => {
@@ -502,6 +534,12 @@ describe("an edit outside every rule and signature is a syntax-only change", () 
       ["load"],
     ],
     [
+      "the labels a `break` and a `continue` name swapped",
+      firstNegativeRow("inner", "outer"),
+      firstNegativeRow("outer", "inner"),
+      ["firstNegativeRow"],
+    ],
+    [
       "a concise conditional rewritten as a block that returns it in parentheses",
       "export const larger = (a: number, b: number): number => (a > b ? a : b)\n",
       "export const larger = (a: number, b: number): number => {\n  return (a > b ? a : b)\n}\n",
@@ -649,6 +687,12 @@ describe("a formatting edit is no change", () => {
       "a trailing comma after the last parameter",
       withParams("a: string, b: number"),
       withParams("a: string, b: number,"),
+      1,
+    ],
+    [
+      "a comment written after `throw`",
+      get('new NotFound("id")'),
+      get('/* legacy path */ new NotFound("id")'),
       1,
     ],
     [

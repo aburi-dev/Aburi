@@ -302,6 +302,7 @@ const LEAF_TEXT_TYPES: ReadonlySet<string> = new Set([
   "shorthand_property_identifier",
   "shorthand_property_identifier_pattern",
   "private_property_identifier",
+  "statement_identifier",
   "number",
   "string_fragment",
   "regex_pattern",

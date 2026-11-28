@@ -103,6 +103,7 @@ describe("a type is recorded as it reads on one line", () => {
 describe("what a function throws", () => {
   it.each([
     ["the constructor of `throw new`", "throw new MyError()", ["MyError"]],
+    ["past a comment after `throw`", "throw /* legacy */ new MyError()", ["MyError"]],
     ["an identifier the module binds", "throw TIMEOUT", ["TIMEOUT"]],
     ["an identifier nothing binds", "throw unknownError", ["unknownError"]],
     ["the callee of a factory thrown", "throw makeError()", ["makeError"]],
