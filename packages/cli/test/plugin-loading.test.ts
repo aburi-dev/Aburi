@@ -11,6 +11,8 @@ import {
   EXIT,
   type LoadPluginsOptions,
   loadPlugins,
+  readIR,
+  runScan,
 } from "../src"
 import { pathExists } from "../src/fs-probe"
 import {
@@ -23,7 +25,7 @@ import {
 } from "./plugin-fakes"
 import { runCliIn } from "./run-cli"
 import { stubPluginSource, writeStubWorkspace } from "./stub-language"
-import { writeFileAt } from "./workspace"
+import { writeConfig, writeFileAt, writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("plugin-loading")
 
@@ -87,6 +89,28 @@ describe("loadPlugins — finding the plugin in a module", () => {
     expect(loaded.effects).toEqual([FAKE_EFFECTS_PLUGIN])
   })
 
+  it("loads a plugin listed twice once, under the entry that loaded it first", async () => {
+    const modules: Record<string, unknown> = {
+      "@aburi/lang-fake": { plugin: FAKE_LANGUAGE_PLUGIN },
+      "@aburi/effects-fake": { plugin: FAKE_EFFECTS_PLUGIN },
+    }
+    const loaded = await loadPlugins({
+      config: {
+        languages: ["lang-fake", "@aburi/lang-fake"],
+        effects: ["@aburi/effects-fake", "effects-fake"],
+      },
+      workspaceRoot: "/tmp",
+      importModule: async (specifier) => modules[specifier],
+    })
+
+    expect(loaded.languages).toEqual([FAKE_LANGUAGE_PLUGIN])
+    expect(loaded.effects).toEqual([FAKE_EFFECTS_PLUGIN])
+    expect([...loaded.listedIn]).toEqual([
+      ["lang-fake", { field: "languages", ref: "lang-fake" }],
+      ["effects-fake", { field: "effects", ref: "@aburi/effects-fake" }],
+    ])
+  })
+
   it.each<[string, Config, () => Promise<unknown>, string]>([
     [
       "a module that fails to import",
@@ -113,6 +137,12 @@ describe("loadPlugins — finding the plugin in a module", () => {
       { effects: ["lang-fake"] },
       async () => ({ plugin: FAKE_LANGUAGE_PLUGIN }),
       'Plugin "lang-fake" is listed under effects but its manifest declares type "lang".',
+    ],
+    [
+      "a plugin listed again under a field its type disagrees with",
+      { languages: ["lang-fake"], effects: ["@aburi/lang-fake"] },
+      async () => ({ plugin: FAKE_LANGUAGE_PLUGIN }),
+      'Plugin "@aburi/lang-fake" is listed under effects but its manifest declares type "lang".',
     ],
   ])("reports %s as the plugin's fault", async (_, config, importModule, says) => {
     const error = await errorFrom(CliError, () =>
@@ -367,4 +397,41 @@ describe("aburi scan — a configured plugin that cannot be loaded", () => {
       expect(await pathExists(resolve(workspace.root, DEFAULT_OUTPUT_DIRNAME))).toBe(false)
     },
   )
+})
+
+describe("aburi scan — a plugin listed under two spellings", () => {
+  it("runs it once and names it once in the Document", async () => {
+    await writePackageJson(workspace.root, {
+      name: "demo",
+      version: "1.0.0",
+      dependencies: { "@prisma/client": "*" },
+    })
+    await writeConfig(workspace.root, {
+      languages: ["lang-typescript", "@aburi/lang-typescript"],
+      effects: ["@aburi/effects-prisma", "effects-prisma"],
+    })
+    await writeFileAt(
+      workspace.root,
+      "src/users.ts",
+      [
+        'import { PrismaClient } from "@prisma/client"',
+        "const prisma = new PrismaClient()",
+        "export async function rawCount() {",
+        '  return prisma.$queryRawUnsafe("select count(*) from users")',
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const report = await runScan({ cwd: workspace.root, format: "json" })
+    const ir = await readIR(report.irPath ?? "")
+
+    expect(ir.generator.plugins.map((plugin) => plugin.name)).toEqual([
+      "effects-prisma",
+      "lang-typescript",
+    ])
+    expect(ir.stats.declinedCalls?.map((call) => [call.plugin, call.target])).toEqual([
+      ["effects-prisma", "prisma.$queryRawUnsafe"],
+    ])
+  })
 })

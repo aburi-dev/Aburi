@@ -1226,7 +1226,8 @@ another cell follows, so a row that ends early does not push the next column out
 core effect id is `core`, and a prefix is written `(prefix <prefix>)`, since it stands for every
 value under it ([`extension-vocab.md`](./extension-vocab.md) §3.2). A plugin listed twice, whose
 manifest registers again unchanged ([`extension-vocab.md`](./extension-vocab.md) V9), is one
-plugin, under the entry that loaded it first.
+plugin, under the entry that loaded it first. It is loaded and run once too, so a scan's
+`generator.plugins` names it once and a call it declines is declined once.
 
 `aburi vocab effects` — owner, id, description:
 ```
@@ -1384,7 +1385,9 @@ both streams refuse, that line is lost too, and the code still says `1`.
 
 The line between `1` and `2` is who has to act, not which subsystem failed. `2` covers the whole
 of what the reader wrote: a config that does not parse, does not conform, or names the same
-component twice — and a `--config` path that names nothing, which is the "missing" in the table
+component twice; a workspace manifest that does not parse or does not list its packages
+(`pnpm-workspace.yaml`, the root `package.json`, the `package.json` of a package a Component
+holds), whichever component search meets it first; and a `--config` path that names nothing, which is the "missing" in the table
 above and is a mistyped argument rather than an IO failure. `1` covers a config that is **there
 and cannot be read**: a permission, a mount, a directory of that name. No edit to `aburi.json`
 fixes any of those. And a failure Aburi's own invariants raised is `1` with the run named as a
@@ -1742,6 +1745,7 @@ a command's option, not a global one (§3).
 | CL49 | `aburi scan` with a configured plugin that fails to import, or whose manifest the registry refuses (§5.4): a prefix another configured plugin declared, another configured plugin's name with a different manifest, a reserved namespace, a namespace its type may not own, a value JSON cannot carry, a `version` that is not a string, or a language plugin's manifest that declares no `languageId` (one set on the plugin object instead is not read), one outside `[a-z][a-z0-9]*`, the reserved `slice`, or a token another configured plugin declared | exit 3 before anything is written, stderr naming the config entry that loaded the plugin. A `frameworkHints` entry the registry refuses is exit 2, naming the entry |
 | CL50 | `aburi scan` where an effect plugin's `classify` refuses a value through `ctx.registry.assertEffectDeclared`, or returns a Promise | exit 3 with that error's message, nothing on stdout and no IR written, though the first is the registry's error and the second the core's. The first exits 3 under `--discover` too, since the registry does not read `strict`. `aburi explain` and `aburi diff` exit 3 for both, since they run the same scan, and `aburi diff` writes no report |
 | CL51 | `aburi scan` in a workspace holding a directory the process may not list, whether the census, a manifest search or discovery meets it, or `aburi init` there | exit 1, with `Directory "<path>" could not be listed` and the errno on stderr, after `Failed to resolve components: ` (scan) or `Failed to detect components: ` (init) when a component search meets it. With `.gitignore` excluding that directory and no declared package pattern reaching it, `aburi scan` exits 0 and the IR holds the rest of the workspace, and with `--no-respect-gitignore` it exits 1 |
+| CL51a | `aburi scan` or `aburi init` with a `pnpm-workspace.yaml` that is not YAML or whose `packages:` entry is not a string, a root `package.json` that is not JSON, or a workspace package's `package.json` that is not JSON | exit 2, with `Failed to resolve components: ` (scan) or `Failed to detect components: ` (init), then the manifest's path and the parser's reason, on stderr; for the YAML, the line and column it stopped at (§9) |
 | CL52 | `aburi diff --base <ir> --head <ir>` or `aburi explain --ir <ir>` where the file opens with one byte order mark (U+FEFF) | Read as without it. Two of them, or one after the first character, is exit 2, `IR file "<path>" is not valid JSON` |
 | CL53 | `aburi scan` where `package.json` and `aburi.json` both open with one byte order mark | exit 0, the Component named after the `package.json` |
 | CL54 | `aburi diff HEAD~1..HEAD`, with and without a `--fail-on` that trips, or `aburi explain <ambiguous>`, with nothing reading stdout; the same two diffs or `aburi scan` with nothing reading stderr | The code the same run exits with when both streams are read (`0`, `3` or `2`), never `1`; the other stream byte for byte, the same artefacts, and no base worktree or temporary directory left behind |

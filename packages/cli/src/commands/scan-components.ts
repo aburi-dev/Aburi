@@ -39,14 +39,16 @@ export async function resolveManagers(
   try {
     return await detectManagers(workspaceRoot, { respectGitignore: config.respectGitignore })
   } catch (error) {
-    throw isUnreadableTree(error) ? componentResolutionFailure(error) : error
+    throw componentResolutionFailure(error)
   }
 }
 
-// The manager scan meets the tree before the census does, so a tree neither can read is reported
-// alike whichever meets it. A manifest fault the manager scan meets keeps its exit 1.
-export function isUnreadableTree(error: unknown): error is CoreError {
-  return error instanceof CoreError && UNREADABLE_TREE_CODES.has(error.code)
+// The manager scan and the census read the same manifests, so a fault is the reader's to fix, or
+// not, whichever of them meets it first.
+export function componentFaultKind(error: unknown): "config-error" | "runtime-error" {
+  return error instanceof CoreError && CONFIG_COMPONENT_ERROR_CODES.has(error.code)
+    ? "config-error"
+    : "runtime-error"
 }
 
 export async function resolveComponents(
@@ -189,18 +191,14 @@ function assertSpelling(value: string, subject: string): string {
 }
 
 function componentResolutionFailure(error: unknown): CliError {
-  const configFault = error instanceof CoreError && CONFIG_COMPONENT_ERROR_CODES.has(error.code)
   return new CliError(
     `Failed to resolve components: ${errorMessage(error)}`,
-    configFault ? "config-error" : "runtime-error",
-    { cause: error },
+    componentFaultKind(error),
+    {
+      cause: error,
+    },
   )
 }
-
-const UNREADABLE_TREE_CODES: ReadonlySet<CoreErrorCode> = new Set<CoreErrorCode>([
-  "scan-gitignore-unreadable",
-  "scan-directory-unreadable",
-])
 
 const CONFIG_COMPONENT_ERROR_CODES: ReadonlySet<CoreErrorCode> = new Set<CoreErrorCode>([
   "invalid-component-id",

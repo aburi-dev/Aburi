@@ -247,7 +247,7 @@ When not specified explicitly, the core Component autodetect infers them from `p
 
 Each field has the same shape as [`ir-schema.md`](./ir-schema.md) §4. **However, `languages` and `name` may be omitted on the config side.** Autodetect fills in neither: an omitted `name` is the entry's `id`, and an omitted or empty `languages` is `["ts"]`. In the schema, both are required on the IR Component; the config Component is lenient.
 
-A `publicApi` entry is carried into the IR as written, in NFC, so one the IR schema refuses is refused here, with exit 2 naming the component, before anything is scanned: an entry holding a backslash, which this schema admits and the IR's does not. A root the IR cannot record is refused the same way.
+A `publicApi` entry is carried into the IR as written, in NFC, so one the IR schema refuses is refused here, with exit 2 naming the component, before anything is scanned: an entry holding a backslash, which this schema admits and the IR's does not. A root the IR cannot record is refused the same way. The list's order and repeats are not carried: the IR holds its entries sorted, each once ([`ir-schema.md`](./ir-schema.md) §1), so reordering it, or naming an entry twice, changes nothing a diff can see.
 
 `frameworks` holds framework ids (`nestjs`, what a plugin's `provides.frameworks[]` or the
 detector names), not plugin names. A value that is a plugin's own name (`framework-nestjs`),
@@ -583,6 +583,7 @@ Each names a package an effects plugin's import gate reads, so a plugin is writt
 | C21a | `components: [{ …, "frameworks": ["lang-typescript"] }]`, a plugin that provides no framework | Exit 0; stderr says to remove it or write the component's framework id |
 | C22 | A config that opens with one byte order mark (U+FEFF) | Loads as without it; a key named twice is reported at the column an editor shows. Two of them, or one after the first character, is `config-parse-failed` naming `InvalidSymbol` and its offset |
 | C23 | `components: [{ …, "publicApi": ["src\\index.ts"] }]` | Exit 2 naming the component and the entry |
+| C23a | `components: [{ …, "publicApi": ["src/z/**", "src/a/**", "src/z/**"] }]` | The IR's Component holds `["src/a/**", "src/z/**"]`; a diff against the same config with the list as `["src/a/**", "src/z/**"]` reports no Component change |
 | C24 | `testFiles` omitted, over `src/a.test.ts`, `src/__tests__/b.ts`, `test/c.ts`, `tools/.harness/test/d.ts` and `src/testing.ts` | Every Symbol of the first four carries `inTestFile: true`; the last file's carry no key |
 | C25 | `testFiles: ["src/order.ts"]` | Only that file's Symbols carry the key: the default list no longer applies |
 | C25a | `testFiles: ["...", "src/order.ts"]`, the two in either order, and `testFiles: ["...", "!tools"]` | The first marks every file C24 marks and `src/order.ts`; the second marks those of C24 but `tools/.harness/test/d.ts` |
