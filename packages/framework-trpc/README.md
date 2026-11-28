@@ -106,6 +106,30 @@ guard removed from `protectedProcedure` changes `protectedProcedure` alone, and
 the report lists a procedure built on it only when the change moves an effect
 the procedure inherits.
 
+A procedure written inside a router's object literal has no Symbol of its own,
+so the router names, for each, what it is built on, prefixed by the path a
+client calls it by: `t.router({ list: publicProcedure.query(fn), delete:
+protectedProcedure.use(isAdmin).mutation(fn) })` names
+`delete:protectedProcedure`, `delete:isAdmin` and `list:publicProcedure`, and
+calls `protectedProcedure`, `isAdmin` and `publicProcedure`. Switching `delete`
+to `publicProcedure` is then a logic change to the router
+(`- middleware removed: delete:protectedProcedure`). The entries follow the
+paths rather than the order the keys are written in, since tRPC serves a
+procedure by its path, so swapping two keys is no logic change.
+
+A router written inside one is read the same way under the path of keys
+(`post.delete:protectedProcedure`), whether it is a `t.router({ … })`, a plain
+object (`post: { delete: … }`) or a `t.mergeRouters(…)` of routers built in
+place. A key is the name of the property it makes: `"by-id"`, `["by-id"]` and
+`` [`by-id`] `` give `by-id:`, `0x10` gives `16:`, and a key read only at run
+time gives `<computed>:`. A quoted `"post.delete"` key and a `delete` inside
+`post` give one path, the one a client calls either by.
+
+A procedure on the instance's own `t.procedure` names no base procedure, as it
+does when declared as a `const`: `list: t.procedure.use(isAdmin).query(fn)`
+names `list:isAdmin`. A procedure or router the object names by reference
+(`{ list }`, `{ post: postRouter }`) names nothing, since it carries its own.
+
 Not linked today:
 
 - A middleware composed inside the `.use(…)` or `.concat(…)` that hands it
@@ -136,7 +160,8 @@ Not classified today:
   gives an object handed to a call no member Symbols, so there is no Symbol to
   classify. The router is classified, and it walks its whole call, so the
   procedure's resolver is the router's: its calls, rules and effects are on the
-  router, and an edit to its rules or effects is a logic change to the router. Declare the
+  router, and an edit to its rules or effects is a logic change to the router,
+  as is a change to what it is built on, which the router names. Declare the
   procedure as a `const` and name it in the router to give it a Symbol of its
   own.
 - What is built on a base procedure whose name is neither `procedure` nor ends
