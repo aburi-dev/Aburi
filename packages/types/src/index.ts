@@ -77,6 +77,7 @@ export type {
 export type {
   Capabilities,
   EffectVocab as ManifestEffectVocab,
+  ExitCall,
   ExtKindVocab as ManifestExtKindVocab,
   PluginManifest,
   Provides,
@@ -144,6 +145,8 @@ export {
   type SymbolChangeStatus,
 } from "./symbol-change"
 export {
+  ABSTRACT_DECLARATION_DERIVED_BY,
+  AMBIENT_DECLARATION_DERIVED_BY,
   CALL_ARGUMENT_FUNCTION_DERIVED_BY,
   COMPUTED_TARGET_SEGMENT,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,

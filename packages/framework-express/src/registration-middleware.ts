@@ -1,4 +1,5 @@
 import {
+  type CalleeName,
   calleeName,
   chainCalls,
   middlewareNames,
@@ -7,18 +8,52 @@ import {
   writtenChildren,
 } from "@aburi/core"
 import { EXPRESS_MIDDLEWARE_METHOD } from "./middleware"
-import { handlerArguments, hasRouteArguments, isRouteMethod } from "./routes"
+import {
+  handlerArguments,
+  hasRouteArguments,
+  hasRouteCallUpTheChain,
+  isRouteMethod,
+} from "./routes"
 
-export function registrationMiddleware(call: SyntaxNode): string[] {
-  const chain = chainCalls(call).toReversed()
-  return chain.flatMap((registration, index) => {
-    const leaf = calleeName(registration)?.leaf
-    if (leaf === EXPRESS_MIDDLEWARE_METHOD) return middlewareNames(useArguments(registration))
-    if (leaf === undefined || !isRouteMethod(leaf) || !hasRouteArguments(registration)) return []
-    const handlers = handlerArguments(registration).flatMap(flattened)
+export interface Registration {
+  readonly call: SyntaxNode
+  readonly callee: CalleeName
+  /** What it hands Express to run, flattened as Express flattens it, the path left out. */
+  readonly handlers: readonly SyntaxNode[]
+}
+
+/** The `use` and route registrations a statement's chain makes, in the order it makes them. */
+export function registrationsOf(call: SyntaxNode): Registration[] {
+  return chainCalls(call)
+    .toReversed()
+    .flatMap((registration) => {
+      const callee = calleeName(registration)
+      if (callee?.leaf === EXPRESS_MIDDLEWARE_METHOD) {
+        return [{ call: registration, callee, handlers: useArguments(registration) }]
+      }
+      if (callee === null || !isRouteRegistration(registration)) return []
+      const handlers = handlerArguments(registration).flatMap(flattened)
+      return [{ call: registration, callee, handlers }]
+    })
+}
+
+export function registersRoute({ callee }: Registration): boolean {
+  return callee.leaf !== EXPRESS_MIDDLEWARE_METHOD
+}
+
+export function registrationMiddleware(registrations: readonly Registration[]): string[] {
+  const routes = registrations.filter(registersRoute)
+  // One Symbol holds every route a statement registers, so a bare name could not say which method
+  // a guard moved to. A `.route()` chain qualifies even one, so its names hold as methods come and go.
+  const qualified = routes.length > 1 || routes.some((route) => hasRouteCallUpTheChain(route.call))
+  return registrations.flatMap(({ callee, handlers }, index) => {
+    if (callee.leaf === EXPRESS_MIDDLEWARE_METHOD) return middlewareNames(handlers)
     const guardsLaterRoutes =
-      leaf === ALL_METHODS && chain.slice(index + 1).some(isRouteRegistration)
-    return middlewareNames(guardsLaterRoutes ? handlers : handlers.slice(0, -1))
+      callee.leaf === ALL_METHODS && registrations.slice(index + 1).some(registersRoute)
+    const names = middlewareNames(guardsLaterRoutes ? handlers : handlers.slice(0, -1))
+    if (!qualified) return names
+    if (names.length === 0) return [`${callee.leaf}:`]
+    return names.map((name) => `${callee.leaf}:${name}`)
   })
 }
 

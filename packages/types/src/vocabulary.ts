@@ -2,6 +2,10 @@ export const COMPUTED_TARGET_SEGMENT = "<computed>"
 
 export const UNNAMED_DECORATOR = "<expression>"
 
+export const ABSTRACT_DECLARATION_DERIVED_BY = "abstract-declaration"
+
+export const AMBIENT_DECLARATION_DERIVED_BY = "ambient-declaration"
+
 export const EXPORT_KEYWORD_DERIVED_BY = "export-keyword"
 
 export const EXPORT_DEFAULT_DERIVED_BY = "export-default"

@@ -1,4 +1,5 @@
-import { useScratchWorkspace } from "@aburi/test-support"
+import type { ScanExtras } from "@aburi/test-harness"
+import { recordingLogger, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { scanTypeScript } from "./fixtures/scan"
 
@@ -10,13 +11,14 @@ async function callsFromMain(
   imports: readonly string[],
   calls: readonly string[],
   file = "src/use.ts",
+  extras: ScanExtras = {},
 ) {
   for (const [path, source] of Object.entries(modules)) await workspace.writeSource(path, source)
   const body = calls.map((call) => `  ${call}`)
   const use = [...imports, "", "export function main() {", ...body, "}", ""].join("\n")
   await workspace.writeSource(file, use)
 
-  const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+  const { ir, unresolvedCalls } = await scanTypeScript(workspace.root, {}, extras)
   const mainId = `ts:${file}#main`
   const main = ir.symbols.find((s) => s.id === mainId)
   return {
@@ -315,16 +317,65 @@ describe("scan — a call through the name of a class that lacks the member", ()
     })
   })
 
+  // Built output the scan does not read is all its manifest names.
+  const LOGGING_PACKAGE: ScanExtras = {
+    workspacePackages: [
+      { name: "@acme/logging", root: "packages/logging", entry: { main: "./dist/index.js" } },
+    ],
+  }
+
   it.each([
     ["a barrel that re-exports it", "src/use.ts", 'import { Logger } from "./barrel"'],
     ["a workspace package", "src/use.ts", 'import { Logger } from "@acme/logging"'],
     ["a `require` in JavaScript", "src/use.js", 'const { Logger } = require("./audit-log")'],
     ["an ambient declaration", "src/use.ts", "declare const Logger: { log(m: string): string }"],
   ])("searches on past %s to the class that declares the member", async (_label, file, head) => {
-    expect(await callsFromMain(MODULES, [head], ['Logger.log("x")'], file)).toEqual({
+    const calls = await callsFromMain(MODULES, [head], ['Logger.log("x")'], file, LOGGING_PACKAGE)
+    expect(calls).toEqual({
       resolved: [["Logger.log", "ts:src/audit-log.ts#Logger.log"]],
       unresolved: [],
     })
+  })
+
+  it.each([
+    ["an import", "src/use.ts", "@nestjs/common", 'import { Logger } from "@nestjs/common"'],
+    [
+      "an alias no tsconfig maps",
+      "src/use.ts",
+      "@app/logging",
+      'import { Logger } from "@app/logging"',
+    ],
+    ["a `require` in JavaScript", "src/use.js", "winston", 'const { Logger } = require("winston")'],
+  ])(
+    "stops at a package outside the workspace through %s, bucketed `external`, and warns that the workspace declares the name",
+    async (_label, file, specifier, head) => {
+      const logger = recordingLogger()
+      const extras = { ...LOGGING_PACKAGE, logger }
+      const calls = await callsFromMain(MODULES, [head], ['Logger.log("x")'], file, extras)
+      expect(calls).toEqual({
+        resolved: [["Logger.log", null]],
+        unresolved: [["Logger.log", "external"]],
+      })
+      expect(logger.warnings).toEqual([
+        `${specifier} maps to no file the scan read and names no workspace package, so 1 call through it ends unresolved, though a workspace Symbol shares the name. If it is a path alias, map it in a tsconfig the scan reads.`,
+      ])
+    },
+  )
+
+  it("stops at a package outside the workspace without a warning where the workspace declares no namesake", async () => {
+    const logger = recordingLogger()
+    const calls = await callsFromMain(
+      MODULES,
+      ['import { Logger } from "@nestjs/common"'],
+      ['Logger.warn("x")'],
+      "src/use.ts",
+      { ...LOGGING_PACKAGE, logger },
+    )
+    expect(calls).toEqual({
+      resolved: [["Logger.warn", null]],
+      unresolved: [["Logger.warn", "external"]],
+    })
+    expect(logger.warnings).toEqual([])
   })
 })
 
@@ -546,6 +597,72 @@ describe("scan — a call of a member of `this`", () => {
   })
 })
 
+describe("scan — a call of a function or method declared with no body", () => {
+  it("reaches an abstract member, through `this` and through a value of its class", async () => {
+    await workspace.writeSource(
+      "src/repo.ts",
+      [
+        "export abstract class Repo {",
+        "  abstract find(id: string): string",
+        "  load(id: string) { return this.find(id) }",
+        "}",
+        'export function use(repo: Repo) { return repo.find("1") }',
+        "",
+      ].join("\n"),
+    )
+
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (id: string) =>
+      ir.symbols.find((s) => s.id === id)?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("ts:src/repo.ts#Repo.load")).toEqual([["this.find", "ts:src/repo.ts#Repo.find"]])
+    expect(callsOf("ts:src/repo.ts#use")).toEqual([["repo.find", "ts:src/repo.ts#Repo.find"]])
+    expect(unresolvedCalls).toEqual([])
+  })
+
+  it("passes over one written under `declare`, to the implementation or to no Symbol", async () => {
+    await workspace.writeSource(
+      "src/a.ts",
+      [
+        "declare namespace Analytics { function track(e: string): void }",
+        "declare class Logger { log(m: string): void }",
+        'export function here(l: Logger) { Analytics.track("x"); l.log("m") }',
+        "",
+      ].join("\n"),
+    )
+    await workspace.writeSource(
+      "src/b.ts",
+      "export const Analytics = { track(e: string) { return e } }\n",
+    )
+    await workspace.writeSource("src/c.ts", 'export function there() { Analytics.track("x") }\n')
+    await workspace.writeSource("src/g.ts", "export declare function load(id: string): string\n")
+    await workspace.writeSource(
+      "src/use.ts",
+      'import { load } from "./g"\nexport function loads() { return load("1") }\n',
+    )
+
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (id: string) =>
+      ir.symbols.find((s) => s.id === id)?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("ts:src/a.ts#here")).toEqual([
+      ["Analytics.track", "ts:src/b.ts#Analytics.track"],
+      ["l.log", null],
+    ])
+    expect(callsOf("ts:src/c.ts#there")).toEqual([
+      ["Analytics.track", "ts:src/b.ts#Analytics.track"],
+    ])
+    expect(callsOf("ts:src/use.ts#loads")).toEqual([["load", null]])
+    expect(unresolvedCalls.map((d) => [d.symbolId, d.target, d.bucket])).toEqual([
+      ["ts:src/a.ts#here", "l.log", "local-scope"],
+      ["ts:src/use.ts#loads", "load", "no-match"],
+    ])
+    expect(
+      ["ts:src/a.ts#Analytics.track", "ts:src/a.ts#Logger.log", "ts:src/g.ts#load"].map(
+        (id) => ir.symbols.find((s) => s.id === id)?.dropped,
+      ),
+    ).toEqual([false, false, false])
+  })
+})
+
 describe("scan — a call of a member a class inherits", () => {
   it("reaches the nearest class up the chain that declares it, each bound where its class is", async () => {
     const result = await callsFromMain(
@@ -739,8 +856,8 @@ describe("scan — a call through a variable another module declares", () => {
       ],
       unresolved: [
         ["made.stop", "no-match"],
-        ["manager.stop", "no-match"],
-        ["manager.stop", "no-match"],
+        ["manager.stop", "local-scope"],
+        ["manager.stop", "local-scope"],
       ],
     })
   })
@@ -1013,7 +1130,7 @@ describe("scan — a call through a method that gives back `this`", () => {
 })
 
 describe("scan — a call no declaration the scan read can be the callee of", () => {
-  it("buckets a global's call and a member nothing in the workspace names `external`", async () => {
+  it("buckets a global's call and a member nothing in the workspace names `external`, and a local's member `local-scope`", async () => {
     const result = await callsFromMain(
       {
         "src/store.ts": [
@@ -1024,16 +1141,16 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
           "",
         ].join("\n"),
       },
-      ['import { Store } from "./store"'],
+      ['import { Store } from "./store"', "const items = [1, 2]", "const store = new Store()"],
       [
         "setTimeout(() => {}, 1)",
         "expect(1).toBe(1)",
-        "const items = [1, 2]",
         "items.map(String)",
         "items.save()",
-        "const store = new Store()",
         "store.flush()",
         "localHelper()",
+        "const list = [3]",
+        "list.map(String)",
       ],
     )
     expect(result.unresolved).toEqual([
@@ -1044,6 +1161,103 @@ describe("scan — a call no declaration the scan read can be the callee of", ()
       ["items.save", "no-match"],
       ["store.flush", "external"],
       ["localHelper", "external"],
+      ["list.map", "local-scope"],
+    ])
+  })
+})
+
+describe("scan — a call through a name a scope inside the module declares", () => {
+  it("leaves the call to the local, bucketed `local-scope`, over the module's and an import's namesakes", async () => {
+    await workspace.writeSource("src/fmt.ts", "export function helper() { return 1 }\n")
+    await workspace.writeSource(
+      "src/use.ts",
+      [
+        'import { helper } from "./fmt"',
+        "function save(x: number) { return x }",
+        "function remove(id: string) { return id }",
+        "export function local(id: string, jobs: Array<(n: number) => void>) {",
+        "  function remove(x: string) { return x }",
+        "  remove(id)",
+        "  const save = (x: number) => x * 2",
+        "  save(1)",
+        "  { const helper = () => 3; helper() }",
+        "  jobs.forEach((save) => save(2))",
+        "  try {} catch (helper) { helper() }",
+        "}",
+        'export function outer() { return [save(3), remove("a"), helper()] }',
+        "",
+      ].join("\n"),
+    )
+    const { ir, unresolvedCalls } = await scanTypeScript(workspace.root)
+    const callsOf = (name: string) =>
+      ir.symbols
+        .find((symbol) => symbol.id === `ts:src/use.ts#${name}`)
+        ?.calls.map((call) => [call.target, call.resolved])
+    expect(callsOf("local")).toEqual([
+      ["remove", null],
+      ["save", null],
+      ["helper", null],
+      ["jobs.forEach", null],
+      ["save", null],
+      ["helper", null],
+    ])
+    expect(
+      unresolvedCalls.filter((d) => d.symbolId === "ts:src/use.ts#local").map((d) => d.bucket),
+    ).toEqual(Array(6).fill("local-scope"))
+    expect(callsOf("outer")).toEqual([
+      ["save", "ts:src/use.ts#save"],
+      ["remove", "ts:src/use.ts#remove"],
+      ["helper", "ts:src/fmt.ts#helper"],
+    ])
+  })
+})
+
+describe("scan — a type a module names through a path alias, in a file that makes no call", () => {
+  it("binds the class an `extends`, a variable's type and a function's return name", async () => {
+    const result = await callsFromMain(
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+        }),
+        "src/repository.ts": [
+          "export class Repository { find(id: string) { return id } }",
+          "export class Manager { setOnline(v: boolean) { return v } }",
+          "",
+        ].join("\n"),
+        "src/admin.ts": [
+          'import { Repository } from "@/repository"',
+          "export class AdminRepository extends Repository {",
+          '  label = "admin"',
+          "}",
+          "",
+        ].join("\n"),
+        "src/manager.ts": [
+          'import { Manager } from "@/repository"',
+          "export let manager: Manager | null = null",
+          "",
+        ].join("\n"),
+        "src/get-repo.ts": [
+          'import { Repository } from "@/repository"',
+          "let repo: Repository",
+          "export function getRepo(): Repository {",
+          "  return repo",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      [
+        'import type { AdminRepository } from "./admin"',
+        'import { manager } from "./manager"',
+        'import { getRepo } from "./get-repo"',
+        "declare const admin: AdminRepository",
+      ],
+      ['admin.find("1")', "manager.setOnline(true)", 'getRepo().find("2")'],
+    )
+    expect(result.resolved).toEqual([
+      ["admin.find", "ts:src/repository.ts#Repository.find"],
+      ["manager.setOnline", "ts:src/repository.ts#Manager.setOnline"],
+      ["getRepo.find", "ts:src/repository.ts#Repository.find"],
+      ["getRepo", "ts:src/get-repo.ts#getRepo"],
     ])
   })
 })

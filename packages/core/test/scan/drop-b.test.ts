@@ -45,6 +45,26 @@ describe("decideSymbolDrop", () => {
     ],
     ["a class, which needs no body node", candidate({ kind: "class", bodyNode: null })],
     [
+      "an abstract method, which declares no body",
+      candidate({
+        kind: "method",
+        bodyNode: null,
+        derivedBy: ["class-method", "abstract-declaration"],
+      }),
+    ],
+    [
+      "a declared function, which declares no body",
+      candidate({ kind: "function", bodyNode: null, derivedBy: ["ambient-declaration"] }),
+    ],
+    [
+      "a declared class's method, which declares no body",
+      candidate({
+        kind: "method",
+        bodyNode: null,
+        derivedBy: ["class-method", "ambient-declaration"],
+      }),
+    ],
+    [
       "an interface a boundary decorator marks as framework surface",
       candidate({
         kind: "interface",

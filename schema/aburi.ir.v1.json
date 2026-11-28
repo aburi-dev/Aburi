@@ -567,7 +567,7 @@
           "items": { "$ref": "#/$defs/Call" }
         },
         "middleware": {
-          "description": "The middleware a framework-classified Symbol runs ahead of its handler, as the framework plugin names them, in the order they run: what a registration hands its handler to, or what a tRPC procedure or base procedure is built with. The logic fingerprint reads it, so adding, removing or reordering one is a logic change. Class B: writers omit the key when the Symbol names no middleware, never emit [].",
+          "description": "The middleware a framework-classified Symbol runs ahead of its handlers, as the framework plugin names them, in the order the declaration writes them: what a registration hands its handler to, or what a tRPC procedure or base procedure is built with. Where one Symbol holds several routes, as a .route(path) chain does, a route's entry is <method>:<name>, and a route that takes none is the bare <method>: mark, which runs nothing. The logic fingerprint reads it, so adding, removing or reordering one is a logic change. Class B: writers omit the key when the Symbol names no middleware, never emit [].",
           "type": "array",
           "minItems": 1,
           "items": { "type": "string", "minLength": 1 }

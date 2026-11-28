@@ -52,12 +52,20 @@ export const frameworkNextManifest: FrameworkManifest = {
         id: "framework:next:route",
         baseKind: "function",
         description:
-          "Next.js App Router route handler — what app/**/route.{ts,js} exports under an HTTP verb name (GET / POST / PUT / DELETE / PATCH / OPTIONS / HEAD). Its kind is const where the language plugin cannot see the value is a function (export const { GET, POST } = handlers).",
+          "Next.js App Router route handler — what app/**/route.{ts,tsx,js,jsx} exports under an HTTP verb name (GET / POST / PUT / DELETE / PATCH / OPTIONS / HEAD). Its kind is const where the language plugin cannot see the value is a function (export const { GET, POST } = handlers).",
       },
     ],
     extKindPrefixes: ["framework:next"],
     derivedByPrefixes: [NEXT_DERIVED_BY_PREFIX],
     // Matches the identifier `@aburi/core`'s Component autodetect uses for the `next` dependency.
     frameworks: ["nextjs"],
+    // Each throws on every call. `forbidden` and `unauthorized` answer 403 and 401 only under
+    // `experimental.authInterrupts`, and throw a plain error without it.
+    exitCalls: [
+      {
+        module: "next/navigation",
+        exports: ["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"],
+      },
+    ],
   },
 }
