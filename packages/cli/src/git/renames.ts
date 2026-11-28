@@ -30,9 +30,9 @@ export async function collectRenames(
     const result =
       "head" in span
         ? await git.run([...NAME_STATUS, `${span.base}..${span.head}`], { cwd })
-        : await diffWorkingTree(git, cwd, span.base, span.scratchIndex)
+        : await diffWorkingTree(git, cwd, span, between, warn)
     stdout = result.stdout
-    const said = renameDetectionNotes(result.stderr)
+    const said = result.stderr.trim()
     if (said.length > 0) {
       warn(
         `⚠ git reported while collecting renames for ${between}: ${said}. ` +
@@ -59,39 +59,93 @@ export async function collectRenames(
 
 const NAME_STATUS: readonly string[] = ["diff", "--find-renames", "--name-status", "-z"]
 
+/**
+ * `--ignore-errors` so one path git cannot add (an untracked repository with no commit, a name
+ * the platform reserves) does not keep the rest out; `--no-warn-embedded-repo` because the advice
+ * git gives on an untracked repository is about committing it.
+ */
+const ADD_UNTRACKED: readonly string[] = [
+  "add",
+  "--intent-to-add",
+  "--ignore-errors",
+  "--no-warn-embedded-repo",
+  "--",
+  ":/",
+]
+
 async function diffWorkingTree(
   git: GitRunner,
   cwd: string,
-  base: string,
-  scratchIndex: string,
+  span: Extract<RenameSpan, { scratchIndex: string }>,
+  between: string,
+  warn: WarnFn,
 ): Promise<{ stdout: string; stderr: string }> {
-  const { stdout } = await git.run(["rev-parse", "--git-path", "index"], { cwd })
-  const index = stdout.trim()
-  if (index.length > 0) {
-    try {
-      await copyFile(resolve(cwd, index), scratchIndex)
-    } catch (error) {
-      // A checkout with no index yet: git starts the scratch one empty and adds every file.
-      if (errorCode(error) !== "ENOENT") throw error
-    }
+  const ownIndex = await indexNamedBy(git, cwd, {})
+  try {
+    await copyFile(ownIndex, span.scratchIndex)
+  } catch (error) {
+    // A checkout with no index yet: git starts the scratch one empty and adds every file.
+    if (errorCode(error) !== "ENOENT") throw error
   }
-  const env = { GIT_INDEX_FILE: scratchIndex }
-  await git.run(["add", "--intent-to-add", "--", ":/"], { cwd, env })
-  return git.run([...NAME_STATUS, base], { cwd, env })
+  // Untranslated, so the line-ending notes can be told from the rest of what git says.
+  const env = { GIT_INDEX_FILE: span.scratchIndex, LC_ALL: "C" }
+  const leftOut = await addUntrackedFiles(git, cwd, env, ownIndex)
+  if (leftOut.length > 0) {
+    warn(
+      `⚠ Rename detection for ${between} may be missing files git does not track: ${leftOut}. ` +
+        `A move of one without \`git mv\` is reported as removed + added, ${RENAMED_AND_SKIPPED}.`,
+    )
+  }
+  const result = await git.run([...NAME_STATUS, span.base], { cwd, env })
+  return { stdout: result.stdout, stderr: withoutLineEndingNotes(result.stderr) }
+}
+
+/** What kept files git does not track out of the scratch index; empty when none was. */
+async function addUntrackedFiles(
+  git: GitRunner,
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+  ownIndex: string,
+): Promise<string> {
+  // A runner that drops `env` would have the add write the caller's index, which a commit in
+  // progress may be reading, so git is asked first which index the add would write.
+  if ((await indexNamedBy(git, cwd, env)) === ownIndex) {
+    return "the GitRunner did not apply GIT_INDEX_FILE from `options.env`, so git would have added them to the caller's own index"
+  }
+  try {
+    return withoutLineEndingNotes((await git.run(ADD_UNTRACKED, { cwd, env })).stderr)
+  } catch (error) {
+    return withoutLineEndingNotes(errorMessage(error))
+  }
+}
+
+async function indexNamedBy(
+  git: GitRunner,
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+): Promise<string> {
+  const { stdout } = await git.run(["rev-parse", "--git-path", "index"], { cwd, env })
+  return resolve(cwd, stdout.trim())
 }
 
 /**
- * What git said about rename detection. A diff that reads the working tree also says how it would
- * convert a file's line endings, which changes no record.
+ * What git said, less the notes on how it would convert a file's line endings under
+ * `core.autocrlf`, which a diff reading the working tree prints for each such file and which
+ * change no record. git before 2.37 put each note on two lines.
  */
-function renameDetectionNotes(stderr: string): string {
+function withoutLineEndingNotes(stderr: string): string {
   return stderr
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => /rename/i.test(line))
+    .filter((line) => line.length > 0 && !LINE_ENDING_NOTES.some((note) => note.test(line)))
     .join(" ")
-    .replace(/\.$/, "")
 }
+
+const LINE_ENDING_NOTES: readonly RegExp[] = [
+  /^warning: in the working copy of '.*', (?:CRLF|LF) will be replaced by (?:CRLF|LF) the next time Git touches it$/,
+  /^warning: (?:CRLF|LF) will be replaced by (?:CRLF|LF) in .*\.$/,
+  /^The file will have its original line endings in your working directory\.?$/,
+]
 
 const RENAMED_AND_SKIPPED =
   "and the Symbols of a renamed file one scan skipped as removed or added rather than unknown"

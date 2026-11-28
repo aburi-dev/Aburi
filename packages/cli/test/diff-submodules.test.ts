@@ -54,11 +54,11 @@ async function commitFunction(directory: string, file: string, name: string): Pr
   await commitAll(directory, `add ${name}`)
 }
 
-async function diffIn(cwd: string) {
+async function diffIn(cwd: string, refSpec = "HEAD~1..HEAD") {
   const log = recordingLogger()
   const report = await runDiff({
     cwd,
-    refSpec: "HEAD~1..HEAD",
+    refSpec,
     outputDir: resolve(cwd, "out"),
     failOn: "added",
     warn: log.warn,
@@ -131,6 +131,21 @@ describe("aburi diff in a repository with a submodule", () => {
     await commitAll(demo, "libs/sub becomes a submodule")
 
     const { report, warnings } = await diffIn(demo)
+
+    expect(report.summaryLine).toBe("+0 -0 ~0 ↔0 ⤴0")
+    expect(report.exitCode).toBe(EXIT.SUCCESS)
+    expect(warnings).toEqual([WARNING("libs/sub")])
+  })
+
+  it("reads the submodules of a head checked out apart from that head, not the working tree", async () => {
+    const lib = await library()
+    const demo = await demoWorkspace()
+    await commitAll(demo, "c1")
+    await addSubmodule(demo, lib, "libs/sub")
+    await commitAll(demo, "add libs/sub")
+    await git(["checkout", "-q", "HEAD~1"], demo)
+
+    const { report, warnings } = await diffIn(demo, "HEAD..main")
 
     expect(report.summaryLine).toBe("+0 -0 ~0 ↔0 ⤴0")
     expect(report.exitCode).toBe(EXIT.SUCCESS)

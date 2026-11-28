@@ -3,14 +3,16 @@ import { CliError, errorCode, errorMessage } from "../errors"
 import { pathExists } from "../fs-probe"
 import type { GitRunner } from "./runner"
 
+/** The commit `ref` names, a tag peeled to the commit it tags. */
 export async function assertRefResolvable(
   git: GitRunner,
   cwd: string,
   ref: string,
   role: "base" | "head",
-): Promise<void> {
+): Promise<string> {
+  let object: string
   try {
-    await git.run(["rev-parse", "--verify", ref], { cwd })
+    object = (await git.run(["rev-parse", "--verify", ref], { cwd })).stdout.trim()
   } catch (error) {
     if (errorCode(error) === "ENOENT") {
       throw new CliError(
@@ -21,6 +23,21 @@ export async function assertRefResolvable(
     }
     throw await diagnoseUnresolvedRef(git, cwd, ref, role, error)
   }
+  try {
+    // Peeled by its id: a suffix on the ref itself would change the text `:/<text>` searches for.
+    const { stdout } = await git.run(["rev-parse", "--verify", `${object}^{commit}`], { cwd })
+    return stdout.trim()
+  } catch (error) {
+    throw new CliError(
+      `${roleName(role)} ref '${ref}' names no commit, and aburi diff compares two: name a branch, tag or SHA of one. (${errorMessage(error).trim()})`,
+      "input-error",
+      { cause: error },
+    )
+  }
+}
+
+function roleName(role: "base" | "head"): string {
+  return role === "base" ? "Base" : "Head"
 }
 
 async function diagnoseUnresolvedRef(
@@ -30,7 +47,7 @@ async function diagnoseUnresolvedRef(
   role: "base" | "head",
   cause: unknown,
 ): Promise<CliError> {
-  const prefix = `${role === "base" ? "Base" : "Head"} ref '${ref}' could not be resolved`
+  const prefix = `${roleName(role)} ref '${ref}' could not be resolved`
   const said = errorMessage(cause).trim()
   const outside = "Run aburi diff from inside one, or compare IR files with --base/--head."
   const unanswered = (): CliError =>

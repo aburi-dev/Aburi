@@ -71,13 +71,16 @@ export async function scanRevisions(
   const { cwd, warn } = context
   const git = context.git ?? defaultGitRunner
   await assertRefResolvable(git, cwd, spec.base, "base")
-  await assertRefResolvable(git, cwd, spec.head, "head")
+  const headCommit = await assertRefResolvable(git, cwd, spec.head, "head")
   await assertNotShallow(git, cwd)
   await assertNotSparse(git, cwd)
 
-  const headIsWorkingTree = await namesCheckedOutCommit(git, cwd, spec.head)
+  const headIsWorkingTree = headCommit === (await checkedOutCommit(git, cwd))
   const pinnedConfig = await context.pinConfigOnce()
   const headWorkspaceRoot = await resolveWorkspaceRoot(cwd)
+  // Read before either worktree exists, as every other check is, unless the head has an index
+  // only once it is checked out.
+  const workingTreeListing = headIsWorkingTree ? await listHead(git, headWorkspaceRoot, warn) : null
   const tempParent = await mkdtemp(resolve(tmpdir(), "aburi-worktree-"))
   // Each side's checkout under a level of its own, so the leaf is free to be any name the workspace has.
   const checkoutOf = (side: DiffSide, ref: string): Checkout => ({
@@ -144,9 +147,9 @@ export async function scanRevisions(
       added.push(dir)
     }
     const rootOf = (side: DiffSide): string => checkouts[side]?.dir ?? headWorkspaceRoot
-    const headIndex = await listIndex(git, rootOf("head"))
-    const submoduleIgnore = submoduleIgnorePatterns(headIndex, warn)
-    plainLinks.head = await plainFileLinks(headIndex, rootOf("head"))
+    const { submoduleIgnore, links } =
+      workingTreeListing ?? (await listHead(git, rootOf("head"), warn))
+    plainLinks.head = links
     plainLinks.base = await plainFileLinks(await listIndex(git, rootOf("base")), rootOf("base"))
 
     const sideScan = (side: DiffSide): SideScan => {
@@ -203,19 +206,28 @@ export async function scanRevisions(
   }
 }
 
-/** Whether `ref` names the commit checked out at `cwd`, which the working tree then stands for. */
-async function namesCheckedOutCommit(git: GitRunner, cwd: string, ref: string): Promise<boolean> {
-  const commit = await commitNamedBy(git, cwd, ref)
-  return commit !== null && commit === (await commitNamedBy(git, cwd, "HEAD"))
-}
-
-async function commitNamedBy(git: GitRunner, cwd: string, ref: string): Promise<string | null> {
+/** The commit the working tree at `cwd` stands for, when it has one. */
+async function checkedOutCommit(git: GitRunner, cwd: string): Promise<string | null> {
   try {
-    const { stdout } = await git.run(["rev-parse", "--verify", `${ref}^{commit}`], { cwd })
+    const { stdout } = await git.run(["rev-parse", "--verify", "HEAD^{commit}"], { cwd })
     return stdout.trim()
   } catch {
-    // A ref naming no commit, or a HEAD with none yet: either way not the working tree's commit.
+    // A branch with no commit yet, checked out while the refs compared are elsewhere.
     return null
+  }
+}
+
+/** What the head's index says the scans must know: its submodules, and its links git wrote as files. */
+interface HeadListing {
+  submoduleIgnore: string[]
+  links: string[]
+}
+
+async function listHead(git: GitRunner, root: string, warn: WarnFn): Promise<HeadListing> {
+  const index = await listIndex(git, root)
+  return {
+    submoduleIgnore: submoduleIgnorePatterns(index, warn),
+    links: await plainFileLinks(index, root),
   }
 }
 

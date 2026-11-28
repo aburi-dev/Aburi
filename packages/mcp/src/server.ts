@@ -273,7 +273,7 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
       {
         title: "Report what a change did",
         description:
-          "Runs `aburi diff` and answers with its report: the Symbols added, removed, moved and changed, grouped into Slices along the call graph. Compare two git refs with `refspec` (the head is read from the working tree, so HEAD..HEAD is what the uncommitted edits did), or two scans or IR files with `base` and `head`.",
+          "Runs `aburi diff` and answers with its report: the Symbols added, removed, moved and changed, grouped into Slices along the call graph. Compare two git refs with `refspec` (a head naming the commit checked out is read from the working tree, so HEAD..HEAD is what the uncommitted edits did; any other head is read as committed), or two scans or IR files with `base` and `head`.",
         inputSchema: z.object({
           refspec: z.string().optional().describe("<base>..<head>, as `aburi diff` takes it"),
           base: z.string().optional().describe("A scan's id or an IR file, with `head`"),

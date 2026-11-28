@@ -1,4 +1,4 @@
-import { rename } from "node:fs/promises"
+import { mkdir, rename } from "node:fs/promises"
 import { resolve } from "node:path"
 import {
   commitAll,
@@ -10,6 +10,8 @@ import {
 import { describe, expect, it } from "vitest"
 import { EXIT, type GitRunner, runDiff } from "../src"
 import { collectRenames, parseRenameRecords } from "../src/git/renames"
+import { defaultGitRunner } from "../src/git/runner"
+import { fakeGit, gitOutput } from "./git"
 import { TYPESCRIPT, writeConfig, writeFileAt, writePackageJson } from "./workspace"
 
 const workspace = useScratchWorkspace("git-renames")
@@ -122,6 +124,22 @@ describe("collectRenames — when git gives no usable hints", () => {
     for (const fragment of fragments) expect(log.warnings[0]).toContain(fragment)
   })
 
+  it("passes on whatever git says over a range, line by line as it said it", async () => {
+    const log = recordingLogger()
+    const runner = answering(() => ({
+      stdout: "",
+      stderr:
+        "warning: refname 'main' is ambiguous.\nwarning: in the working copy of 'a.ts', LF will be replaced by CRLF the next time Git touches it\n",
+    }))
+
+    expect(await collectRenames(runner, workspace.root, SPEC, log.warn)).toEqual(new Map())
+
+    expect(log.warnings).toHaveLength(1)
+    expect(log.warnings[0]).toContain(
+      "for main..HEAD: warning: refname 'main' is ambiguous.\nwarning: in the working copy of 'a.ts'",
+    )
+  })
+
   it("keeps what it read but warns when git exits 0 having given up on rename detection", async () => {
     const log = recordingLogger()
     const runner = answering(() => ({
@@ -134,6 +152,55 @@ describe("collectRenames — when git gives no usable hints", () => {
     expect(log.warnings).toHaveLength(1)
     expect(log.warnings[0]).toContain("exhaustive rename detection was skipped")
     expect(log.warnings[0]).toContain("diff.renameLimit")
+  })
+})
+
+describe("collectRenames — what git says while reading the working tree", () => {
+  const RENAME_LIMIT =
+    "warning: exhaustive rename detection was skipped due to too many files.\nwarning: you may want to set your diff.renameLimit variable to at least 3 and retry the command.\n"
+
+  it.each<[string, { diff?: string; add?: string }, string[]]>([
+    [
+      "the two-line line-ending note git wrote before 2.37",
+      {
+        diff: "warning: LF will be replaced by CRLF in src/rename.ts.\nThe file will have its original line endings in your working directory\n",
+      },
+      [],
+    ],
+    [
+      "a rename limit beside a line-ending note",
+      {
+        diff: `warning: in the working copy of 'src/a.ts', LF will be replaced by CRLF the next time Git touches it\n${RENAME_LIMIT}`,
+      },
+      [
+        "git reported while collecting renames for main against the working tree: warning: exhaustive rename detection was skipped due to too many files. warning: you may want to set your diff.renameLimit",
+      ],
+    ],
+    [
+      "a directory the add could not read",
+      { add: "warning: could not open directory 'secret/': Permission denied\n" },
+      [
+        "Rename detection for main against the working tree may be missing files git does not track: warning: could not open directory 'secret/': Permission denied. A move of one without `git mv` is reported as removed + added",
+      ],
+    ],
+  ])("passes on all but the line-ending notes, given %s", async (_, stderr, fragments) => {
+    const { runner } = fakeGit({
+      handlers: {
+        "diff --find-renames": () => gitOutput("", stderr.diff),
+        "add --intent-to-add": () => gitOutput("", stderr.add),
+      },
+    })
+    const log = recordingLogger()
+    const span = { base: "main", scratchIndex: resolve(workspace.root, "index") }
+
+    expect(await collectRenames(runner, workspace.root, span, log.warn)).toEqual(new Map())
+
+    expect(log.warnings).toHaveLength(fragments.length)
+    fragments.forEach((fragment, at) => {
+      expect(log.warnings[at]).toContain(fragment)
+    })
+    expect(log.warnings.join("\n")).not.toContain("line endings")
+    expect(log.warnings.join("\n")).not.toContain("working copy")
   })
 })
 
@@ -219,15 +286,85 @@ describe("aburi diff — a file renamed between the revisions", () => {
     expect(await git(["ls-files", "-z", "--stage"], root)).toBe(index)
   })
 
+  it("keeps the rest of the map, and names the path, when git cannot add an untracked one", async () => {
+    const root = workspace.root
+    await initRepository(root)
+    await writePackageJson(root, { name: "demo", private: true })
+    await writeConfig(root, TYPESCRIPT)
+    await writeFileAt(root, "src/a.ts", "export function alpha(x: number) {\n  return x + 1\n}\n")
+    await writeFileAt(
+      root,
+      "src/c.ts",
+      "export function gamma(y: string) {\n  return y.trim()\n}\n",
+    )
+    await commitAll(root, "base")
+    await git(["mv", "src/a.ts", "src/b.ts"], root)
+    await rename(resolve(root, "src/c.ts"), resolve(root, "src/d.ts"))
+    await mkdir(resolve(root, "nested"))
+    await git(["init", "-q"], resolve(root, "nested"))
+    const index = await git(["ls-files", "-z", "--stage"], root)
+    const log = recordingLogger()
+
+    const report = await runDiff({
+      cwd: root,
+      refSpec: "HEAD..HEAD",
+      outputDir: resolve(root, "out"),
+      failOn: "removed",
+      warn: log.warn,
+    })
+
+    expect(report.summaryLine).toBe("+0 -0 ~0 ↔2 ⤴0")
+    expect(report.exitCode).toBe(EXIT.SUCCESS)
+    expect(log.warnings).toHaveLength(1)
+    expect(log.warnings[0]).toContain(
+      "Rename detection for HEAD against the working tree may be missing files git does not track: ",
+    )
+    expect(log.warnings[0]).toContain("'nested/' does not have a commit checked out")
+    expect(await git(["ls-files", "-z", "--stage"], root)).toBe(index)
+  })
+
+  it("leaves the caller's index alone when the GitRunner does not apply `env`, and says so", async () => {
+    const root = workspace.root
+    await initRepository(root)
+    await writePackageJson(root, { name: "demo", private: true })
+    await writeConfig(root, TYPESCRIPT)
+    await writeFileAt(root, "src/a.ts", "export function alpha(x: number) {\n  return x + 1\n}\n")
+    await commitAll(root, "base")
+    await rename(resolve(root, "src/a.ts"), resolve(root, "src/b.ts"))
+    const index = await git(["ls-files", "-z", "--stage"], root)
+    const withoutEnv: GitRunner = {
+      run: (args, options) =>
+        defaultGitRunner.run(args, options?.cwd === undefined ? {} : { cwd: options.cwd }),
+    }
+    const log = recordingLogger()
+
+    await runDiff({
+      cwd: root,
+      refSpec: "HEAD..HEAD",
+      outputDir: resolve(root, "out"),
+      git: withoutEnv,
+      warn: log.warn,
+    })
+
+    expect(log.warnings).toEqual([
+      expect.stringContaining(
+        "may be missing files git does not track: the GitRunner did not apply GIT_INDEX_FILE from `options.env`",
+      ),
+    ])
+    expect(await git(["ls-files", "-z", "--stage"], root)).toBe(index)
+  })
+
   it("says nothing of the line endings git notes while it reads the working tree", async () => {
     const root = workspace.root
     await initRepository(root)
     await writePackageJson(root, { name: "demo", private: true })
     await writeConfig(root, TYPESCRIPT)
     await writeFileAt(root, "src/a.ts", "export const a = 1\n")
+    await writeFileAt(root, "src/rename-user.ts", "export const r = 1\n")
     await commitAll(root, "base")
     await git(["config", "core.autocrlf", "true"], root)
     await writeFileAt(root, "src/a.ts", "export const a = 2\n")
+    await writeFileAt(root, "src/rename-user.ts", "export const r = 2\n")
     const log = recordingLogger()
 
     await runDiff({

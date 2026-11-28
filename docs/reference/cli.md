@@ -212,7 +212,9 @@ worktree, and scans it. When the head names the commit you have checked out
 for it, so uncommitted changes and files you have not added yet are part of the
 head, and a file you moved without committing is reported as moved. Any other
 head is checked out into a temporary worktree of its own, so
-`aburi diff v1.2.0..v1.3.0` compares the two tags whatever you have checked out.
+`aburi diff v1.2.0..v1.3.0` compares the two tags as tagged, unless you have
+`v1.3.0` checked out: then the head is your working tree, uncommitted changes
+included. A ref that names no commit, such as `HEAD^{tree}`, exits `2`.
 
 Both scans read your working tree's config — the one discovery finds from your
 working directory, or the one `--config` names there — even when the head is

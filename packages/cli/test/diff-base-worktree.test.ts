@@ -1,5 +1,5 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises"
-import { resolve } from "node:path"
+import { appendFile, mkdir, readdir, readFile } from "node:fs/promises"
+import { basename, dirname, resolve } from "node:path"
 import {
   commitAll,
   errorFrom,
@@ -11,7 +11,7 @@ import {
 import type { DiffResult } from "@aburi/types"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CliError, EXIT, runDiff } from "../src"
-import { fakeGit, refusedBy } from "./git"
+import { fakeGit, gitOutput } from "./git"
 import {
   TYPESCRIPT,
   writeConfig,
@@ -60,6 +60,18 @@ async function diffIn(cwd: string, refSpec: string, failOn = "added") {
 }
 
 const UNCOMMITTED = "export function uncommitted(): number { return 3 }\n"
+
+async function worktreesOf(directory: string): Promise<string[]> {
+  const listing = await git(["worktree", "list", "--porcelain"], directory)
+  return listing.split("\n").filter((line) => line.startsWith("worktree "))
+}
+
+/** A commit past the one checked out, so the head names a revision Aburi checks out apart. */
+async function checkOutBefore(directory: string): Promise<string> {
+  await git(["commit", "-q", "--allow-empty", "-m", "later"], directory)
+  await git(["checkout", "-q", "HEAD~1"], directory)
+  return "HEAD..main"
+}
 
 const addedOne = (id: string) => ({
   clause: { token: "added", threshold: null },
@@ -142,15 +154,19 @@ describe("aburi diff — which tree the head side is", () => {
     expect(report.summaryLine).toBe("+1 -0 ~0 ↔0 ⤴0")
     expect(report.triggered).toEqual(addedOne("ts:src/one.ts#two"))
     expect(warnings).toEqual([])
-    const listing = await git(["worktree", "list", "--porcelain"], workspace.root)
-    expect(listing.split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
+    expect(await worktreesOf(workspace.root)).toHaveLength(1)
   })
 
-  it.each(["HEAD", "main"])(
-    "reads the working tree, uncommitted edits included, for a head %s naming the commit checked out",
-    async (head) => {
+  it.each([
+    ["HEAD", "HEAD"],
+    ["a branch", "main"],
+    ["an annotated tag", "v2"],
+  ])(
+    "reads the working tree, uncommitted edits included, for %s naming the commit checked out",
+    async (_, head) => {
       await repository(workspace.root)
       await addFunction(workspace.root, "src/one.ts", "two")
+      await git(["tag", "-a", "-m", "v2", "v2"], workspace.root)
       await appendFile(resolve(workspace.root, "src/one.ts"), UNCOMMITTED)
 
       const { report, warnings } = await diffIn(workspace.root, `HEAD~1..${head}`)
@@ -162,15 +178,25 @@ describe("aburi diff — which tree the head side is", () => {
 })
 
 describe("aburi diff — the base checkout describes the same Components as the head", () => {
+  const headIsTheWorkingTree = async (): Promise<string> => "HEAD..HEAD"
+
   it.each([
-    ["only the checkout directory differs", "demo", ""],
-    ["the workspace is named like the run's own output directories", "base-out", ""],
-    ["the command ran in a subdirectory of the workspace", "demo", "src"],
-  ])("reports no Component change when %s", async (_, name, below) => {
+    ["only the checkout directory differs", "demo", "", headIsTheWorkingTree],
+    [
+      "the workspace is named like the run's own output directories",
+      "base-out",
+      "",
+      headIsTheWorkingTree,
+    ],
+    ["the command ran in a subdirectory of the workspace", "demo", "src", headIsTheWorkingTree],
+    ["the head is checked out apart", "demo", "", checkOutBefore],
+    ["the head is checked out apart, from a subdirectory", "demo", "src", checkOutBefore],
+  ])("reports no Component change when %s", async (_, name, below, refSpecFor) => {
     const root = resolve(workspace.root, name)
     await repository(root, false)
+    const refSpec = await refSpecFor(root)
 
-    const { diff, warnings, report } = await diffIn(resolve(root, below), "HEAD..HEAD")
+    const { diff, warnings, report } = await diffIn(resolve(root, below), refSpec)
 
     expect(diff.summary).toMatchObject({ componentsAdded: 0, componentsRemoved: 0 })
     expect(warnings).toEqual([])
@@ -187,36 +213,77 @@ describe("aburi diff — the base checkout describes the same Components as the 
   })
 })
 
-describe("aburi diff — cleaning up the base checkout", () => {
-  it("removes the base worktree even when the base scan fails", async () => {
-    await repository(workspace.root)
-    await writeFileAt(workspace.root, "package.json", '{ "name": "broken", }')
-    await commitAll(workspace.root, "break the manifest")
-    await writePackageJson(workspace.root, { name: "demo", private: true })
-
-    await expect(diffIn(workspace.root, "HEAD..HEAD")).rejects.toThrow(/Failed to parse JSON/)
-
-    const listing = await git(["worktree", "list", "--porcelain"], workspace.root)
-    expect(listing.split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1)
-  })
-
-  it("does not remove a worktree that `worktree add` never created", async () => {
-    const { runner, asked } = fakeGit({
-      handlers: {
-        "worktree add": refusedBy("fatal: could not create work tree dir"),
-        "worktree remove": refusedBy("worktree remove must not be reached"),
+describe("aburi diff — cleaning up the checkouts", () => {
+  it.each<[string, (directory: string) => Promise<string>]>([
+    [
+      "the base scan fails",
+      async (directory) => {
+        await writePackageJson(directory, { name: "demo", private: true })
+        return "HEAD..HEAD"
       },
-    })
-    const log = recordingLogger()
+    ],
+    [
+      "the scan of a head checked out apart fails",
+      async (directory) => {
+        await git(["checkout", "-q", "HEAD~1"], directory)
+        return "HEAD..main"
+      },
+    ],
+  ])("removes every worktree and the temporary directory when %s", async (_, refSpecFor) => {
+    const demo = resolve(workspace.root, "demo")
+    await repository(demo)
+    await writeFileAt(demo, "package.json", '{ "name": "broken", }')
+    await commitAll(demo, "break the manifest")
+    const refSpec = await refSpecFor(demo)
+    const temp = resolve(workspace.root, "tmp")
+    await mkdir(temp)
+    tempDirectoryAt(temp)
 
-    const error = await errorFrom(Error, () =>
-      runDiff({ cwd: workspace.root, refSpec: "main..HEAD", git: runner, warn: log.warn }),
-    )
+    await expect(diffIn(demo, refSpec)).rejects.toThrow(/Failed to parse JSON/)
 
-    expect(error.message).toMatch(/could not create work tree dir/)
-    expect(asked).not.toContain("worktree remove")
-    expect(log.warnings.join("\n")).not.toContain("git worktree cleanup failed")
+    expect(await worktreesOf(demo)).toHaveLength(1)
+    expect(await readdir(temp)).toEqual([])
   })
+
+  it.each<[string, "base" | "head", string, string[]]>([
+    ["the base's", "base", "abc", []],
+    ["a head's, checked out apart once the base was", "head", "def", ["base"]],
+  ])(
+    "removes no worktree that `worktree add` never created, when %s fails",
+    async (_, refused, checkedOut, removed) => {
+      const sideOf = (worktreeDir: string | undefined): string =>
+        basename(dirname(worktreeDir ?? ""))
+      const removedSides: string[] = []
+      const { runner } = fakeGit({
+        handlers: {
+          "rev-parse --verify": (args) =>
+            gitOutput(args[2] === "HEAD^{commit}" ? `${checkedOut}\n` : "abc\n"),
+          "worktree add": (args) => {
+            if (sideOf(args[3]) === refused)
+              throw new Error("fatal: could not create work tree dir")
+            return gitOutput()
+          },
+          "worktree remove": (args) => {
+            removedSides.push(sideOf(args[3]))
+            return gitOutput()
+          },
+        },
+      })
+      const temp = resolve(workspace.root, "tmp")
+      await mkdir(temp)
+      tempDirectoryAt(temp)
+      const log = recordingLogger()
+
+      const error = await errorFrom(Error, () =>
+        runDiff({ cwd: workspace.root, refSpec: "main..HEAD", git: runner, warn: log.warn }),
+      )
+
+      expect(error.message).toMatch(/could not create work tree dir/)
+      expect(removedSides).toEqual(removed)
+      expect(log.warnings.join("\n")).not.toContain("git worktree cleanup failed")
+      expect(await readdir(temp)).toEqual([])
+    },
+  )
 
   it("refuses, as a bug in Aburi, a base scan that roots outside its worktree", async () => {
     const demo = resolve(workspace.root, "demo")

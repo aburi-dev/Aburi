@@ -4,7 +4,8 @@ export interface GitRunOptions {
   cwd?: string
   /**
    * Variables set for this command alone, on top of the environment every command gets. A runner
-   * has to apply them: one names a scratch index, and without it the command writes the caller's.
+   * has to apply them: rename detection names a scratch index here, and leaves the files git does
+   * not track out of it, with a warning, when git is not given that index.
    */
   env?: Readonly<Record<string, string>>
 }

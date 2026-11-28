@@ -1,4 +1,4 @@
-import type { GitRunner } from "../src"
+import type { GitRunner, GitRunOptions } from "../src"
 
 export interface GitOutput {
   stdout: string
@@ -16,7 +16,10 @@ export function refusedBy(message: string): () => never {
 }
 
 export interface FakeGitOptions {
-  handlers?: Record<string, (args: readonly string[]) => GitOutput | Promise<GitOutput>>
+  handlers?: Record<
+    string,
+    (args: readonly string[], options?: GitRunOptions) => GitOutput | Promise<GitOutput>
+  >
   onWorktreeAdd?: (worktreeDir: string) => Promise<void> | void
 }
 
@@ -28,6 +31,8 @@ export function fakeGit(options: FakeGitOptions = {}): { runner: GitRunner; aske
   const asked: string[] = []
   const handlers: NonNullable<FakeGitOptions["handlers"]> = {
     "rev-parse --verify": () => gitOutput("abc\n"),
+    "rev-parse --git-path": (_, runOptions) =>
+      gitOutput(`${runOptions?.env?.GIT_INDEX_FILE ?? ".git/index"}\n`),
     "rev-parse --is-inside-work-tree": () => gitOutput("true\n"),
     "rev-list --all": () => gitOutput("abc\n"),
     "rev-parse --is-shallow-repository": () => gitOutput("false\n"),
@@ -41,10 +46,10 @@ export function fakeGit(options: FakeGitOptions = {}): { runner: GitRunner; aske
     ...options.handlers,
   }
   const runner: GitRunner = {
-    async run(args) {
+    async run(args, runOptions) {
       const key = args.slice(0, 2).join(" ")
       asked.push(key)
-      return (await handlers[key]?.(args)) ?? gitOutput()
+      return (await handlers[key]?.(args, runOptions)) ?? gitOutput()
     },
   }
   return { runner, asked }
