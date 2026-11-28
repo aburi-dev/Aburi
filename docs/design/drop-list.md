@@ -155,6 +155,7 @@ Language/framework plugins may add to Category B:
 
 - `lang-typescript`: enum (?) — whether enum is treated as a data model depends on usage; make it configurable
 - `framework-nestjs`: a class with only `@Module` and no body is NOT dropped (it carries a boundary, so it is outside Category B)
+- `framework-nestjs`: a method with only `@Cron` / `@Interval` / `@Timeout` (`@nestjs/schedule`) or `@OnEvent` (`@nestjs/event-emitter`) and an empty body is NOT dropped: NestJS calls it, so the decorator is a boundary
 
 ## 5. Category C: Node-level filter
 

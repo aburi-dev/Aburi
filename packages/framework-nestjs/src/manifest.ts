@@ -35,10 +35,20 @@ export const frameworkNestjsManifest: FrameworkManifest = {
         description: "NestJS exception filter declared with @Catch.",
       },
       {
+        id: "framework:nestjs:resolver",
+        baseKind: "class",
+        description: "NestJS GraphQL resolver class declared with @Resolver from @nestjs/graphql.",
+      },
+      {
+        id: "framework:nestjs:gateway",
+        baseKind: "class",
+        description: "NestJS WebSocket gateway class declared with @WebSocketGateway.",
+      },
+      {
         id: "framework:nestjs:route",
         baseKind: "method",
         description:
-          "NestJS route handler declared with an HTTP verb decorator or a microservice / WebSocket pattern decorator.",
+          "NestJS route handler declared with an HTTP verb or @Sse decorator, a microservice / WebSocket / gRPC pattern decorator, or a GraphQL operation decorator from @nestjs/graphql.",
       },
     ],
     extKindPrefixes: ["framework:nestjs"],

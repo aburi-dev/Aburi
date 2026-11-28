@@ -48,9 +48,14 @@ const CONFIDENCE: Readonly<Record<Provenance, Confidence | null>> = {
   "other-framework": null,
 }
 
-interface NameOrigin {
-  readonly imported: string
+interface TracedProvenance {
   readonly provenance: Provenance
+  /** The `@nestjs/*` package the name was traced to, when it was. */
+  readonly nestjsPackage: string | null
+}
+
+interface NameOrigin extends TracedProvenance {
+  readonly imported: string
 }
 
 type NamespaceOrigin = Pick<ImportEdge, "source" | "origins">
@@ -84,10 +89,10 @@ export function readImportedNames(
     for (const raw of edge.symbols) {
       const binding = splitAliasedImportName(raw)
       assertImportBinding(binding, raw, edge, origin)
-      const provenance = provenanceOf(edge, binding.imported)
+      const trace = provenanceOf(edge, binding.imported)
       const earlier = names.get(binding.local)
-      if (earlier !== undefined && RANK[earlier.provenance] <= RANK[provenance]) continue
-      names.set(binding.local, { imported: binding.imported, provenance })
+      if (earlier !== undefined && RANK[earlier.provenance] <= RANK[trace.provenance]) continue
+      names.set(binding.local, { imported: binding.imported, ...trace })
     }
   }
 
@@ -96,16 +101,23 @@ export function readImportedNames(
 
 // Only a module the scan placed outside the workspace is refused: a specifier as written may be a
 // path alias to the project's own files.
-function provenanceOf(edge: NamespaceOrigin, name: string): Provenance {
+function provenanceOf(edge: NamespaceOrigin, name: string): TracedProvenance {
   const origin = edge.origins?.get(name)
-  if (origin === undefined) return isNestjsModule(edge.source) ? "nestjs" : "unknown"
-  if (isNestjsModule(origin)) return "nestjs"
-  return isOtherFrameworkModule(origin) ? "other-framework" : "unknown"
+  const module = origin ?? edge.source
+  if (isNestjsModule(module)) return { provenance: "nestjs", nestjsPackage: packageOf(module) }
+  const foreign = origin !== undefined && isOtherFrameworkModule(origin)
+  return { provenance: foreign ? "other-framework" : "unknown", nestjsPackage: null }
+}
+
+function packageOf(scopedModule: string): string {
+  return scopedModule.split("/", 2).join("/")
 }
 
 export interface ResolvedDecoratorName {
   canonical: string
   confidence: Confidence
+  /** The `@nestjs/*` package the scan traced the decorator to; `null` when no import binds it to one. */
+  nestjsPackage: string | null
 }
 
 /** `null` for a decorator the scan traced to another framework's package outside the workspace. */
@@ -121,20 +133,25 @@ export function resolveDecoratorName(
       const ranked = viaNamespace.map((edge) => provenanceOf(edge, member))
       return graded(
         name,
-        ranked.reduce((best, next) => (RANK[next] < RANK[best] ? next : best)),
+        ranked.reduce((best, next) =>
+          RANK[next.provenance] < RANK[best.provenance] ? next : best,
+        ),
       )
     }
     const viaName = bindings.names.get(head)
-    if (viaName !== undefined) return graded(name, viaName.provenance)
-    return { canonical: name, confidence: "high" }
+    return viaName === undefined ? unbound(name) : graded(name, viaName)
   }
   const origin = bindings.names.get(name)
-  if (origin === undefined) return { canonical: name, confidence: "high" }
+  if (origin === undefined) return unbound(name)
   const canonical = origin.imported === DEFAULT_EXPORT_NAME ? name : origin.imported
-  return graded(canonical, origin.provenance)
+  return graded(canonical, origin)
 }
 
-function graded(canonical: string, provenance: Provenance): ResolvedDecoratorName | null {
-  const confidence = CONFIDENCE[provenance]
-  return confidence === null ? null : { canonical, confidence }
+function unbound(canonical: string): ResolvedDecoratorName {
+  return { canonical, confidence: "high", nestjsPackage: null }
+}
+
+function graded(canonical: string, trace: TracedProvenance): ResolvedDecoratorName | null {
+  const confidence = CONFIDENCE[trace.provenance]
+  return confidence === null ? null : { canonical, confidence, nestjsPackage: trace.nestjsPackage }
 }
