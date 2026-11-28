@@ -50,8 +50,10 @@ as `scan`.
 
 `diff` takes either a `refspec`, as `aburi diff` does, or two sides:
 
-- `{ refspec: "main..HEAD" }` is what the branch changed, uncommitted edits included, because the
-  head is read from the working tree.
+- `{ refspec: "main..HEAD" }` is what the branch changed, uncommitted edits included, because a
+  head naming the commit checked out is read from the working tree.
+- `{ refspec: "v1.2.0..v1.3.0" }` is what the release changed, read as committed unless `v1.3.0`
+  is what is checked out.
 - `{ refspec: "HEAD..HEAD" }` is what the uncommitted edits did.
 - `{ base: "scan-1", head: "scan-2" }` is what changed between two scans, so an agent can scan,
   edit, scan again and see exactly what its edit did.

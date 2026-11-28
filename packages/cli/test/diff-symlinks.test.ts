@@ -35,8 +35,8 @@ const readAsSource = (count: number, listing: string, remedy: string) =>
   `${count} symbolic link(s) checked out as plain files holding their targets were read as source, ` +
   `where a scan passes over a link: ${listing}. ${remedy}`
 
-const baseWarning = (paths: readonly string[]) =>
-  `⚠ base ref "HEAD~1": ${readAsSource(paths.length, paths.join(", "), BASE_REMEDY)}`
+const baseWarning = (paths: readonly string[], label = 'base ref "HEAD~1"') =>
+  `⚠ ${label}: ${readAsSource(paths.length, paths.join(", "), BASE_REMEDY)}`
 const headWarning = (paths: readonly string[]) =>
   `⚠ head (working tree): ${readAsSource(paths.length, paths.join(", "), HEAD_REMEDY)}`
 
@@ -69,11 +69,11 @@ async function changeMain(repo: string): Promise<void> {
   await commitAll(repo, "change main")
 }
 
-async function diffIn(cwd: string) {
+async function diffIn(cwd: string, refSpec = "HEAD~1..HEAD") {
   const log = recordingLogger()
   const report = await runDiff({
     cwd,
-    refSpec: "HEAD~1..HEAD",
+    refSpec,
     outputDir: resolve(cwd, "out"),
     warn: log.warn,
   })
@@ -93,6 +93,21 @@ describe("aburi diff over symbolic links git checked out as plain files", () => 
 
     expect(exitCode).toBe(EXIT.SUCCESS)
     expect(warnings).toEqual([baseWarning(READ), headWarning(READ)])
+  })
+
+  it("names a head's checked out apart by its ref, with the remedy for a checkout this run made", async () => {
+    const demo = await repository("false")
+    await commitLinks(demo, LINKS)
+    await changeMain(demo)
+    await git(["checkout", "-q", "HEAD~1"], demo)
+
+    const { exitCode, warnings } = await diffIn(demo, "HEAD..main")
+
+    expect(exitCode).toBe(EXIT.SUCCESS)
+    expect(warnings).toEqual([
+      baseWarning(READ, 'base ref "HEAD"'),
+      baseWarning(READ, 'head ref "main"'),
+    ])
   })
 
   it.each(["false", "true"])(
@@ -166,7 +181,7 @@ describe("describeLinksReadAsSource", () => {
       (_, at) => `src/link-${String(at + 1).padStart(2, "0")}.ts`,
     )
 
-    expect(describeLinksReadAsSource("base", paths)).toBe(
+    expect(describeLinksReadAsSource("fresh-checkout", paths)).toBe(
       readAsSource(12, `${paths.slice(0, 10).join(", ")}, and 2 more`, BASE_REMEDY),
     )
   })

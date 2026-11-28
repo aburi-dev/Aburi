@@ -52,8 +52,9 @@ as `aburi --config` takes it.
 
 - `workspace`, `component` and `explain` scan the working tree first unless `scan` names an
   earlier scan, since the agent is the one editing the tree between calls.
-- `refspec` is `<base>..<head>`. The head is read from the working tree, so `HEAD..HEAD` is what
-  the uncommitted edits did.
+- `refspec` is `<base>..<head>`. A head that names the commit checked out is read from the
+  working tree, so `HEAD..HEAD` is what the uncommitted edits did; any other head is read as
+  committed.
 - `base` and `head` each take a scan's id or the path of an `aburi.ir.json`, so
   `{ base: "scan-1", head: "scan-2" }` is what changed between two scans, committed or not.
 
