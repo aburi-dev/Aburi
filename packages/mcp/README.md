@@ -37,8 +37,9 @@ was installed with, which loads only the plugins `aburi.json` names by path.
 aburi-mcp [--cwd <path>] [--config <path>]
 ```
 
-`--cwd` names the workspace (default: the current directory); `--config` is passed to every run,
-as `aburi --config` takes it.
+`--cwd` names the workspace (default: the current directory), and one that is not a directory
+ends the server at startup with exit 2; `--config` is passed to every run, as `aburi --config`
+takes it.
 
 ## Tools
 

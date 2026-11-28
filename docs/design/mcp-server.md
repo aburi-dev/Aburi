@@ -33,7 +33,9 @@ The server speaks MCP over stdio: requests on stdin, answers on stdout, one JSON
 line. It serves the workspace of the directory it is started in, or of `--cwd`; `--config` is
 passed to every run it makes, as `--config` is to the CLI ([`cli-spec.md`](./cli-spec.md) §13).
 `--help` and `--version` print and exit `0`; any other argument exits `2` with the reason on
-stderr.
+stderr, and so does a `--cwd` that does not exist or is not a directory, which every run would
+otherwise fail to start in. A directory removed while the server runs fails each call after it,
+naming the directory.
 
 The server exits `0` once stdin closes: the calls then in flight are cancelled (MC-3), and it ends
 when their runs have, removing its directory (MC-4). `SIGINT` or `SIGTERM` closes the connection,
@@ -102,7 +104,9 @@ replaces the answer.
 - `refspec` is `<base>..<head>` as `aburi diff` takes it. The head is scanned from the working
   tree, so `HEAD..HEAD` is what the uncommitted edits did.
 - `base` and `head` are each a scan's id or the path of an IR file, so `diff` with `base: "scan-1"`
-  and `head: "scan-2"` is what changed between two scans of the tree, committed or not.
+  and `head: "scan-2"` is what changed between two scans of the tree, committed or not. A scan's
+  files are kept in a directory named after its id, so the report's title, which names the two IR
+  files, and the run's arguments show the ids the call passed.
 - `failOn` is a list of `--fail-on` values ([`cli-spec.md`](./cli-spec.md) §6.7), `failOnScope` is
   `--fail-on-scope`, and `maxBytes` is `--max-bytes`, capping `diff.md`. The uncapped
   `diff.full.md` a capped report points to is not returned, since the server removes the run's
@@ -113,7 +117,9 @@ replaces the answer.
   ([`slice-view.md`](./slice-view.md)) and the change of each member, from `diff.json`.
 
 Every answer carries, beside its text, a structured result with each run's bin, arguments, exit
-code and stderr, and the `scan` it read when there is one, failures included. The stderr is the
+code and stderr, and the `scan` it read when there is one, failures included. Each tool's output
+schema marks `scan`, and the `scan` tool's `components`, optional, since a failure has them only
+when it got that far: every result the server sends conforms to the schema it declared. The stderr is the
 second text block of the answer when it is not empty, headed
 `aburi <command> wrote on stderr (exit <code>):`, since what a scan warns about — a file it
 withdrew, a value it could not classify — qualifies the answer. Each run is started with
@@ -140,14 +146,14 @@ naming that Symbol alone.
 | MC3 | `explain` of a full Symbol id, of a file, and of a pattern several Symbols match | The stdout of `aburi explain <target> --ir <the scan's IR>`, with exit `0`, `0` and `2`; a `target` nothing matches fails with `No matches` |
 | MC4 | `workspace`, `component` or `explain` naming no scan, twice | Each scans afresh and says which scan it read, `scan-1` then `scan-2` |
 | MC5 | `diff` with `refspec: "HEAD..HEAD"` over an uncommitted edit, as Markdown and as JSON | `diff.md` and `diff.json` of `aburi diff HEAD..HEAD`; nothing written in the workspace |
-| MC6 | `diff` with `base` and `head` naming two scans, before and after an edit | The report of `aburi diff --base <first IR> --head <second IR>` |
+| MC6 | `diff` with `base` and `head` naming two scans, before and after an edit, with another `diff` between the scans | The report of `aburi diff --base <first IR> --head <second IR>`, its title naming `scan-1/aburi.ir.json` and `scan-2/aburi.ir.json` |
 | MC7 | `diff` with a `failOn` that trips, with and without `FORCE_COLOR=1` in the server's environment | Not a failure: the report, exit `3`, and the tripped clause on stderr, uncoloured |
 | MC8 | `diff` with `symbol` naming a changed Symbol, and one naming no changed Symbol | The Slice holding it and its members' changes; the second fails, naming the Symbol |
 | MC9 | `component` or `scan` naming one that does not exist | Fails, listing the ids that do |
 | MC10 | A workspace whose language plugin cannot be loaded | `scan` fails with the CLI's message and exit `3` |
 | MC11 | Two `diff` calls sent at once | The second run starts once the first has exited |
 | MC12 | `aburi-mcp` over stdio, then stdin closed | The tools listed and a `scan` answered; the process exits and its directory is gone |
-| MC13 | `aburi-mcp --bogus` | exit 2, the argument named on stderr |
+| MC13 | `aburi-mcp --bogus`; `aburi-mcp --cwd` naming nothing, or a file | exit 2, the argument named on stderr; the directory named, with the usage |
 | MC14 | A `scan` the client cancels while a plugin that holds `SIGTERM` is loading, then another call | The run's process has exited before the next call is answered, and the cancelled scan is given no id |
 | MC15 | A workspace whose `node_modules` holds an `@aburi/cli`, and one whose `@aburi/cli` has a `package.json` that does not parse | Every run starts that CLI, and each run names its bin; the second fails, naming the `package.json` |
 | MC16 | `explain` with a `target` of `--output`, `--config` or `-x`; `diff` with a `refspec` of `--config=<path>` | Each read as the target or the refspec: no matches, and not a valid ref spec; nothing written in the workspace |
@@ -157,6 +163,8 @@ naming that Symbol alone.
 | MC20 | A `diff` of `HEAD..HEAD` the client cancels while a plugin that takes away the CLI's `SIGTERM` handling is loading | The base worktree is unregistered and removed once the run is killed, and the server's directory holds no run's temp dir |
 | MC21 | A diff, or the server closing, where the directory cannot be removed | The report answered, or the server closed, and the directory named on stderr |
 | MC22 | The server closing, or `aburi-mcp`'s stdin closing, while a run is going | The run's process ends, and the server's directory is removed |
+| MC23 | `scan`, `workspace`, `component` and `explain` in a workspace whose language plugin cannot be loaded, and `workspace` naming a scan that does not exist | Each fails, with a structured result its tool's output schema admits |
+| MC24 | A call after the server's `--cwd` was removed | Fails, naming the directory, not the Node binary |
 
 ## 5. Design Decisions
 

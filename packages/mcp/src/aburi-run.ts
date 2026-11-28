@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, resolve, sep } from "node:path"
 
@@ -52,7 +52,7 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
     const stderr: Buffer[] = []
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk))
-    child.on("error", fail)
+    child.on("error", (error) => fail(startFailure(error, options.cwd)))
     child.on("close", (code) => {
       signal?.removeEventListener("abort", stop)
       clearTimeout(escalation)
@@ -65,6 +65,26 @@ export function runAburi(argv: readonly string[], options: AburiRunOptions): Pro
       })
     })
   })
+}
+
+// Node names the executable when the directory to start in is what is missing.
+function startFailure(error: Error, cwd: string): Error {
+  if (!isMissing(error) || !isGone(cwd)) return error
+  return new Error(`aburi cannot start in ${cwd}: it is not a directory any more.`, {
+    cause: error,
+  })
+}
+
+function isGone(path: string): boolean {
+  try {
+    return !statSync(path).isDirectory()
+  } catch (error) {
+    return isMissing(error)
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT"
 }
 
 /**

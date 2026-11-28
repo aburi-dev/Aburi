@@ -31,8 +31,9 @@ Most other clients take a JSON entry:
 ```
 
 Either way the server runs the `@aburi/cli` your workspace installed, because that is the CLI
-that can load the plugins `aburi.json` names. `--cwd <path>` serves another directory, and
-`--config <path>` passes a config file to every run.
+that can load the plugins `aburi.json` names. `--cwd <path>` serves another directory (one that
+does not exist stops the server at startup), and `--config <path>` passes a config file to every
+run.
 
 ## What the agent can ask
 

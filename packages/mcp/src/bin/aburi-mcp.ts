@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { rmSync } from "node:fs"
+import { rmSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
 import { constants } from "node:os"
 import { resolve } from "node:path"
@@ -41,8 +41,16 @@ function main(): void {
     return
   }
 
+  const cwd = resolve(parsed.cwd ?? ".")
+  const fault = directoryFault(cwd)
+  if (fault !== null) {
+    process.stderr.write(`--cwd ${cwd} ${fault}.\n\n${USAGE}`)
+    process.exitCode = 2
+    return
+  }
+
   const aburi = createAburiServer({
-    cwd: resolve(parsed.cwd ?? "."),
+    cwd,
     ...(parsed.config === undefined ? {} : { configPath: resolve(parsed.config) }),
     version,
   })
@@ -79,6 +87,18 @@ function main(): void {
         .finally(() => endOn(signal))
     })
   }
+}
+
+function directoryFault(path: string): string | null {
+  try {
+    return statSync(path).isDirectory() ? null : "is not a directory"
+  } catch (error) {
+    return isMissing(error) ? "does not exist" : `cannot be read: ${messageOf(error)}`
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT"
 }
 
 function say(line: string): void {
