@@ -1,3 +1,4 @@
+import { resolve } from "node:path"
 import type {
   IgnoredPublicApiReason,
   SkippedFile,
@@ -520,14 +521,22 @@ describe("reportScanIncidents — the other incidents", () => {
     ])
   })
 
-  it("names a config that sits below the workspace root, labelled like the rest", () => {
-    const lines = incidentLinesFrom(
-      { configSource: "/repo/apps/web/aburi.json", workspaceRoot: "/repo" },
-      'base ref "main"',
-    )
-    expect(lines).toHaveLength(1)
-    expect(lines[0]).toContain('⚠ base ref "main": Config /repo/apps/web/aburi.json sits below')
-  })
+  it.each([
+    ["sits below", "/repo/apps/web/aburi.json"],
+    ["is outside", "/shared/aburi.json"],
+    ["is outside", "/repo-tools/aburi.json"],
+    ["is outside", "/aburi.json"],
+  ])(
+    "says a config %s the workspace root when it is at %s, labelled like the rest",
+    (where, at) => {
+      const configSource = resolve(at)
+      const workspaceRoot = resolve("/repo")
+      const lines = incidentLinesFrom({ configSource, workspaceRoot }, 'base ref "main"')
+      expect(lines).toEqual([
+        `⚠ base ref "main": Config ${configSource} ${where} the workspace root ${workspaceRoot}. Paths inside it (ignore, components[].roots, relative plugin refs) resolve against the root, not against the config's own directory, and the scan covers the whole workspace.`,
+      ])
+    },
+  )
 
   it("stays quiet about a config the caller pinned, however far from the root it is", () => {
     const lines = incidentLinesFrom({

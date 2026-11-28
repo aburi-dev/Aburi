@@ -51,7 +51,9 @@ describe("aburi explain — finding the IR aburi scan wrote", () => {
     const { outcome, said } = await explainAlpha(app)
 
     expect(outcome.exitCode).toBe(EXIT.SUCCESS)
-    expect(said).toEqual([`Answering from ${irUnder(mono)}; there is no IR under ${resolve(app)}.`])
+    expect(said).toEqual([
+      `⚠ Answering from ${irUnder(mono)}; there is no IR under ${resolve(app)}.`,
+    ])
   })
 
   it("searches the directories between the working directory and the root", async () => {
