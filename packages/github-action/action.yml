@@ -102,9 +102,10 @@ inputs:
       pnpm version to install via `pnpm/action-setup`. Only for `cli: dlx`; under
       `cli: workspace` the action installs nothing and runs on the caller's pnpm. Empty (the
       default) installs the version the repository's root `package.json` pins in
-      `packageManager` or `devEngines.packageManager`, and pnpm 10 when it pins none. A version
-      given here is passed as it is, so beside a `packageManager` pin it has to be that exact
-      version: `pnpm/action-setup` refuses any other.
+      `packageManager` or `devEngines.packageManager`, and pnpm 10 when it pins neither. A
+      version given here is passed as it is: beside a `packageManager` pin it has to be that
+      exact version, since `pnpm/action-setup` refuses any other, and beside a
+      `devEngines.packageManager` pin it replaces the pin.
     required: false
     default: ""
 
@@ -169,9 +170,11 @@ runs:
         case "$OUTPUT_DIR" in
           *$'\n'*|*$'\r'*) refuse "output-dir must not hold a line break." ;;
         esac
-        case "$PNPM_VERSION" in
-          *$'\n'*|*$'\r'*) refuse "pnpm-version must not hold a line break." ;;
-        esac
+        if [ "$CLI" = "dlx" ]; then
+          case "$PNPM_VERSION" in
+            *$'\n'*|*$'\r'*) refuse "pnpm-version must not hold a line break." ;;
+          esac
+        fi
 
     - name: "Setup Node.js"
       if: inputs.cli == 'dlx'

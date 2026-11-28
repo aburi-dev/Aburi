@@ -4,27 +4,29 @@ import { join } from "node:path"
 const UNPINNED_VERSION = "10"
 
 /**
- * The pnpm version the root package.json pins, read as pnpm/action-setup reads it, which refuses a
- * `version` beside a `packageManager` pin that differs from it, a major alone included.
+ * Whether the root package.json pins pnpm, read as pnpm/action-setup reads it: that action refuses
+ * a `version` beside a `packageManager` pin that differs from it, a major alone included, and takes
+ * a pin with an empty version for no pin at all.
  */
-function pinnedPnpm(workspace) {
+function pinsPnpm(workspace) {
   let manifest
   try {
     manifest = JSON.parse(readFileSync(join(workspace, "package.json"), "utf8"))
   } catch {
     // No manifest, or one pnpm/action-setup will refuse to parse in its own words.
-    return null
+    return false
   }
-  if (manifest === null || typeof manifest !== "object") return null
-  const { packageManager, devEngines } = manifest
-  if (typeof packageManager === "string" && packageManager.startsWith("pnpm@")) {
-    return packageManager.slice("pnpm@".length).split("+")[0]
-  }
-  const engine = devEngines?.packageManager
+  if (manifest === null || typeof manifest !== "object") return false
+  const engine = manifest.devEngines?.packageManager
   if (engine?.name === "pnpm" && typeof engine.version === "string" && engine.version !== "") {
-    return engine.version
+    return true
   }
-  return null
+  const { packageManager } = manifest
+  return (
+    typeof packageManager === "string" &&
+    packageManager.startsWith("pnpm@") &&
+    packageManager.slice("pnpm@".length).split("+")[0] !== ""
+  )
 }
 
 function main() {
@@ -34,9 +36,8 @@ function main() {
     return
   }
   const workspace = process.env.GITHUB_WORKSPACE ?? ""
-  const pinned = workspace === "" ? null : pinnedPnpm(workspace)
   // Nothing for a pin: pnpm/action-setup then installs the pinned version itself.
-  process.stdout.write(pinned === null ? UNPINNED_VERSION : "")
+  process.stdout.write(workspace !== "" && pinsPnpm(workspace) ? "" : UNPINNED_VERSION)
 }
 
 main()

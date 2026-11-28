@@ -37,6 +37,11 @@ describe("resolve-pnpm-version.mjs", () => {
       manifest({ devEngines: { packageManager: { name: "npm", version: "10.9.0" } } }),
     ],
     ["a package.json that is not JSON", "{ name: shop"],
+    ["a `packageManager` pin with no version", manifest({ packageManager: "pnpm@" })],
+    [
+      "a `packageManager` pin with an integrity hash and no version",
+      manifest({ packageManager: "pnpm@+sha512.0123abcd" }),
+    ],
   ])("passes pnpm 10 for %s", async (_, json) => {
     expect(await resolvedFor(json)).toEqual({ status: 0, stdout: "10", stderr: "" })
   })
@@ -44,6 +49,11 @@ describe("resolve-pnpm-version.mjs", () => {
   it.each<[string, string | null]>([
     ["with no pin", null],
     ["beside a pin it equals", manifest({ packageManager: "pnpm@9.15.0" })],
+    ["beside a pin it differs from", manifest({ packageManager: "pnpm@10.12.1" })],
+    [
+      "beside a `devEngines.packageManager` pin it differs from",
+      manifest({ devEngines: { packageManager: { name: "pnpm", version: "^10.12.0" } } }),
+    ],
   ])("passes a version the caller set as it is, %s", async (_, json) => {
     expect(await resolvedFor(json, "9.15.0")).toEqual({ status: 0, stdout: "9.15.0", stderr: "" })
   })
