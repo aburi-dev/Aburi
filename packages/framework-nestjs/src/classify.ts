@@ -11,12 +11,24 @@ import type {
 import {
   classifyClassDecorator,
   isMethodBoundaryDecorator,
+  methodRoleOf,
   NESTJS_CLASS_DECORATORS,
+  NESTJS_DECORATOR_PACKAGES,
+  NESTJS_GRAPHQL_OPERATION_DECORATORS,
   NESTJS_HANDLER_DECORATORS,
+  NESTJS_HANDLER_HOST_ROLES,
   NESTJS_HTTP_METHOD_DECORATORS,
+  NESTJS_METHOD_ROLES,
   NESTJS_PATTERN_DECORATORS,
+  NESTJS_TRIGGER_DECORATORS,
+  type NestjsMethodRole,
 } from "./decorators"
-import { type ImportedBindings, readImportedNames, resolveDecoratorName } from "./imports"
+import {
+  type ImportedBindings,
+  type ResolvedDecoratorName,
+  readImportedNames,
+  resolveDecoratorName,
+} from "./imports"
 import { NESTJS_DERIVED_BY_PREFIX } from "./manifest"
 
 /** Shared by HTTP-verb and pattern-style handlers so one predicate finds every entry point. */
@@ -49,22 +61,28 @@ function classifyClass(
   names: ImportedBindings,
 ): SymbolClassification | null {
   const boundaries: Record<string, true> = {}
+  const handlerKeys: string[] = []
+  let hostsHandlers = false
   let winner: { extKind: string; role: string } | null = null
   let confidence: Confidence = "high"
 
   for (const decorator of symbol.decorators) {
-    assertDecoratorName(decorator.name, symbol.id)
-    assertDecoratorQualifier(decorator.qualifier, decorator.name, symbol.id)
-    const resolved = resolveDecoratorName(decorator, names)
+    const resolved = resolveNestjsDecorator(decorator, symbol.id, names)
     if (resolved === null) continue
+    if (NESTJS_HANDLER_DECORATORS.has(resolved.canonical)) {
+      handlerKeys.push(boundaryKey(decorator))
+      continue
+    }
     const hit = classifyClassDecorator(resolved.canonical)
     if (hit === undefined) continue
     boundaries[boundaryKey(decorator)] = true
+    if (NESTJS_HANDLER_HOST_ROLES.has(hit.role)) hostsHandlers = true
     if (winner !== null) continue
     winner = hit
     confidence = resolved.confidence
   }
   if (winner === null) return null
+  if (hostsHandlers) for (const key of handlerKeys) boundaries[key] = true
 
   return {
     extKind: winner.extKind,
@@ -80,45 +98,42 @@ function classifyMethod(
   names: ImportedBindings,
 ): SymbolClassification | null {
   const boundaries: Record<string, true> = {}
-  let firstRoute: ResolvedWinner | null = null
-  let firstHandler: ResolvedWinner | null = null
+  const firstOfRole = new Map<NestjsMethodRole, ResolvedDecoratorName>()
 
   for (const decorator of symbol.decorators) {
-    assertDecoratorName(decorator.name, symbol.id)
-    assertDecoratorQualifier(decorator.qualifier, decorator.name, symbol.id)
-    const resolved = resolveDecoratorName(decorator, names)
+    const resolved = resolveNestjsDecorator(decorator, symbol.id, names)
     if (resolved === null) continue
-    const { canonical, confidence } = resolved
-    if (!isMethodBoundaryDecorator(canonical)) continue
+    const role = methodRoleOf(resolved.canonical)
+    if (role === null) continue
     boundaries[boundaryKey(decorator)] = true
-    if (NESTJS_HTTP_METHOD_DECORATORS.has(canonical) || NESTJS_PATTERN_DECORATORS.has(canonical)) {
-      firstRoute ??= { canonical, confidence }
-    } else {
-      firstHandler ??= { canonical, confidence }
-    }
+    if (!firstOfRole.has(role)) firstOfRole.set(role, resolved)
   }
 
-  if (firstRoute !== null) {
+  for (const role of NESTJS_METHOD_ROLES) {
+    const winner = firstOfRole.get(role)
+    if (winner === undefined) continue
     return {
-      extKind: ROUTE_EXT_KIND,
+      ...(role === "route" ? { extKind: ROUTE_EXT_KIND } : {}),
       decoratorBoundaries: boundaries,
-      derivedBy: `${NESTJS_DERIVED_BY_PREFIX}:route:${firstRoute.canonical}`,
-      ...confidenceOverride(firstRoute.confidence),
-    }
-  }
-  if (firstHandler !== null) {
-    return {
-      decoratorBoundaries: boundaries,
-      derivedBy: `${NESTJS_DERIVED_BY_PREFIX}:handler:${firstHandler.canonical}`,
-      ...confidenceOverride(firstHandler.confidence),
+      derivedBy: `${NESTJS_DERIVED_BY_PREFIX}:${role}:${winner.canonical}`,
+      ...confidenceOverride(winner.confidence),
     }
   }
   return null
 }
 
-interface ResolvedWinner {
-  canonical: string
-  confidence: Confidence
+/** `null` for a decorator the scan did not trace to the package that gives it this meaning. */
+function resolveNestjsDecorator(
+  decorator: Decorator,
+  symbolId: string,
+  names: ImportedBindings,
+): ResolvedDecoratorName | null {
+  assertDecoratorName(decorator.name, symbolId)
+  assertDecoratorQualifier(decorator.qualifier, decorator.name, symbolId)
+  const resolved = resolveDecoratorName(decorator, names)
+  if (resolved === null) return null
+  const required = NESTJS_DECORATOR_PACKAGES.get(resolved.canonical)
+  return required === undefined || resolved.nestjsPackage === required ? resolved : null
 }
 
 /** `high` is the documented meaning of an omitted `confidence`, so it is spread as nothing. */
@@ -157,7 +172,11 @@ export {
   classifyClassDecorator,
   isMethodBoundaryDecorator,
   NESTJS_CLASS_DECORATORS,
+  NESTJS_DECORATOR_PACKAGES,
+  NESTJS_GRAPHQL_OPERATION_DECORATORS,
   NESTJS_HANDLER_DECORATORS,
+  NESTJS_HANDLER_HOST_ROLES,
   NESTJS_HTTP_METHOD_DECORATORS,
   NESTJS_PATTERN_DECORATORS,
+  NESTJS_TRIGGER_DECORATORS,
 }

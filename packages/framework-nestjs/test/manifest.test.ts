@@ -22,6 +22,8 @@ describe("frameworkNestjsManifest", () => {
       ["framework:nestjs:controller", "class"],
       ["framework:nestjs:provider", "class"],
       ["framework:nestjs:filter", "class"],
+      ["framework:nestjs:resolver", "class"],
+      ["framework:nestjs:gateway", "class"],
       ["framework:nestjs:route", "method"],
     ])
   })
