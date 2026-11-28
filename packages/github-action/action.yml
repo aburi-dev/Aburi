@@ -62,9 +62,9 @@ inputs:
     default: "."
   cli:
     description: >-
-      How the CLI is resolved. `dlx` (default) fetches it with `pnpm dlx @aburi/cli@<version>`:
-      no install step, but a plugin named by package (`lang-typescript`) cannot load, because the
-      CLI resolves it from the pnpm store rather than from your checkout. `workspace` runs the
+      How the CLI is resolved. `dlx` (default) fetches it with `pnpm dlx @aburi/cli@<version>`;
+      a plugin named by package (`lang-typescript`) is imported from your checkout's
+      `node_modules`, so it loads once the workspace is installed. `workspace` runs the
       `@aburi/cli` your project installed, resolved from `working-directory`, with its plugins
       beside it; install (and, from source, build) the workspace before this step. `version`,
       `node-version` and `pnpm-version` do not apply to it.

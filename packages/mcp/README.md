@@ -28,10 +28,9 @@ For a client configured with JSON:
 ```
 
 Each run starts the `@aburi/cli` the workspace installed, the one Node resolves from the directory
-the server serves upward, because a plugin `aburi.json` names by package (`lang-typescript`) is
-loaded from where the CLI is installed. So `npx -y @aburi/mcp` in a workspace with `@aburi/cli`
-installed answers as `aburi scan` there would. In a workspace with none, the server runs the CLI it
-was installed with, which loads only the plugins `aburi.json` names by path.
+the server serves upward, so `npx -y @aburi/mcp` in a workspace with `@aburi/cli` installed answers
+as `aburi scan` there would. In a workspace with none, the server runs the CLI it was installed
+with, which still loads the plugins `aburi.json` names from the workspace's `node_modules`.
 
 ```
 aburi-mcp [--cwd <path>] [--config <path>]

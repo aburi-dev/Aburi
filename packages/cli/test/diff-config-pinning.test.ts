@@ -90,14 +90,30 @@ describe("aburi diff — the base scan reads the head's config", () => {
     expect(report.exitCode).toBe(EXIT.SUCCESS)
   })
 
-  it("loads a relative plugin ref from the head's tree, though the base revision lacks the file", async () => {
+  it.each<[string, string, Record<string, string>]>([
+    [
+      "a relative plugin ref from the head's tree, though the base revision lacks the file",
+      "./plugins/noop.mjs",
+      { "plugins/noop.mjs": NOOP_EFFECTS_PLUGIN },
+    ],
+    [
+      "a package plugin ref from the head's node_modules, which the base's checkout has none of",
+      "@myorg/aburi-noop",
+      {
+        "node_modules/@myorg/aburi-noop/package.json": JSON.stringify({
+          name: "@myorg/aburi-noop",
+          type: "module",
+          exports: "./index.js",
+        }),
+        "node_modules/@myorg/aburi-noop/index.js": NOOP_EFFECTS_PLUGIN,
+      },
+    ],
+  ])("loads %s", async (_, ref, files) => {
     await revisionsDifferingInConfig("aburi.json")
-    await writeFileAt(workspace.root, "plugins/noop.mjs", NOOP_EFFECTS_PLUGIN)
-    await writeConfig(workspace.root, {
-      ...TYPESCRIPT,
-      ignore: ["plugins/**"],
-      effects: ["./plugins/noop.mjs"],
-    })
+    for (const [path, content] of Object.entries(files)) {
+      await writeFileAt(workspace.root, path, content)
+    }
+    await writeConfig(workspace.root, { ...TYPESCRIPT, ignore: ["plugins/**"], effects: [ref] })
 
     const { report, summary } = await diffWorkingTree()
 

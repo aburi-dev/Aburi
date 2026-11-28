@@ -60,10 +60,11 @@ same IR that could drift from it.
 Rule MC-2: the CLI a run starts is **the workspace's own** `@aburi/cli`, the one Node resolves
 from the directory the server serves upward, at the time of the run. Only where none resolves does
 the server run the `@aburi/cli` it was installed with; one that is there but does not load, a
-`package.json` that does not parse for instance, fails the call instead. A plugin `aburi.json`
-names by package is imported from where the CLI is installed, so the workspace's CLI loads the
-plugins the workspace installed, and a server fetched by `npx` answers about the workspace as
-`aburi scan` there would. The CLI of its own loads only the plugins `aburi.json` names by path.
+`package.json` that does not parse for instance, fails the call instead. So a server fetched by
+`npx` answers about the workspace as the `aburi scan` the workspace pinned would. Either CLI
+imports a plugin `aburi.json` names by package from the workspace's `node_modules` first
+([`config.md`](./config.md) §5.2), so the CLI of the server's own loads the plugins the
+workspace installed too.
 Each run in the structured result names the bin it started.
 
 Rule MC-3: calls are run **one at a time**, in the order they arrive. A run sizes its work as the

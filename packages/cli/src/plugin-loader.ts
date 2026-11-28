@@ -1,5 +1,6 @@
-import { isAbsolute, resolve, win32 } from "node:path"
-import { pathToFileURL } from "node:url"
+import { statSync } from "node:fs"
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { RegistryError, VocabRegistry } from "@aburi/plugin-registry"
 import type {
   Config,
@@ -8,6 +9,7 @@ import type {
   LanguagePlugin,
   PluginManifest,
 } from "@aburi/types"
+import { resolve as resolveImport } from "import-meta-resolve"
 import { assertNever, CliError, errorMessage } from "./errors"
 import { pluginForDetectorId } from "./plugin-catalog"
 
@@ -49,8 +51,9 @@ export async function loadPlugins(options: LoadPluginsOptions): Promise<LoadedPl
   const list = (name: string, listing: PluginListing) => {
     if (!listedIn.has(name)) listedIn.set(name, listing)
   }
-  const importFn = options.importModule ?? defaultImport
   const pluginRefRoot = options.pluginRefRoot ?? options.workspaceRoot
+  const importFn =
+    options.importModule ?? ((specifier: string) => defaultImport(specifier, pluginRefRoot))
   const refs = (Object.keys(PLUGIN_FIELDS) as PluginField[]).flatMap((field) =>
     (options.config[field] ?? []).map((ref) => ({
       field,
@@ -232,6 +235,62 @@ function routePlugin(
   }
 }
 
-async function defaultImport(specifier: string): Promise<unknown> {
-  return import(specifier)
+async function defaultImport(specifier: string, pluginRefRoot: string): Promise<unknown> {
+  if (URL.canParse(specifier)) return import(specifier)
+  // The project's own install comes first, so a CLI run from elsewhere, as `pnpm dlx` or a global
+  // install runs it, loads the plugin the project pinned.
+  const installed = workspacePackageUrl(specifier, pluginRefRoot)
+  if (installed !== null) return import(installed)
+  try {
+    return await import(specifier)
+  } catch (error) {
+    if (!isMissingPackage(error) || resolvedFrom(specifier, import.meta.url) !== null) throw error
+    const cli = fileURLToPath(new URL(".", import.meta.url))
+    throw new Error(
+      `Cannot find package '${specifier}' in ${pluginRefRoot} or a directory above it, nor where the CLI runs from (${cli})`,
+      { cause: error },
+    )
+  }
+}
+
+/**
+ * The URL the workspace's own modules would import `specifier` from, or `null` when no
+ * `node_modules` on their walk up from `workspaceRoot` holds a package by that name to import.
+ */
+export function workspacePackageUrl(specifier: string, workspaceRoot: string): string | null {
+  const name = packageNameOf(specifier)
+  const directory = name === null ? null : packageDirectory(name, workspaceRoot)
+  if (directory === null) return null
+  // Resolved from inside the package, so its own manifest is the one read: the workspace's is a
+  // scan's to report on, and Node's own reading of one tolerates what this resolver's does not.
+  return resolvedFrom(specifier, pathToFileURL(join(directory, "package.json")).href)
+}
+
+/** The directory Node's walk up from `from` stops at for the package `name`. */
+function packageDirectory(name: string, from: string): string | null {
+  for (let directory = resolve(from); ; directory = dirname(directory)) {
+    const candidate = join(directory, "node_modules", name)
+    if (statSync(candidate, { throwIfNoEntry: false })?.isDirectory() === true) return candidate
+    if (dirname(directory) === directory) return null
+  }
+}
+
+function packageNameOf(specifier: string): string | null {
+  const [first = "", second = ""] = specifier.split("/")
+  if (!first.startsWith("@")) return first === "" ? null : first
+  return second === "" ? null : `${first}/${second}`
+}
+
+function resolvedFrom(specifier: string, parent: string): string | null {
+  try {
+    return resolveImport(specifier, parent)
+  } catch (error) {
+    // A package that is there but cannot be loaded is that install's to fix, not another's to answer for.
+    if (isMissingPackage(error)) return null
+    throw error
+  }
+}
+
+function isMissingPackage(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ERR_MODULE_NOT_FOUND"
 }

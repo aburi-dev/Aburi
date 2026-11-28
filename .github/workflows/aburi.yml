@@ -94,7 +94,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # `cli: dlx` cannot load a plugin named by package, so the published one is named by its file.
+      # Nothing is installed in this checkout, so the published plugin goes beside it, named by its file.
       - name: Install the published TypeScript plugin
         working-directory: ${{ runner.temp }}
         run: |

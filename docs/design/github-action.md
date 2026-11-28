@@ -155,24 +155,23 @@ the pin, since overriding that is not something `pnpm/action-setup` allows; besi
 
 This repository pins pnpm in `packageManager`, so `aburi.yml` runs the action under `cli: dlx` as
 well, beside its `cli: workspace` gate: a toolchain step that refuses the pin fails that job.
-Under `dlx` the plugin has to be named by path (below), so the job installs the published
-`lang-typescript` and names its file in a config of its own.
+That job installs nothing in the checkout, so it installs the published `lang-typescript`
+beside it and names its file in a config of its own.
 
-Its limit is plugin resolution. `packages/cli/src/plugin-loader.ts` imports a plugin ref with a
-bare `import(specifier)`, so Node resolves it from **the CLI's own location**. Under `pnpm dlx`
-that location is the pnpm store, and nothing the consumer installs in their project is on that
-path:
+A plugin named **by package** is imported from the workspace's own `node_modules` first, and
+from the CLI's location only when the workspace has none ([`config.md`](./config.md) §5.2).
+Under `pnpm dlx` that location is the pnpm store, which holds nothing the consumer installs, so
+a config naming plugins by package needs the workspace installed before the action runs, as it
+does under `workspace`. With no install step it fails:
 
 ```
 Failed to import plugin "lang-typescript" (resolved to "@aburi/lang-typescript"):
-Cannot find package '@aburi/lang-typescript' imported from
-/root/.local/share/pnpm/store/v11/links/@aburi/cli/0.3.0/…/node_modules/@aburi/cli/…
+Cannot find package '@aburi/lang-typescript' in /home/runner/work/app/app or a directory above
+it, nor where the CLI runs from (/root/.local/share/pnpm/store/v11/links/@aburi/cli/…/dist/)
 ```
 
-A ref written as a **relative path** (`./plugins/x.mjs`) resolves against the workspace root
-instead (`resolveSpecifier`), and an **absolute path** names its file directly, so either loads
-here perfectly well. The limit is exactly: plugins named
-by package.
+A ref written as a **relative path** (`./plugins/x.mjs`) resolves against the workspace root,
+and an **absolute path** names its file directly, so either loads with no install at all.
 
 ### 3.2 `workspace`
 

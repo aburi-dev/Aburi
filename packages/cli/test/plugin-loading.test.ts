@@ -124,6 +124,86 @@ describe("loadPlugins — finding the plugin in a module", () => {
   })
 })
 
+describe("loadPlugins — where a plugin named by package is imported from", () => {
+  /** An effects plugin package at the workspace root: `manifest` goes into its package.json. */
+  async function installInWorkspace(
+    name: string,
+    manifest: Record<string, unknown>,
+    plugin: Partial<typeof EFFECTS_MANIFEST> = {},
+  ): Promise<void> {
+    const directory = resolve(workspace.root, "node_modules", name)
+    await writeFileAt(
+      directory,
+      "package.json",
+      JSON.stringify({ name, type: "module", ...manifest }),
+    )
+    await writeFileAt(
+      directory,
+      "index.js",
+      pluginModuleSource({ ...EFFECTS_MANIFEST, ...plugin }, "  classify: () => null,"),
+    )
+  }
+
+  const loadFromWorkspace = (effects: string[]) =>
+    loadPlugins({ config: { effects }, workspaceRoot: workspace.root })
+
+  it("imports a package the workspace installed and the CLI does not carry", async () => {
+    await installInWorkspace("@myorg/aburi-x", { exports: "./index.js" }, { name: "effects-x" })
+
+    const loaded = await loadFromWorkspace(["@myorg/aburi-x"])
+
+    expect(loaded.effects.map((plugin) => plugin.manifest.name)).toEqual(["effects-x"])
+  })
+
+  it("imports a package the workspace installed, whatever the workspace's own package.json holds", async () => {
+    await writeFileAt(workspace.root, "package.json", "{ not json")
+    await installInWorkspace("@myorg/aburi-x", { exports: "./index.js" }, { name: "effects-x" })
+
+    const loaded = await loadFromWorkspace(["@myorg/aburi-x"])
+
+    expect(loaded.effects.map((plugin) => plugin.manifest.name)).toEqual(["effects-x"])
+  })
+
+  it("imports the workspace's copy of a package the CLI carries too", async () => {
+    await installInWorkspace(
+      "@aburi/effects-prisma",
+      { main: "./index.js" },
+      { name: "effects-prisma", version: "9.9.9" },
+    )
+
+    const loaded = await loadFromWorkspace(["effects-prisma"])
+
+    expect(loaded.effects.map((plugin) => plugin.manifest.version)).toEqual(["9.9.9"])
+  })
+
+  it("imports from the CLI's own install a package the workspace has not installed", async () => {
+    const loaded = await loadFromWorkspace(["effects-prisma"])
+
+    expect(loaded.effects.map((plugin) => plugin.manifest.name)).toEqual(["effects-prisma"])
+    expect(loaded.effects[0]?.manifest.version).not.toBe("9.9.9")
+  })
+
+  it("fails on a workspace install it cannot import, rather than taking the CLI's copy", async () => {
+    await installInWorkspace("@aburi/effects-prisma", { exports: { "./other": "./index.js" } })
+
+    const error = await errorFrom(CliError, () => loadFromWorkspace(["effects-prisma"]))
+
+    expect(error.code).toBe("plugin-error")
+    expect(error.message).toContain(
+      `No "exports" main defined in ${resolve(workspace.root, "node_modules/@aburi/effects-prisma/package.json")}`,
+    )
+  })
+
+  it("names the workspace and the CLI when neither has the package", async () => {
+    const error = await errorFrom(CliError, () => loadFromWorkspace(["@myorg/aburi-missing"]))
+
+    expect(error.code).toBe("plugin-error")
+    expect(error.message).toContain(
+      `Failed to import plugin "@myorg/aburi-missing" (resolved to "@myorg/aburi-missing"): Cannot find package '@myorg/aburi-missing' in ${workspace.root} or a directory above it, nor where the CLI runs from (`,
+    )
+  })
+})
+
 describe("loadPlugins — frameworkHints", () => {
   it("registers each entry under framework:hint and runs it after the configured frameworks", async () => {
     const fakeFramework: FrameworkPlugin = { ...FRAMEWORK_CORE, manifest: FRAMEWORK_MANIFEST }

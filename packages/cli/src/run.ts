@@ -168,8 +168,9 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
               `  effects: ${report.effectsPlugins.join(", ") || "—"}\n` +
               `  components: ${report.componentCount}\n`,
           )
-          if (report.suggestedPlugins.length > 0) {
+          if (report.installCommand !== null) {
             out(`  suggested: ${report.suggestedPlugins.join(", ")}\n`)
+            out(`  install: ${report.installCommand}\n`)
           }
           for (const line of describeWorkspaceDetection(report)) warn(`⚠ ${line}`)
           if (report.unmappedLanguages.length > 0) {

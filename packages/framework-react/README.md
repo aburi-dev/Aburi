@@ -159,9 +159,9 @@ The plugin's `provides.frameworks: ["react"]` matches `@aburi/core`'s Component
 autodetect against a workspace `react` npm dependency. Adding
 `"@aburi/framework-react"` to `aburi.json`'s `frameworks` array wires it into
 the scan pipeline. `aburi init` writes it there (as `framework-react`) when it
-detects a React dependency, and with `--with-suggestions` adds a
-`// Suggested install: pnpm add -D @aburi/framework-react` comment while the
-package is not installed.
+detects a React dependency, and with `--with-suggestions` names
+`@aburi/framework-react` and the command that installs it while the package is
+not installed.
 
 ## See also
 
