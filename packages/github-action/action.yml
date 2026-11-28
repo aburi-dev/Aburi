@@ -74,6 +74,14 @@ inputs:
     description: "Upsert the produced Markdown as a PR comment. Set to `false` to run diff only."
     required: false
     default: "true"
+  pr-number:
+    description: >-
+      The pull request to comment on. Empty takes the one the event carries (`pull_request`,
+      `pull_request_target`, a comment on a pull request). An event that carries none, such as
+      `push`, `schedule` or `workflow_dispatch`, posts nothing unless this names one, and says so
+      in a notice rather than failing the job.
+    required: false
+    default: ""
   max-bytes:
     description: >-
       Size cap for `diff.md`, in UTF-8 bytes, forwarded as `--max-bytes`. The report meets it
@@ -120,7 +128,7 @@ outputs:
     description: "Numeric exit code from `aburi diff` (0=clean, 1=runtime error, 2=input error, 3=--fail-on gate or plugin error). Matches `packages/cli/src/exit-codes.ts`. A run that stops before the diff still sets one: 2 for a rejected input, a ref spec that cannot be read from the checkout, or a `cli: workspace` that finds no CLI to run; 1 when a setup step failed. Never empty."
     value: ${{ steps.exit-code.outputs.cli-exit-code }}
   comment-id:
-    description: "Numeric id of the PR comment that was created or updated, or empty when `comment=false`."
+    description: "Numeric id of the PR comment that was created or updated, or empty when none was: `comment=false`, a skipped comment step, no pull request to comment on, or a failed upsert."
     value: ${{ steps.post-comment.outputs.comment-id }}
   comment-action:
     description: "`created`, `updated`, `unchanged`, or empty when no comment step ran."
@@ -139,6 +147,7 @@ runs:
         MAX_BYTES: ${{ inputs.max-bytes }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
         PNPM_VERSION: ${{ inputs.pnpm-version }}
+        PR_NUMBER: ${{ inputs.pr-number }}
       run: |
         set -euo pipefail
         refuse() {
@@ -163,6 +172,9 @@ runs:
         esac
         if [ -n "$MAX_BYTES" ] && ! printf '%s' "$MAX_BYTES" | grep -Eq '^(0|[1-9][0-9]*)$'; then
           refuse "max-bytes must be a non-negative integer, or empty (got '$MAX_BYTES')."
+        fi
+        if [ -n "$PR_NUMBER" ] && ! printf '%s' "$PR_NUMBER" | grep -Eq '^[1-9][0-9]*$'; then
+          refuse "pr-number must be a positive integer, or empty (got '$PR_NUMBER')."
         fi
         if [ -z "$OUTPUT_DIR" ]; then
           refuse "output-dir must not be empty."
@@ -282,8 +294,8 @@ runs:
         fi
         printf '%s\n' "$paths" >> "$GITHUB_OUTPUT"
 
-    - name: "Aburi: upsert PR comment"
-      id: post-comment
+    - name: "Aburi: find the pull request to comment on"
+      id: pull-request
       if: >-
         ${{ inputs.comment == 'true'
             && steps.diff.outputs.diff-md-path != ''
@@ -291,9 +303,19 @@ runs:
                 || steps.diff.outputs.cli-exit-code == '3') }}
       shell: bash
       env:
+        PR_INPUT: ${{ inputs.pr-number }}
+        EVENT_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        MARKDOWN_PATH: ${{ steps.diff.outputs.diff-md-path }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/pr-number-step.sh"
+
+    - name: "Aburi: upsert PR comment"
+      id: post-comment
+      if: steps.pull-request.outputs.number != ''
+      shell: bash
+      env:
         GITHUB_TOKEN: ${{ inputs.token }}
         MARKDOWN_PATH: ${{ steps.diff.outputs.diff-md-path }}
-        PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        PR_NUMBER: ${{ steps.pull-request.outputs.number }}
       run: node "$GITHUB_ACTION_PATH/scripts/upsert-comment.mjs"
 
     - name: "Aburi: propagate CLI exit code"

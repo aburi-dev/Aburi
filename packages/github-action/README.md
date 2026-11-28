@@ -94,6 +94,7 @@ uses the alias.
 | `working-directory` | `.` | Directory to run the CLI from. |
 | `cli` | `dlx` | How the CLI is resolved: `dlx` (`pnpm dlx @aburi/cli@<version>`) or `workspace` (the `@aburi/cli` your project installed). See [Choosing `cli`](#choosing-cli). |
 | `comment` | `true` | Upsert the produced Markdown as a PR comment. |
+| `pr-number` | *(empty)* | The pull request to comment on. Empty takes the one the event carries. On an event that carries none (`push`, `schedule`, `workflow_dispatch`) nothing is posted unless this names one, and a notice says so instead of failing the job. A positive integer, or empty. |
 | `max-bytes` | *(empty)* | Cap for `diff.md`, in UTF-8 bytes, forwarded to `--max-bytes`. Empty means `65507` — GitHub's 65536-byte comment limit less the hidden marker. `0` means no cap. See [Report size](#report-size). |
 | `token` | `${{ github.token }}` | Token used for the comment API. |
 | `node-version` | `24` | Node.js version installed via `actions/setup-node`. `cli: dlx` only. |
@@ -106,7 +107,7 @@ uses the alias.
 | `diff-json-path` | Absolute path to the `diff.json` this run wrote (empty when `format=md`, or when the run stopped before writing it). Read it together with `cli-exit-code`: a run that exits 1 or 2 can leave a path to something it could not clear. |
 | `diff-md-path` | Absolute path to the `diff.md` this run wrote (empty when `format=json`, or when the run stopped before writing it). Read it together with `cli-exit-code`: a run that exits 1 or 2 can leave a path to something it could not clear. |
 | `cli-exit-code` | `0` clean · `1` runtime error · `2` input error · `3` `--fail-on` gate or plugin error. Matches [`packages/cli/src/exit-codes.ts`](../cli/src/exit-codes.ts). Set even when the run stops before the diff: `2` for a rejected input, a ref spec that cannot be read from the checkout, or a `cli: workspace` that finds no CLI to run; `1` when a setup step failed. Never empty. |
-| `comment-id` | Numeric id of the created/updated comment. Empty when no comment was written: `comment=false`, a run that skipped the comment step (exit 1 or 2, or no `diff.md`), or an upsert that failed. |
+| `comment-id` | Numeric id of the created/updated comment. Empty when no comment was written: `comment=false`, a run that skipped the comment step (exit 1 or 2, or no `diff.md`), an event with no pull request and no `pr-number`, or an upsert that failed. |
 | `comment-action` | `created` / `updated` / `unchanged`; empty whenever `comment-id` is. |
 
 ## Choosing `cli`

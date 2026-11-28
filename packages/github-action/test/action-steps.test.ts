@@ -86,4 +86,31 @@ describe.skipIf(process.platform === "win32")("the action's step bodies", () => 
     expect(result.outputs).toEqual({ "cli-exit-code": String(status) })
     expect(result.stderr).toEqual(stderr)
   })
+
+  it.each([
+    ["pr-number alone", { PR_INPUT: "12", EVENT_PR: "" }, "12"],
+    ["the event's own number", { PR_INPUT: "", EVENT_PR: "7" }, "7"],
+    ["pr-number over the event's", { PR_INPUT: "12", EVENT_PR: "7" }, "12"],
+  ])("pr-number-step.sh comments on %s", async (_, env, number) => {
+    const result = await step("pr-number-step.sh", { ...env, MARKDOWN_PATH: "/w/.aburi/diff.md" })
+
+    expect(result.status).toBe(0)
+    expect(result.outputs).toEqual({ number })
+    expect(result.stderr).toBe("")
+  })
+
+  it("pr-number-step.sh names no pull request on an event that carries none, and says why", async () => {
+    const result = await step("pr-number-step.sh", {
+      PR_INPUT: "",
+      EVENT_PR: "",
+      GITHUB_EVENT_NAME: "push",
+      MARKDOWN_PATH: "/w/.aburi/diff.md",
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.outputs).toEqual({ number: "" })
+    expect(result.stderr).toBe(
+      "::notice::No pull request to comment on: this push event carries none and pr-number is empty, so the report at /w/.aburi/diff.md was not posted. Set pr-number to post it, or comment: false to skip this step.\n",
+    )
+  })
 })
