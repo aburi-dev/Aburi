@@ -22,6 +22,7 @@ import { toNfc } from "../codepoints"
 import { packageName, type WorkspacePackage } from "../component-manifest"
 import { DEFAULT_EXPORT_NAME, decoratorReference, splitAliasedImportName } from "../import-edge"
 import { compareCodeUnit } from "../order"
+import { withoutQuery } from "./component-edges"
 import type { DiscoveredFile } from "./discover"
 import {
   type ExtractionEvent,
@@ -443,8 +444,9 @@ export class ImportOrigins {
   }
 
   /**
-   * What the file's language maps each bare specifier it imports names through to, then, for a
-   * workspace package's name, the files its manifest names, which the language looks up last.
+   * What the file's language maps each bare specifier it imports, written without its query, to,
+   * then, for a workspace package's name, the files its manifest names, which the language looks
+   * up last.
    */
   async mapSpecifiers(
     fromFile: string,
@@ -452,13 +454,13 @@ export class ImportOrigins {
   ): Promise<readonly SpecifierPaths[]> {
     const out: SpecifierPaths[] = []
     const asked = new Set<string>()
-    for (const { source, symbols, dynamic } of imports) {
-      if (dynamic || isRelativeSpecifier(source) || asked.has(source)) continue
-      if (symbols !== "*" && symbols.length === 0) continue
-      asked.add(source)
-      const mapped = await this.#mappedPaths(fromFile, source)
-      const paths = [...(mapped === "fault" ? [] : mapped), ...this.#packagePaths(source)]
-      if (paths.length > 0) out.push([source, paths])
+    for (const { source } of imports) {
+      const specifier = withoutQuery(source)
+      if (isRelativeSpecifier(specifier) || asked.has(specifier)) continue
+      asked.add(specifier)
+      const mapped = await this.#mappedPaths(fromFile, specifier)
+      const paths = [...(mapped === "fault" ? [] : mapped), ...this.#packagePaths(specifier)]
+      if (paths.length > 0) out.push([specifier, paths])
     }
     return out
   }

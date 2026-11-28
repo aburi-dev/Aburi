@@ -15,7 +15,7 @@ Recognised files under `app/**/`:
 | `loading.{ts,tsx,js,jsx}` | `framework:next:loading` |
 | `error.{ts,tsx,js,jsx}` | `framework:next:error` |
 | `not-found.{ts,tsx,js,jsx}` | `framework:next:not-found` |
-| `route.{ts,js}` | `framework:next:route` |
+| `route.{ts,tsx,js,jsx}` | `framework:next:route` |
 
 A component role (`page` through `not-found`) is the file's default export, written
 `export default function Page()`, `export default Page` or `export { Page as default }`.
@@ -24,7 +24,7 @@ is one too, and so is a default-exported `const` initialised by such a call
 (`const Page = withAuth(() => { … })` with `export default Page`). A `const` whose call is
 handed no function (`const Page = withAuth(Inner)`) gets no role.
 
-A route is what `route.{ts,js}` exports under an HTTP verb name (`GET`, `POST`, `PUT`,
+A route is what `route.{ts,tsx,js,jsx}` exports under an HTTP verb name (`GET`, `POST`, `PUT`,
 `DELETE`, `PATCH`, `OPTIONS`, `HEAD`). Next.js dispatches to the module's exports by name, so
 the plugin reads the export, not the declaration's name:
 
@@ -55,15 +55,37 @@ clause-exported handler gaining or losing a verb (`export { handler as GET }` be
 the export names it gained and lost. A handler exported by its keyword is named by its verb, so
 changing the verb reports it as removed and added.
 
-Component roles accept both React (`.tsx` / `.jsx`) and non-React (`.ts` / `.js`)
-extensions. `route.*` intentionally does **not** accept `.tsx` / `.jsx`: route
-files export named HTTP verb handlers and do not participate in JSX rendering,
-so restricting extensions matches the Next.js runtime and prevents `route.tsx`
-siblings from being misclassified.
+Every role, `route` included, accepts `.ts`, `.tsx`, `.js` and `.jsx`, the extensions Next.js
+matches App Router files against by default: an Open Graph image handler renders JSX, so it is
+written as `app/api/og/route.tsx`. List `framework-next` ahead of `framework-react`, as `aburi
+init` does: the first framework plugin to classify a symbol wins, and framework-react files a
+capitalised function that renders JSX, such as that `GET`, as a component.
 
 Not classified today (documented for completeness): `default`, `global-error`,
 `middleware`, `instrumentation`, and the metadata files (`sitemap`, `icon`,
 `opengraph-image`, …). Adding them is a table extension inside `app-router.ts`.
+
+The calls that never return are guards. `redirect`, `permanentRedirect`, `notFound`, `forbidden`
+and `unauthorized` from `next/navigation` throw on every call (`forbidden` and `unauthorized`
+answer 403 and 401 only under `experimental.authInterrupts`, and throw a plain error without it),
+so the manifest declares them under `provides.exitCalls`, and an `if` whose consequence calls one
+is recorded as a `guard` rule, as `if (!session) throw …` is:
+
+```tsx
+import { notFound, redirect } from "next/navigation"
+
+export default async function AdminPage({ params }: { params: { id: string } }) {
+  const session = await auth()
+  if (!session?.user.isAdmin) redirect("/login") // guard
+  const report = await loadReport(params.id)
+  if (!report) notFound() // guard
+  return <Dashboard user={session.user} report={report} />
+}
+```
+
+Removing either check is then a logic change in `aburi diff`. The call is read through its import
+(an alias, `import * as nav` or `import nav = require("next/navigation")` included), so a local
+function named `redirect` is not one.
 
 Client / server discrimination folds into `derivedBy`: a `"use client"` or `"use server"` directive
 at the top of an App Router file adds `framework:next:client-component` or

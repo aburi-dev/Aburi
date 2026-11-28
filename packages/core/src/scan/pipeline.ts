@@ -72,7 +72,12 @@ export interface ExtractedFile extends FileOutcomeCommon {
   receiverCalls: readonly ReceiverCallEntry[]
   /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
   unboundHeads: readonly string[]
-  /** What the language maps the file's bare specifiers to, for call resolution to probe. */
+  /** By `makeSymbolCallKey`: each call whose leading name a scope nearer it than the module declares. */
+  localHeads: readonly string[]
+  /**
+   * What the language maps the file's bare specifiers to, which call resolution and the Component
+   * import edges probe.
+   */
   specifierPaths: readonly SpecifierPaths[]
   /** What withdraws the file although nothing threw; its `symbols` are then empty. */
   fault: FileFault | null
@@ -178,6 +183,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         returnSources: [],
         receiverCalls: [],
         unboundHeads: [],
+        localHeads: [],
         specifierPaths: [],
         fault: {
           code: candidates.code,
@@ -205,6 +211,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     const importedReceivers: string[] = []
     const receiverCalls: ReceiverCallEntry[] = []
     const unboundHeads: string[] = []
+    const localHeads: string[] = []
 
     const frameworkCtx: FrameworkClassifyContext = { ...extractCtx, imports }
     // What a client imported from another file is reaches the effect plugins only, and only
@@ -290,6 +297,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
         importedReceivers: fileImportedReceivers,
         receiverCalls: fileReceiverCalls,
         unboundHeads: fileUnboundHeads,
+        localHeads: fileLocalHeads,
       } = classifyCalls(classifyCallsInput)
       dynamicCallSites.push(...fileDynamicCallSites)
       declinedCalls.push(...fileDeclinedCalls)
@@ -298,6 +306,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       importedReceivers.push(...fileImportedReceivers)
       receiverCalls.push(...fileReceiverCalls)
       unboundHeads.push(...fileUnboundHeads)
+      localHeads.push(...fileLocalHeads)
 
       const normalized = language.normalizeAst(candidate)
       symbols.push(
@@ -318,11 +327,18 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
     }
 
     log.debug(`scan/pipeline: ${file.path} produced ${symbols.length} symbols`)
-    // A call resolves through the file's own imports, and through its re-exports when it is a barrel.
-    const resolvesThrough =
-      symbols.some((symbol) => symbol.calls.length > 0) || writtenImports.some(reexportsAny)
+    // Each lookup asks the language's resolver, so only a file something reads the answer for is
+    // mapped. Call resolution binds names through the file's imports for each call it makes, for
+    // what it re-exports as a barrel, and for each type or name a declaration of it says a value
+    // is: an `extends`, a variable's type, what a function gives back. The Component graph draws
+    // an edge for each import of a file in a Component.
+    const readsMapping =
+      component !== null ||
+      symbols.some((symbol) => symbol.calls.length > 0) ||
+      writtenImports.some(reexportsAny) ||
+      classHeritages.length + valueTypes.length + returnSources.length > 0
     const specifierPaths =
-      origins === undefined || !resolvesThrough
+      origins === undefined || !readsMapping
         ? []
         : await deadline.excluding(() => origins.mapSpecifiers(file.path, writtenImports))
 
@@ -343,6 +359,7 @@ export async function runFilePipeline(input: FilePipelineInput): Promise<FilePip
       returnSources,
       receiverCalls,
       unboundHeads,
+      localHeads,
       specifierPaths,
       fault: null,
     }

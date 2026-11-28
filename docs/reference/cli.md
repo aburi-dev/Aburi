@@ -188,7 +188,8 @@ unparseable file tells you something about your source, not about the scan.
 :::
 
 Every command that scans reports the same way. `aburi diff` runs two scans and
-labels each one's `⚠` lines: the base by its ref, the head as `head (working tree)`.
+labels each one's `⚠` lines: the base by its ref, and the head as `head (working tree)`,
+or by its ref when Aburi checked it out apart (see [`aburi diff`](#aburi-diff)).
 A `pluginOptions` key that names no loaded plugin, or the plugin of a
 `frameworkHints` entry, is about the config both scans read, so `aburi diff`
 says it once, with no label.
@@ -206,11 +207,18 @@ Compares two revisions and writes `diff.json` and `diff.md` (and `diff.full.md` 
 `--max-bytes` shortened `diff.md`).
 
 **Ref mode** verifies both refs with git, checks out the base into a temporary
-worktree, and scans it. Aburi scans the head from your working tree, and uses
-its ref as a label in the report.
+worktree, and scans it. When the head names the commit you have checked out
+(`HEAD`, or a branch, tag or SHA at that commit), Aburi scans your working tree
+for it, so uncommitted changes and files you have not added yet are part of the
+head, and a file you moved without committing is reported as moved. Any other
+head is checked out into a temporary worktree of its own, so
+`aburi diff v1.2.0..v1.3.0` compares the two tags as tagged, unless you have
+`v1.3.0` checked out: then the head is your working tree, uncommitted changes
+included. A ref that names no commit, such as `HEAD^{tree}`, exits `2`.
 
-Both scans read the **head**'s config — the one discovery finds from your
-working directory, or the one `--config` names there. The base revision's own
+Both scans read your working tree's config — the one discovery finds from your
+working directory, or the one `--config` names there — even when the head is
+checked out apart. The base revision's own
 `aburi.json` is ignored, even when the base ref carries a different one, and a
 head with no config at all exits `2` without scanning either. Otherwise editing
 `ignore` would count as a change to every Symbol the setting covers, and
@@ -219,7 +227,7 @@ touched no source.
 
 The paths *inside* that config still resolve per scan: `ignore` and
 `components[].roots` are matched against each revision's own workspace root, so
-for the base that is the temporary worktree. Plugin refs are the
+for a revision checked out apart that is its temporary worktree. Plugin refs are the
 exception. A relative one (`./plugins/x.mjs`) belongs to the plugin set, which
 [comes from the head](../extend/architecture.md) along with
 `node_modules`, so it is loaded from your working tree for both scans. An
@@ -232,7 +240,7 @@ differ, `aburi diff` names each difference in one warning on stderr: a plugin
 only one side loaded, or one loaded at another version. An effect plugin only
 the base loaded leaves its effects on the base side alone, so every Symbol that
 carried one reads as changed. Rescan both with one plugin set, or diff the refs,
-whose two scans load the head's plugins.
+whose two scans load your working tree's plugins.
 
 | Flag | Effect |
 |---|---|

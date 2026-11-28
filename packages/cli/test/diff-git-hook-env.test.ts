@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
-import { git, initRepository, useScratchWorkspace } from "@aburi/test-support"
+import { git, initRepository, recordingLogger, useScratchWorkspace } from "@aburi/test-support"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EXIT, runDiff } from "../src"
 import { gitChildEnv } from "../src/git/runner"
@@ -12,7 +12,10 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-/** Two commits, the second adding `two()`, made through `run` so the caller picks the repository. */
+/**
+ * Two commits, the second adding `two()`, made through `run` so the caller picks the repository,
+ * and a file git does not track, which rename detection adds to an index of its own.
+ */
 async function commitTwice(directory: string, run: (args: string[]) => Promise<string>) {
   await writeDiffWorkspace(directory, {
     "src/one.ts": "export function one(): number { return 1 }\n",
@@ -22,10 +25,13 @@ async function commitTwice(directory: string, run: (args: string[]) => Promise<s
   await writeFileAt(directory, "src/two.ts", "export function two(): number { return 2 }\n")
   await run(["add", "-A"])
   await run(["commit", "-q", "-m", "c2"])
+  await writeFileAt(directory, "notes.txt", "not tracked\n")
 }
 
-function diffFrom(cwd: string, refSpec = "HEAD~1..HEAD"): ReturnType<typeof runDiff> {
-  return runDiff({ cwd, refSpec, outputDir: resolve(cwd, "out"), warn: () => {} })
+async function diffFrom(cwd: string, refSpec = "HEAD~1..HEAD") {
+  const log = recordingLogger()
+  const report = await runDiff({ cwd, refSpec, outputDir: resolve(cwd, "out"), warn: log.warn })
+  return { ...report, warnings: log.warnings }
 }
 
 function stagedIn(indexFile: string, cwd: string): Promise<string> {
@@ -80,6 +86,7 @@ describe("aburi diff inside a commit hook", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 /)
+    expect(result.warnings).toEqual([])
     expect((await readFile(indexFile)).equals(before)).toBe(true)
     expect(await stagedIn(indexFile, repository)).toContain("src/two.ts")
     expect((await readFile(resolve(repository, ".git/index"))).equals(ownIndex)).toBe(true)
@@ -95,6 +102,7 @@ describe("aburi diff inside a commit hook", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 /)
+    expect(result.warnings).toEqual([])
     expect((await readFile(index)).equals(before)).toBe(true)
   })
 
@@ -111,6 +119,7 @@ describe("aburi diff inside a commit hook", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 /)
+    expect(result.warnings).toEqual([])
     expect((await readFile(indexFile)).equals(before)).toBe(true)
     expect(await stagedIn(indexFile, linked)).toContain("src/two.ts")
   })
@@ -135,6 +144,7 @@ describe("aburi diff on a repository only the environment names", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 /)
+    expect(result.warnings).toEqual([])
   })
 
   it.each<[string, Record<string, string>, boolean, string[]]>([
@@ -159,6 +169,7 @@ describe("aburi diff on a repository only the environment names", () => {
 
       expect(result.exitCode).toBe(EXIT.SUCCESS)
       expect(result.summaryLine).toMatch(/^\+1 -0 ~0 ↔0 ⤴0/)
+      expect(result.warnings).toEqual([])
     },
   )
 
@@ -171,6 +182,7 @@ describe("aburi diff on a repository only the environment names", () => {
 
     expect(result.exitCode).toBe(EXIT.SUCCESS)
     expect(result.summaryLine).toMatch(/^\+1 -0 ~0 ↔0 ⤴0/)
+    expect(result.warnings).toEqual([])
   })
 
   it("diagnoses a mistyped ref as one, which takes GIT_WORK_TREE to see the work tree", async () => {

@@ -62,11 +62,12 @@ uses, which works because `github.token` is in scope there:
 
 ### 2.1 The refs a pull request means
 
-`aburi diff` scans the working tree as the head, whatever the ref spec calls it
-([`cli-spec.md`](./cli-spec.md) §6.4, step 4): the `<head>` it is given labels the report and
-collects the rename map (`git diff --find-renames <base>..<head>`); it does not decide which tree is
-scanned. So with no `refspec`, the base has to be the tree the checkout grew from, and the action
-reads the checkout to find it rather than taking the event's word for it.
+`aburi diff` reads the head from the working tree when `<head>` names the commit checked out, and
+checks any other head out apart, with the working tree's config and plugins
+([`cli-spec.md`](./cli-spec.md) §6.3). With no `refspec`, the action names the checkout as the
+head, so the report describes the tree the workflow checked out and built, and the base has to be
+the tree that checkout grew from; the action reads the checkout to find it rather than taking the
+event's word for it.
 
 The event's `pull_request.base.sha` is not that tree. A plain `actions/checkout` on `pull_request`
 checks out `refs/pull/<n>/merge`, the pull request's head merged into the base branch as it stood
@@ -106,11 +107,10 @@ refused. A clone with no tracking ref skips that check, and the log says so.
 Anything else is refused rather than guessed at, as a malformed event always was (both SHAs must be
 full commit SHAs, and `base.ref` present). The report would name one tree and describe another. When
 the checkout is a commit on the base branch, which is what a `pull_request_target` checks out by
-default, no ref spec can help: the checkout holds none of the pull request's code, and `aburi diff`
-scans it as the head whatever the ref spec says, so the only way out is to check out the pull
-request's head or merge ref. A `refspec` input skips the check and is used as given: that is how a
-workflow names both sides when the checkout does hold the tree it wants compared (an earlier push's
-merge ref, a commit the workflow made itself). A shallow clone is refused too, and the refusal names
+default, there is no tree to name: the checkout holds none of the pull request's code, so the only
+way out is to check out the pull request's head or merge ref. A `refspec` input skips the check and
+is used as given: that is how a workflow names both sides itself (an earlier push's merge ref, a
+commit the workflow made itself), and a head in it that is not the checkout is checked out apart. A shallow clone is refused too, and the refusal names
 what is checked out before it says the clone is shallow: `aburi diff` refuses one anyway, and the
 `fetch-depth: 0` it needs for the base worktree also gives this step the parents and merge bases it
 reads.

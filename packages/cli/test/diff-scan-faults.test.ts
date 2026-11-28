@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { git, recordingLogger, useScratchWorkspace } from "@aburi/test-support"
+import { commitAll, git, recordingLogger, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { EXIT, formatFailOnMessage, IR_JSON_FILENAME, runDiff, runScan } from "../src"
 import { capturedLog } from "./run-cli"
@@ -27,28 +27,46 @@ async function diffRevisions(
 }
 
 describe("aburi diff — the two scans it ran", () => {
-  it("labels each side, and never calls the head by the ref spec's head label", async () => {
+  it.each<[string, (root: string) => Promise<void>, string, string]>([
+    [
+      "names the commit checked out, as the working tree",
+      async (root) => {
+        await git(["tag", "v1.1.0"], root)
+      },
+      "main",
+      "head (working tree)",
+    ],
+    [
+      "names another commit, by its ref",
+      async (root) => {
+        await commitAll(root, "head")
+        await git(["tag", "v1.1.0"], root)
+        await git(["checkout", "-q", "HEAD~1"], root)
+      },
+      "HEAD",
+      'head ref "v1.1.0"',
+    ],
+  ])("labels each side when the head %s", async (_, tagTheHead, base, head) => {
     await writeStubRepository(workspace.root, {
       base: ["bad.stub", "ok.stub"],
       head: ["warn.stub", "ok.stub"],
     })
-    await git(["tag", "v1.1.0"], workspace.root)
+    await tagTheHead(workspace.root)
     const log = recordingLogger()
 
     await runDiff({
       cwd: workspace.root,
       log: logged.write,
-      refSpec: "main..v1.1.0",
+      refSpec: `${base}..v1.1.0`,
       outputDir: resolve(workspace.root, "out"),
       warn: log.warn,
     })
 
     expect(log.warnings).toContain(
-      '⚠ base ref "main": 1 file(s) could not be parsed and were left out of the IR.',
+      `⚠ base ref "${base}": 1 file(s) could not be parsed and were left out of the IR.`,
     )
-    expect(log.warnings).toContain("⚠ head (working tree): 1 file(s) had recoverable parse errors.")
+    expect(log.warnings).toContain(`⚠ ${head}: 1 file(s) had recoverable parse errors.`)
     expect(log.warnings).toContain("    warn.stub: 2:1 — stray token")
-    expect(log.warnings.join("\n")).not.toContain("v1.1.0")
   })
 
   it.each([

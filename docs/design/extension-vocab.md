@@ -123,6 +123,22 @@ These are machine-validated by [`aburi.plugin.v1.json`](https://github.com/aburi
 
 `provides.extKinds[].baseKind` says what kind of Symbol the extKind describes; it does not constrain `Symbol.kind`. A plugin may give the extKind to a Symbol the language plugin read as another kind, as `framework:next:route` (`baseKind: "function"`) goes to a route handler that is a `const` because its value cannot be seen to be a function.
 
+### 3.5 Exit calls
+
+`provides.exitCalls` is optional and names no vocabulary of the IR. It states a fact about a library that the language plugin cannot see without types: functions a module exports that never return to their caller, because each throws, or ends the process, on every call.
+
+```jsonc
+"exitCalls": [
+  { "module": "next/navigation", "exports": ["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"] }
+]
+```
+
+`module` is the specifier an import names, and `exports` the names the module exports them under (`default` for its default export). The body walk reads a call through the import that binds its callee, and when `registry.isExitCall(module, exported)` answers true, an `if` whose consequence makes the call is a guard, as a `throw` makes it ([`ir-schema.md`](./ir-schema.md) §8, [`lang-plugin.md`](./lang-plugin.md) LP16d). So the fact lives with the plugin that knows the library, and the language plugin knows only that such calls exist.
+
+A declaration owns nothing. Two plugins may name the same module, or the same export of it, and the registry answers for the union. A plugin of any type may declare one, since a library's control flow is not the vocabulary of a type. The registry reads `exitCalls` only as a key of `provides` itself, as the shape check reads it, so an `exitCalls` that `provides` inherits from `Object.prototype` declares nothing.
+
+`isExitCall` is the one registry method `@aburi/lang-typescript` calls, so a host whose registry predates it cannot run that plugin: the plugin's `init` refuses such a registry, and the scan ends with `plugin-init-failed` naming the host to update ([`lang-plugin.md`](./lang-plugin.md) LP16e), rather than failing the walk of every file that calls an import.
+
 ## 4. Registration lifecycle
 
 ```
@@ -204,6 +220,7 @@ The same applies to `fp:` / `oop:` / `meta:`: each sub-namespace is owned by exa
 | A `type: framework` plugin declares `effects` / `effectPrefixes`, or declares extKinds outside the `framework:` prefix | **manifest validation error** |
 | A `type: lang` plugin declares `effects` / `effectPrefixes` / `frameworks`, or declares extKinds outside `(fp\|oop\|meta):` | **manifest validation error** |
 | A manifest holding a value JSON cannot carry (such as `undefined`) | **manifest validation error** |
+| Two plugins declare the same `exitCalls[]` module, or the same export of it | accepted: an exit call has no owner (§3.5) |
 
 Mitigation: forcing the plugin namespace via `x-<plugin-name>:` naturally resolves effect-id conflicts between third parties.
 
@@ -240,6 +257,9 @@ interface VocabRegistry {
   listExtKinds(): ExtKindVocab[]
   listFrameworks(): FrameworkVocab[]
   listPlugins(): PluginManifest[]
+
+  // a library's control flow (§3.5)
+  isExitCall(module: string, exported: string): boolean
 
   // validation (at extraction time)
   assertEffectDeclared(id: string, byPlugin: string): void
@@ -293,6 +313,7 @@ description.
 | V13 | Treating `@Foo` as a boundary via Framework hints (§11.3) alone | OK; no plugin manifest required |
 | V13a | Two lang manifests declare the same `languageId`; a lang manifest declares none, one outside `[a-z][a-z0-9]*`, or `slice`; an effects or framework manifest declares one | startup error naming the plugin (and, for a duplicate, the plugin that declared it first) |
 | V13b | A lang manifest declares `grammarRevision` `tree-sitter-typescript`, `tree-sitter-typescript@^0.23.0`, a number or `null`; an effects or framework manifest declares one; a lang manifest declares `@vscode/tree-sitter-wasm@0.3.1`, or none | startup error naming the plugin for the first five, and `scan` handed one of the first four without the registry ends with `scan-plugin-misconfigured` before parsing a file; the last two register, and a scan records `@vscode/tree-sitter-wasm@0.3.1`, or `<name>@<version>` without build metadata, ending with `scan-plugin-misconfigured` instead when that would be off the form (version `1.0.0-rc~1`) |
+| V13c | Two manifests declare `exitCalls` for `next/navigation`, one `redirect` and `notFound`, the other `forbidden`; a lang, an effects and a framework manifest each declaring one; `Object.prototype` carrying an `exitCalls`; a manifest whose `exitCalls` is not an array, or holds an entry that is not an object, lacks a string `module`, or has `exports` that is not an array of strings; a JSON manifest whose entry has an empty `module`, no `exports`, an empty or repeated export, or a key the schema does not name | `isExitCall` answers true for the three exports and false for any other export or module, and for every call when no manifest declares one; each type's declaration registers; the inherited one declares nothing; each malformed manifest is a startup error naming the field, and each malformed JSON manifest fails the schema |
 | V14 | `aburi scan` with a plugin listed in `aburi.json` whose manifest the registry refuses at startup (§6.1–§6.2), for any of the refusals [`cli-spec.md`](./cli-spec.md) CL49 lists | exit 3 before extraction, stderr naming the config entry that loaded the plugin ahead of the registry's reason |
 
 ## 9.5 Manifest schema compatibility policy

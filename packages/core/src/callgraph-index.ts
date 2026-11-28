@@ -1,4 +1,5 @@
 import {
+  AMBIENT_DECLARATION_DERIVED_BY,
   EXPORT_CLAUSE_DERIVED_BY_PREFIX,
   type Symbol as IRSymbol,
   type SymbolId,
@@ -14,6 +15,10 @@ type ByName = ReadonlyMap<string, readonly IRSymbol[]>
 export interface SymbolTable {
   /** Every Symbol by id, dropped ones included. */
   allById: ReadonlyMap<SymbolId, IRSymbol>
+  /**
+   * What a call may resolve to, as `keptById` and the maps by name hold it too: the kept Symbols,
+   * less a function or method written under `declare`.
+   */
   keptSymbolIds: ReadonlySet<SymbolId>
   keptById: ReadonlyMap<SymbolId, IRSymbol>
   topLevelByFile: ReadonlyMap<FilePath, ByName>
@@ -33,9 +38,9 @@ export function buildSymbolTable(
   symbols: readonly IRSymbol[],
   moduleFiles: ReadonlyMap<Language, ReadonlySet<FilePath>> = new Map(),
 ): SymbolTable {
-  const kept = symbols.filter((symbol) => !symbol.dropped)
+  const resolvable = symbols.filter(isResolvable)
   const byName = (group: readonly IRSymbol[]) => groupBy(group, (symbol) => symbol.name)
-  const keptByLanguage = groupBy(kept, (symbol) => symbol.language)
+  const keptByLanguage = groupBy(resolvable, (symbol) => symbol.language)
   const topLevelPerFile = (group: readonly IRSymbol[]) =>
     groupBy(
       group.filter((symbol) => !symbol.name.includes(".")),
@@ -43,9 +48,9 @@ export function buildSymbolTable(
     )
   return {
     allById: new Map(symbols.map((symbol) => [symbol.id, symbol])),
-    keptSymbolIds: new Set(kept.map((symbol) => symbol.id)),
-    keptById: new Map(kept.map((symbol) => [symbol.id, symbol])),
-    topLevelByFile: mapValues(topLevelPerFile(kept), byName),
+    keptSymbolIds: new Set(resolvable.map((symbol) => symbol.id)),
+    keptById: new Map(resolvable.map((symbol) => [symbol.id, symbol])),
+    topLevelByFile: mapValues(topLevelPerFile(resolvable), byName),
     // Dropping a declaration keeps it out of `resolved`, not out of what its name means.
     memberOwnersByFile: mapValues(
       topLevelPerFile(symbols.filter(listsItsMembers)),
@@ -63,11 +68,22 @@ export function buildSymbolTable(
   }
 }
 
+// A function or method written under `declare` is kept for the signature it declares, but `declare`
+// says the value is defined elsewhere, so the resolver reads it as it reads a dropped Symbol.
+function isResolvable(symbol: IRSymbol): boolean {
+  if (symbol.dropped) return false
+  return !(
+    CALLABLE_KINDS.has(symbol.kind) && symbol.derivedBy.includes(AMBIENT_DECLARATION_DERIVED_BY)
+  )
+}
+
+const CALLABLE_KINDS: ReadonlySet<SymbolKind> = new Set(["function", "method"])
+
 const MEMBER_OWNER_KINDS: ReadonlySet<SymbolKind> = new Set(["class", "enum", "namespace"])
 
 // `declare` says the value is defined elsewhere, which may declare members this file does not.
 function listsItsMembers(symbol: IRSymbol): boolean {
-  if (symbol.derivedBy.includes("ambient-declaration")) return false
+  if (symbol.derivedBy.includes(AMBIENT_DECLARATION_DERIVED_BY)) return false
   return (
     MEMBER_OWNER_KINDS.has(symbol.kind) || symbol.derivedBy.includes("object-literal-initializer")
   )

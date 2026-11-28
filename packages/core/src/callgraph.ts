@@ -54,6 +54,8 @@ export interface ResolveCallGraphInput {
   importedReceivers?: ReadonlySet<string>
   /** By `makeSymbolCallKey`: each call whose leading name no scope around it declares. */
   unboundHeads?: ReadonlySet<string>
+  /** By `makeSymbolCallKey`: each call whose leading name a scope nearer it than the module declares. */
+  localHeads?: ReadonlySet<string>
   classHeritages?: ClassHeritages
   /** By variable Symbol id: the named type its module declares its value with. */
   valueTypes?: ValueTypes
@@ -67,6 +69,14 @@ export interface ResolveCallGraphInput {
    */
   specifierPaths?: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>
   /**
+   * The `package.json` names of the workspace's packages, private ones included. A named import of
+   * a bare specifier that reaches no file the scan read ends the search when the specifier's
+   * package name is none of these, and goes on to component scope otherwise, as an alias with no
+   * package name (`@/lib`, `#lib`) does. Left out, no package is the workspace's, so a call into one
+   * whose manifest names only built output finds nothing by name.
+   */
+  workspacePackageNames?: ReadonlySet<string>
+  /**
    * By language: every file the scan read, Symbols or not, so that a specifier naming a barrel
    * that only re-exports still reaches it.
    */
@@ -79,6 +89,11 @@ export interface ResolveCallGraphResult {
   stats: CallResolutionStats
   diagnostics: UnresolvedCallDiagnostic[]
   lspHintUsage: Readonly<LspHintUsage>
+  /**
+   * By bare specifier, in code-unit order: how many calls ended unresolved at a package's export
+   * that a Symbol of the workspace shares the spelling of.
+   */
+  foreignNamesakes: ReadonlyMap<string, number>
 }
 
 export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraphResult {
@@ -100,6 +115,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     extensions: input.fileExtensions ?? DEFAULT_EXTENSIONS,
     relativeTargets: new Map(),
     specifierPaths: input.specifierPaths ?? new Map(),
+    workspacePackageNames: input.workspacePackageNames ?? EMPTY_NAMES,
     mappedTargets: new Map(),
     importsByFile: input.importsByFile,
     exportAnswers: new Map(),
@@ -111,6 +127,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     receiverHints,
     declaredReceiverTypes,
     importedReceivers,
+    localHeads: input.localHeads ?? EMPTY_CALL_SITE_KEYS,
     receiverCalls: input.receiverCalls ?? EMPTY_RECEIVER_CALLS,
     returnSources: input.returnSources ?? EMPTY_RETURN_SOURCES,
   })
@@ -119,6 +136,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const edges: CallEdge[] = []
   const diagnostics: UnresolvedCallDiagnostic[] = []
   const lspHintUsage = emptyHintUsage()
+  const foreignNamesakes = new Map<string, number>()
   let totalCalls = 0
   let resolvedCalls = 0
 
@@ -138,6 +156,10 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
       if (hinted?.outcome === "rejected") lspHintUsage[hinted.reason] += 1
       if (hinted?.outcome === "hit") lspHintUsage.consumed += 1
       if (hit === null) {
+        const specifier = trace.foreignNamesake
+        if (specifier !== null) {
+          foreignNamesakes.set(specifier, (foreignNamesakes.get(specifier) ?? 0) + 1)
+        }
         const callSiteKey = makeCallSiteKey(symbol.source.file, call.line, call.target)
         diagnostics.push(
           classifyUnresolved({
@@ -176,10 +198,12 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     stats: buildCallResolutionStats(totalCalls, resolvedCalls, diagnostics),
     diagnostics,
     lspHintUsage,
+    foreignNamesakes: new Map([...foreignNamesakes].sort(([a], [b]) => compareCodeUnit(a, b))),
   }
 }
 
 const EMPTY_CALL_SITE_KEYS: ReadonlySet<string> = new Set()
+const EMPTY_NAMES: ReadonlySet<string> = new Set()
 const EMPTY_RECEIVER_HINTS: ReadonlyMap<string, ReceiverHint> = new Map()
 const EMPTY_DECLARED_RECEIVER_TYPES: DeclaredReceiverTypes = new Map()
 const EMPTY_RECEIVER_CALLS: ReceiverCalls = new Map()

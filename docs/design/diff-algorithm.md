@@ -86,7 +86,8 @@ The most common case. Symbols with no file move and no rename are settled here.
 
 ```
 if git available and ref-based diff:
-  renameMap = git diff --find-renames --name-status -z base..head
+  renameMap = git diff --find-renames --name-status -z base..head   # a head checked out apart
+            | git diff --find-renames --name-status -z base         # a head that is the working tree
               → {oldpath: newpath}
   
   claimants = {}
@@ -102,6 +103,30 @@ if git available and ref-based diff:
 ```
 
 git's rename detection returns a physical-level mapping, making it the most reliable move-detection mechanism.
+
+The map is read between the two trees the scans read ([`cli-spec.md`](./cli-spec.md) §6.3). A
+head checked out in a worktree of its own is a commit, so the map is the range's. A head that is
+the working tree is compared with the base directly, which takes in what is staged and what is
+not, and through a scratch index rather than the caller's: a copy of the index in the run's
+temporary directory, named by `GIT_INDEX_FILE`, to which
+`git add --intent-to-add --ignore-errors --no-warn-embedded-repo -- :/` adds every file git does
+not track yet and does not ignore. The head scan reads those files, so a file moved with a plain
+`mv` and not yet added pairs with its old path as one moved with `git mv` does, and the caller's
+index, which a commit in progress may be reading, is never written. A repository with no index yet
+starts the scratch one empty. A range would describe the committed head instead, and a rename not
+yet committed — the one a commit hook is there to check — would degrade into the `removed` +
+`added` pair.
+
+Adding the untracked files is the step that can fall short, and it costs only those files. git
+refuses a path it cannot stage — a name the platform reserves (`NUL` on Windows), one it keeps for
+its own directory (`git~1`), and in some versions an untracked repository with no commit — and `--ignore-errors` keeps that refusal from leaving every other
+untracked file out with it. Whatever the add says, and its failure if it fails, goes into one
+warning that untracked files may be missing from rename detection, and the diff is read over the
+scratch index as it stands, so a move `git mv` staged still pairs. `--no-warn-embedded-repo` keeps
+out git's advice on committing an untracked repository, which says nothing about renames. Before
+the add, `git rev-parse --git-path index` is asked under the same environment which index the add
+would write: an embedder's `GitRunner` that does not apply `env` names the caller's, and the add is
+then skipped, with that warning, rather than run against it.
 
 `-z` is part of the contract, not a detail of the invocation. Without it git separates the
 fields with a tab and renders a path outside printable ASCII the way `core.quotePath` asks —
@@ -121,8 +146,14 @@ Symbols, which is worse for this stage than having no hint at all.
 
 git can also succeed while declining to detect renames: over `diff.renameLimit` it exits 0, warns
 on stderr, and reports every move as a delete plus an add. That degradation is invisible in the
-records — they parse, the map is just empty — so the caller warns on any stderr from this
-invocation.
+records — they parse, the map is just empty — so the caller warns on whatever this invocation
+writes to stderr. A diff that reads the working tree is the one place it leaves anything out:
+there git also notes, file by file, how it would convert line endings under `core.autocrlf`
+(`in the working copy of '<path>', LF will be replaced by CRLF the next time Git touches it`, or
+the two-line form git printed before 2.37), which changes no record. Those notes alone are dropped,
+matched as whole lines so a path cannot make one look like anything else, and that diff runs
+under `LC_ALL=C` so they are recognisable in any locale. Everything else git says there still
+reaches the caller.
 
 Two base files renamed onto one target predict the same head id, so the claimants are collected before one is chosen and the lowest `base.id` is the move source. §3.8 does not apply — there is no score to order by — but the reason for fixing the choice is the one it gives.
 

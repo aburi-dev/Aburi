@@ -348,49 +348,34 @@ describe("runFilePipeline — effect classification", () => {
     ])
   })
 
-  it("keys each call through an imported receiver, and no key one of whose calls goes through none", async () => {
-    const imported = (line: number, importedReceiver?: boolean) =>
-      makeCall({
-        target: "manager.stop",
-        line,
-        ...(importedReceiver === undefined ? {} : { importedReceiver }),
+  it.each([
+    ["through an imported receiver", "importedReceiver", "importedReceivers"],
+    ["whose leading name nothing declares", "unboundHead", "unboundHeads"],
+    ["whose leading name a scope inside the module declares", "localHead", "localHeads"],
+  ] as const)(
+    "keys each call %s, and no key one of whose calls is not marked so",
+    async (_marked, flag, keys) => {
+      const marked = (line: number, value?: boolean) =>
+        makeCall({
+          target: "runtime.tick",
+          line,
+          ...(value === undefined ? {} : { [flag]: value }),
+        })
+      const result = await extractOneSymbol({
+        body: bodyCalling(
+          marked(3, true),
+          marked(3, true),
+          marked(4, true),
+          marked(4),
+          marked(5),
+          marked(5, true),
+          marked(6, false),
+        ),
       })
-    const result = await extractOneSymbol({
-      body: bodyCalling(
-        imported(3, true),
-        imported(3, true),
-        imported(4, true),
-        imported(4),
-        imported(5),
-        imported(5, true),
-        imported(6, false),
-      ),
-    })
 
-    expect(result.importedReceivers).toEqual([
-      makeSymbolCallKey("stub:test.stub#Fn", 3, "manager.stop"),
-    ])
-  })
-
-  it("keys each call whose leading name nothing declares, and no key one of whose calls has one", async () => {
-    const global = (line: number, unboundHead?: boolean) =>
-      makeCall({
-        target: "runtime.tick",
-        line,
-        ...(unboundHead === undefined ? {} : { unboundHead }),
-      })
-    const result = await extractOneSymbol({
-      body: bodyCalling(
-        global(3, true),
-        global(3, true),
-        global(4, true),
-        global(4),
-        global(5, false),
-      ),
-    })
-
-    expect(result.unboundHeads).toEqual([makeSymbolCallKey("stub:test.stub#Fn", 3, "runtime.tick")])
-  })
+      expect(result[keys]).toEqual([makeSymbolCallKey("stub:test.stub#Fn", 3, "runtime.tick")])
+    },
+  )
 
   it("keys the call each receiver is the result of, and no key whose calls name two or none", async () => {
     const through = (line: number, from?: number) =>

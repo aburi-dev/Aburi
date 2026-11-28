@@ -1,4 +1,10 @@
-import { component, dependency, recordingLogger, useScratchWorkspace } from "@aburi/test-support"
+import {
+  component,
+  dependency,
+  recordingLogger,
+  spend,
+  useScratchWorkspace,
+} from "@aburi/test-support"
 import type { Component, SymbolCandidate } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import { scanStubs, stubCandidate, stubLanguagePlugin } from "../fixtures/plugins"
@@ -29,6 +35,21 @@ const importsPerLine = stubLanguagePlugin({
   }),
   extractSymbols: (_tree, ctx) =>
     ctx.file.path.endsWith("/twins.stub") ? [twin(ctx.file.path, 3), twin(ctx.file.path, 9)] : [],
+})
+
+const SLOW = "shared/slow.stub"
+
+/** `importsPerLine`, mapping `@org/<path>` to `<path>.stub`, with `shared/slow.stub` parsing for 150ms. */
+const aliasedImportsPerLine = stubLanguagePlugin({
+  ...importsPerLine,
+  parseFile: (file) => {
+    if (file.path === SLOW) spend(150)
+    return importsPerLine.parseFile(file)
+  },
+  createImportResolver: () => ({
+    resolve: async (specifier) =>
+      specifier.startsWith("@org/") ? [`${specifier.slice("@org/".length)}.stub`] : [],
+  }),
 })
 
 const WEB_SHARED_API = [
@@ -85,6 +106,19 @@ describe("scan — Component edges", () => {
     )
 
     expect(ir.dependencies).toEqual([dependency({ from: "web", to: "root" })])
+  })
+
+  it("reach through an alias a file of another Component that ran out of time to parse", async () => {
+    await workspace.writeSource("web/app.stub", "@org/shared/slow\n")
+    await workspace.writeSource(SLOW, "")
+    const { ir, skipped } = await scanStubs(workspace.root, {
+      config: { parseTimeoutMs: 100 },
+      languages: [aliasedImportsPerLine],
+      components: WEB_SHARED_API,
+    })
+
+    expect(skipped.map((file) => [file.path, file.reason])).toEqual([[SLOW, "parse-timeout"]])
+    expect(ir.dependencies).toEqual([dependency({ from: "web", to: "shared" })])
   })
 
   it("warn once for a package name the manifests of two Components declare, and draw no edge for it", async () => {

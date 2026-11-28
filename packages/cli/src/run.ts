@@ -279,7 +279,10 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
   program
     .command("diff")
     .description("Compute the semantic diff between two IRs")
-    .argument("[refspec]", "<base>..<head> ref spec")
+    .argument(
+      "[refspec]",
+      "<base>..<head> ref spec; a head naming the commit checked out is read from the working tree, uncommitted changes included",
+    )
     .option("--base <path>", "base IR file", parsePath)
     .option("--head <path>", "head IR file", parsePath)
     .option(

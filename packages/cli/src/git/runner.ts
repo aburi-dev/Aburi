@@ -1,10 +1,17 @@
 import { spawn } from "node:child_process"
 
+export interface GitRunOptions {
+  cwd?: string
+  /**
+   * Variables set for this command alone, on top of the environment every command gets. A runner
+   * has to apply them: rename detection names a scratch index here, and leaves the files git does
+   * not track out of it, with a warning, when git is not given that index.
+   */
+  env?: Readonly<Record<string, string>>
+}
+
 export interface GitRunner {
-  run(
-    args: readonly string[],
-    options?: { cwd?: string },
-  ): Promise<{ stdout: string; stderr: string }>
+  run(args: readonly string[], options?: GitRunOptions): Promise<{ stdout: string; stderr: string }>
 }
 
 const UNINHERITED_GIT_ENV: readonly string[] = ["GIT_INDEX_FILE", "GIT_PREFIX"]
@@ -18,10 +25,11 @@ export function gitChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 export const defaultGitRunner: GitRunner = {
   async run(
     args: readonly string[],
-    options?: { cwd?: string },
+    options?: GitRunOptions,
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolvePromise, rejectPromise) => {
-      const child = spawn("git", args, { cwd: options?.cwd, env: gitChildEnv() })
+      const env = { ...gitChildEnv(), ...options?.env }
+      const child = spawn("git", args, { cwd: options?.cwd, env })
       const stdoutChunks: Buffer[] = []
       const stderrChunks: Buffer[] = []
       child.stdout?.on("data", (chunk: Buffer) => {

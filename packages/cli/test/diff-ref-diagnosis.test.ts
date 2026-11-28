@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises"
 import { resolve } from "node:path"
-import { commitAll, errorFrom, initRepository, useScratchWorkspace } from "@aburi/test-support"
+import { commitAll, errorFrom, git, initRepository, useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { CliError, type GitRunner, runDiff } from "../src"
 import { fakeGit, refusedBy } from "./git"
@@ -74,6 +74,27 @@ describe("aburi diff — why a ref did not resolve, in a real repository", () =>
       "main..nosuch",
       ["Head ref 'nosuch' could not be resolved", "no such revision"],
       [],
+    ],
+    [
+      "the head names a tree rather than a commit",
+      async () => {
+        await repositoryWithACommit()
+        return workspace.root
+      },
+      "main..HEAD^{tree}",
+      ["Head ref 'HEAD^{tree}' names no commit", "expected commit type"],
+      ["could not be resolved"],
+    ],
+    [
+      "the base is an annotated tag of a tree",
+      async () => {
+        await repositoryWithACommit()
+        await git(["tag", "-a", "-m", "tree", "tree-tag", "HEAD^{tree}"], workspace.root)
+        return workspace.root
+      },
+      "tree-tag..HEAD",
+      ["Base ref 'tree-tag' names no commit", "expected commit type"],
+      ["could not be resolved"],
     ],
   ])(
     "says when %s, with git's own words, at exit 2",

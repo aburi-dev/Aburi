@@ -1,4 +1,4 @@
-import type { PluginManifest, Provides } from "@aburi/types"
+import type { ExitCall, PluginManifest, Provides } from "@aburi/types"
 import { raise } from "./errors"
 
 const PROVIDES_ENTRIES = {
@@ -8,7 +8,7 @@ const PROVIDES_ENTRIES = {
   extKindPrefixes: "string",
   frameworks: "string",
   derivedByPrefixes: "string",
-} as const satisfies Record<keyof Provides, readonly string[] | "string">
+} as const satisfies Record<Exclude<keyof Provides, "exitCalls">, readonly string[] | "string">
 
 function describeType(value: unknown): string {
   if (value === null) return "null"
@@ -65,4 +65,26 @@ export function assertProvidesShape(m: PluginManifest): void {
       }
     }
   }
+  if (!Object.hasOwn(provides, "exitCalls")) return
+  const exitCalls = provides.exitCalls
+  if (!Array.isArray(exitCalls)) refuse("exitCalls", "an array", exitCalls)
+  for (const [i, entry] of (exitCalls as unknown[]).entries()) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      refuse(`exitCalls[${i}]`, "an object", entry)
+    }
+    const own = (field: string) =>
+      Object.hasOwn(entry, field) ? (entry as Record<string, unknown>)[field] : undefined
+    const module = own("module")
+    if (typeof module !== "string") refuse(`exitCalls[${i}].module`, "a string", module)
+    const exports = own("exports")
+    if (!Array.isArray(exports)) refuse(`exitCalls[${i}].exports`, "an array", exports)
+    for (const [j, name] of (exports as unknown[]).entries()) {
+      if (typeof name !== "string") refuse(`exitCalls[${i}].exports[${j}]`, "a string", name)
+    }
+  }
+}
+
+/** The `exitCalls` the gate checked: an inherited one declares nothing, as it was never read. */
+export function ownExitCalls(provides: Provides): readonly ExitCall[] {
+  return Object.hasOwn(provides, "exitCalls") ? (provides.exitCalls ?? []) : []
 }

@@ -20,6 +20,15 @@ const SHADOWED = [
   "restName",
   "arrow",
   "Handler.handle",
+  "localArrow",
+  "localFunction",
+  "block",
+  "caught",
+  "forOf",
+  "callback",
+  "POST",
+  "PUT",
+  "Route.handle",
 ]
 
 const REPO = [
@@ -32,13 +41,14 @@ const REPO = [
   "",
 ].join("\n")
 
-describe("scan — a destructuring parameter shadows the import it names", () => {
+describe("scan — a parameter or a local named after the import shadows it", () => {
   beforeEach(async () => {
     await workspace.writeSource("src/repo.ts", REPO)
     await workspace.writeSource(
       "src/handler.ts",
       [
         'import { save } from "./repo"',
+        'import { withAuth } from "./auth"',
         "",
         "type Deps = { save: (total: number) => Promise<void> }",
         "",
@@ -52,6 +62,15 @@ describe("scan — a destructuring parameter shadows the import it names", () =>
         "export async function restName(...save: any) { await save(11) }",
         "export const arrow = async ({ save }: Deps) => { await save(8) }",
         "export class Handler { async handle({ save }: any) { await save(9) } }",
+        "export async function localArrow() { const save = async (n: number) => n; await save(12) }",
+        "export async function localFunction() { async function save(n: number) { return n }; await save(13) }",
+        "export async function block() { { const save = async (n: number) => n; await save(14) } }",
+        "export async function caught() { try {} catch (save: any) { await save(15) } }",
+        'export async function forOf(list: Deps["save"][]) { for (const save of list) await save(16) }',
+        'export async function callback(list: Deps["save"][]) { list.forEach((save) => save(17)) }',
+        "export const POST = withAuth(async ({ save }: any) => { await save(18) })",
+        "export const PUT = withAuth(async (save: any) => { await save(19) })",
+        "export class Route { handle = withAuth(async ({ save }: any) => { await save(20) }) }",
         "export async function direct() { await save(10) }",
         "",
       ].join("\n"),
@@ -61,8 +80,9 @@ describe("scan — a destructuring parameter shadows the import it names", () =>
   it.each(SHADOWED)("%s leaves `save` unresolved and takes no effect", async (qname) => {
     const result = await scanWorkspace()
     const symbol = symbolById(result, `ts:src/handler.ts#${qname}`)
+    const saves = symbol.calls.filter((c) => c.target === "save")
 
-    expect(symbol.calls.map((c) => [c.target, c.resolved])).toEqual([["save", null]])
+    expect(saves.map((c) => [c.target, c.resolved])).toEqual([["save", null]])
     expect(symbol.effects).toEqual([])
   })
 
@@ -128,34 +148,5 @@ describe("scan — a destructuring parameter with text the parser could not plac
       bindings === undefined ? { name, type: "any" } : { name, type: "any", bindings },
     ])
     expect(symbol.calls.map((c) => [c.target, c.resolved])).toEqual([["save", resolved]])
-  })
-})
-
-describe("scan — a function a const hands its call is not shadowed", () => {
-  beforeEach(async () => {
-    await workspace.writeSource("src/repo.ts", REPO)
-    await workspace.writeSource(
-      "src/route.ts",
-      [
-        'import { save } from "./repo"',
-        'import { withAuth } from "./auth"',
-        "",
-        "export const POST = withAuth(async ({ save }: any) => { await save(1) })",
-        "export const PUT = withAuth(async (save: any) => { await save(2) })",
-        "",
-      ].join("\n"),
-    )
-  })
-
-  it.each(["POST", "PUT"])("%s links `save` to the import", async (qname) => {
-    const result = await scanWorkspace()
-    const symbol = symbolById(result, `ts:src/route.ts#${qname}`)
-
-    expect(symbol.signature).toBeNull()
-    expect(symbol.calls.map((c) => [c.target, c.resolved])).toEqual([
-      ["withAuth", null],
-      ["save", "ts:src/repo.ts#save"],
-    ])
-    expect(symbol.effects.map((e) => e.id)).toEqual(["db.write"])
   })
 })

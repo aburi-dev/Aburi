@@ -1,6 +1,14 @@
 import { createRequire } from "node:module"
+import { CoreError, scan } from "@aburi/core"
 import { extractFile } from "@aburi/test-harness"
-import { irSchemaViolations, relativePath, useScratchWorkspace } from "@aburi/test-support"
+import {
+  errorFrom,
+  irSchemaViolations,
+  noopRegistry,
+  relativePath,
+  useScratchWorkspace,
+} from "@aburi/test-support"
+import type { VocabRegistry } from "@aburi/types"
 import { describe, expect, it } from "vitest"
 import {
   langTypescriptManifest,
@@ -19,6 +27,32 @@ describe("the manifest's languageId", () => {
 
     expect(langTypescriptPlugin.manifest.languageId).toBe("ts")
     expect(ids).toEqual(["ts:src/a.ts#alpha"])
+  })
+})
+
+describe("a host whose plugin registry cannot say which calls never return", () => {
+  it("ends the scan as the plugin initializes, rather than withdrawing the files that call an import", async () => {
+    const { isExitCall: _, ...older } = noopRegistry
+    await workspace.writeSource(
+      "src/a.ts",
+      'import { save } from "./db"\nexport function f(x: boolean) { if (x) save() }\n',
+    )
+
+    const err = await errorFrom(CoreError, () =>
+      scan({
+        workspaceRoot: workspace.root,
+        config: {},
+        languages: [langTypescriptPlugin],
+        frameworks: [],
+        effects: [],
+        registry: older as VocabRegistry,
+      }),
+    )
+
+    expect(err).toMatchObject({ code: "plugin-init-failed", value: "lang-typescript" })
+    expect(err.message).toBe(
+      'Plugin "lang-typescript" failed to initialize: the host\'s plugin registry has no isExitCall, which this @aburi/lang-typescript reads to tell whether a call returns. Update @aburi/cli to the version released with it.',
+    )
   })
 })
 
