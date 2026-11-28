@@ -26,6 +26,17 @@ Priorities are first-match-wins in the order listed above: a `useX` function
 that also returns JSX still classifies as `hook`, and a `<Ctx.Provider>`-shaped
 component classifies as `provider` rather than `component`.
 
+A component's own returns must hand back what React renders: an element or a
+fragment, an array of them, the `children` it is handed (`props.children`
+included), a `createElement`, `cloneElement` or `createPortal` call, or a
+`.map`, `.flatMap` or `useMemo` call whose callback hands one back
+(`items.map((i) => <li />)`, `Children.map(children, (c) => …)`). The value is
+read as a provider's is (below), and a name the body binds is read through what
+its declarations and assignments give it (`const content = <p />; return
+content`). JSX elsewhere makes no component: `Format(v)` building an element it
+logs and returning `v.toFixed(2)`, `renderToStaticMarkup(<p />)` and an Open
+Graph `GET` returning `new ImageResponse(<div />)` have no role.
+
 A role read off a name is `high` only in a file that imports React, and
 `medium` elsewhere, which the report badges: `useCounter` is a Vue composable's
 name too, and `memo` or `createContext` can be any library's. A file imports

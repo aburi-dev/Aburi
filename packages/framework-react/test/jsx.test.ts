@@ -17,7 +17,58 @@ describe("hasJsxReturn", () => {
     ["a self-closing element", true, "function C() { return <br /> }"],
     ["a fragment", true, "function C() { return <>hi</> }"],
     ["JSX inside a conditional", true, "function C(x) { if (x) return <p /> ; return null }"],
+    ["either arm of a conditional", true, "function C(x) { return x ? null : <p /> }"],
+    ["the last operand of &&", true, "function C(x) { return x && <p /> }"],
+    ["the fallback of ??", true, "function C(x) { return x ?? <p /> }"],
+    ["an array of elements", true, "function C() { return [<li key='a' />, <li key='b' />] }"],
+    ["a mapped list", true, "function C({ items }) { return items.map((i) => <li>{i}</li>) }"],
+    [
+      "a list spread into an array",
+      true,
+      "function C({ items }) { return [<h2 />, ...items.flatMap((i) => [<li>{i}</li>])] }",
+    ],
+    [
+      "Children.map",
+      true,
+      "function C({ children }) { return Children.map(children, (c) => <li>{c}</li>) }",
+    ],
+    ["a memoised element", true, "function C() { return useMemo(() => <p />, []) }"],
+    ["a name bound to an element", true, "function C() { const content = <p />; return content }"],
+    [
+      "a name assigned an element on one path",
+      true,
+      "function C(x) { let content = null; if (x) content = <p />; return content }",
+    ],
+    ["the children it is handed", true, "function C({ children }) { return children }"],
+    ["props.children", true, "function C(props) { return props.children ?? null }"],
+    ["a portal", true, "function C({ el }) { return createPortal(<p />, el) }"],
+    ["React.createElement", true, "function C() { return React.createElement('p') }"],
+    ["React.cloneElement", true, "function C({ child }) { return React.cloneElement(child) }"],
+    ["a concise arrow's element", true, "const C = () => (<p />) as JSX.Element"],
     ["a literal", false, "function C() { return 42 }"],
+    [
+      "a string, with JSX elsewhere in the body",
+      false,
+      "function C(v) { const preview = <span>{v}</span>; console.debug(preview); return v.toFixed(2) }",
+    ],
+    [
+      "markup rendered to a string",
+      false,
+      "function C(name) { return renderToStaticMarkup(<p>Hello {name}</p>) }",
+    ],
+    ["an object built from JSX", false, "function C() { return new ImageResponse(<div />) }"],
+    [
+      "a nested function's element",
+      false,
+      "function C() { const render = () => <p />; return render }",
+    ],
+    [
+      "a list mapped to strings",
+      false,
+      "function C({ items }) { return items.map((i) => i.name) }",
+    ],
+    ["a name bound to a string", false, "function C() { const children = 'x'; return children }"],
+    ["a name bound to itself", false, "function C() { let a = a; return a }"],
   ])("reads a body returning %s as JSX: %s", async (_label, expected, source) => {
     expect(hasJsxReturn(await bodyOf(source))).toBe(expected)
   })

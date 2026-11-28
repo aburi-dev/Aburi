@@ -139,6 +139,44 @@ describe("scan — React source shapes across .tsx and .jsx files", () => {
   })
 })
 
+describe("scan — what a component returns", () => {
+  it("gives the component role to a capitalised function that returns an element, and not to one that only builds one", async () => {
+    await workspace.writeSource(
+      "src/format.tsx",
+      [
+        'import { renderToStaticMarkup } from "react-dom/server"',
+        'import { ImageResponse } from "next/og"',
+        "export function Format(value: number): string {",
+        "  const preview = <span>{value}</span>",
+        "  console.debug(preview)",
+        "  return value.toFixed(2)",
+        "}",
+        "export function RenderEmail(name: string): string {",
+        "  return renderToStaticMarkup(<p>Hello {name}</p>)",
+        "}",
+        "export async function GET() { return new ImageResponse(<div>Hello</div>) }",
+        "export function Greeting({ name }: { name: string }) { return <p>Hello {name}</p> }",
+        "export function List({ items }: { items: string[] }) { return items.map((i) => <li key={i}>{i}</li>) }",
+        "export function Slot({ children }: { children: React.ReactNode }) { return children }",
+      ].join("\n"),
+    )
+
+    const { ir } = await scanWith(workspace.root, {
+      languages: [langTypescriptPlugin],
+      frameworks: [reactFrameworkPlugin],
+    })
+
+    expect(Object.fromEntries(ir.symbols.map((symbol) => [symbol.name, symbol.extKind]))).toEqual({
+      Format: null,
+      RenderEmail: null,
+      GET: null,
+      Greeting: "framework:react:component",
+      List: "framework:react:component",
+      Slot: "framework:react:component",
+    })
+  })
+})
+
 describe("scan — the frameworks of a file's Component", () => {
   it("leaves the code of a Component that records frameworks, React not among them, alone", async () => {
     await workspace.writeSource(
