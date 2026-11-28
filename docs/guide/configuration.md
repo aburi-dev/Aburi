@@ -11,15 +11,23 @@ projects that generated file is the last you will think about it:
 {
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
-  "frameworks": ["framework-next", "framework-react"]
+  "frameworks": ["framework-next", "framework-react"],
+  "effects": ["effects-drizzle"],
+  "components": [
+    { "id": "storefront", "name": "storefront", "roots": ["apps/storefront"], "languages": ["ts"], "frameworks": ["nextjs", "react"] }
+  ]
 }
 ```
 
 Every field is optional, but `aburi scan` needs a language plugin to parse
-anything: with `{}`, or with no config at all, it exits `2` and says so. Components
-are inferred from your workspace manifests; the plugin lists are not, which is
-what `aburi init` writes them for. The sections below cover what people change in
-practice.
+anything: with `{}`, or with no config at all, it exits `2` and says so. The plugin
+lists are never inferred, which is what `aburi init` writes them for: one plugin
+for each language and framework it detected, and one for each library an effects
+plugin classifies that your manifests depend on, such as `@prisma/client` or
+`drizzle-orm`. Components are inferred from your workspace manifests when the
+config declares none. `aburi init` writes the ones it found, so from then on the
+list is the whole set: see [Define components](#define-components). The sections
+below cover what people change in practice.
 
 ::: tip JSONC is fine
 Name the file `aburi.jsonc` if you want comments. Keep the `$schema` line either
@@ -184,9 +192,15 @@ codebase:
 }
 ```
 
-A component you declare **replaces** the autodetected one with the same id.
-There is no partial merge, so write out every field you care about. Components
-you leave alone keep their autodetected definition.
+Declaring components turns detection off: the components you list are the
+whole set, with no partial merge, so write out every field you care about. A
+workspace package the list leaves out belongs to no component, and `aburi scan`
+names each one the IR has symbols from, so a package added after `aburi init`
+wrote the list is named once it has symbols. Add it to the list, or delete
+`components` to have every package detected again. To leave a package out on
+purpose, exclude its files with `ignore`. A package one of your roots lies inside,
+such as `apps/storefront` in the example above, is not named: declaring part of it
+leaves the rest out on purpose.
 
 `roots` is also what decides which component a symbol counts towards: a file
 belongs to the component whose root is the deepest path containing it, so a

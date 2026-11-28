@@ -165,6 +165,7 @@ export async function runCli(options: RunCliOptions): Promise<ExitCode> {
             `  managers: ${report.detectedManagers.join(", ") || "—"}\n` +
               `  languages: ${report.detectedLanguages.join(", ") || "—"}\n` +
               `  frameworks: ${report.detectedFrameworks.join(", ") || "—"}\n` +
+              `  effects: ${report.effectsPlugins.join(", ") || "—"}\n` +
               `  components: ${report.componentCount}\n`,
           )
           if (report.suggestedPlugins.length > 0) {

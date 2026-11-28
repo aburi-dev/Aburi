@@ -96,7 +96,7 @@ aburi init [--output <path>] [--force] [--with-suggestions]
 |---|---|
 | `--output <path>` | Output destination (default: `./aburi.json`) |
 | `--force` | Overwrite an existing file |
-| `--with-suggestions` | Include enable candidates for plugins matching detected frameworks as JSONC comments |
+| `--with-suggestions` | Include enable candidates for the plugins written for the detected languages, frameworks and effect libraries as JSONC comments |
 | `--respect-gitignore` / `--no-respect-gitignore` | Whether the language census and the nx detector's search for `project.json` honour `.gitignore` (default: honour), as `config.respectGitignore` decides for `aburi scan`: whether a git-ignored file counts, a git-ignored `project.json` is a project, and a git-ignored directory either search cannot list may go unread. No config exists yet to override, so this is also the only way past a `.gitignore` that cannot be read |
 
 ### 4.3 Behavior
@@ -130,25 +130,30 @@ aburi init [--output <path>] [--force] [--with-suggestions]
   managers: pnpm
   languages: ts
   frameworks: nestjs
+  effects: effects-prisma
   components: 3
-  suggested: @aburi/framework-nestjs
+  suggested: @aburi/framework-nestjs, @aburi/effects-prisma
 ```
 
 The `suggested:` line appears under `--with-suggestions` when it names anything. Warnings go to
 stderr: a `--force` that replaced a file (`⚠ Overwrote /repo/aburi.json; the config that was there
 is gone.`), and a detected language or framework no first-party plugin covers.
 
-`languages` and `frameworks` always name the first-party plugins for what was detected, installed or
-not, because a scan loads nothing it is not told to. `--with-suggestions` adds one JSONC comment per
+`languages`, `frameworks` and `effects` always name the first-party plugins for what was detected,
+installed or not, because a scan loads nothing it is not told to. `effects` comes from the
+dependencies the workspace's manifests declare ([`config.md`](./config.md) §13), and the `effects:`
+line names the plugins written there, or `—`. `--with-suggestions` adds one JSONC comment per
 plugin among them that the workspace has not installed — no `node_modules/@aburi/<name>` directory
 in the workspace root or any directory above it, the walk an ESM import from there makes:
 
 ```jsonc
 {
   // Suggested install: pnpm add -D @aburi/framework-nestjs
+  // Suggested install: pnpm add -D @aburi/effects-prisma
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-nestjs"],
+  "effects": ["effects-prisma"],
   "components": [/* ... */]
 }
 ```
@@ -254,6 +259,7 @@ calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambi
 ⚠ Component "api" lists "framework-nestjs" in frameworks, which names a plugin, not a framework; the IR carries it as written. Write "nestjs".
 ⚠ Component "sdk": packages/sdk/package.json#main is "./lib/", a directory rather than a file, so it gives no publicApi entry.
 ⚠ packages/legacy/package.json could not be read (EACCES: permission denied), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.
+⚠ 1 workspace package(s) are in none of the components the config declares, so their Symbols count towards no Component: packages/c (2 Symbols). A declared components list is the whole set: add each package to it, leave its files out with ignore, or remove components to have every package detected.
 ⚠ pluginOptions["effects-prsima"] names no loaded plugin (loaded: lang-typescript, framework-nestjs, effects-prisma).
 ⚠ 3 file(s) had recoverable parse errors.
     src/widget.tsx: 4 errors, first at 31:12 — syntax error
@@ -1771,6 +1777,8 @@ a command's option, not a global one (§3).
 | CL84 | `aburi diff HEAD..main` with the commit before `main` checked out and an uncommitted edit in the working tree; `aburi diff HEAD~1..HEAD` and `HEAD~1..main` with `main` checked out and the same edit | The first reports only what `main` added, without the edit, labels the head's lines `head ref "main"`, and leaves no worktree behind; the other two report the edit as well, labelling the head `head (working tree)` (§6.3) |
 | CL85 | `aburi diff HEAD..HEAD --fail-on removed` after `git mv src/a.ts src/b.ts`, or after a plain `mv` git was not told of; `aburi diff HEAD..main` with the rename committed on `main` and the commit before it checked out | exit 0, every Symbol of the file moved by `git-rename` and none removed, and the caller's index as it was ([`diff-algorithm.md`](./diff-algorithm.md) §3.2) |
 | CL86 | `aburi diff main..HEAD^{tree}`; `aburi diff <tag>..HEAD` where the annotated tag names a tree | exit 2, `Head ref 'HEAD^{tree}' names no commit` (`Base ref '<tag>'` for the second) with git's own report appended, before anything is checked out |
+| CL87 | `aburi init` in a workspace whose manifests depend, in any of the four dependency fields, on a package of the table in [`config.md`](./config.md) §13 (`@prisma/client`, `drizzle-orm`, `@nestjs/event-emitter`, `eventemitter2`, `@nestjs/cqrs`, `@trpc/client`, `@trpc/react-query`, `@trpc/next`), in the root manifest alone or in a workspace package's, a manifest that opens with a byte order mark included; with `--with-suggestions` and none installed | `effects` names that package's plugin, each plugin once and sorted, and the `suggested:` line and banner name each after the language and framework plugins; a workspace depending on none gets `"effects": []` |
+| CL88 | `aburi scan` after `aburi init` wrote the components of two packages and a third, `c`, was added; the same scan with the components detected, with all three declared, with `c`'s files under `ignore`, or with a declared root inside `c` | One warning naming `c`'s root and its Symbol count; none in the other four |
 
 ## 18. Design Decisions
 

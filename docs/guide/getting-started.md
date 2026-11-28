@@ -62,14 +62,15 @@ bunx aburi <command>
 aburi init
 ```
 
-`init` looks at your repository, works out the workspace layout, languages, and
-frameworks, and reports what it found:
+`init` looks at your repository, works out the workspace layout, languages,
+frameworks and the libraries an effects plugin reads, and reports what it found:
 
 ```
 ✓ Wrote /home/you/shop/aburi.json
   managers: pnpm
   languages: ts
   frameworks: nextjs, react
+  effects: —
   components: 1
 ```
 
@@ -80,6 +81,7 @@ The file it wrote names the plugins to load and the components it detected:
   "$schema": "https://aburi.dev/schema/aburi.config.v1.json",
   "languages": ["lang-typescript"],
   "frameworks": ["framework-next", "framework-react"],
+  "effects": [],
   "components": [
     {
       "id": "storefront",

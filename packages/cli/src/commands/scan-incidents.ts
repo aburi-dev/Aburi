@@ -10,7 +10,7 @@ import {
 } from "@aburi/core"
 import type { LspEnrichmentStats } from "@aburi/types"
 import { assertNever } from "../errors"
-import { writeFullListing, writeListing } from "../listing"
+import { joinCapped, writeFullListing, writeListing } from "../listing"
 import { describeWorkspaceDetection } from "../unresolved-report"
 import type { WarnFn } from "../warn"
 import { SKIP_REASON_RANK } from "./scan-coverage"
@@ -46,6 +46,7 @@ export function reportScanIncidents(
   reportPluginNamedFrameworks(report.pluginNamedFrameworks, sayIncident)
   reportIgnoredPublicApi(report.ignoredPublicApi, sayIncident)
   reportUnreadPackageManifests(report.unreadPackageManifests, sayIncident)
+  reportPackagesInNoComponent(report.packagesInNoComponent, sayIncident)
   reportStrayPluginOptions(report, warn, said)
   reportUnrepresentable(report.unrepresentableFiles, sayIncident, warn)
   reportTreeReleaseFailures(report.treeReleaseFailures, sayIncident, warn)
@@ -223,6 +224,20 @@ function reportUnreadPackageManifests(
       `${manifestPath} could not be read (${reason}), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.`,
     )
   }
+}
+
+function reportPackagesInNoComponent(
+  packages: ScanReport["packagesInNoComponent"],
+  sayIncident: SayIncident,
+): void {
+  if (packages.length === 0) return
+  const listed = packages.map(
+    ({ root, symbols }) => `${root} (${symbols} Symbol${symbols === 1 ? "" : "s"})`,
+  )
+  sayIncident(
+    `${packages.length} workspace package(s) are in none of the components the config declares, so their Symbols count towards no Component: ${joinCapped(listed)}. ` +
+      "A declared components list is the whole set: add each package to it, leave its files out with ignore, or remove components to have every package detected.",
+  )
 }
 
 /** Not labelled: a pluginOptions key reaches no artifact, and every scan of one command reads the same config. */

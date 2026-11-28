@@ -57,6 +57,7 @@ import type { WarnFn } from "../warn"
 import { resolveWorkspaceRoot } from "../workspace-root"
 import {
   declaredComponents,
+  packagesInNoComponent,
   pluginNamedFrameworks,
   resolveComponents,
   resolveManagers,
@@ -130,13 +131,13 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     workspaceRoot,
     plugins.languages,
   )
-  const { packages: workspacePackages, unreadManifests } = await resolveWorkspacePackages(
-    workspaceRoot,
-    managers,
-    components,
-  )
-  const fellBackToSingleComponent =
-    declaredComponents(config) === undefined && managers.workspaces.length === 0
+  const {
+    packages: workspacePackages,
+    unreadManifests,
+    rootsInNoComponent,
+  } = await resolveWorkspacePackages(workspaceRoot, managers, components)
+  const declared = declaredComponents(config) !== undefined
+  const fellBackToSingleComponent = !declared && managers.workspaces.length === 0
 
   const command = options.command ?? "scan"
   const outputDir = resolveOutputDir(cwd, options.outputDir, config.output?.dir)
@@ -231,6 +232,10 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     pluginNamedFrameworks: pluginNamedFrameworks(config, plugins.registry),
     ignoredPublicApi,
     unreadPackageManifests: unreadManifests,
+    // Detection makes a Component of every package it finds, so only a declared list leaves one out.
+    packagesInNoComponent: declared
+      ? packagesInNoComponent(scanResult.ir.symbols, rootsInNoComponent)
+      : [],
     loadedPlugins,
     strayPluginOptions: strayPluginOptions(config, loadedPlugins, loaded.syntheticPlugins),
     exitCode:

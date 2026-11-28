@@ -11,7 +11,11 @@ import { CliError, errorMessage } from "../errors"
 import { EXIT, type ExitCode } from "../exit-codes"
 import { pathKind } from "../fs-probe"
 import { outputIsADirectory, writeOutputFile } from "../output-file"
-import { FRAMEWORK_TO_PLUGIN, LANGUAGE_TO_PLUGIN } from "../plugin-catalog"
+import {
+  DEPENDENCY_TO_EFFECTS_PLUGIN,
+  FRAMEWORK_TO_PLUGIN,
+  LANGUAGE_TO_PLUGIN,
+} from "../plugin-catalog"
 import { resolveWorkspaceRoot } from "../workspace-root"
 import { isUnreadableTree } from "./scan-components"
 
@@ -31,6 +35,8 @@ export interface InitReport {
   detectedManagers: string[]
   detectedLanguages: string[]
   detectedFrameworks: string[]
+  /** The effects plugins written to `effects`, for the dependencies the workspace's manifests name. */
+  effectsPlugins: string[]
   componentCount: number
   suggestedPlugins: readonly string[]
   unmappedLanguages: readonly string[]
@@ -64,11 +70,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
       throw isUnreadableTree(error) ? detectionFailure(error) : error
     },
   )
-  const { components } = await detectComponents({ workspaceRoot, respectGitignore }).catch(
-    (error: unknown) => {
-      throw detectionFailure(error)
-    },
-  )
+  const { components, dependencyNames } = await detectComponents({
+    workspaceRoot,
+    respectGitignore,
+  }).catch((error: unknown) => {
+    throw detectionFailure(error)
+  })
 
   const languageSet = new Set<string>()
   const frameworkSet = new Set<string>()
@@ -77,12 +84,17 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     for (const framework of component.frameworks ?? []) frameworkSet.add(framework)
   }
 
+  const effects = pluginRefsFor(new Set(dependencyNames), DEPENDENCY_TO_EFFECTS_PLUGIN)
   const suggestions = options.withSuggestions
-    ? await uninstalledPackages(workspaceRoot, suggestPluginsFor(languageSet, frameworkSet))
+    ? await uninstalledPackages(
+        workspaceRoot,
+        suggestPluginsFor(languageSet, frameworkSet, effects),
+      )
     : []
   const contents = renderConfig({
     languages: pluginRefsFor(languageSet, LANGUAGE_TO_PLUGIN),
     frameworks: pluginRefsFor(frameworkSet, FRAMEWORK_TO_PLUGIN),
+    effects,
     components: components.map((component) => ({
       id: component.id,
       name: component.name,
@@ -101,6 +113,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitReport> {
     detectedManagers: managers.managers.map((manager) => manager.tool),
     detectedLanguages: [...languageSet].sort(),
     detectedFrameworks: [...frameworkSet].sort(),
+    effectsPlugins: effects,
     componentCount: components.length,
     suggestedPlugins: suggestions,
     unmappedLanguages: unmappedIds(languageSet, LANGUAGE_TO_PLUGIN),
@@ -128,10 +141,12 @@ function pluginRefsFor(
 function suggestPluginsFor(
   languages: ReadonlySet<string>,
   frameworks: ReadonlySet<string>,
+  effects: readonly string[],
 ): string[] {
   return [
     ...pluginRefsFor(languages, LANGUAGE_TO_PLUGIN),
     ...pluginRefsFor(frameworks, FRAMEWORK_TO_PLUGIN),
+    ...effects,
   ].map((name) => `@aburi/${name}`)
 }
 
@@ -161,6 +176,7 @@ function unmappedIds(detected: ReadonlySet<string>, table: ReadonlyMap<string, s
 interface RenderedConfigInput {
   languages: readonly string[]
   frameworks: readonly string[]
+  effects: readonly string[]
   components: readonly {
     id: string
     name: string
@@ -176,6 +192,7 @@ function renderConfig(input: RenderedConfigInput): string {
     $schema: CONFIG_SCHEMA_URL,
     languages: [...input.languages],
     frameworks: [...input.frameworks],
+    effects: [...input.effects],
     components: input.components.map((component) => ({
       id: component.id,
       name: component.name,

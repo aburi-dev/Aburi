@@ -3,7 +3,7 @@ import type { ImportEdge } from "@aburi/types"
 import { EFFECTS_PRISMA_PLUGIN_NAME } from "./constants"
 
 // A package whose every module, `@prisma/client/edge` and `/runtime/…` included, is the client's.
-const PRISMA_CLIENT_MODULES_LIST = ["@prisma/client"] as const
+export const PRISMA_CLIENT_MODULES_LIST = ["@prisma/client"] as const
 
 type PrismaClientModule = (typeof PRISMA_CLIENT_MODULES_LIST)[number]
 

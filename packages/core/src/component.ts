@@ -11,13 +11,15 @@ import { countLanguagesPerRoot } from "./component-languages"
 import {
   collectFrameworks,
   collectPublicApi,
+  dependencyNamesOf,
   type IgnoredPublicApiValue,
   NPM_MANIFEST,
   type NpmManifest,
+  type ReadManifest,
   readCandidateManifests,
 } from "./component-manifest"
 import { makeLanguageId, toDocumentPath } from "./id"
-import { compareBy } from "./order"
+import { compareBy, compareCodeUnit } from "./order"
 import { type DetectManagersOptions, detectManagers, type WorkspaceCandidate } from "./workspace"
 
 const FALLBACK_LANGUAGE: LanguageId = makeLanguageId("ts")
@@ -39,6 +41,11 @@ export interface DetectComponentsResult {
   components: Component[]
   /** By component id, then in the order its manifest holds them. */
   ignoredPublicApi: IgnoredPublicApi[]
+  /**
+   * Every package the `package.json` at the workspace root or at a detected Component's root names
+   * in `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies`, sorted.
+   */
+  dependencyNames: string[]
 }
 
 export async function detectComponents(
@@ -56,9 +63,16 @@ export async function detectComponents(
     mergedCandidates.map((entry) => entry.relativeRoot),
     options,
   )
-  const built = await Promise.all(
-    mergedCandidates.map((entry) => buildComponent(entry, languages.get(entry.relativeRoot) ?? [])),
-  )
+  const [built, rootDependencies] = await Promise.all([
+    Promise.all(
+      mergedCandidates.map((entry) =>
+        buildComponent(entry, languages.get(entry.relativeRoot) ?? []),
+      ),
+    ),
+    mergedCandidates.some((entry) => entry.relativeRoot === ".")
+      ? new Set<string>()
+      : manifestDependencies(rootCandidate(options.workspaceRoot)),
+  ])
   // Collision resolution renames in place, so each ignored value is labelled after it.
   const components = resolveIdCollisions(built.map(({ component }) => component)).sort(
     compareBy((component) => component.id),
@@ -72,7 +86,13 @@ export async function detectComponents(
       })),
     )
     .sort(compareBy((value) => value.component))
-  return { components, ignoredPublicApi }
+  const dependencyNames = new Set(rootDependencies)
+  for (const { dependencies } of built) for (const name of dependencies) dependencyNames.add(name)
+  return {
+    components,
+    ignoredPublicApi,
+    dependencyNames: [...dependencyNames].sort(compareCodeUnit),
+  }
 }
 
 interface MergedCandidate extends CandidateRoot {
@@ -105,6 +125,16 @@ interface BuiltComponent {
   component: Component
   root: string
   ignored: IgnoredPublicApiValue[]
+  dependencies: ReadonlySet<string>
+}
+
+async function manifestDependencies(entry: MergedCandidate): Promise<Set<string>> {
+  return dependencyNamesOf(npmManifestOf(await readCandidateManifests(entry)))
+}
+
+// The one place a parse is read as an `NpmManifest`: it came from the `package.json` slot.
+function npmManifestOf(manifests: readonly ReadManifest[]): NpmManifest | null {
+  return manifests.find((read) => read.kind === NPM_MANIFEST)?.manifest ?? null
 }
 
 async function buildComponent(
@@ -112,9 +142,7 @@ async function buildComponent(
   languages: readonly LanguageId[],
 ): Promise<BuiltComponent> {
   const manifests = await readCandidateManifests(entry)
-  // The one place a parse is read as an `NpmManifest`: it came from the `package.json` slot.
-  const npmManifest: NpmManifest | null =
-    manifests.find((read) => read.kind === NPM_MANIFEST)?.manifest ?? null
+  const npmManifest = npmManifestOf(manifests)
   const declared = declaredNames(manifests.map((read) => read.manifest))
   const id = decideId(entry, declared)
   const name = decideName(entry, declared)
@@ -129,5 +157,10 @@ async function buildComponent(
   }
   if (publicApi.entries.length > 0) component.publicApi = publicApi.entries
   if (frameworks.length > 0) component.frameworks = frameworks
-  return { component, root: entry.relativeRoot, ignored: publicApi.ignored }
+  return {
+    component,
+    root: entry.relativeRoot,
+    ignored: publicApi.ignored,
+    dependencies: dependencyNamesOf(npmManifest),
+  }
 }

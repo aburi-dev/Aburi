@@ -2,6 +2,7 @@ import {
   buildComponentAttribution,
   CoreError,
   type CoreErrorCode,
+  compareCodeUnit,
   type DetectComponentsResult,
   type DetectManagersResult,
   describeThrown,
@@ -16,11 +17,15 @@ import {
   toDocumentPath,
   type WorkspacePackage,
 } from "@aburi/core"
-import type { Component, Config, LanguagePlugin } from "@aburi/types"
+import type { Component, Config, IR, LanguagePlugin } from "@aburi/types"
 import { CliError, errorMessage } from "../errors"
 import { frameworkIdForPlugin } from "../plugin-catalog"
 import type { LoadedPlugins } from "../plugin-loader"
-import type { PluginNamedFramework, UnreadPackageManifest } from "./scan-report"
+import type {
+  PackageInNoComponent,
+  PluginNamedFramework,
+  UnreadPackageManifest,
+} from "./scan-report"
 
 export function declaredComponents(config: Partial<Config>): Config["components"] | undefined {
   const declared = config.components
@@ -48,7 +53,7 @@ export async function resolveComponents(
   config: Partial<Config>,
   workspaceRoot: string,
   languages: readonly LanguagePlugin[],
-): Promise<DetectComponentsResult> {
+): Promise<Pick<DetectComponentsResult, "components" | "ignoredPublicApi">> {
   const declared = declaredComponents(config)
   try {
     if (declared !== undefined) {
@@ -67,6 +72,8 @@ export async function resolveComponents(
 export interface ResolvedWorkspacePackages {
   packages: WorkspacePackage[]
   unreadManifests: UnreadPackageManifest[]
+  /** The roots of the workspace packages no Component holds any part of. */
+  rootsInNoComponent: string[]
 }
 
 export async function resolveWorkspacePackages(
@@ -94,16 +101,51 @@ export async function resolveWorkspacePackages(
   // A package no Component holds is the end of no edge, so a manifest that cannot be read costs
   // only its name, and the others are still read.
   const named = await Promise.all([...unheld].map((root) => readUnheldPackage(workspaceRoot, root)))
+  const componentRoots = components.flatMap((component) => component.roots)
   return {
     packages: [...packages, ...named.flatMap((read) => read.packages)],
     unreadManifests: named.flatMap((read) => read.unreadManifests),
+    // A Component root inside a package declares part of it, so the rest is left out on purpose.
+    rootsInNoComponent: [...unheld]
+      .filter((root) => !componentRoots.some((inner) => contains(root, inner)))
+      .sort(compareCodeUnit),
   }
+}
+
+function contains(root: string, path: string): boolean {
+  return root === "." || path === root || path.startsWith(`${root}/`)
+}
+
+/**
+ * The workspace packages, among `roots`, that Symbols no Component holds came from, each Symbol
+ * counted for the deepest root containing its file.
+ */
+export function packagesInNoComponent(
+  symbols: IR["symbols"],
+  roots: readonly string[],
+): PackageInNoComponent[] {
+  const deepestFirst = [...roots].sort((a, b) => depth(b) - depth(a))
+  const counts = new Map<string, number>()
+  for (const symbol of symbols) {
+    if (symbol.component !== null) continue
+    const root = deepestFirst.find((candidate) => contains(candidate, symbol.source.file))
+    if (root !== undefined) counts.set(root, (counts.get(root) ?? 0) + 1)
+  }
+  return roots.flatMap((root) => {
+    const count = counts.get(root)
+    return count === undefined ? [] : [{ root, symbols: count }]
+  })
+}
+
+// `.` contains every path, so it is tried after every root that has a name.
+function depth(root: string): number {
+  return root === "." ? 0 : root.length
 }
 
 async function readUnheldPackage(
   workspaceRoot: string,
   root: string,
-): Promise<ResolvedWorkspacePackages> {
+): Promise<Omit<ResolvedWorkspacePackages, "rootsInNoComponent">> {
   try {
     return { packages: await readWorkspacePackages(workspaceRoot, [root]), unreadManifests: [] }
   } catch (error) {

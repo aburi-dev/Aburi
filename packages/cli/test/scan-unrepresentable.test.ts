@@ -1,25 +1,19 @@
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import type { UnrepresentableFile } from "@aburi/core"
-import { recordingLogger, useScratchWorkspace } from "@aburi/test-support"
+import { useScratchWorkspace } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
-import { EXIT, IR_JSON_FILENAME, runExplain, runScan, type ScanReport } from "../src"
+import { EXIT, IR_JSON_FILENAME, runExplain, type ScanReport } from "../src"
 import { runCliIn } from "./run-cli"
 import { writeStubWorkspace } from "./stub-language"
-import { writeFileAt } from "./workspace"
+import { scanSaying, writeFileAt } from "./workspace"
 
 const workspace = useScratchWorkspace("scan-unrepresentable")
 
 async function scanStubs(files: readonly string[]): Promise<{ report: ScanReport; said: string }> {
   await writeStubWorkspace(workspace.root, files)
-  const log = recordingLogger()
-  const report = await runScan({
-    cwd: workspace.root,
-    outputDir: resolve(workspace.root, "out"),
-    format: "json",
-    incidents: { warn: log.warn },
-  })
-  return { report, said: log.warnings.join("\n") }
+  const { report, warnings } = await scanSaying(workspace.root)
+  return { report, said: warnings.join("\n") }
 }
 
 function unspellable(fsPath: string): UnrepresentableFile {

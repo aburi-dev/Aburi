@@ -405,6 +405,34 @@ describe("reportScanIncidents — a workspace package manifest it could not read
   })
 })
 
+const LEFT_OUT_REMEDY =
+  "A declared components list is the whole set: add each package to it, leave its files out with ignore, or remove components to have every package detected."
+
+const leftOut = (count: number) => ({ root: `packages/p${count}`, symbols: count })
+
+describe("reportScanIncidents — a workspace package the declared components leave out", () => {
+  it.each<[string, ScanReport["packagesInNoComponent"], string]>([
+    ["one Symbol", [{ root: "packages/c", symbols: 1 }], "packages/c (1 Symbol)"],
+    [
+      "several packages, in the order given",
+      [
+        { root: "packages/d", symbols: 3 },
+        { root: "apps/web", symbols: 2 },
+      ],
+      "packages/d (3 Symbols), apps/web (2 Symbols)",
+    ],
+    [
+      "more packages than a listing holds",
+      Array.from({ length: 12 }, (_, i) => leftOut(i + 1)),
+      `${Array.from({ length: 10 }, (_, i) => `packages/p${i + 1} (${i + 1} Symbol${i === 0 ? "" : "s"})`).join(", ")}, and 2 more`,
+    ],
+  ])("names %s and the ways out", (_, packages, listed) => {
+    expect(incidentLinesFrom({ packagesInNoComponent: packages })).toEqual([
+      `⚠ ${packages.length} workspace package(s) are in none of the components the config declares, so their Symbols count towards no Component: ${listed}. ${LEFT_OUT_REMEDY}`,
+    ])
+  })
+})
+
 function ignoredMain(
   value: string,
   reason: IgnoredPublicApiReason,
