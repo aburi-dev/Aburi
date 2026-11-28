@@ -80,9 +80,8 @@ const CLIENT_CAPABILITIES = {
 
 export async function enrichWithLsp(input: EnrichmentInput): Promise<EnrichmentResult> {
   if (input.lspConfig?.enabled !== true) return untouched(input.symbols, [])
-  const { servers } = input.lspConfig
-  const warnings = serverKeyWarnings(Object.keys(servers ?? {}), input.languageIds)
-  if (servers === undefined) return untouched(input.symbols, warnings)
+  const servers = input.lspConfig.servers ?? {}
+  const warnings = serverKeyWarnings(Object.keys(servers), input.languageIds)
 
   const logger: Logger = input.logger ?? silentLogger
   const stats = createStatsBuilder(false)

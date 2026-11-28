@@ -1,8 +1,9 @@
 import { stat } from "node:fs/promises"
 import { resolve } from "node:path"
-import type { RelativePath, SkippedFile as SkippedFileRecord } from "@aburi/types"
+import type { LanguageId, RelativePath, SkippedFile as SkippedFileRecord } from "@aburi/types"
 import { toNfc } from "../codepoints"
 import { symbolIdSeparatorSite, toDocumentPath, type UnnameableSite, unnameableSite } from "../id"
+import { languageOfExtension } from "../language-extensions"
 import { compareBy } from "../order"
 import { describeThrown, isVanishedFile } from "./faults"
 import { openGitignoreTree } from "./gitignore"
@@ -81,10 +82,17 @@ export interface CollidingFile extends UnrepresentableBase {
   documentPath: string
 }
 
+/** A file of a language no loaded plugin claims, which the Document counts nowhere. */
+export interface UnclaimedFile {
+  path: string
+  language: LanguageId
+}
+
 export interface DiscoverResult {
   files: DiscoveredFile[]
   skipped: SkippedFile[]
   unrepresentableFiles: UnrepresentableFile[]
+  unclaimedFiles: UnclaimedFile[]
 }
 
 export async function discoverFiles(options: DiscoverOptions): Promise<DiscoverResult> {
@@ -117,12 +125,20 @@ export async function discoverFiles(options: DiscoverOptions): Promise<DiscoverR
   const files: DiscoveredFile[] = []
   const skipped: SkippedFile[] = []
   const unrepresentableFiles: UnrepresentableFile[] = []
+  const unclaimedFiles: UnclaimedFile[] = []
   const claimants = new Map<string, string[]>()
 
   for (const rawPath of matches) {
-    if (extensions.size > 0 && !hasKnownExtension(rawPath, extensions)) continue
+    const claimed = extensions.size === 0 || hasKnownExtension(rawPath, extensions)
+    const unclaimedLanguage = claimed ? null : languageOfExtension(rawPath)
+    if (!claimed && unclaimedLanguage === null) continue
 
     if (gitignore !== null && (await gitignore.ignores(rawPath))) continue
+
+    if (unclaimedLanguage !== null) {
+      unclaimedFiles.push({ path: toNfc(rawPath), language: unclaimedLanguage })
+      continue
+    }
 
     const unnameable = unnameableSite(rawPath)
     if (unnameable !== null) {
@@ -178,8 +194,9 @@ export async function discoverFiles(options: DiscoverOptions): Promise<DiscoverR
   files.sort(compareBy((file) => file.path))
   skipped.sort(compareBy((file) => file.path))
   unrepresentableFiles.sort(compareBy((file) => file.fsPath))
+  unclaimedFiles.sort(compareBy((file) => file.path))
 
-  return { files, skipped, unrepresentableFiles }
+  return { files, skipped, unrepresentableFiles, unclaimedFiles }
 }
 
 function withdrawCollisions(

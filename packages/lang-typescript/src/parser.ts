@@ -79,6 +79,11 @@ async function loadLanguage(wasmPath: string): Promise<Language> {
   return attempt
 }
 
+export async function loadGrammars(): Promise<void> {
+  await ensureRuntimeInitialized()
+  await Promise.all([...new Set(EXTENSION_GRAMMAR.values())].map(loadLanguage))
+}
+
 export async function parseTypescriptFile(file: SourceFile): Promise<ParseResult<Tree>> {
   const wasmPath = pickGrammarForPath(file.path)
   await ensureRuntimeInitialized()

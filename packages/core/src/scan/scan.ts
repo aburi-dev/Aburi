@@ -47,6 +47,7 @@ import type { TreeReleaseFailure } from "./pipeline"
 import { buildLanguageRouter, type LanguageRouter } from "./route"
 import { markTestFiles } from "./test-files"
 import type { ClassifyTimeoutEvent, ParseTimeoutEvent } from "./timeout"
+import { type UnreadLanguage, unreadLanguages } from "./unread-languages"
 import type { UndeclaredVocabOccurrence } from "./vocab"
 
 export type { ExtractionFailure, ParseErrorRecord } from "./extract-files"
@@ -114,6 +115,7 @@ export interface ScanResult {
   undeclaredVocab: readonly UndeclaredVocabOccurrence[]
   unrepresentableFiles: readonly UnrepresentableFile[]
   lspWarnings: readonly string[]
+  unreadLanguages: readonly UnreadLanguage[]
 }
 
 export async function scan(input: ScanInput): Promise<ScanResult> {
@@ -292,6 +294,7 @@ export async function scan(input: ScanInput): Promise<ScanResult> {
     unrepresentableFiles: discovered.unrepresentableFiles,
     undeclaredVocab: extracted.undeclaredVocab,
     lspWarnings: enrichment.warnings,
+    unreadLanguages: unreadLanguages(ir.components, discovered.unclaimedFiles),
   }
 }
 

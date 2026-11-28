@@ -45,29 +45,10 @@ async function incidentsOf(files: readonly string[], label?: string): Promise<re
 }
 
 describe("runScan — LSP configuration the pass cannot act on", () => {
-  it.each<[string, Record<string, unknown>, ScanOptions, RegExp[]]>([
-    [
-      "a server key no loaded plugin has",
-      {
-        lsp: { enabled: true, servers: { typescript: { command: "typescript-language-server" } } },
-      },
-      {},
-      [
-        /^⚠ head: No lsp\.servers key .*\(configured: typescript; loaded: stub\)/,
-        /^⚠ head: LSP enrichment is on/,
-      ],
-    ],
-    [
-      "--lsp with no lsp block",
-      {},
-      { lsp: true },
-      [/^⚠ head: No lsp\.servers key .*\(configured: none; loaded: stub\)/],
-    ],
-  ])("reports %s on the labelled incident channel", async (_, config, options, expected) => {
+  async function lspIncidents(config: Record<string, unknown>, options: ScanOptions = {}) {
     await writeStubWorkspace(workspace.root, ["ok.stub"], config)
     const log = recordingLogger()
-
-    await runScan({
+    const report = await runScan({
       cwd: workspace.root,
       log: logged.write,
       outputDir: resolve(workspace.root, "out"),
@@ -75,8 +56,58 @@ describe("runScan — LSP configuration the pass cannot act on", () => {
       ...options,
       incidents: { warn: log.warn, label: "head" },
     })
+    return { warnings: log.warnings, lspEnrichment: report.lspEnrichment }
+  }
 
-    expect(log.warnings).toEqual(expected.map((line) => expect.stringMatching(line)))
+  it("reports a server key no loaded plugin has on the labelled incident channel", async () => {
+    const { warnings } = await lspIncidents({
+      lsp: { enabled: true, servers: { typescript: { command: "typescript-language-server" } } },
+    })
+    expect(warnings).toEqual([
+      expect.stringMatching(
+        /^⚠ head: No lsp\.servers key .*\(configured: typescript; loaded: stub\)/,
+      ),
+      expect.stringMatching(/^⚠ head: LSP enrichment is on/),
+    ])
+  })
+
+  it.each<[string, Record<string, unknown>, ScanOptions]>([
+    ["--lsp with no lsp block", {}, { lsp: true }],
+    ["lsp.enabled with no servers block", { lsp: { enabled: true } }, {}],
+    ["lsp.enabled with an empty servers block", { lsp: { enabled: true, servers: {} } }, {}],
+  ])("records a run that started no server, and says so, for %s", async (_, config, options) => {
+    const { warnings, lspEnrichment } = await lspIncidents(config, options)
+    expect(warnings).toEqual([
+      expect.stringMatching(/^⚠ head: No lsp\.servers key .*\(configured: none; loaded: stub\)/),
+      expect.stringMatching(/^⚠ head: LSP enrichment is on, but .* so no LSP request was made\.$/),
+    ])
+    expect(lspEnrichment).toMatchObject({ enabled: false, requestsIssued: 0 })
+  })
+})
+
+describe("runScan — files of a language no loaded plugin reads", () => {
+  const PYTHON_FILES = Array.from({ length: 10 }, (_, i) => `ml/model${i}.py`)
+
+  async function scanBeside(config: Record<string, unknown> = {}) {
+    await writeStubWorkspace(workspace.root, ["ok.stub", ...PYTHON_FILES], config)
+    const log = recordingLogger()
+    const report = await scanStubs({ warn: log.warn })
+    return { warnings: log.warnings, report }
+  }
+
+  it("names the Component and the language, and counts none of the files", async () => {
+    const { warnings, report } = await scanBeside()
+
+    expect(warnings).toEqual([
+      `⚠ Component "stub-fixture" has files no loaded language plugin reads (10 py): none was scanned, and none counts in the IR's stats. Load a plugin for the language, or leave the files out with ignore.`,
+    ])
+    expect([report.totalFiles, report.skipped]).toEqual([1, []])
+  })
+
+  it("says nothing of files ignore leaves out", async () => {
+    const { warnings } = await scanBeside({ ignore: ["ml/**"] })
+
+    expect(warnings).toEqual([])
   })
 })
 

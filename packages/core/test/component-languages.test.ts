@@ -1,6 +1,6 @@
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
-import { linkDirectory } from "@aburi/test-support"
+import { linkDirectory, makeGitPointer } from "@aburi/test-support"
 import { describe, expect, it } from "vitest"
 import { detectComponents } from "../src/index"
 import { useWorkspaceTree } from "./fixtures/workspace"
@@ -66,7 +66,7 @@ describe("detection drops what discovery drops", () => {
   it("does not count a checkout nested below the root", async () => {
     await tree.writeLanguageFiles("src", ".ts")
     await tree.writeLanguageFiles(".claude/worktrees/feat", ".py")
-    await tree.writeSource(".claude/worktrees/feat/.git", "gitdir: /r/.git/worktrees/feat\n")
+    await makeGitPointer(join(tree.root, ".claude/worktrees/feat/.git"), "../../../.git/wt/feat")
 
     expect(await languagesOfRoot()).toEqual(["ts"])
   })

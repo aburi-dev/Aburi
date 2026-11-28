@@ -33,7 +33,7 @@ This enables:
 
 ### 2.1 Workspace root detection
 
-Walk from cwd toward parents. The workspace root is the first directory holding a `.git` — a directory, or a file opening with `gitdir:`, the pointer a linked worktree or a submodule has in its place. Below it, or when the walk reaches the filesystem root without meeting one, the root is the **outermost (closest to the filesystem root)** directory in which any of the following is found:
+Walk from cwd toward parents. The workspace root is the first directory holding a `.git` git reads as a repository — a git directory, or a file opening with `gitdir: ` that names one, the pointer a linked worktree or a submodule has in its place — by the test discovery applies ([`drop-list.md` §3](./drop-list.md)). A `.git` git reads as no repository, such as a pointer to a pruned worktree or an empty directory, is passed like any other entry. Below it, or when the walk reaches the filesystem root without meeting one, the root is the **outermost (closest to the filesystem root)** directory in which any of the following is found:
 
 - `.git`, as above
 - `pnpm-workspace.yaml`
@@ -186,7 +186,7 @@ POSIX path relative to the workspace root.
 
 ### 4.4 `languages`
 
-Shallow-scan each component's subtree (up to 3 directory levels below its own root) and tally extension frequencies, over the files the workspace has not excluded — see §8. Include the language id for each extension exceeding the threshold (>5% and >10 files).
+Shallow-scan each component's subtree (up to 3 directory levels below its own root) and tally extension frequencies, over the files the workspace has not excluded — see §8. Include the language id for each extension exceeding the threshold (>5% and >10 files). A Component in which none does is given `["ts"]`, since the schema keeps `languages` non-empty.
 
 The census counts every extension in the table below, whether or not a lang plugin claims it. That is deliberate and is the point of the paragraph after next: the field answers "what is this component written in", not "what did this run parse", and `aburi init` has to answer it before any plugin is resolved. A file too large for `maxFileSizeBytes` counts for the same reason.
 
@@ -195,7 +195,7 @@ The census counts every extension in the table below, whether or not a lang plug
 - Not included in `Component.languages[]` (autodetect lists primary languages only)
 - However, if the corresponding lang plugin is enabled, those files are still scanned normally and Symbols are extracted
 - "Symbols in a language not listed in `Component.languages`" is normal (e.g., a mostly-TS component containing a few `.py` scripts with the py plugin enabled)
-- Files in a language with no corresponding lang plugin are skipped with a warning (same handling as §6.5)
+- Files in a language with no corresponding lang plugin are not scanned and count nowhere, as in §6.5, but warn of nothing: the warning names a language the Component has, not every file a plugin passes over
 
 The role of `Component.languages[]` is to indicate "the primary languages needed to understand this component". It is independent of the Symbol extraction scope.
 
@@ -348,8 +348,8 @@ A monorepo mixing multiple managers, such as `apps/web` (pnpm) + `apps/api` (car
 - Since **only TS is supported today**, when a non-TS workspace is detected:
   - The Component is still created (to preserve the full architectural picture)
   - The language is included in `languages`, but Symbol extraction is skipped
-  - Recorded in `stats.skippedFiles[]` with `reason: "unroutable"` — that reason covers both ways a file has no route into the Document, and here it is the first: no loaded plugin claims the extension (to be revisited when more languages land — see the [roadmap](../roadmap.md))
-  - Warning on stderr: `Component <id> has language <lang> but no lang plugin enabled. Symbols not extracted.`
+  - Its files are counted nowhere in the Document. Discovery lists no file whose extension no loaded plugin claims, as it lists no `README.md`, so they are in neither `stats.totalFiles` nor `stats.skippedFiles[]` (to be revisited when more languages land — see the [roadmap](../roadmap.md))
+  - So the scan says so, once per Component, naming each such language that the Component's own files hold and how many of them discovery passed over: `Component "<id>" has files no loaded language plugin reads (<n> <lang>, …): none was scanned, and none counts in the IR's stats. Load a plugin for the language, or leave the files out with ignore.` A file counts towards the Component that owns it, the innermost one whose root holds it, and only while `.gitignore` and `ignore` leave it in. A language a Component has with no file of it, as the `ts` it is given when the census counts none (§4.4), warns of nothing, and so does a language the census left out of `languages`, such as two `.py` scripts beside a TypeScript package
 
 ## 7. Conflict resolution
 
@@ -374,11 +374,11 @@ When multiple detectors generate the same id with different paths (§4.1):
 - `config.ignore[]` and the loaded language plugins' file-drop globs apply when the caller has them. The census is one walk from the **workspace root**, bucketed by component root afterwards, because those patterns are workspace-root relative by contract and cannot be matched against a walk rooted inside a package
 - The one caller that has neither is `aburi init`, which detects components in order to write the first config. It honours `.gitignore` and the core patterns, which is everything knowable before a config exists
 - Dot directories: the language census and the nx detector's search for `project.json` walk them, as discovery does ([`drop-list.md` §3](./drop-list.md)), so a dot directory's files count towards its component's languages and an nx project kept in one is a Component, as nx itself finds it. The resolution of declared package patterns reads a leading dot as the package manager does (§3.1.1)
-- Another checkout: the language census and the nx detector's search for `project.json` list nothing in a directory below the workspace root that holds a `.git`, a directory or a `gitdir:` pointer, as discovery lists nothing there ([`drop-list.md` §3](./drop-list.md)): its files are not the outer checkout's, so they count towards no language, and an nx project in it would own no scanned file. The resolution of declared package patterns walks into it, as pnpm and npm do (§3.1.1)
+- Another checkout: the language census and the nx detector's search for `project.json` list nothing in a directory below the workspace root that holds a `.git` git reads as a repository, as discovery lists nothing there ([`drop-list.md` §3](./drop-list.md)): its files are not the outer checkout's, so they count towards no language, and an nx project in it would own no scanned file. The resolution of declared package patterns walks into it, as pnpm and npm do (§3.1.1)
 - Symlinks: of detection's three filesystem searches, two do not follow them and one does. The language census and the nx detector's search for `project.json` do not, because discovery does not ([`drop-list.md` §3](./drop-list.md)): a file only a link reaches is never scanned, so it does not count towards a language, and a project only a link reaches would be a Component no scanned file belongs to. The resolution of declared package patterns (pnpm, npm, yarn, bun) does, as the package manager does (§3.1.1), so a package declared through a link is a Component that owns no scanned file
 - A directory one of the three searches cannot list ends detection, naming it, by discovery's rule ([`drop-list.md` §3](./drop-list.md)): one gone by the time it is listed is passed over, and any other failure ends the run, apart from the `.gitignore` exemption below. For the census the files under such a directory would go uncounted. For the detectors a manifest under it is a package this run cannot see — §7 already refuses to answer around a manifest that is there and cannot be read, and a directory that cannot be listed hides every manifest below it, whether the failure is a permission or a descriptor table that ran out for one directory and not the next. A link the resolution of declared package patterns follows and cannot resolve ends detection the same way, naming the link; one that dangles or loops (`ENOENT`, `ELOOP`) is what the commit holds, so every checkout passes it over alike
 - `.gitignore` reaches each search as it reaches the tool the search stands for. The census and the nx detector's search for `project.json` honour it while `config.respectGitignore` holds: the census counts no git-ignored file, and a `project.json` in a git-ignored directory is no nx project, as nx's own file walk skips what `.gitignore` excludes. A directory it excludes may then go unlisted, since nothing under it could count. The resolution of declared package patterns never reads it, as pnpm and npm do not: a pattern names its directories, so a package in a git-ignored one is still a package, and failing to list it ends detection whatever the setting. The detectors take no `config.ignore[]` and so reach directories discovery never lists, such as `build/` and `coverage/`: one of those that cannot be listed ends detection unless the nx search alone reaches it and `.gitignore` excludes it
-- The contents of a `.git` directory are never read: every search drops a `.git` from the listing of the directory that holds it, at any depth and whatever its patterns spell. A `.git` file is read only as far as its opening `gitdir: `, to tell a linked worktree's or a submodule's pointer from any other file of that name. Either one ends the workspace-root walk (§2.1)
+- No file in a `.git` directory is listed: every search drops a `.git` from the listing of the directory that holds it, at any depth and whatever its patterns spell. Of a `.git` only what git reads to tell a repository is read — the git directory's `HEAD` and `commondir`, whether `objects/` and `refs/` are there, and a `.git` file's opening `gitdir: ` line. One git reads as a repository ends the workspace-root walk (§2.1)
 
 ## 9. Performance
 
@@ -426,7 +426,7 @@ Implementation guidance:
 | CD30 | A Component rooted at `packages//api`; a Symbol in `packages/api/x.ts` | `Symbol.component` is `api` — an empty segment names nothing on either side |
 | CD31 | A Component rooted at `""`, at `"/"`, or at `../vendor` | It claims no file at all, the workspace root included |
 | CD32 | cwd inside a repository that sits under another marker — a linked worktree at `.worktrees/feat` in the main checkout, a repository nested in another, a submodule | The workspace root is that checkout's own top level, the directory holding its `.git` (a directory or a `gitdir:` file), not the outer one |
-| CD33 | cwd inside a monorepo subdirectory holding a `.git` file that does not open with `gitdir:` (an empty one left behind) | The walk passes it: the workspace root is the monorepo's |
+| CD33 | cwd inside a monorepo subdirectory holding a `.git` git reads as no repository: a file that does not open with `gitdir:` (an empty one left behind), a `gitdir:` pointer to a directory that is gone, an empty `.git` directory, or one without `objects/` | The walk passes it: the workspace root is the monorepo's |
 | CD34 | A component holding twelve `.ts` files and a link to a directory outside the workspace that holds twelve `.py` files | `languages` is `["ts"]` — the census does not walk through the link |
 | CD35 | `nx.json`, `apps/billing/project.json`, and `apps/alias` a link to `apps/billing` | One Component, rooted at `apps/billing` |
 | CD36 | `packages: ["packages/*"]`, `packages/billing/package.json`, and `packages/alias` a link to `packages/billing` | Two Components, rooted at `packages/alias` and `packages/billing`; no scanned file belongs to the one at `packages/alias` |
@@ -449,6 +449,7 @@ Implementation guidance:
 | CD50 | `pnpm-workspace.yaml: packages: ["apps/*"]` and `package.json#workspaces: ["libs/*", "apps/*"]` beside `pnpm-lock.yaml`, with `apps/billing` and `libs/shared` | One `managers[]` entry, `{tool: "pnpm", roots: ["apps/billing", "libs/shared"]}`, and one candidate per directory |
 | CD51 | A value of CD47 and one of CD48 in the `package.json` of two components whose id collision resolution renames (`apps/web`, `libs/web`), beside a component whose root sorts first and whose id sorts last (`aaa/zed`); and a manifest whose ignored values come in another order than `exports` then `main`, `module`, `types`, `typings` | Each value is reported with its component's final id, its manifest's path, its place in the manifest (`main`, `exports["."]`), the value and its case, ordered by component id and, within one manifest, as the manifest holds them. Every value CD47 and CD48 name is reported with its own place and case, `exports["./lib/"]` among them |
 | CD52 | `exports: {"./internal/*": null}`, or `main: 42` | No entry and nothing reported |
+| CD53 | A pnpm workspace whose `packages/web` holds one file a loaded plugin claims, and whose `packages/ml` holds ten `.py` and twelve `.go` files, scanned with no plugin for either; then `packages/web` alone, given `["ts"]` with no `.ts` file; then two `.py` files beside ten claimed ones in `packages/web`; then `packages/ml` with ten of its twenty `.py` files in a git-ignored directory | `ml` has `languages: ["go", "py"]`, `stats.totalFiles` is 1, `stats.skippedFiles` is empty, and one warning names `ml` with `12 go, 10 py`. `packages/web` alone and its two `.py` files warn of nothing, and the git-ignored case names `10 py` (§6.5) |
 
 ## 11. Design decisions
 

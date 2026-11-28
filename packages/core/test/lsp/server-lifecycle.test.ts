@@ -22,12 +22,23 @@ import {
 } from "./fixtures/mock-server"
 
 describe("a run with no server to talk to", () => {
-  it.each<[string, Config["lsp"]]>([
-    ["lsp is not enabled", { enabled: false }],
-    ["no servers are configured", { enabled: true }],
-  ])("hands the symbols back untouched when %s", async (_, lspConfig) => {
+  it("reads a missing servers block as an empty one, and reports the run that started no server", async () => {
+    const run = (lspConfig: Config["lsp"]) =>
+      enrich({ ...thisFooFile(), serverFactory: mockServerFactory(), lspConfig })
+    const missing = await run({ enabled: true })
+
+    expect(missing).toEqual(await run({ enabled: true, servers: {} }))
+    expect(missing.symbols).toEqual(thisFooFile().symbols)
+    expect(missing.stats).toMatchObject({ enabled: false, requestsIssued: 0, hintsProduced: 0 })
+  })
+
+  it("hands the symbols back untouched when lsp is not enabled", async () => {
     const factory = mockServerFactory()
-    const result = await enrich({ ...thisFooFile(), serverFactory: factory, lspConfig })
+    const result = await enrich({
+      ...thisFooFile(),
+      serverFactory: factory,
+      lspConfig: { enabled: false },
+    })
 
     expect(result).toEqual({
       symbols: thisFooFile().symbols,

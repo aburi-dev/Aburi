@@ -91,6 +91,11 @@ it with, such as a parser running as a process of its own ([`plugin-process.md`]
   in this order, before its first file and cleans them up once its last file is done. The objects
   the scan was handed make no call, and are neither initialized nor cleaned up. A plugin holding a
   process holds one on each worker.
+- **What every file needs is loaded in `init`.** A file's `parseTimeoutMs` budget (§7.1.2) starts
+  before its `parseFile`, so a runtime or a grammar loaded on a plugin's first parse is charged to
+  the first file of its grammar on each thread: on one thread to one file, on a pool to a
+  different file on each worker, which the budget can then skip on one and not the other.
+  `@aburi/lang-typescript` loads tree-sitter and both its grammars in `init`.
 
 ## 4. Interface
 
@@ -874,7 +879,7 @@ Its **parse errors are still reported**. They are diagnostic rather than IR, and
 
 - warning stderr: `Skipped <file>: extraction reached <elapsed>ms, exceeding parseTimeoutMs (<budget>ms). Override with config.parseTimeoutMs.`
 
-A file being skipped on wall clock does mean the IR can differ between a fast machine and a slow one, at file granularity. That is inherent in asking for a time budget; a run that wants reproducibility across machines sets `parseTimeoutMs` high enough that nothing reaches it.
+A file being skipped on wall clock does mean the IR can differ between a fast machine and a slow one, at file granularity, and between one thread and a pool on the same machine: a worker shares the processors with the others and compiles the plugins' code afresh, so a file close to its budget can reach it on one and not the other ([`performance.md`](./performance.md) Rule PF-11). That is inherent in asking for a time budget; a run that wants reproducibility across machines, or across `--concurrency`, sets `parseTimeoutMs` high enough that nothing reaches it. What every thread pays alike is kept out of the budget, so that only the file's own cost is measured: a plugin's first load, which `init` does (§3), and the other modules a file's imports are followed into (§5.1, §5.2.4).
 
 ### 7.2 Extraction exceptions
 
@@ -1199,6 +1204,7 @@ parameter (`x => …` → `() => …`) reads as no change at all, and adding the
 | LP53 | A scan whose parse pool extracts on plugin objects of its own | none of the objects the scan was handed is initialized, called or cleaned up |
 | LP54 | One effects plugin object listed twice | its `init` and its `cleanup` called once each |
 | LP55 | A plugin whose `init` is `true`, or whose `cleanup` is `null` | the scan fails with `scan-plugin-misconfigured` naming the plugin, and no plugin is initialized |
+| LP55a | `@aburi/lang-typescript` whose grammars take longer than `parseTimeoutMs` to load, over a `.ts`, a `.tsx` and a `.js` file | `init` loads both grammars, once each, and no file is skipped as `parse-timeout` (§3) |
 
 ### 9.11 Import resolution, origins and upstream (§4.8, §5.1, §5.2.4)
 

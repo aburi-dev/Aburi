@@ -267,6 +267,7 @@ calls 1310 · resolved 1203 · unresolved 107 (external 30 · dynamic 60 · ambi
     src/table.tsx: 88:9 — syntax error
 ⚠ Config /repo/apps/web/aburi.json sits below the workspace root /repo. …
 ⚠ 1 file(s) could not be parsed and were left out of the IR.
+⚠ Component "ml" has files no loaded language plugin reads (10 py): none was scanned, and none counts in the IR's stats. Load a plugin for the language, or leave the files out with ignore.
 ⚠ 5 file(s) contributed no Symbols: over-size=3, parse-failed=1, extraction-failed=1
 ⚠ over-size (3) — larger than maxFileSizeBytes. Raise the budget, or leave them out with ignore.
     vendor/bundle.js: 2100000 > 1048576
@@ -339,6 +340,12 @@ send the reader to raise a budget that was never the problem.
 The first line was previously the only account of an unparseable file's errors, so a withdrawn
 file's skip detail carries one of them: the refusal when there is one, otherwise the first
 recoverable error with its position.
+
+The unread-language line comes ahead of the census, one per Component that holds files in a
+language no loaded plugin reads, naming each such language with the number of its files there
+([component-detect.md](./component-detect.md) §6.5). Discovery lists none of those files, so they
+are in no count below and in nothing the IR holds; the line is their only account. It keeps its
+scan's label.
 
 The "contributed no Symbols" line is a census; under it each reason present gets a line of its
 own, saying what to do about it, and then its files with the detail `@aburi/core` recorded for

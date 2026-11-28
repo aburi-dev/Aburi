@@ -3,6 +3,7 @@ import type {
   SkippedFile,
   TreeReleaseFailure,
   UnnameableRoot,
+  UnreadLanguage,
   UnrepresentableFile,
   UnresolvedDeclaration,
 } from "@aburi/core"
@@ -61,6 +62,7 @@ export interface ScanReport {
   treeReleaseFailures: readonly TreeReleaseFailure[]
   lspEnrichment: LspEnrichmentStats | undefined
   lspWarnings: readonly string[]
+  unreadLanguages: readonly UnreadLanguage[]
   callResolutionLine: string
   unresolvedCalls: readonly UnresolvedCallDiagnostic[]
   configSource: string | null

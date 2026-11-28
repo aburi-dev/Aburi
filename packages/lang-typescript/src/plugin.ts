@@ -18,7 +18,7 @@ import { assertAnswersExitCalls } from "./early-exit"
 import { extractSymbols } from "./extract-symbols"
 import { langTypescriptManifest } from "./manifest"
 import { normalizeAst } from "./normalize-ast"
-import { parseTypescriptFile, TYPESCRIPT_FILE_EXTENSIONS } from "./parser"
+import { loadGrammars, parseTypescriptFile, TYPESCRIPT_FILE_EXTENSIONS } from "./parser"
 import { createTsconfigResolver } from "./tsconfig-paths"
 import { walkBody } from "./walk-body"
 
@@ -42,6 +42,8 @@ class LangTypescriptPlugin implements LanguagePlugin<Tree, Node> {
 
   async init(ctx: PluginContext): Promise<void> {
     assertAnswersExitCalls(ctx.registry)
+    // A file's parse budget starts before `parseFile`, and every parser worker runs `init` first.
+    await loadGrammars()
   }
 
   async parseFile(file: SourceFile): Promise<ParseResult<Tree>> {

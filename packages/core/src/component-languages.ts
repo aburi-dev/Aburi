@@ -1,36 +1,11 @@
 import type { LanguageId } from "@aburi/types"
 import { toNfc } from "./codepoints"
 import type { DetectComponentsOptions } from "./component"
-import { makeLanguageId } from "./id"
+import { languageOfExtension } from "./language-extensions"
 import { compareCodeUnit } from "./order"
 import { CORE_IGNORE_PATTERNS } from "./scan/discover"
 import { openGitignoreTree } from "./scan/gitignore"
-import { fileExtension } from "./scan/route"
 import { walk } from "./scan/walk"
-
-const EXTENSION_TO_LANGUAGE: ReadonlyMap<string, string> = new Map([
-  [".ts", "ts"],
-  [".mts", "ts"],
-  [".cts", "ts"],
-  [".tsx", "tsx"],
-  [".js", "js"],
-  [".mjs", "js"],
-  [".cjs", "js"],
-  [".jsx", "jsx"],
-  [".py", "py"],
-  [".go", "go"],
-  [".rs", "rs"],
-  [".java", "java"],
-  [".kt", "kt"],
-  [".kts", "kt"],
-  [".scala", "scala"],
-  [".rb", "rb"],
-  [".php", "php"],
-  [".cs", "cs"],
-  [".swift", "swift"],
-  [".ex", "ex"],
-  [".exs", "ex"],
-])
 
 const LANGUAGE_SCAN_DEPTH = 3
 
@@ -84,13 +59,6 @@ function withinRoot(root: string, file: string): boolean {
 
 function directoryLevels(file: string): number {
   return file.split("/").length - 1
-}
-
-function languageOfExtension(file: string): LanguageId | null {
-  const extension = fileExtension(file)
-  const raw = extension === null ? undefined : EXTENSION_TO_LANGUAGE.get(extension)
-  if (raw === undefined) return null
-  return makeLanguageId(raw)
 }
 
 function frequentLanguages(counts: ReadonlyMap<LanguageId, number>): LanguageId[] {

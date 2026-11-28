@@ -32,6 +32,13 @@ function normalizeCandidateStrings(
   candidate: SymbolCandidate<OpaqueAstNode>,
   file: RelativePath,
 ): SymbolCandidate<OpaqueAstNode> {
+  const writtenName = candidate.name
+  const name = typeof writtenName === "string" ? toNfc(writtenName) : writtenName
+  const derivedBy = Array.isArray(candidate.derivedBy)
+    ? mapPreservingIdentity(candidate.derivedBy, (token) =>
+        typeof token === "string" ? toNfc(token) : token,
+      )
+    : candidate.derivedBy
   const signature = normalizeSignatureStrings(candidate.signature)
   const decorators = normalizeDecoratorNames(candidate.decorators)
   const written = candidate.superclass
@@ -47,6 +54,8 @@ function normalizeCandidateStrings(
     : members
   if (
     file === candidate.source.file &&
+    name === writtenName &&
+    derivedBy === candidate.derivedBy &&
     signature === candidate.signature &&
     decorators === candidate.decorators &&
     superclass === written &&
@@ -58,6 +67,8 @@ function normalizeCandidateStrings(
   }
   const next: SymbolCandidate<OpaqueAstNode> = {
     ...candidate,
+    name,
+    derivedBy,
     source: { ...candidate.source, file },
     signature,
     decorators,

@@ -63,6 +63,7 @@ export function reportScanIncidents(
       `${report.timeoutCount} effect classification(s) ran past the per-call budget; their results were kept.`,
     )
   }
+  reportUnreadLanguages(report.unreadLanguages, sayIncident)
   reportSkipped(report.skipped, sayIncident, warn)
   for (const line of report.lspWarnings) sayIncident(line)
   if (report.lspEnrichment !== undefined) reportLspEnrichment(report.lspEnrichment, sayIncident)
@@ -222,6 +223,18 @@ function reportUnreadPackageManifests(
   for (const { manifestPath, reason } of unread) {
     sayIncident(
       `${manifestPath} could not be read (${reason}), so the package it declares is not known as the workspace's, and an import of its name reads as one from outside the workspace.`,
+    )
+  }
+}
+
+function reportUnreadLanguages(
+  unread: ScanReport["unreadLanguages"],
+  sayIncident: SayIncident,
+): void {
+  for (const [component, entries] of groupBy(unread, (entry) => entry.component)) {
+    const counted = entries.map(({ files, language }) => `${files} ${language}`).join(", ")
+    sayIncident(
+      `Component "${component}" has files no loaded language plugin reads (${counted}): none was scanned, and none counts in the IR's stats. Load a plugin for the language, or leave the files out with ignore.`,
     )
   }
 }
