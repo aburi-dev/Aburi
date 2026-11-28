@@ -228,6 +228,104 @@ describe("import scope", () => {
     )
   })
 
+  describe("a non-null assertion in a target binds what the name without it binds", () => {
+    it.each<[string, string, IRSymbol[], ImportClause[], string, string]>([
+      [
+        "a function the file declares",
+        "helper!",
+        [makeSymbol("ts:src/a.ts#helper")],
+        [],
+        "ts:src/a.ts#helper",
+        "high",
+      ],
+      [
+        "a member of a binding the file declares",
+        "api!.ping",
+        [makeSymbol("ts:src/a.ts#api", { kind: "const" }), makeSymbol("ts:src/a.ts#api.ping")],
+        [],
+        "ts:src/a.ts#api.ping",
+        "high",
+      ],
+      [
+        "a named import",
+        "helper!!",
+        [makeSymbol("ts:src/util.ts#helper")],
+        [{ source: "./util", symbols: ["helper"] }],
+        "ts:src/util.ts#helper",
+        "high",
+      ],
+      [
+        "a namespace import",
+        "helpers!.helper!",
+        [makeSymbol("ts:src/util.ts#helper")],
+        [{ source: "./util", symbols: "*", namespaceBinding: "helpers" }],
+        "ts:src/util.ts#helper",
+        "high",
+      ],
+      [
+        "a member component scope finds",
+        "Repo!.save",
+        [makeSymbol("ts:src/z.ts#Repo.save", { kind: "method" })],
+        [],
+        "ts:src/z.ts#Repo.save",
+        "medium",
+      ],
+    ])("reaches %s", (_what, target, callees, edges, to, confidence) => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, ...callees],
+        importsByFile: importsOf("src/a.ts", ...edges),
+      })
+      expect(result.edges.map((e) => [e.to, e.confidence])).toEqual([[to, confidence]])
+      expect(result.symbols[0]?.calls[0]?.target).toBe(target)
+    })
+  })
+
+  describe("a type-only import binds a name to no value", () => {
+    const helper = makeSymbol("ts:src/h.ts#helper")
+    const namesake = makeSymbol("ts:src/other.ts#helper")
+
+    it.each<[string, string, ImportClause]>([
+      [
+        "a named import",
+        "helper",
+        { source: "./h", symbols: ["helper"], typeOnlyLocals: ["helper"] },
+      ],
+      [
+        "an aliased import",
+        "h",
+        { source: "./h", symbols: ["helper as h"], typeOnlyLocals: ["h"] },
+      ],
+      [
+        "a namespace import",
+        "hs.helper",
+        { source: "./h", symbols: "*", namespaceBinding: "hs", typeOnlyLocals: ["hs"] },
+      ],
+    ])("leaves a call through %s unresolved, bucketed `no-match`", (_binding, target, edge) => {
+      const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, helper, namesake],
+        importsByFile: importsOf("src/a.ts", edge),
+      })
+      expect(result.edges).toEqual([])
+      expect(result.diagnostics.map((d) => d.bucket)).toEqual(["no-match"])
+    })
+
+    it("leaves a value import beside it, of another name, to resolve", () => {
+      const other = makeSymbol("ts:src/h.ts#other")
+      const caller = withCalls("ts:src/a.ts#caller", [{ target: "other", line: 4 }])
+      const result = resolveCallGraph({
+        symbols: [caller, helper, other],
+        importsByFile: importsOf("src/a.ts", {
+          source: "./h",
+          symbols: ["helper", "other"],
+          typeOnlyLocals: ["helper"],
+        }),
+      })
+      expect(result.edges.map((e) => e.to)).toEqual(["ts:src/h.ts#other"])
+    })
+  })
+
   describe("a default import resolves to the module's default export", () => {
     function resolvedOf(target: string, symbols: string[], callees: IRSymbol[]) {
       const caller = withCalls("ts:src/a.ts#caller", [{ target, line: 6 }])

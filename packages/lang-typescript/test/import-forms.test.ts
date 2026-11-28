@@ -5,7 +5,6 @@ import { importsOf } from "./fixtures/ctx"
 describe("import-equals-require binds the module object", () => {
   it.each([
     ["the plain form", "import x = require('./mod')", "src/a.ts"],
-    ["a type-only form", "import type x = require('./mod')", "src/a.ts"],
     [
       "the CommonJS extension it is the ordinary form for",
       "import x = require('./mod')",

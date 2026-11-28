@@ -26,6 +26,7 @@ function importing(spelling: string): ImportEdge {
     source: `./${spelling}`,
     symbols: [`${spelling} as ${spelling}Local`],
     namespaceBinding: spelling,
+    typeOnlyLocals: [`${spelling}Local`],
     line: 1,
     dynamic: false,
     reexports: [{ imported: spelling, exported: `${spelling}Out` }],

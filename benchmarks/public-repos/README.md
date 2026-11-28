@@ -77,10 +77,13 @@ fetches only the blobs a checkout touches. Reruns reuse the clones.
    one such file can hold more calls than the code around it. Reachable leaves out
    of those authored calls the ones the scan buckets `external`
    ([`call-resolution.md`](../../docs/design/call-resolution.md) §8.1): a package's,
-   a global's, or a member nothing in the workspace names. Resolved % of reachable is
-   Resolved over Reachable, the share of the calls that could reach workspace code
-   that do. It is an estimate, since the bucket goes by names: a member the workspace
-   assigns without declaring a Symbol for it is left out of Reachable too.
+   a global's, or a member no declaration the calling module can hold a value of
+   names. Resolved % of reachable is Resolved over Reachable, the share of the calls
+   that could reach workspace code that do. It is an estimate that errs both ways,
+   since the bucket goes by names: a member the workspace assigns without declaring a
+   Symbol for it is left out of Reachable too, and a member name an exported
+   declaration shares with a built-in (`get`, `find`) keeps unrelated calls of that
+   name in it.
 6. Run `aburi diff <base>..<head>` once, with `--config` pointing at the
    rewritten config — the base ref is scanned inside a throwaway `git worktree`
    where the harness's untracked `aburi.json` does not exist, and without it the

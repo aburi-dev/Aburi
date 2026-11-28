@@ -26,7 +26,7 @@ import {
 } from "./callgraph-diagnostics"
 import { buildSymbolTable } from "./callgraph-index"
 import { CallResolver } from "./callgraph-outcomes"
-import { mappedTargetOf, type ResolutionRun } from "./callgraph-scopes"
+import { filesReachedFrom, mappedTargetOf, type ResolutionRun } from "./callgraph-scopes"
 import { DEFAULT_EXTENSIONS } from "./callgraph-specifier"
 import { CoreError } from "./errors"
 import type { ReceiverHint } from "./lsp/enrich"
@@ -103,11 +103,6 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
   const declaredReceiverTypes = input.declaredReceiverTypes ?? EMPTY_DECLARED_RECEIVER_TYPES
   const importedReceivers = input.importedReceivers ?? EMPTY_CALL_SITE_KEYS
   const unboundHeads = input.unboundHeads ?? EMPTY_CALL_SITE_KEYS
-  let names: WorkspaceNames | null = null
-  const workspaceNames = (): WorkspaceNames => {
-    names ??= workspaceNamesOf(input.symbols, input.importsByFile)
-    return names
-  }
   const run: ResolutionRun = {
     table: buildSymbolTable(input.symbols, input.moduleFiles),
     classHeritages: input.classHeritages ?? new Map(),
@@ -119,6 +114,22 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
     mappedTargets: new Map(),
     importsByFile: input.importsByFile,
     exportAnswers: new Map(),
+  }
+
+  let names: WorkspaceNames | null = null
+  const workspaceNames = (): WorkspaceNames => {
+    names ??= workspaceNamesOf(input.symbols, input.importsByFile)
+    return names
+  }
+  const reachedByFile = new Map<string, ReadonlySet<string>>()
+  const reachedFrom = (symbol: IRSymbol): ReadonlySet<string> => {
+    const file = symbol.source.file
+    let reached = reachedByFile.get(file)
+    if (reached === undefined) {
+      reached = filesReachedFrom(run, symbol.language, file)
+      reachedByFile.set(file, reached)
+    }
+    return reached
   }
 
   const resolver = new CallResolver({
@@ -173,6 +184,7 @@ export function resolveCallGraph(input: ResolveCallGraphInput): ResolveCallGraph
               mappedTargetOf(run, symbol.language, symbol.source.file, specifier) !== null,
             unboundHead: unboundHeads.has(makeSymbolCallKey(symbol.id, call.line, call.target)),
             names: workspaceNames(),
+            reachedFiles: () => reachedFrom(symbol),
           }),
         )
         return call

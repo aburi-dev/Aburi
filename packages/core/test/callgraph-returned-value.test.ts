@@ -31,7 +31,7 @@ interface Setup {
 }
 
 const box = [
-  makeSymbol("ts:src/box.ts#Box", { kind: "class" }),
+  makeSymbol("ts:src/box.ts#Box", { kind: "class", derivedBy: ["export-keyword"] }),
   makeSymbol(RUN, { kind: "method" }),
   makeSymbol("ts:src/box.ts#Box.with", { kind: "method" }),
 ]

@@ -12,7 +12,12 @@ import { componentKeyOf, type SymbolTable } from "./callgraph-index"
 import { dirname, isRelativeSpecifier, resolveRelativeSpecifier } from "./callgraph-specifier"
 import { packageName } from "./component-manifest"
 import { DEFAULT_EXPORT_QNAME, trySymbolId } from "./id"
-import { DEFAULT_EXPORT_NAME, importBindsLocal, splitAliasedImportName } from "./import-edge"
+import {
+  DEFAULT_EXPORT_NAME,
+  importBindsLocal,
+  reexportsAny,
+  splitAliasedImportName,
+} from "./import-edge"
 
 export interface ResolutionTrace {
   ambiguousCandidates: Set<SymbolId>
@@ -87,6 +92,8 @@ export interface ResolveTargetContext {
   localHead?: boolean
   /** The Symbols a binding may reach: the kept ones unless a caller says otherwise. */
   reachable?: { has(id: SymbolId): boolean }
+  /** The target names a type, which a type-only import binds as well as a value import does. */
+  readsType?: true
 }
 
 export function resolveTarget(
@@ -257,7 +264,12 @@ function isHeldByField(member: IRSymbol): boolean {
 export function boundClass(ctx: ResolveTargetContext, type: string): IRSymbol | null {
   const [head, ...tail] = splitTargetSegments(type)
   if (head === undefined) return null
-  const typeCtx = { ...ctx, target: type, reachable: ctx.run.table.allById }
+  const typeCtx = {
+    ...ctx,
+    target: type,
+    reachable: ctx.run.table.allById,
+    readsType: true as const,
+  }
   const bound = resolveBoundHead(typeCtx, head, tail, newTrace())
   const owner = bound?.hit == null ? undefined : ctx.run.table.allById.get(bound.hit.id)
   return owner?.kind === "class" ? owner : null
@@ -381,6 +393,8 @@ function resolveInImportScope(
   trace: ResolutionTrace,
 ): BoundHead | null {
   const imported = importedNamesOf(ctx, head, tail)
+  // A type-only import binds the head to no value, so nothing past it can be what the call runs.
+  if (imported.typeOnly && imported.names.length === 0) return NO_MEMBER
   const renamed = imported.renamed
   let conflicting = false
   const names = imported.names.flatMap((entry) => {
@@ -419,6 +433,8 @@ interface ImportedNames {
    * is a package's export, whatever the workspace declares under the same name.
    */
   foreign: string | null
+  /** A type-only import binds the head where the target reads a value. */
+  typeOnly: boolean
 }
 
 function importedNamesOf(
@@ -429,8 +445,13 @@ function importedNamesOf(
   const names: ImportedName[] = []
   let renamed = false
   let foreign: string | null = null
+  let typeOnly = false
   for (const edge of ctx.imports) {
     if (edge.dynamic) continue
+    if (ctx.readsType !== true && edge.typeOnlyLocals?.includes(head) === true) {
+      typeOnly ||= importBindsLocal(edge, head)
+      continue
+    }
 
     if (edge.symbols === "*") {
       if (edge.namespaceBinding !== head) continue
@@ -450,7 +471,7 @@ function importedNamesOf(
       else if (foreign === null && isForeignSpecifier(ctx.run, edge.source)) foreign = edge.source
     }
   }
-  return { names, renamed, foreign }
+  return { names, renamed, foreign, typeOnly }
 }
 
 // A workspace package whose manifest names only files the scan did not read, such as built output,
@@ -475,6 +496,26 @@ function specifierTargetOf(
   return isRelativeSpecifier(specifier)
     ? relativeTargetOf(run, language, fromFile, specifier)
     : mappedTargetOf(run, language, fromFile, specifier)
+}
+
+/**
+ * The file, each file its imports name, and the modules those re-export from, since a barrel
+ * hands on what they declare.
+ */
+export function filesReachedFrom(run: ResolutionRun, language: string, file: string): Set<string> {
+  const reached = new Set([file])
+  const pending: string[] = []
+  const follow = (from: string, edge: ImportEdge): void => {
+    const target = specifierTargetOf(run, language, from, edge.source)
+    if (target === null || reached.has(target)) return
+    reached.add(target)
+    pending.push(target)
+  }
+  for (const edge of run.importsByFile.get(file) ?? []) follow(file, edge)
+  for (let from = pending.pop(); from !== undefined; from = pending.pop()) {
+    for (const edge of run.importsByFile.get(from) ?? []) if (reexportsAny(edge)) follow(from, edge)
+  }
+  return reached
 }
 
 /**
@@ -739,12 +780,15 @@ function resolveInComponentScope(
   const perComponent = ctx.run.table.byComponent
     .get(ctx.caller.language)
     ?.get(componentKeyOf(ctx.caller.component))
-  const hit = soleCandidate(perComponent?.get(ctx.target), trace)
+  const hit = soleCandidate(perComponent?.get(unassertedTarget(ctx.target)), trace)
   return hit === null ? null : { id: hit.id, confidence: "medium" }
 }
 
 function hasNamesake(ctx: ResolveTargetContext): boolean {
-  return (ctx.run.table.byWorkspace.get(ctx.caller.language)?.get(ctx.target)?.length ?? 0) > 0
+  const named = ctx.run.table.byWorkspace
+    .get(ctx.caller.language)
+    ?.get(unassertedTarget(ctx.target))
+  return (named?.length ?? 0) > 0
 }
 
 function resolveInWorkspaceScope(
@@ -752,7 +796,7 @@ function resolveInWorkspaceScope(
   trace: ResolutionTrace,
 ): ResolutionHit | null {
   const perName = ctx.run.table.byWorkspace.get(ctx.caller.language)
-  const hit = soleCandidate(perName?.get(ctx.target), trace)
+  const hit = soleCandidate(perName?.get(unassertedTarget(ctx.target)), trace)
   return hit === null ? null : { id: hit.id, confidence: "low" }
 }
 
@@ -768,6 +812,15 @@ function soleCandidate(
   return bucket[0] ?? null
 }
 
+// A target keeps the non-null assertions it was written with, which change nothing a name binds.
 export function splitTargetSegments(target: string): string[] {
-  return target.split(".").filter((s) => s.length > 0)
+  return unassertedTarget(target)
+    .split(".")
+    .filter((s) => s.length > 0)
 }
+
+function unassertedTarget(target: string): string {
+  return target.replace(NON_NULL_ASSERTIONS, "")
+}
+
+const NON_NULL_ASSERTIONS = /!+(?=\.|$)/g
