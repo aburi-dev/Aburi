@@ -1,8 +1,9 @@
-import { access, readdir, readFile } from "node:fs/promises"
+import { access, mkdir, readdir, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { DEFAULT_OUTPUT_DIRNAME } from "@aburi/cli"
 import { editFile, git, gitTestEnv, useScratchWorkspace } from "@aburi/test-support"
 import { Client } from "@modelcontextprotocol/client"
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/client/validators/ajv"
 import { InMemoryTransport } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it } from "vitest"
 import { type AburiServer, type AburiServerOptions, createAburiServer } from "../src"
@@ -275,6 +276,21 @@ describe("the aburi MCP server", () => {
     expect(report.text).toContain("InvoiceService.create")
   })
 
+  it("names the two scans a diff compares as the agent did, whatever ran between them", async () => {
+    await writeRepository(workspace)
+    const client = await connected()
+    await call(client, "scan")
+    await call(client, "diff", { refspec: "HEAD..HEAD" })
+    await editService(workspace.root)
+    await call(client, "scan")
+    const report = await call(client, "diff", { base: "scan-1", head: "scan-2" })
+    const directory = open?.aburi.directory ?? ""
+
+    expect(report.text.split("\n", 1)[0]).toBe(
+      `# Aburi diff: \`${join(directory, "scan-1", "aburi.ir.json")}\`..\`${join(directory, "scan-2", "aburi.ir.json")}\``,
+    )
+  })
+
   it.each([{}, { FORCE_COLOR: "1" }])(
     "answers a diff whose failOn trips, with the gate on stderr uncoloured and exit 3, under %j",
     async (env) => {
@@ -354,6 +370,40 @@ describe("the aburi MCP server", () => {
       expect(answer.structured.scan).toBe(scan)
     },
   )
+
+  it.each<[string, Record<string, unknown>]>([
+    ["scan", {}],
+    ["workspace", {}],
+    ["workspace", { scan: "scan-9" }],
+    ["component", { id: "api" }],
+    ["explain", { target: ID }],
+  ])("fails %s %j with a structured result its output schema admits", async (tool, args) => {
+    await writeRepository(workspace, { languages: ["./absent-plugin.mjs"] })
+    const client = await connected()
+    const { tools } = await client.listTools()
+    const declared = tools.find((listed) => listed.name === tool)?.outputSchema
+    if (declared === undefined) throw new Error(`${tool} declares no output schema`)
+    const { $schema: _dialect, ...schema } = declared
+
+    const answer = await call(client, tool, args)
+
+    expect(answer.isError).toBe(true)
+    expect(new AjvJsonSchemaValidator().getValidator(schema)(answer.structured)).toMatchObject({
+      valid: true,
+    })
+  })
+
+  it("fails a call once the directory it answers about is gone, naming the directory", async () => {
+    const gone = join(cli.root, "gone")
+    await mkdir(gone)
+    const client = await connected({}, { cwd: gone })
+    await rm(gone, { recursive: true })
+
+    const answer = await call(client, "scan")
+
+    expect(answer.isError).toBe(true)
+    expect(answer.text).toContain(`aburi cannot start in ${gone}: it is not a directory any more.`)
+  })
 
   it("fails a scan whose plugin cannot be loaded, with what aburi scan says", async () => {
     await writeRepository(workspace, { languages: ["./absent-plugin.mjs"] })

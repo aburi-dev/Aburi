@@ -125,4 +125,18 @@ describe("aburi-mcp", () => {
     expect(code).toBe(2)
     expect(stderr).toContain("--bogus")
   })
+
+  it.each([
+    ["does not exist", "absent"],
+    ["is not a directory", "package.json"],
+  ])("exits 2 at startup for a --cwd that %s", async (fault, name) => {
+    await workspace.writeSource("package.json", "{}")
+    const cwd = join(workspace.root, name)
+
+    const { code, stderr } = await start(["--cwd", cwd]).exited
+
+    expect(code).toBe(2)
+    expect(stderr).toContain(`--cwd ${cwd} ${fault}.`)
+    expect(stderr).toContain("Usage: aburi-mcp")
+  })
 })

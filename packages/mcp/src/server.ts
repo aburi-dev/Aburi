@@ -70,6 +70,11 @@ const SCAN_INPUT = z
     "The id of an earlier scan to answer from (scan-1, scan-2, ...). Without it the tool scans the working tree first.",
   )
 
+const SCAN_READ = z
+  .string()
+  .optional()
+  .describe("The id of the scan the answer is from; absent when the call failed before it had one")
+
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const
 
 export function createAburiServer(options: AburiServerOptions): AburiServer {
@@ -79,7 +84,7 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
   const config = options.configPath === undefined ? [] : ["--config", options.configPath]
   const scans = new Map<string, Scan>()
   const stopping = new AbortController()
-  let made = 0
+  let diffs = 0
   let queue: Promise<unknown> = Promise.resolve()
 
   // Each run sizes its work as the only one on the machine, and scan ids follow the calls.
@@ -109,25 +114,18 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
     }
   }
 
-  const outputDirectory = (kind: string): string => {
-    made += 1
-    return join(directory, `${kind}-${made}`)
-  }
-
   const scanTree = async (signal: AbortSignal): Promise<Scan | CallToolResult> => {
-    const output = outputDirectory("scan")
+    // Calls run one at a time, so no other scan takes this id first. A diff of two scans names
+    // their IRs in its title, which then shows the ids the agent passed.
+    const id = `scan-${scans.size + 1}`
+    const output = join(directory, id)
     const scanned = await run(["scan", "--output-dir", output, ...config], signal)
     const read = await componentsOf(scanned, output, signal)
     if (!("components" in read)) {
       await remove(output)
       return unanswered(scanned, { lack: read.lack })
     }
-    const scan: Scan = {
-      id: `scan-${scans.size + 1}`,
-      directory: output,
-      components: read.components,
-      run: scanned,
-    }
+    const scan: Scan = { id, directory: output, components: read.components, run: scanned }
     scans.set(scan.id, scan)
     return scan
   }
@@ -171,8 +169,11 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
         inputSchema: z.object({}),
         outputSchema: z.object({
           ...ANSWER,
-          scan: z.string().describe("The scan's id"),
-          components: z.array(z.string()).describe("The ids of the scan's Components"),
+          scan: z.string().optional().describe("The scan's id; absent when the scan failed"),
+          components: z
+            .array(z.string())
+            .optional()
+            .describe("The ids of the scan's Components; absent when the scan failed"),
         }),
         annotations: READ_ONLY,
       },
@@ -194,7 +195,7 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
         description:
           "The workspace overview `aburi scan` writes as workspace.md: its Components, the dependencies between them and the effects they reach.",
         inputSchema: z.object({ scan: SCAN_INPUT }),
-        outputSchema: z.object({ ...ANSWER, scan: z.string() }),
+        outputSchema: z.object({ ...ANSWER, scan: SCAN_READ }),
         annotations: READ_ONLY,
       },
       ({ scan }, ctx) =>
@@ -215,7 +216,7 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
           id: z.string().describe("The Component's id, as `scan` lists them"),
           scan: SCAN_INPUT,
         }),
-        outputSchema: z.object({ ...ANSWER, scan: z.string() }),
+        outputSchema: z.object({ ...ANSWER, scan: SCAN_READ }),
         annotations: READ_ONLY,
       },
       ({ id, scan }, ctx) =>
@@ -242,7 +243,7 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
           target: z.string().describe("A full Symbol id, a file path, or part of a qualified name"),
           scan: SCAN_INPUT,
         }),
-        outputSchema: z.object({ ...ANSWER, scan: z.string() }),
+        outputSchema: z.object({ ...ANSWER, scan: SCAN_READ }),
         annotations: READ_ONLY,
       },
       ({ target, scan }, ctx) =>
@@ -317,7 +318,8 @@ export function createAburiServer(options: AburiServerOptions): AburiServer {
             if (typeof scan === "string") return refused(scan)
             sides.push(`--${flag}`, join(scan.directory, IR_JSON_FILENAME))
           }
-          const output = outputDirectory("diff")
+          diffs += 1
+          const output = join(directory, `diff-${diffs}`)
           try {
             const diffed = await run(
               [
